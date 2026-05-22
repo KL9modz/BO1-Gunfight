@@ -6,8 +6,6 @@
 - Mid-round join grace period (~10s window to allow spawn instead of hard block)
 - Prematch control lockout (investigate T5 equivalent of `FreezeControlsAllowLook`)
 - Death sounds (wire `level.onPlayerKilled`, test aliases like `"uin_challenge_repeatable"` in-game)
-- Perks per loadout
-- Perk display notification — implemented via `gf_displayPerks()` using wager-style HUD (icon + name, right side, scale pop-in, 5s fade). Verify icon material strings in-game: `perk_lightweight_pro`, `perk_hardened_pro`, `perk_marathon_pro`
 - Minimap disable
 - Forfeit handling (if a team drops to 0 connected players, end the match gracefully)
 - Verify `colt45_mp` is a valid T5 weapon string (used in 4 loadouts)
@@ -16,6 +14,16 @@
 - Wager match modes (Gun Game, Sharpshooter — reference gun.gsc and shrp.gsc from plutoniummod/t5-scripts)
 - Verify remaining attachment strings in-game: `extclip` (Extended Mags), `rapidfire` (MP5K), `variable` (L96A1 variable zoom), `grip` (SPAS) — confirmed `silencer` is correct (was `suppressor`, now fixed)
 - Remove debug `iprintln` in `gf_giveLoadout` once attachments are confirmed working in-game
+
+## DONE
+- ✅ Perks per loadout — Lightweight, Hardened, Marathon given to all loadouts
+- ✅ Perk display notification — `gf_displayPerks()` in `_gf_hud.gsc`: wager-style HUD (icon + name, right side, scale pop-in, 5s fade). Icon strings unverified in-game: `specialty_marathon`, `specialty_hardened`, `specialty_lightweight`
+- ✅ Attachment fix — `suppressor` → `silencer` (confirmed correct T5 string)
+- ✅ Class select suppression — `replacefunc` on `beginClassChoice` (see class select section below)
+- ✅ Health regen disabled — `level.healthRegenDisabled = true` + `level.playerHealth_RegularRegenDelay = 0`
+- ✅ State persistence — `gf_state_*` dvars survive `map_restart`
+- ✅ Bomb suppression — SD bomb hidden and disabled each round
+- ✅ Script split — 4 files under `raw/scripts/mp/`
 
 ---
 
@@ -66,8 +74,17 @@ Custom Gunfight game mode for Black Ops 1 running on Plutonium T5 MP.
 Layered over the SD (Search & Destroy) gametype. Solo offline only.
 
 **Load:** `loadMod mp_gunfight` in the Plutonium console, then `map_restart`.
-**Mod file:** `scripts/mp/mp_gunfight.gsc`
 **Mod folder must be prefixed `mp_`** for it to appear in the in-game mod menu.
+
+**File layout:**
+```
+raw/scripts/mp/
+  mp_gunfight.gsc   -- entry point, init, state persistence, player lifecycle
+  _gf_loadouts.gsc  -- loadout pool, picking, giving, random attachment, perk display
+  _gf_hud.gsc       -- live HP display, perk pop-in notification
+  _gf_rounds.gsc    -- round management, end conditions, audio, bomb suppression
+  mp_spawn_fix.gsc  -- spawn fix utility
+```
 
 ---
 
@@ -189,7 +206,8 @@ if ( level.oldschool || GetDvarInt("scr_disable_cac") == 1 )
 }
 ```
 
-**Current implementation:** `setDvar("scr_disable_cac", "1")` in `init()` — triggers this bypass directly.
+**Current implementation:** `replacefunc( maps\mp\gametypes\_globallogic_ui::beginClassChoice, ::gf_bypassClassChoice )` — confirmed working in Plutonium T5.
+`setDvar("scr_disable_cac", "1")` is also set but **does not work in Plutonium** (dvar is parsed but ignored at runtime). The replacefunc is the real fix.
 `setDvar("scr_sd_selectclass", "0")` kept as extra insurance.
 
 ---
@@ -616,12 +634,24 @@ self SetActionSlot( 1, "weapon", "flash_grenade_mp" );
 
 ## File structure
 ```
-mp_gunfight/
-  CLAUDE.md                      ← this file
+Gunfight/  (GitHub: KL9modz/Gunfight)
+  CLAUDE.md                        ← this file
+  README.md
   .gitignore
-  scripts/
-    mp/
-      mp_gunfight.gsc            ← main script (~700 lines)
+  mp_gunfight.code-workspace
+  .vscode/
+    settings.json                  ← GSC extension config, runtime folder exclusions, rulers
+    extensions.json                ← recommends eyza.aw-gsc
+  raw/
+    scripts/
+      mp/
+        mp_gunfight.gsc            ← entry point, init, state persistence, player lifecycle
+        _gf_loadouts.gsc           ← loadout pool, picking, giving, attachment randomizer
+        _gf_hud.gsc                ← HP HUD, perk pop-in display
+        _gf_rounds.gsc             ← round management, end conditions, audio, bomb suppression
+        mp_spawn_fix.gsc           ← spawn fix utility
+      sp/
+        zm_spawn_fix.gsc
 ```
 
 ---
