@@ -19,10 +19,10 @@ gf_initLoadouts()
 	n++;
 
 	level.gf_loadouts[n]                  = [];
-	level.gf_loadouts[n]["name"]          = "Galil / Colt 45";
+	level.gf_loadouts[n]["name"]          = "Galil / M1911";
 	level.gf_loadouts[n]["primary"]       = "galil_mp";
 	level.gf_loadouts[n]["primary_atts"]  = "reflex acog silencer extclip";
-	level.gf_loadouts[n]["second"]        = "colt45_mp";
+	level.gf_loadouts[n]["second"]        = "m1911_mp";
 	level.gf_loadouts[n]["lethal"]        = "semtex_grenade_mp";
 	level.gf_loadouts[n]["tactical"]      = "flash_grenade_mp";
 	n++;
@@ -46,10 +46,10 @@ gf_initLoadouts()
 	n++;
 
 	level.gf_loadouts[n]                  = [];
-	level.gf_loadouts[n]["name"]          = "AUG / Colt 45";
+	level.gf_loadouts[n]["name"]          = "AUG / M1911";
 	level.gf_loadouts[n]["primary"]       = "aug_mp";
 	level.gf_loadouts[n]["primary_atts"]  = "reflex acog silencer extclip";
-	level.gf_loadouts[n]["second"]        = "colt45_mp";
+	level.gf_loadouts[n]["second"]        = "m1911_mp";
 	level.gf_loadouts[n]["lethal"]        = "frag_grenade_mp";
 	level.gf_loadouts[n]["tactical"]      = "flash_grenade_mp";
 	n++;
@@ -65,10 +65,10 @@ gf_initLoadouts()
 
 	// ---- Submachine Guns ----
 	level.gf_loadouts[n]                  = [];
-	level.gf_loadouts[n]["name"]          = "AK74u / Colt 45";
+	level.gf_loadouts[n]["name"]          = "AK74u / M1911";
 	level.gf_loadouts[n]["primary"]       = "ak74u_mp";
 	level.gf_loadouts[n]["primary_atts"]  = "reflex acog silencer extclip";
-	level.gf_loadouts[n]["second"]        = "colt45_mp";
+	level.gf_loadouts[n]["second"]        = "m1911_mp";
 	level.gf_loadouts[n]["lethal"]        = "semtex_grenade_mp";
 	level.gf_loadouts[n]["tactical"]      = "flash_grenade_mp";
 	n++;
@@ -76,7 +76,7 @@ gf_initLoadouts()
 	level.gf_loadouts[n]                  = [];
 	level.gf_loadouts[n]["name"]          = "MP5K / Makarov";
 	level.gf_loadouts[n]["primary"]       = "mp5k_mp";
-	level.gf_loadouts[n]["primary_atts"]  = "reflex silencer extclip rapidfire";
+	level.gf_loadouts[n]["primary_atts"]  = "reflex silencer extclip rf";
 	level.gf_loadouts[n]["second"]        = "makarovdw_mp";
 	level.gf_loadouts[n]["lethal"]        = "frag_grenade_mp";
 	level.gf_loadouts[n]["tactical"]      = "concussion_grenade_mp";
@@ -92,10 +92,10 @@ gf_initLoadouts()
 	n++;
 
 	level.gf_loadouts[n]                  = [];
-	level.gf_loadouts[n]["name"]          = "Uzi / Colt 45";
+	level.gf_loadouts[n]["name"]          = "Uzi / M1911";
 	level.gf_loadouts[n]["primary"]       = "uzi_mp";
 	level.gf_loadouts[n]["primary_atts"]  = "reflex silencer extclip";
-	level.gf_loadouts[n]["second"]        = "colt45_mp";
+	level.gf_loadouts[n]["second"]        = "m1911_mp";
 	level.gf_loadouts[n]["lethal"]        = "semtex_grenade_mp";
 	level.gf_loadouts[n]["tactical"]      = "concussion_grenade_mp";
 	n++;
@@ -104,7 +104,7 @@ gf_initLoadouts()
 	level.gf_loadouts[n]                  = [];
 	level.gf_loadouts[n]["name"]          = "L96A1 / Python";
 	level.gf_loadouts[n]["primary"]       = "l96a1_mp";
-	level.gf_loadouts[n]["primary_atts"]  = "silencer extclip variable";
+	level.gf_loadouts[n]["primary_atts"]  = "silencer extclip vzoom";
 	level.gf_loadouts[n]["second"]        = "python_speed_mp";
 	level.gf_loadouts[n]["lethal"]        = "frag_grenade_mp";
 	level.gf_loadouts[n]["tactical"]      = "concussion_grenade_mp";
@@ -113,7 +113,7 @@ gf_initLoadouts()
 	level.gf_loadouts[n]                  = [];
 	level.gf_loadouts[n]["name"]          = "SPAS / Makarov";
 	level.gf_loadouts[n]["primary"]       = "spas_mp";
-	level.gf_loadouts[n]["primary_atts"]  = "grip";
+	level.gf_loadouts[n]["primary_atts"]  = "silencer";
 	level.gf_loadouts[n]["second"]        = "makarovdw_mp";
 	level.gf_loadouts[n]["lethal"]        = "semtex_grenade_mp";
 	level.gf_loadouts[n]["tactical"]      = "flash_grenade_mp";

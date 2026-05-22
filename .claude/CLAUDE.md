@@ -34,11 +34,11 @@
 - Death sounds (wire `level.onPlayerKilled`, test aliases like `"uin_challenge_repeatable"` in-game)
 - Minimap disable
 - Forfeit handling (if a team drops to 0 connected players, end the match gracefully)
-- Verify `colt45_mp` is a valid T5 weapon string (used in 4 loadouts)
+- ~~Verify `colt45_mp`~~ — does not exist; replaced with `m1911_mp` in all loadouts ✅
 - More loadout variety (LMGs, Ithaca shotgun, Skorpion/MAC-11)
 - Weapon camos — no direct GSC function exists in T5; engine ties camos to DDL persistent data. Options: (1) check Plutonium modding API/Discord for a native camo setter, (2) test populating `self.custom_class[0]["camo_num"]` before spawn with class set to `CLASS_CUSTOM1`
 - Wager match modes (Gun Game, Sharpshooter — reference gun.gsc and shrp.gsc from plutoniummod/t5-scripts)
-- Verify remaining attachment strings in-game: `extclip` (Extended Mags), `rapidfire` (MP5K), `variable` (L96A1 variable zoom), `grip` (SPAS) — confirmed `silencer` is correct (was `suppressor`, now fixed)
+- ~~Verify attachment strings~~ — all confirmed from primetime43 weapon dump ✅: `extclip`, `reflex`, `acog`, `silencer`, `rf` (Rapid Fire, NOT `rapidfire`), `vzoom` (Variable Zoom, NOT `variable`), `grip`. SPAS has no grip variant — `silencer` used instead.
 - Remove debug `iprintln` in `gf_giveLoadout` once attachments are confirmed working in-game
 
 ## DONE
@@ -70,8 +70,8 @@
   https://github.com/Resxt/Plutonium-T5-Scripts
 
 ### Weapon & Asset References
-- **BO1 MP Weapon list** (pastebin — contents unverified, may include attachment variants)
-  https://pastebin.com/ZbKLyVTk
+- **BO1 MP Weapon list** — verified full dump by primetime43; authoritative for weapon strings and attachment variants
+  (local copy shared in project chat; original: https://pastebin.com/ZbKLyVTk)
 - **MW2 full weapon list** — Used as naming convention cross-reference for attachment strings (IW4, not T5 — verify before using)
   https://github.com/Gerst20051/Game-Mods/blob/master/Modern%20Warfare%202/Weapons.txt
 - **CabConModding BO1 weapons GSC tutorial**
@@ -179,14 +179,14 @@ Use `"progress_bar_fill"` / `"progress_bar_bg"` instead of `"white"` for native-
 - Health regen disabled via `level.playerHealth_RegularRegenDelay = 0` + `level.healthRegenDisabled = true`
 - Perks given to all loadouts: `specialty_movefaster`, `specialty_bulletpenetration`, `specialty_longersprint`
 - Attachment system: `gf_addRandomAttachment(baseWeapon, attList)` picks one random attachment from space-separated list (2 extra empty slots give ~33% no-attachment chance)
-- **T5 attachment keyword strings** (used embedded in weapon name: `famas_silencer_mp`):
+- **T5 attachment keyword strings** (used embedded in weapon name: `famas_silencer_mp`) — all confirmed from primetime43 weapon dump:
   - `reflex` — Reflex sight
   - `acog` — ACOG scope
-  - `silencer` — Silencer (NOT `suppressor` — confirmed wrong in T5)
-  - `extclip` — Extended Mags (unconfirmed, pending in-game test)
-  - `rapidfire` — Rapid Fire SMG attachment (unconfirmed)
-  - `variable` — Variable Zoom sniper scope (unconfirmed)
-  - `grip` — Grip/Foregrip (unconfirmed)
+  - `silencer` — Silencer
+  - `extclip` — Extended Mags
+  - `rf` — Rapid Fire (NOT `rapidfire`)
+  - `vzoom` — Variable Zoom sniper scope (NOT `variable`)
+  - `grip` — Grip/Foregrip (not available on SPAS)
 - All weapon+attachment variants precached at startup via `gf_precacheWeapons()`
 
 ### Class select suppression — CONFIRMED T5 method (from source)

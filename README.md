@@ -20,4 +20,3 @@ Custom Gunfight mode for BO1 MP, layered over SD. Work in progress.
 
 - [plutoniummod/t5-scripts](https://github.com/plutoniummod/t5-scripts) — Official T5 source dump
 - [Plutonium modding docs](https://plutonium.pw/docs/modding/loading-mods/)
-- [BO1 weapon strings](https://forum.plutonium.pw/topic/33166/bo1-item-commands)
