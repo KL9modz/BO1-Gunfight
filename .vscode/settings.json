@@ -19,5 +19,6 @@
     "files.associations": {
         "*.gsc": "gsc"
     },
-    "editor.rulers": [100]
+    "editor.rulers": [100],
+    "git.ignoredRepositories": ["S:\\SteamLibrary\\steamapps\\common\\Call of Duty Black Ops 42740\\raw"]
 }
