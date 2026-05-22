@@ -1,5 +1,5 @@
 {
-"gsc.gameRootFolder": "raw",
+    "gsc.gameRootFolder": "raw",
     "gsc.includedWorkspaceFolders": ["t5-raw"],
     "files.exclude": {
         "demos/": true,
