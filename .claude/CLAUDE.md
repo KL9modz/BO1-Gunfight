@@ -2,6 +2,32 @@
 
 ## TODO
 - HUD (Cold War Gunfight style — player icons, HP bars, score dots)
+  Target layout with `horzAlign="left"`, `vertAlign="top"`:
+  ```
+  y=126  dark background panel  162×38 px               y=164
+  y=137  [icon][icon] [==bar==] HP  . . . . . .  allies row
+  y=144  separator line
+  y=153  [icon][icon] [==bar==] HP  . . . . . .  axis row
+  ```
+  - Player icons: 9×13 px squares, blue=allies alive, green=axis alive, gray=dead, hidden=slot empty
+  - HP bar: 68 px max (200 HP full), 5 px tall, scales with total team HP
+  - HP number: text to right of bar
+  - Score dots: 6 per row at x=122+d×7, 5×5 px; ally wins → blue, axis wins → red, unscored → gray
+
+  Planned element refs on each player entity:
+  ```
+  player.gf_hudBg              background panel
+  player.gf_hudSep             separator line
+  player.gf_hudAlliesIcon[0/1] player icons
+  player.gf_hudAlliesBarBg     bar background
+  player.gf_hudAlliesBarFg     bar foreground (resized each tick)
+  player.gf_hudAlliesHp        HP number text
+  player.gf_hudAllyDot[0..5]   score dots
+  player.gf_hudAxisIcon[0/1]
+  player.gf_hudAxisBarBg/Fg
+  player.gf_hudAxisHp
+  player.gf_hudAxisDot[0..5]
+  ```
 - Overtime mechanic
 - Mid-round join grace period (~10s window to allow spawn instead of hard block)
 - Prematch control lockout (investigate T5 equivalent of `FreezeControlsAllowLook`)
@@ -162,34 +188,6 @@ Use `"progress_bar_fill"` / `"progress_bar_bg"` instead of `"white"` for native-
   - `variable` — Variable Zoom sniper scope (unconfirmed)
   - `grip` — Grip/Foregrip (unconfirmed)
 - All weapon+attachment variants precached at startup via `gf_precacheWeapons()`
-
-### HUD — Cold War Gunfight style (left side, under minimap)
-Layout with `horzAlign="left"`, `vertAlign="top"`:
-```
-y=126  dark background panel  162×38 px               y=164
-y=137  [icon][icon] [==bar==] HP  . . . . . .  allies row
-y=144  separator line
-y=153  [icon][icon] [==bar==] HP  . . . . . .  axis row
-```
-- Player icons: 9×13 px squares, blue=allies alive, green=axis alive, gray=dead, hidden=slot empty
-- HP bar: 68 px max (200 HP full), 5 px tall, scales with total team HP
-- HP number: text to right of bar
-- Score dots: 6 per row at x=122+d×7, 5×5 px; ally wins → blue, axis wins → red, unscored → gray
-
-**HUD element refs** on each player entity:
-```
-player.gf_hudBg              background panel
-player.gf_hudSep             separator line
-player.gf_hudAlliesIcon[0/1] player icons
-player.gf_hudAlliesBarBg     bar background
-player.gf_hudAlliesBarFg     bar foreground (resized each tick)
-player.gf_hudAlliesHp        HP number text
-player.gf_hudAllyDot[0..5]   score dots
-player.gf_hudAxisIcon[0/1]
-player.gf_hudAxisBarBg/Fg
-player.gf_hudAxisHp
-player.gf_hudAxisDot[0..5]
-```
 
 ### Class select suppression — CONFIRMED T5 method (from source)
 
