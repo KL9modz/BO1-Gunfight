@@ -103,15 +103,9 @@ init()
 // Suppress SD's default behaviour (defenders win).
 gf_onTimeLimitNoop() { }
 
-// SD fires this when a team reaches zero alive players (via updateTeamStatus).
-// Translate into our gf_round_result notify so gf_roundStart can handle it.
-// Guard against SD firing it outside an active round (e.g. during intermission).
-gf_onDeadEvent( team )
-{
-	if ( !level.gf_roundActive ) return;
-	winner = getOtherTeam( team );
-	level notify( "gf_round_result", winner );
-}
+// Noop — gf_eliminationWatch owns round-end detection and fires gf_round_result
+// after a 2 s delay so SD's killcam has time to play.
+gf_onDeadEvent( team ) { }
 
 gf_bypassClassChoice( forceNewChoice )
 {
@@ -135,6 +129,9 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
 {
 	if ( isDefined( eAttacker ) && isPlayer( eAttacker ) && eAttacker != self )
 	{
+		// Block all PvP damage during pre-round countdown and intermission
+		if ( !level.gf_roundActive ) return 0;
+
 		if ( isDefined( eAttacker.pers["team"] ) && isDefined( self.pers["team"] ) &&
 		     eAttacker.pers["team"] != self.pers["team"] )
 		{
@@ -198,9 +195,7 @@ onPlayerSpawned()
 	// Destroy SD's per-attacker suitcase carry-icon
 	if ( isDefined( self.carryIcon ) ) self.carryIcon destroy();
 
-	self.pers["gf_score"]   = 0;
 	self.pers["gf_hp_lost"] = 0;
-	self.score = 0;
 
 	gf_giveLoadout();
 	// Start HP HUD once per player connection; it persists across rounds.

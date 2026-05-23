@@ -28,21 +28,24 @@ gf_roundStart()
 	{
 		gf_waitForRoundActive();
 
-		// Reset per-round scores now that players are spawned
+		// Reset only the per-round HP-budget tracker; damage score accumulates match-wide
 		for ( i = 0; i < level.players.size; i++ )
 		{
 			p = level.players[i];
 			if ( !isDefined( p ) ) continue;
-			p.pers["gf_score"]   = 0;
 			p.pers["gf_hp_lost"] = 0;
-			p.score = 0;
 		}
 
-		level.gf_roundActive = true;
+		// Pre-round: 3 s window where players can move but PvP damage is blocked
+		// (gf_onPlayerDamage returns 0 when !gf_roundActive)
 		level.gf_roundNum++;
+		iprintln( "^3Round " + level.gf_roundNum + " ^7-- ^8" + level.gf_currentLoadout["name"]
+		          + " ^7| starting in 3..." );
+		wait 3;
 
-		iprintlnbold( "^3Round " + level.gf_roundNum
-		              + " ^7-- Fight!  ^8(" + level.gf_currentLoadout["name"] + ")" );
+		level.gf_roundActive = true;
+
+		iprintlnbold( "^3Round " + level.gf_roundNum + " ^7-- ^2FIGHT!" );
 		gf_announceLoadout();
 
 		level thread gf_roundTimer();
@@ -137,7 +140,8 @@ gf_roundTimer()
 }
 
 // Polls every 0.1 s; fires gf_round_result when a team reaches zero alive players.
-// Backup for gf_onDeadEvent which fires async (one frame lag via updateTeamStatus).
+// Waits 2 s after detecting elimination so SD's killcam has time to play before
+// the round result is processed.
 gf_eliminationWatch()
 {
 	level endon( "game_ended"         );
@@ -153,16 +157,19 @@ gf_eliminationWatch()
 
 		if ( alliesAlive == 0 && axisAlive == 0 )
 		{
+			wait 2;
 			level notify( "gf_round_result", "draw" );
 			return;
 		}
 		else if ( alliesAlive == 0 )
 		{
+			wait 2;
 			level notify( "gf_round_result", "axis" );
 			return;
 		}
 		else if ( axisAlive == 0 )
 		{
+			wait 2;
 			level notify( "gf_round_result", "allies" );
 			return;
 		}
@@ -248,13 +255,13 @@ gf_processRoundResult( winner )
 	gf_roundBetween();
 }
 
-// 5-second intermission then respawns all team players for the next round.
+// Brief intermission then respawns all team players for the next round.
 // onPlayerSpawned handles weapons + perks as normal.
 gf_roundBetween()
 {
 	level endon( "game_ended" );
 
-	wait 5;
+	wait 2;
 
 	// Kill any survivors still standing
 	for ( i = 0; i < level.players.size; i++ )
