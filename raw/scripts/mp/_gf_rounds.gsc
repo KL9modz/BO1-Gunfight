@@ -26,9 +26,6 @@ gf_roundStart()
 
 	for ( ;; )
 	{
-		[[level._setTeamScore]]( "allies", game["roundswon"]["allies"] );
-		[[level._setTeamScore]]( "axis",   game["roundswon"]["axis"]   );
-
 		gf_waitForRoundActive();
 
 		// Reset per-round scores now that players are spawned
@@ -196,7 +193,7 @@ gf_processRoundResult( winner )
 	else if ( winner == "allies" )
 	{
 		game["roundswon"]["allies"]++;
-		[[level._setTeamScore]]( "allies", game["roundswon"]["allies"] );
+		game["teamScores"]["allies"] = game["roundswon"]["allies"];
 		iprintlnbold( "^4Allies ^7win round " + level.gf_roundNum );
 		maps\mp\gametypes\_globallogic_audio::leaderDialog( "round_success", "allies" );
 		maps\mp\gametypes\_globallogic_audio::leaderDialog( "round_failure", "axis"   );
@@ -204,7 +201,7 @@ gf_processRoundResult( winner )
 	else
 	{
 		game["roundswon"]["axis"]++;
-		[[level._setTeamScore]]( "axis", game["roundswon"]["axis"] );
+		game["teamScores"]["axis"] = game["roundswon"]["axis"];
 		iprintlnbold( "^1Axis ^7win round " + level.gf_roundNum );
 		maps\mp\gametypes\_globallogic_audio::leaderDialog( "round_success", "axis"   );
 		maps\mp\gametypes\_globallogic_audio::leaderDialog( "round_failure", "allies" );
