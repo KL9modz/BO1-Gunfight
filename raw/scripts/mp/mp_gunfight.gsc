@@ -119,8 +119,10 @@ gf_bypassClassChoice( forceNewChoice )
 		return;
 	self.pers["class"] = level.defaultClass;
 	self.class = level.defaultClass;
-	// Don't spawn mid-round — wait for the next round start.
-	if ( self.sessionstate != "playing" && game["state"] == "playing" && !level.gf_roundActive )
+	// Only spawn during the initial prematch (before any round has started).
+	// Between rounds, gf_roundBetween owns all spawning.
+	if ( self.sessionstate != "playing" && game["state"] == "playing"
+	     && !level.gf_roundActive && level.gf_roundNum == 0 )
 		self thread [[level.spawnClient]]();
 	level thread maps\mp\gametypes\_globallogic::updateTeamStatus();
 	self thread maps\mp\gametypes\_spectating::setSpectatePermissionsForMachine();
