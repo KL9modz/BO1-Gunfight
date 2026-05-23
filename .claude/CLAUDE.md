@@ -105,10 +105,10 @@ Layered over the SD (Search & Destroy) gametype. Solo offline only.
 **File layout:**
 ```
 raw/scripts/mp/
-  mp_gunfight.gsc   -- entry point, init, state persistence, player lifecycle
+  mp_gunfight.gsc   -- entry point, init, player lifecycle
   _gf_loadouts.gsc  -- loadout pool, picking, giving, random attachment, perk display
   _gf_hud.gsc       -- live HP display, perk pop-in notification
-  _gf_rounds.gsc    -- round management, end conditions, audio, bomb suppression
+  _gf_rounds.gsc    -- round management, end conditions, state persistence, audio, bomb suppression
   mp_spawn_fix.gsc  -- spawn fix utility
 ```
 
@@ -128,6 +128,8 @@ These are confirmed-broken functions in T5 mod scripts and their correct replace
 | `setDvar("scr_player_healthregentime", "0")` | `level.playerHealth_RegularRegenDelay = 0; level.healthRegenDisabled = true;` |
 
 **Compile error diagnosis:** When T5 throws `unknown function: @ scripts/mp/<file>::<func>`, the broken call is INSIDE the named function — scan every call within it for T5 compatibility.
+
+**Cross-file calls require `#include`:** Each `.gsc` file must `#include` every other mod script whose functions it calls directly. T5 does not make sibling script functions globally visible. Missing include → `unknown function` compile error on the calling function. Current include chain: `_gf_rounds.gsc` → `_gf_loadouts.gsc` → `_gf_hud.gsc`.
 
 ---
 

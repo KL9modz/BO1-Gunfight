@@ -131,57 +131,6 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
 }
 
 // ============================================================
-// STATE PERSISTENCE
-// ============================================================
-
-// Reads round state from dvars set by the previous round's gf_saveState().
-// On the very first load gf_state_initialized is 0, so all level vars get
-// safe defaults and gf_loadoutIdx is set to -1 so init() picks a fresh one.
-gf_restoreState()
-{
-	if ( getDvarInt( "gf_state_initialized" ) == 0 )
-	{
-		level.gf_alliesWins = 0;
-		level.gf_axisWins   = 0;
-		level.gf_roundNum   = 0;
-		level.gf_loadoutIdx = -1;
-		level.gf_roundActive = false;
-		return;
-	}
-
-	level.gf_alliesWins  = getDvarInt( "gf_state_allies_wins" );
-	level.gf_axisWins    = getDvarInt( "gf_state_axis_wins"   );
-	level.gf_roundNum    = getDvarInt( "gf_state_round_num"   );
-	level.gf_loadoutIdx  = getDvarInt( "gf_state_loadout_idx" );
-	level.gf_roundActive = false;
-
-	if ( level.gf_loadoutIdx >= 0 && level.gf_loadoutIdx < level.gf_loadoutCount )
-		level.gf_currentLoadout = level.gf_loadouts[level.gf_loadoutIdx];
-
-	// Restore which team is attackers/defenders, overriding SD's default.
-	savedAttackers = getDvar( "gf_state_attackers" );
-	if ( savedAttackers == "allies" || savedAttackers == "axis" )
-	{
-		game["attackers"] = savedAttackers;
-		if ( savedAttackers == "allies" )
-			game["defenders"] = "axis";
-		else
-			game["defenders"] = "allies";
-	}
-}
-
-// Writes the current round state to dvars so the next map_restart can restore it.
-gf_saveState()
-{
-	setDvar( "gf_state_initialized", "1"                    );
-	setDvar( "gf_state_allies_wins",  level.gf_alliesWins   );
-	setDvar( "gf_state_axis_wins",    level.gf_axisWins     );
-	setDvar( "gf_state_round_num",    level.gf_roundNum     );
-	setDvar( "gf_state_loadout_idx",  level.gf_loadoutIdx   );
-	setDvar( "gf_state_attackers",    game["attackers"]     );
-}
-
-// ============================================================
 // PLAYER LIFECYCLE
 // ============================================================
 

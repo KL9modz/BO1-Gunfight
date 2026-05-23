@@ -1,5 +1,6 @@
 #include maps\mp\_utility;
 #include common_scripts\utility;
+#include scripts\mp\_gf_hud;
 
 // Defines every available shared loadout.
 // All players receive the same randomly selected loadout for gf_rounds_per_loadout rounds.
