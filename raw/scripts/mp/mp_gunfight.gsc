@@ -57,8 +57,9 @@ init()
 	if ( level.gf_cfg_roundsPerLoadout <= 0 ) level.gf_cfg_roundsPerLoadout = 2;
 
 	// SD configuration ------------------------------------------------
-	// Our gf_roundTimer owns the clock; disable SD's native timer
-	setDvar( "scr_sd_timelimit",    "9999" );
+	// Set SD's display timer to our round time so the HUD countdown is correct.
+	// level.onTimeLimit (below) prevents SD from acting when the clock hits 0.
+	setDvar( "scr_sd_timelimit",    "" + (level.gf_cfg_roundTime / 60.0) );
 	// Neutralise bomb if somehow planted; detonation impossible in 60 s
 	setDvar( "scr_sd_bombtimer",    "9999" );
 	setDvar( "scr_sd_planttime",    "9999" );
@@ -88,6 +89,7 @@ init()
 	level.onPlayerDamage = ::gf_onPlayerDamage;
 	level.onOneLeftEvent = ::gf_onOneLeft;
 	level.onDeadEvent    = ::gf_onDeadEvent;
+	level.onTimeLimit    = ::gf_onTimeLimitNoop;
 
 	replacefunc( maps\mp\gametypes\_globallogic_ui::beginClassChoice, ::gf_bypassClassChoice );
 
@@ -96,6 +98,10 @@ init()
 	level thread gf_bombSuppressLoop();
 	level thread gf_bombPlantedWatch();
 }
+
+// SD's round timer hit 0 — our gf_roundTimer already handled it (HP tiebreaker).
+// Suppress SD's default behaviour (defenders win).
+gf_onTimeLimitNoop() { }
 
 // SD fires this when a team reaches zero alive players (via updateTeamStatus).
 // Translate into our gf_round_result notify so gf_roundStart can handle it.

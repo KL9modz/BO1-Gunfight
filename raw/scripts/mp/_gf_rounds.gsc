@@ -270,12 +270,16 @@ gf_roundBetween()
 
 	wait 0.5;
 
-	// Respawn all team players
+	// Restore each player's life count then respawn.
+	// With scr_sd_numlives=1, pers["lives"] reaches 0 after death and spawnClient
+	// refuses to spawn — reset it here so the new round's spawn goes through.
 	for ( i = 0; i < level.players.size; i++ )
 	{
 		p = level.players[i];
 		if ( !isDefined( p ) || !isDefined( p.pers["team"] ) ) continue;
 		if ( p.pers["team"] != "allies" && p.pers["team"] != "axis" ) continue;
+		if ( isDefined( level.numlives ) && level.numlives > 0 )
+			p.pers["lives"] = level.numlives;
 		p thread [[level.spawnClient]]();
 	}
 }
