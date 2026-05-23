@@ -61,10 +61,12 @@
   Key files: `MP/Common/maps/mp/gametypes/shrp.gsc`, `gun.gsc`, `sd.gsc`, `_wager.gsc`, `_globallogic.gsc`, `_class.gsc`, `_hud_util.gsc`, `_rank.gsc`
 - **Local T5 source dump** (user's machine): `C:\Users\klaze\OneDrive - sdccd.edu\Desktop\GSC\MP\Common`
 
-### Community BO1 Mods (reference/pattern source)
+### Community Mods (reference/pattern source)
+- https://github.com/misterbubb/T6-Gunfight-Gamemode
+- https://github.com/bblack16/plutonium-waypoints
 - **iAmThatMichael/gunfight** — BO3/T7 Gunfight recreation; used for game-mode design reference
   https://github.com/iAmThatMichael/gunfight
-- **GunMd0wn custom_gunfight.gsc** — BO1 community Gunfight mod (runs on HQ/TDM); source of class-select suppression patterns and weapon dvar approach
+- **GunMd0wn custom_gunfight.gsc** — community Gunfight mod (runs on HQ/TDM); source of class-select suppression patterns and weapon dvar approach
 - **mp_EMv2_Recreation, mp_iMCSx, mp_EnCoReV8** — Community BO1 mods; source of HUD element patterns (`newHudElem`, `newClientHudElem`, `NewScoreHudElem`, `hud.archived`, `fontPulse`)
 - **Resxt/Plutonium-T5-Scripts** — Collection of community T5 GSC scripts
   https://github.com/Resxt/Plutonium-T5-Scripts
@@ -72,8 +74,6 @@
 ### Weapon & Asset References
 - **BO1 MP Weapon list** — verified full dump by primetime43; authoritative for weapon strings and attachment variants
   (local copy shared in project chat; original: https://pastebin.com/ZbKLyVTk)
-- **MW2 full weapon list** — Used as naming convention cross-reference for attachment strings (IW4, not T5 — verify before using)
-  https://github.com/Gerst20051/Game-Mods/blob/master/Modern%20Warfare%202/Weapons.txt
 - **CabConModding BO1 weapons GSC tutorial**
   https://cabconmodding.com/threads/black-ops-1-all-about-weapons-gsc-tutorial.1268/
 - **Steam guide — BO1 MP full weapon names**
@@ -97,7 +97,6 @@
 
 ## Project overview
 Custom Gunfight game mode for Black Ops 1 running on Plutonium T5 MP.
-Layered over the SD (Search & Destroy) gametype. Solo offline only.
 
 **Load:** `loadMod mp_gunfight` in the Plutonium console, then `map_restart`.
 **Mod folder must be prefixed `mp_`** for it to appear in the in-game mod menu.
@@ -349,15 +348,15 @@ Official CW Gunfight logic (not T5-compatible, reference only):
 
 ---
 
-## T5 community Gunfight mod patterns (applicable to this project)
+##  community Gunfight mod patterns (applicable to this project)
 
-From `custom_gunfight.gsc` by GunMd0wn (runs on BO1 HQ/TDM):
+From `custom_gunfight.gsc` by GunMd0wn (runs on ? HQ/TDM):
 
 **Class select suppression — NOTE: `allowClassChoice` does not exist in T5 source.**
 This `replacefunc` pattern from GunMd0wn's mod targets a ghost function and does nothing.
 The correct method (confirmed from T5 source) is `setDvar("scr_disable_cac", "1")` — see the class select section above.
 
-**Weapon randomization via dvars (T5 pattern):**
+**Weapon randomization via dvars:**
 ```gsc
 setDvar("gunfight_current_game_primary", getRandomWeapon("primary"));
 // re-reads each round, all players get same weapon
@@ -369,7 +368,7 @@ level.gunfight_current_game_primary = getDvar("gunfight_current_game_primary");
 maps\mp\gametypes\_gamescore::_setteamscore("allies", getTeamHealth("allies"));
 ```
 
-**Health regen disable (confirmed T5):**
+**Health regen disable):**
 ```gsc
 level.healthregendisabled = 1;
 ```
