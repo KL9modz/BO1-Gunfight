@@ -2,48 +2,53 @@
 #include common_scripts\utility;
 
 // Live HP readout centered on screen with a horizontal divider line.
+// Creates elements once per player lifetime (persists across rounds);
+// subsequent spawns reuse the existing elements instead of layering new ones.
 gf_hud()
 {
 	self endon( "disconnect" );
-	self endon( "death" );
 
-	hp = newClientHudElem( self );
-	hp.horzAlign         = "center";
-	hp.vertAlign         = "middle";
-	hp.alignX            = "center";
-	hp.alignY            = "middle";
-	hp.x                 = 0;
-	hp.y                 = 0;
-	hp.font              = "default";
-	hp.fontScale         = 2;
-	hp.color             = ( 1, 1, 1 );
-	hp.alpha             = 1;
-	hp.foreground        = true;
-	hp.hidewhendead      = false;
-	hp.hidewheninmenu    = false;
-	hp.hidewheninkillcam = false;
-	hp.archived          = false;
+	// Reuse elements if they already exist (player respawned for round 2+)
+	if ( !isDefined( self.gf_hudHp ) )
+	{
+		self.gf_hudHp = newClientHudElem( self );
+		self.gf_hudHp.horzAlign         = "center";
+		self.gf_hudHp.vertAlign         = "middle";
+		self.gf_hudHp.alignX            = "center";
+		self.gf_hudHp.alignY            = "middle";
+		self.gf_hudHp.x                 = 0;
+		self.gf_hudHp.y                 = 0;
+		self.gf_hudHp.font              = "default";
+		self.gf_hudHp.fontScale         = 2;
+		self.gf_hudHp.color             = ( 1, 1, 1 );
+		self.gf_hudHp.alpha             = 1;
+		self.gf_hudHp.foreground        = true;
+		self.gf_hudHp.hidewhendead      = false;
+		self.gf_hudHp.hidewheninmenu    = false;
+		self.gf_hudHp.hidewheninkillcam = false;
+		self.gf_hudHp.archived          = false;
 
-	dot = newClientHudElem( self );
-	dot.horzAlign         = "center";
-	dot.vertAlign         = "middle";
-	dot.alignX            = "center";
-	dot.alignY            = "middle";
-	dot.x                 = 0;
-	dot.y                 = -20;
-	dot.color             = ( 1, 0.3, 0.3 );
-	dot.alpha             = 0.9;
-	dot.foreground        = true;
-	dot.hidewhendead      = false;
-	dot.hidewheninmenu    = false;
-	dot.hidewheninkillcam = false;
-	dot.archived          = false;
-	dot setShader( "white", 40, 4 );
+		self.gf_hudDot = newClientHudElem( self );
+		self.gf_hudDot.horzAlign         = "center";
+		self.gf_hudDot.vertAlign         = "middle";
+		self.gf_hudDot.alignX            = "center";
+		self.gf_hudDot.alignY            = "middle";
+		self.gf_hudDot.x                 = 0;
+		self.gf_hudDot.y                 = -20;
+		self.gf_hudDot.color             = ( 1, 0.3, 0.3 );
+		self.gf_hudDot.alpha             = 0.9;
+		self.gf_hudDot.foreground        = true;
+		self.gf_hudDot.hidewhendead      = false;
+		self.gf_hudDot.hidewheninmenu    = false;
+		self.gf_hudDot.hidewheninkillcam = false;
+		self.gf_hudDot.archived          = false;
+		self.gf_hudDot setShader( "white", 40, 4 );
+	}
 
 	for ( ;; )
 	{
 		wait 0.05;
-		hp setText( "HP " + self.health );
+		self.gf_hudHp setText( "HP " + self.health );
 	}
 }
 

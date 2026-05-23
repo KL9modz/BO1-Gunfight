@@ -38,7 +38,7 @@ gf_roundStart()
 			if ( !isDefined( p ) ) continue;
 			p.pers["gf_score"]   = 0;
 			p.pers["gf_hp_lost"] = 0;
-			[[level._setPlayerScore]]( p, 0 );
+			p.score = 0;
 		}
 
 		level.gf_roundActive = true;

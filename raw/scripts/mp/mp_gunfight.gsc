@@ -149,7 +149,7 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
 				if ( !isDefined( eAttacker.pers["gf_score"] ) )
 					eAttacker.pers["gf_score"] = 0;
 				eAttacker.pers["gf_score"] += actual;
-				[[level._setPlayerScore]]( eAttacker, eAttacker.pers["gf_score"] );
+				eAttacker.score = eAttacker.pers["gf_score"];
 			}
 		}
 	}
@@ -198,8 +198,10 @@ onPlayerSpawned()
 
 	self.pers["gf_score"]   = 0;
 	self.pers["gf_hp_lost"] = 0;
-	[[level._setPlayerScore]]( self, 0 );
+	self.score = 0;
 
 	gf_giveLoadout();
-	self thread gf_hud();
+	// Start HP HUD once per player connection; it persists across rounds.
+	if ( !isDefined( self.gf_hudHp ) )
+		self thread gf_hud();
 }
