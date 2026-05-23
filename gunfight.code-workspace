@@ -7,6 +7,10 @@
         {
             "name": "t5-raw",
             "path": "S:\\SteamLibrary\\steamapps\\common\\Call of Duty Black Ops 42740\\raw"
+        },
+        {
+            "name": "rawfiles",
+            "path": "../../../../../.vscode/extensions/lastdemon99.lb-iw5-gsc-1.6.0/rawfiles"
         }
     ]
 }

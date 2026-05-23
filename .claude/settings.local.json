@@ -10,7 +10,17 @@
       "PowerShell(cd \"$env:TEMP\\\\mp_gunfight_remote\"; git remote -v; git log --oneline -5 2>&1)",
       "PowerShell(Copy-Item \"c:\\\\Users\\\\klaze\\\\AppData\\\\Local\\\\Plutonium\\\\storage\\\\t5\\\\raw\\\\scripts\\\\mp\\\\mp_gunfight.gsc\" \"$env:TEMP\\\\mp_gunfight_remote\\\\scripts\\\\mp\\\\mp_gunfight.gsc\" -Force; cd \"$env:TEMP\\\\mp_gunfight_remote\"; git diff --stat 2>&1)",
       "PowerShell(cd \"$env:TEMP\\\\mp_gunfight_remote\"; git push origin HEAD 2>&1)",
-      "Read(//c/Users/klaze/AppData/Local/Temp/mp_gunfight_remote/**)"
+      "Read(//c/Users/klaze/AppData/Local/Temp/mp_gunfight_remote/**)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\klaze\\\\\" -Directory -ErrorAction SilentlyContinue | Select-Object -First 20 Name)",
+      "Bash(cd /c/Users/klaze && find . -maxdepth 3 -type d \\\\\\( -iname \"GSC\" -o -iname \"MP\" -o -iname \"Common\" -o -iname \"OneDrive\" -o -iname \"Desktop\" -o -iname \"Documents\" \\\\\\) 2>/dev/null | head -20)",
+      "Read(//c/Users/**)",
+      "Bash(find /mnt/c/Users/klaze -maxdepth 3 -type d \\\\\\( -iname \"GSC\" -o -iname \"MP\" -o -iname \"Common\" \\\\\\) 2>/dev/null | head -20)",
+      "Read(//mnt/c/Users/**)",
+      "Bash(xargs -I {} bash -c \"echo '=== {} ==='; ls {} 2>/dev/null | grep -c '.gsc$' || echo '0'\")",
+      "Bash(xargs grep -l \"setTeamScore\\\\|setPlayerScore\\\\|_globallogic\\\\|gsc source\")"
     ]
   }
 }
