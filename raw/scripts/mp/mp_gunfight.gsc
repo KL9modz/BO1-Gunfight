@@ -2,7 +2,7 @@
  * mp_gunfight.gsc  --  Plutonium T5 (Black Ops 1 MP) Gunfight mode
  *
  * RULES
- *   2v2 | 1 life per player | 60-second round timer
+ *   1 life per player | 60-second round timer | no team size limit
  *
  *   Round ends when:
  *     a) One team is fully eliminated    -> other team wins
@@ -18,10 +18,11 @@
  *   Menu: Mods -> mp_gunfight  |  Console: loadMod mp_gunfight | map_restart
  *
  * ROUND ARCHITECTURE
- *   Each round is a separate map load via map_restart(false).
- *   SD's native prematch countdown runs at the start of every round.
- *   Round state (wins, round number, loadout index, team sides) is persisted
- *   across restarts via dvars prefixed gf_state_*.
+ *   No map_restart between rounds. SD's prematch runs once at match start.
+ *   gf_roundStart() loops indefinitely: run round -> gf_roundBetween (5s
+ *   intermission + respawn all players) -> next round.
+ *   Win tracking uses SD's game["roundswon"] + hitRoundWinLimit().
+ *   scr_sd_winlimit controls wins needed (default 6).
  *
  * LOCATION
  *   %appdata%\Plutonium\storage\t5\raw\scripts\mp\mp_gunfight.gsc
@@ -49,24 +50,25 @@ init()
 	// Config dvars -- set via server config or console before map loads
 	//   gf_round_time          seconds per round          (default 60)
 	//   gf_rounds_per_loadout  rounds before new loadout  (default 2)
-	//   gf_win_limit           rounds to win the match    (default 6)
+	//   scr_sd_winlimit        rounds to win the match    (default 6)
 	level.gf_cfg_roundTime        = getDvarInt( "gf_round_time"         );
 	level.gf_cfg_roundsPerLoadout = getDvarInt( "gf_rounds_per_loadout" );
-	level.gf_cfg_winLimit         = getDvarInt( "gf_win_limit"          );
 	if ( level.gf_cfg_roundTime        <= 0 ) level.gf_cfg_roundTime        = 60;
 	if ( level.gf_cfg_roundsPerLoadout <= 0 ) level.gf_cfg_roundsPerLoadout = 2;
-	if ( level.gf_cfg_winLimit         <= 0 ) level.gf_cfg_winLimit         = 6;
 
 	// SD configuration ------------------------------------------------
-	setDvar( "scr_sd_timelimit",    "" + (level.gf_cfg_roundTime / 60.0) );
+	// Our gf_roundTimer owns the clock; disable SD's native timer
+	setDvar( "scr_sd_timelimit",    "9999" );
 	// Neutralise bomb if somehow planted; detonation impossible in 60 s
 	setDvar( "scr_sd_bombtimer",    "9999" );
 	setDvar( "scr_sd_planttime",    "9999" );
 	setDvar( "scr_sd_defusetime",   "9999" );
 	// One life per player per round
 	setDvar( "scr_sd_numlives",     "1"    );
-	// Disable SD's automatic halftime; we control side swaps via gf_state_attackers
+	// Disable SD's automatic halftime; we control side swaps in gf_processRoundResult
 	setDvar( "scr_sd_switchenable", "0"    );
+	// SD win limit — hitRoundWinLimit() reads this; default 6 (first to 6)
+	setDvar( "scr_sd_winlimit",     "6"    );
 	// Skip class-select menu entirely; auto-assign default class and spawn
 	setDvar( "scr_disable_cac",     "1"    );
 	setDvar( "scr_sd_selectclass",  "0"    );
@@ -79,14 +81,13 @@ init()
 
 	gf_initLoadouts();
 	gf_precacheWeapons();
-	gf_restoreState();
-
-	if ( level.gf_loadoutIdx < 0 )
-		gf_pickLoadout();
+	level.gf_loadoutIdx = -1;
+	gf_pickLoadout();
 
 	setscoreboardcolumns( "kills", "deaths", "none", "none" );
 	level.onPlayerDamage = ::gf_onPlayerDamage;
 	level.onOneLeftEvent = ::gf_onOneLeft;
+	level.onDeadEvent    = ::gf_onDeadEvent;
 
 	replacefunc( maps\mp\gametypes\_globallogic_ui::beginClassChoice, ::gf_bypassClassChoice );
 
@@ -94,6 +95,16 @@ init()
 	level thread gf_roundStart();
 	level thread gf_bombSuppressLoop();
 	level thread gf_bombPlantedWatch();
+}
+
+// SD fires this when a team reaches zero alive players (via updateTeamStatus).
+// Translate into our gf_round_result notify so gf_roundStart can handle it.
+// Guard against SD firing it outside an active round (e.g. during intermission).
+gf_onDeadEvent( team )
+{
+	if ( !level.gf_roundActive ) return;
+	winner = getOtherTeam( team );
+	level notify( "gf_round_result", winner );
 }
 
 gf_bypassClassChoice( forceNewChoice )
@@ -110,6 +121,8 @@ gf_bypassClassChoice( forceNewChoice )
 }
 
 // self = victim, eAttacker = shooter. Must return iDamage.
+// Tracks cumulative damage on the victim (capped at 100) so burst-fire bullets
+// that all arrive before self.health decrements can't inflate the score.
 gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeapon, vPoint, vDir, sHitLoc, psOffsetTime )
 {
 	if ( isDefined( eAttacker ) && isPlayer( eAttacker ) && eAttacker != self )
@@ -117,14 +130,21 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
 		if ( isDefined( eAttacker.pers["team"] ) && isDefined( self.pers["team"] ) &&
 		     eAttacker.pers["team"] != self.pers["team"] )
 		{
-			// Cap to remaining health so overkill damage doesn't inflate the stat
-			actual = iDamage;
-			if ( actual > self.health ) actual = self.health;
+			if ( !isDefined( self.pers["gf_hp_lost"] ) )
+				self.pers["gf_hp_lost"] = 0;
 
-			if ( !isDefined( eAttacker.pers["gf_damage"] ) )
-				eAttacker.pers["gf_damage"] = 0;
-			eAttacker.pers["gf_damage"] += actual;
-			[[level._setPlayerScore]]( eAttacker, eAttacker.pers["gf_damage"] );
+			remaining = 100 - self.pers["gf_hp_lost"];
+			if ( remaining > 0 )
+			{
+				actual = iDamage;
+				if ( actual > remaining ) actual = remaining;
+				self.pers["gf_hp_lost"] += actual;
+
+				if ( !isDefined( eAttacker.pers["gf_score"] ) )
+					eAttacker.pers["gf_score"] = 0;
+				eAttacker.pers["gf_score"] += actual;
+				[[level._setPlayerScore]]( eAttacker, eAttacker.pers["gf_score"] );
+			}
 		}
 	}
 	return iDamage;
@@ -170,8 +190,8 @@ onPlayerSpawned()
 	// Destroy SD's per-attacker suitcase carry-icon
 	if ( isDefined( self.carryIcon ) ) self.carryIcon destroy();
 
-	// Reset per-round damage score
-	self.pers["gf_damage"] = 0;
+	self.pers["gf_score"]   = 0;
+	self.pers["gf_hp_lost"] = 0;
 	[[level._setPlayerScore]]( self, 0 );
 
 	gf_giveLoadout();

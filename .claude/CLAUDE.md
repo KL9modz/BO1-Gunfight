@@ -10,7 +10,7 @@
   y=153  [icon][icon] [==bar==] HP  . . . . . .  axis row
   ```
   - Player icons: 9×13 px squares, blue=allies alive, green=axis alive, gray=dead, hidden=slot empty
-  - HP bar: 68 px max (200 HP full), 5 px tall, scales with total team HP
+  - HP bar: 68 px max (100 HP full), 5 px tall, scales with total team HP
   - HP number: text to right of bar
   - Score dots: 6 per row at x=122+d×7, 5×5 px; ally wins → blue, axis wins → red, unscored → gray
 
@@ -47,7 +47,7 @@
 - ✅ Attachment fix — `suppressor` → `silencer` (confirmed correct T5 string)
 - ✅ Class select suppression — `replacefunc` on `beginClassChoice` (see class select section below)
 - ✅ Health regen disabled — `level.healthRegenDisabled = true` + `level.playerHealth_RegularRegenDelay = 0`
-- ✅ State persistence — `gf_state_*` dvars survive `map_restart`
+- ✅ In-place round architecture — no `map_restart` between rounds; `gf_roundStart()` loops indefinitely, `gf_roundBetween()` kills survivors + respawns all players; win tracking via SD's `game["roundswon"]` + `hitRoundWinLimit()`; `scr_sd_winlimit=6` configures match length; all `gf_state_*` dvar persistence removed
 - ✅ Bomb suppression — SD bomb hidden and disabled each round
 - ✅ Script split — 4 files under `raw/scripts/mp/`
 
@@ -171,10 +171,13 @@ Use `"progress_bar_fill"` / `"progress_bar_bg"` instead of `"white"` for native-
 ## Current mod — what's built
 
 ### Round flow
-- Based on SD: 2v2, one life per player, no respawns
-- Round score tracked in `level.gf_alliesWins` / `level.gf_axisWins`
-- First to 6 round wins wins the match (configurable via `scr_sd_winlimit`)
+- Based on SD: one life per player, no respawns, no team size limit
+- No `map_restart` between rounds; all state lives in `level` / `game` vars
+- `gf_roundStart()` — loops forever after the single prematch: spawn-wait → reset per-round scores → timer + elimination watchers → `gf_round_result` notify → process result → `gf_roundBetween` → repeat
+- `gf_roundBetween()` — 5s intermission, kills any survivors, respawns all team players via `[[level.spawnClient]]()`
+- Round wins tracked in SD's native `game["roundswon"]["allies"/"axis"]`; match-end via `hitRoundWinLimit()` reading `scr_sd_winlimit` (default 6)
 - `level.gf_roundNum` tracks current round number
+- `level.gf_roundActive` guards `gf_onDeadEvent` and `gf_roundTimer` against firing outside an active round
 
 ### Loadout
 - 12 loadouts, randomly cycled without back-to-back repeats; all 4 players share the same loadout

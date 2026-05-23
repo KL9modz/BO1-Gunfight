@@ -3,107 +3,77 @@
 #include scripts\mp\_gf_loadouts;
 
 // ============================================================
-// STATE PERSISTENCE
-// ============================================================
-
-gf_restoreState()
-{
-	if ( getDvarInt( "gf_state_initialized" ) == 0 )
-	{
-		level.gf_alliesWins  = 0;
-		level.gf_axisWins    = 0;
-		level.gf_roundNum    = 0;
-		level.gf_loadoutIdx  = -1;
-		level.gf_roundActive = false;
-		return;
-	}
-
-	level.gf_alliesWins  = getDvarInt( "gf_state_allies_wins" );
-	level.gf_axisWins    = getDvarInt( "gf_state_axis_wins"   );
-	level.gf_roundNum    = getDvarInt( "gf_state_round_num"   );
-	level.gf_loadoutIdx  = getDvarInt( "gf_state_loadout_idx" );
-	level.gf_roundActive = false;
-
-	if ( level.gf_loadoutIdx >= 0 && level.gf_loadoutIdx < level.gf_loadoutCount )
-		level.gf_currentLoadout = level.gf_loadouts[level.gf_loadoutIdx];
-
-	savedAttackers = getDvar( "gf_state_attackers" );
-	if ( savedAttackers == "allies" || savedAttackers == "axis" )
-	{
-		game["attackers"] = savedAttackers;
-		if ( savedAttackers == "allies" )
-			game["defenders"] = "axis";
-		else
-			game["defenders"] = "allies";
-	}
-}
-
-gf_saveState()
-{
-	setDvar( "gf_state_initialized", "1"                  );
-	setDvar( "gf_state_allies_wins",  level.gf_alliesWins );
-	setDvar( "gf_state_axis_wins",    level.gf_axisWins   );
-	setDvar( "gf_state_round_num",    level.gf_roundNum   );
-	setDvar( "gf_state_loadout_idx",  level.gf_loadoutIdx );
-	setDvar( "gf_state_attackers",    game["attackers"]   );
-}
-
-// ============================================================
 // ROUND MANAGEMENT
 // ============================================================
 
-// Runs once per map load. Waits for SD's native prematch countdown, then
-// manages a single round. At round end it either calls endGame (match won)
-// or saves state and calls map_restart(false) to start the next round.
+// Waits for SD's first prematch, then loops indefinitely:
+// run round -> gf_roundBetween (intermission + respawn) -> next round.
+// No map_restart between rounds. All state lives in level vars.
+// Win counting uses SD's game["roundswon"] + hitRoundWinLimit().
 gf_roundStart()
 {
 	level endon( "game_ended" );
+
 	level waittill( "prematch_over" );
 
-	// Assign our time-limit hook after prematch so SD's onStartGameType
-	// callback cannot overwrite it first.
-	level.onTimeLimit  = ::gf_onTimeLimit;
-	level.gf_roundActive = false;
+	level.gf_roundActive        = false;
+	level.gf_roundNum           = 0;
+	game["roundswon"]["allies"] = 0;
+	game["roundswon"]["axis"]   = 0;
 
-	// Restore scoreboard values now that the game is in playing state.
-	[[level._setTeamScore]]( "allies", level.gf_alliesWins );
-	[[level._setTeamScore]]( "axis",   level.gf_axisWins   );
-
-	iprintln( "^2[Gunfight] ^72v2 | " + level.gf_cfg_roundTime + " s rounds | first to " + level.gf_cfg_winLimit );
-
-	gf_waitForRoundActive();
-
-	level.gf_roundActive = true;
-	level.gf_roundNum++;
-
-	iprintlnbold( "^3Round " + level.gf_roundNum
-	              + " ^7-- Fight!  ^8(" + level.gf_currentLoadout["name"] + ")" );
-	gf_announceLoadout();
-
-	level thread gf_eliminationWatch();
-
-	level waittill( "gf_round_result", winner );
-	level notify( "gf_cancel_watchers" );
-	level.gf_roundActive = false;
-
-	gf_processRoundResult( winner );
-}
-
-// Blocks until at least one alive player exists on each team.
-gf_waitForRoundActive()
-{
-	level endon( "game_ended" );
+	iprintln( "^2[Gunfight] ^7" + level.gf_cfg_roundTime + " s rounds | first to "
+	          + getDvarInt( "scr_sd_winlimit" ) );
 
 	for ( ;; )
 	{
-		wait 0.5;
-		if ( gf_getAliveCount( "allies" ) > 0 && gf_getAliveCount( "axis" ) > 0 ) return;
+		[[level._setTeamScore]]( "allies", game["roundswon"]["allies"] );
+		[[level._setTeamScore]]( "axis",   game["roundswon"]["axis"]   );
+
+		gf_waitForRoundActive();
+
+		// Reset per-round scores now that players are spawned
+		for ( i = 0; i < level.players.size; i++ )
+		{
+			p = level.players[i];
+			if ( !isDefined( p ) ) continue;
+			p.pers["gf_score"]   = 0;
+			p.pers["gf_hp_lost"] = 0;
+			[[level._setPlayerScore]]( p, 0 );
+		}
+
+		level.gf_roundActive = true;
+		level.gf_roundNum++;
+
+		iprintlnbold( "^3Round " + level.gf_roundNum
+		              + " ^7-- Fight!  ^8(" + level.gf_currentLoadout["name"] + ")" );
+		gf_announceLoadout();
+
+		level thread gf_roundTimer();
+		level thread gf_eliminationWatch();
+
+		level waittill( "gf_round_result", winner );
+		level notify( "gf_cancel_watchers" );
+		level.gf_roundActive = false;
+
+		gf_processRoundResult( winner );
+		// If match over, endGame fires game_ended and loop exits.
+		// Otherwise gf_roundBetween returns and we loop into the next round.
 	}
 }
 
 // ============================================================
 // TEAM QUERY HELPERS
 // ============================================================
+
+gf_waitForRoundActive()
+{
+	level endon( "game_ended" );
+	for ( ;; )
+	{
+		wait 0.5;
+		if ( gf_getAliveCount( "allies" ) > 0 && gf_getAliveCount( "axis" ) > 0 ) return;
+	}
+}
 
 gf_getAliveCount( team )
 {
@@ -133,11 +103,17 @@ gf_getTeamHP( team )
 // END-CONDITION WATCHERS
 // ============================================================
 
-// Called by SD's timer system when the 60-second clock expires.
-// Swaps to noop immediately to prevent _globallogic's poll loop re-entering.
-gf_onTimeLimit()
+// Own round timer thread. SD's clock (scr_sd_timelimit=9999) is disabled.
+// Fires gf_round_result with HP tiebreaker on expiry.
+gf_roundTimer()
 {
-	level.onTimeLimit = ::gf_onTimeLimitNoop;
+	level endon( "game_ended"         );
+	level endon( "gf_cancel_watchers" );
+
+	wait level.gf_cfg_roundTime;
+
+	if ( !level.gf_roundActive ) return;
+
 	maps\mp\gametypes\_globallogic_audio::leaderDialog( "timesup" );
 
 	alliesHp = gf_getTeamHP( "allies" );
@@ -163,10 +139,8 @@ gf_onTimeLimit()
 	}
 }
 
-// Absorbs repeated calls from _globallogic's polling loop after gf_onTimeLimit fires.
-gf_onTimeLimitNoop() { }
-
 // Polls every 0.1 s; fires gf_round_result when a team reaches zero alive players.
+// Backup for gf_onDeadEvent which fires async (one frame lag via updateTeamStatus).
 gf_eliminationWatch()
 {
 	level endon( "game_ended"         );
@@ -206,14 +180,13 @@ gf_eliminateTeam( team )
 		p = level.players[i];
 		if ( !isDefined( p ) || !isDefined( p.pers["team"] ) ) continue;
 		if ( p.pers["team"] != team || p.health <= 0 ) continue;
-
 		p DoDamage( p.health + 100, p.origin );
 	}
 }
 
-// Processes the result of the round that just ended.
-// Updates win counters, checks for match win, handles side-swap + loadout
-// rotation every N rounds, then saves state and restarts into the next round.
+// Updates SD's native round-win counter, checks win limit via hitRoundWinLimit(),
+// handles side-swap + loadout rotation, then either ends the match or calls
+// gf_roundBetween to start the next round in-place.
 gf_processRoundResult( winner )
 {
 	if ( winner == "draw" )
@@ -222,37 +195,38 @@ gf_processRoundResult( winner )
 	}
 	else if ( winner == "allies" )
 	{
-		level.gf_alliesWins++;
-		[[level._setTeamScore]]( "allies", level.gf_alliesWins );
+		game["roundswon"]["allies"]++;
+		[[level._setTeamScore]]( "allies", game["roundswon"]["allies"] );
 		iprintlnbold( "^4Allies ^7win round " + level.gf_roundNum );
 		maps\mp\gametypes\_globallogic_audio::leaderDialog( "round_success", "allies" );
 		maps\mp\gametypes\_globallogic_audio::leaderDialog( "round_failure", "axis"   );
 	}
 	else
 	{
-		level.gf_axisWins++;
-		[[level._setTeamScore]]( "axis", level.gf_axisWins );
+		game["roundswon"]["axis"]++;
+		[[level._setTeamScore]]( "axis", game["roundswon"]["axis"] );
 		iprintlnbold( "^1Axis ^7win round " + level.gf_roundNum );
 		maps\mp\gametypes\_globallogic_audio::leaderDialog( "round_success", "axis"   );
 		maps\mp\gametypes\_globallogic_audio::leaderDialog( "round_failure", "allies" );
 	}
 
-	iprintln( "^3Score: ^4" + level.gf_alliesWins + " ^7- ^1" + level.gf_axisWins );
+	iprintln( "^3Score: ^4" + game["roundswon"]["allies"] + " ^7- ^1" + game["roundswon"]["axis"] );
 
-	if ( level.gf_alliesWins >= level.gf_cfg_winLimit )
+	if ( winner != "draw" && hitRoundWinLimit() )
 	{
-		iprintlnbold( "^4Allies ^7win the match!" );
-		maps\mp\gametypes\_globallogic_audio::leaderDialog( "winning", "allies" );
-		maps\mp\gametypes\_globallogic_audio::leaderDialog( "losing",  "axis"   );
-		maps\mp\gametypes\_globallogic::endGame( "allies", "" );
-		return;
-	}
-	if ( level.gf_axisWins >= level.gf_cfg_winLimit )
-	{
-		iprintlnbold( "^1Axis ^7win the match!" );
-		maps\mp\gametypes\_globallogic_audio::leaderDialog( "winning", "axis"   );
-		maps\mp\gametypes\_globallogic_audio::leaderDialog( "losing",  "allies" );
-		maps\mp\gametypes\_globallogic::endGame( "axis", "" );
+		if ( winner == "allies" )
+		{
+			iprintlnbold( "^4Allies ^7win the match!" );
+			maps\mp\gametypes\_globallogic_audio::leaderDialog( "winning", "allies" );
+			maps\mp\gametypes\_globallogic_audio::leaderDialog( "losing",  "axis"   );
+		}
+		else
+		{
+			iprintlnbold( "^1Axis ^7win the match!" );
+			maps\mp\gametypes\_globallogic_audio::leaderDialog( "winning", "axis"   );
+			maps\mp\gametypes\_globallogic_audio::leaderDialog( "losing",  "allies" );
+		}
+		maps\mp\gametypes\_globallogic::endGame( winner, "" );
 		return;
 	}
 
@@ -274,10 +248,36 @@ gf_processRoundResult( winner )
 		gf_announceLoadout();
 	}
 
-	gf_saveState();
+	gf_roundBetween();
+}
+
+// 5-second intermission then respawns all team players for the next round.
+// onPlayerSpawned handles weapons + perks as normal.
+gf_roundBetween()
+{
+	level endon( "game_ended" );
 
 	wait 5;
-	map_restart( false );
+
+	// Kill any survivors still standing
+	for ( i = 0; i < level.players.size; i++ )
+	{
+		p = level.players[i];
+		if ( !isDefined( p ) || !isDefined( p.pers["team"] ) ) continue;
+		if ( p.pers["team"] != "allies" && p.pers["team"] != "axis" ) continue;
+		if ( p.health > 0 ) p DoDamage( p.health + 100, p.origin );
+	}
+
+	wait 0.5;
+
+	// Respawn all team players
+	for ( i = 0; i < level.players.size; i++ )
+	{
+		p = level.players[i];
+		if ( !isDefined( p ) || !isDefined( p.pers["team"] ) ) continue;
+		if ( p.pers["team"] != "allies" && p.pers["team"] != "axis" ) continue;
+		p thread [[level.spawnClient]]();
+	}
 }
 
 // ============================================================
@@ -295,8 +295,6 @@ gf_onOneLeft( team )
 // BOMB SUPPRESSION
 // ============================================================
 
-// Polls every 0.1 s so it catches SD re-initialising the bomb each round
-// before players ever see the objective.
 gf_bombSuppressLoop()
 {
 	level endon( "game_ended" );
@@ -325,7 +323,6 @@ gf_bombSuppressLoop()
 	}
 }
 
-// Last-resort log if a plant somehow fires despite suppression.
 gf_bombPlantedWatch()
 {
 	level endon( "game_ended" );
