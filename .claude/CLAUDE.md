@@ -62,11 +62,15 @@
 - **Local T5 source dump** (user's machine): `C:\Users\klaze\OneDrive - sdccd.edu\Desktop\GSC\MP\Common`
 
 ### Community Mods (reference/pattern source)
-- https://github.com/misterbubb/T6-Gunfight-Gamemode
-- https://github.com/bblack16/plutonium-waypoints
+- **misterbubb/T6-Gunfight-Gamemode** — BO2/T6 Plutonium Gunfight; closest engine to T5, best code reference for overtime + equipment delay
+  https://github.com/misterbubb/T6-Gunfight-Gamemode
+  https://forum.plutonium.pw/topic/43931/release-gunfight-gamemode
+- **bblack16/plutonium-waypoints** — IW5/MW3 Gunfight + Reinforce port
+  https://github.com/bblack16/plutonium-waypoints
+  https://forum.plutonium.pw/topic/37594/release-custom-game-modes-reinforce-gunfight-and-gun-game
 - **iAmThatMichael/gunfight** — BO3/T7 Gunfight recreation; used for game-mode design reference
   https://github.com/iAmThatMichael/gunfight
-- **GunMd0wn custom_gunfight.gsc** — community Gunfight mod (runs on HQ/TDM); source of class-select suppression patterns and weapon dvar approach
+- **GunMd0wn custom_gunfight.gsc** — community Gunfight mod (runs on HQ/TDM); source of class-select suppression patterns and weapon dvar approach. No GitHub — search Plutonium BO1 forum or megathread.
 - **mp_EMv2_Recreation, mp_iMCSx, mp_EnCoReV8** — Community BO1 mods; source of HUD element patterns (`newHudElem`, `newClientHudElem`, `NewScoreHudElem`, `hud.archived`, `fontPulse`)
 - **Resxt/Plutonium-T5-Scripts** — Collection of community T5 GSC scripts
   https://github.com/Resxt/Plutonium-T5-Scripts
@@ -161,7 +165,9 @@ Use `"progress_bar_fill"` / `"progress_bar_bg"` instead of `"white"` for native-
 
 **Text elements:** set `e.font = "smallfixed"` and `e.fontScale = 1.0`, then `e setText("string")`.
 
-**Timer:** `e setTimerUp(0)` starts counting up from 0. Engine-driven, no script polling needed.
+**Timer:** `e setTimerUp(0)` starts counting up from 0. `e setTimerDown(seconds)` counts down from a value. Both are engine-driven, no script polling needed.
+
+**Numeric value:** `e setValue(number)` — displays a number on a text HUD element without string conversion. Cheaper than `setText(number + "")` and updates atomically.
 
 **Persistent HUD pattern:** Create elements once after first `spawned_player`, update every 0.2s in a loop, never destroy/rebuild mid-session. Destroy on `disconnect`.
 
@@ -375,12 +381,100 @@ level.healthregendisabled = 1;
 
 ---
 
+## BO2/T6 Gunfight mod patterns (misterbubb — closest engine reference)
+
+Source: https://github.com/misterbubb/T6-Gunfight-Gamemode — pure GSC, Plutonium T6. All T6 API calls need T5 adaptation (see API table above).
+
+### Overtime — single-trigger with parallel threads
+`ontimelimit` sets a guard flag, then `level waittill("overtime_complete")`. Two threads run in parallel:
+- `overtimeCapturePoint()` — manual polling loop, 256-unit radius, 3s uncontested capture. On capture: `player suicide()` on each losing player → triggers `ondeadevent` naturally.
+- `overtimeCountdown()` — 20s countdown HUD. When it expires: notifies `"overtime_complete"`.
+
+Whichever fires first wins. After `overtime_complete` the HP tiebreaker runs in `ontimelimit` — losing team gets `suicide()`, again triggering `ondeadevent`.
+
+Key detail: timer visually pauses while someone is on point (`level.overtimeCaptureActive`) but the clock keeps ticking. Reset capture progress (not penalty) when contested.
+
+**T5 adaptation of the HP tiebreaker** (replaces T6's `isAlive()` and `player.team`):
+```gsc
+gf_calculateTeamHealth( team )
+{
+    total = 0;
+    for ( i = 0; i < level.players.size; i++ )
+    {
+        p = level.players[i];
+        if ( p.health <= 0 ) continue;
+        if ( p.pers["team"] != team ) continue;
+        total += p.health;
+    }
+    return total;
+}
+```
+
+**Guard pattern** to prevent ontimelimit re-entry:
+```gsc
+if ( isDefined( game["gf_overtime_triggered"] ) ) return;
+game["gf_overtime_triggered"] = 1;
+// ... overtime logic ...
+// clear on game end:
+level waittill( "game_ended" );
+game["gf_overtime_triggered"] = undefined;
+```
+
+### Capture point entity
+T6 uses `hq_hardpoint` map entities. Hides their models by moving to `origin + (0,0,-10000)` and calling `hide()`, stores real position in `entity.original_origin`. For T5, use `mp_domination_B` (DOM B flag) or fall back to `level.mapcenter`.
+
+### Equipment delay
+```gsc
+giveDelayedEquipment()
+{
+    self endon( "death" );
+    self endon( "disconnect" );
+    level endon( "game_ended" );
+
+    // wait for prematch to clear (T5: verify level.inprematchperiod exists or use waittill "prematch_over")
+    while ( isDefined( level.inprematchperiod ) && level.inprematchperiod )
+        wait 0.05;
+
+    wait 3;
+    if ( self.health > 0 )
+    {
+        self GiveOffhandWeapon( "frag_grenade_mp" );
+        self setWeaponAmmoClip( "frag_grenade_mp", 1 );
+    }
+
+    wait 2;
+    if ( self.health > 0 )
+    {
+        self GiveOffhandWeapon( "flash_grenade_mp" );
+        self setWeaponAmmoClip( "flash_grenade_mp", 2 );
+    }
+}
+```
+Call `self thread giveDelayedEquipment()` at the end of loadout delivery. Prevents spawn-kill grenades.
+
+### Anti-repeat by primary weapon
+Track used primaries as an array in `game["gunfight_used_primaries"]`. On `selectRandomLoadout()`, retry until a primary not in the array is found (max 20 attempts). Append chosen primary to the array. Better than tracking loadout index because it avoids repeating a gun feel regardless of which slot it appears in.
+
+### Loadout index from round count
+```gsc
+// In ondeadevent: increment rounds, then recalculate loadout slot
+game["gunfight_rounds_completed"]++;
+newIndex = int( game["gunfight_rounds_completed"] / 2 );
+if ( newIndex != game["gunfight_current_loadout_index"] )
+{
+    game["gunfight_current_loadout_index"] = newIndex;
+    level.gunfight_current_loadout = game["gunfight_loadouts"][newIndex];
+}
+```
+
+---
+
 ## BO3 community Gunfight mod patterns (design reference)
 
 From `gf.gsc` by Michael Akopyan (BO3/T7):
 - Weapon classes loaded from `gf_weapons.csv` via `TableLookup`
-- Attachments in CSV separated by `+`, parsed with `StrTok(str, "+")`
-- HUD pushed server-side via `clientfield::register` + `clientfield::set_to_player`; LUI renders it
+- Attachments in CSV separated by `+`, parsed with `StrTok(str, "+")` — T6 uses same `+` prefix format; **T5 uses `_` (underscore) embedded in weapon name: `famas_reflex_mp`**
+- HUD pushed server-side via `clientfield::register` + `clientfield::set_to_player`; LUI renders it — T5 only, use `newClientHudElem` instead
 - Singleton HUD update: `level notify("tag"); level endon("tag")` prevents spam
 - Class select: `self.pers["class"] = level.defaultClass` + `self CloseMenu(MENU_CHANGE_CLASS)` + `globallogic_ui::closeMenus()`
 
@@ -587,7 +681,9 @@ Team masks: `iSPAWN_TEAMMASK_ALLIES`(4), `iSPAWN_TEAMMASK_AXIS`(2)
 
 ## T5 game objects — overtime zone
 
-For implementing an overtime capture zone (`_gameobjects.gsc`):
+**Recommended approach: manual polling loop** (from T6 reference) — simpler and more controllable than `_gameobjects`. Poll `Distance(player.origin, captureOrigin)` every 0.1s, track per-team player count on point, accumulate capture progress, notify when done. The T6 example uses a 256-unit radius and 3.0s of uncontested presence. See "BO2/T6 Gunfight mod patterns" section above for the full pattern.
+
+`_gameobjects.gsc` approach (alternative — higher-level but more opaque):
 ```gsc
 // Create a zone players must stand in (like a koth hill or overtime zone):
 zone = maps\mp\gametypes\_gameobjects::createUseObject( ownerTeam, trigger, visuals, offset );
@@ -768,3 +864,80 @@ This is the same pattern used by our `gf_addRandomAttachment`.
 if ( player.guid == getDvar( "sv_adminGUID" ) ) { ... }
 // Or maintain a level.admins[] array populated at connect time
 ```
+
+---
+
+## T6 → T5 API mapping (from misterbubb + SyndiShanX source study)
+
+T6 features that appear in reference code, and their T5 equivalents:
+
+| T6 code | T5 equivalent / status |
+|---|---|
+| `level.givecustomloadout` callback | `level.onGiveLoadout` — fires after `giveLoadout`; override to replace weapons. Already in overridable callbacks list. |
+| `level.disableclassselection = 1` | `replacefunc(_globallogic_ui::beginClassChoice, ::myFunc)` — confirmed T5 method |
+| `giveteamscoreforobjective( "team", 1 )` | `[[level._setTeamScore]]( "team", 1 )` — additive delta (confirmed T5) |
+| `foreach ( p in level.players )` | `for ( i = 0; i < level.players.size; i++ ) { p = level.players[i]; }` |
+| `isAlive( player )` | `player.health > 0` |
+| `player.team` | `player.pers["team"]` |
+| `level.overrideTeamScore = true` | Not available in T5; use `[[level._setTeamScore]]` directly |
+| `level.disableRoundEndRestart = true` | Not needed in T5 — in-place round loop owns restart logic |
+| `getbetterteam()` (K/D overtime) | Manual: compare `game["roundswon"]["allies"]` vs `game["roundswon"]["axis"]` |
+
+### One-time init guard (avoids re-init across hot reloads / round restarts)
+```gsc
+if ( !isDefined( game["gf_initialized"] ) )
+{
+    game["gf_initialized"] = true;
+    // build loadout pool, register callbacks, etc.
+}
+```
+Useful if a function can be called from multiple paths. `game[]` persists across rounds but resets on full map restart.
+
+---
+
+## BO2 SD internal patterns (SyndiShanX — T6, verify before using in T5)
+
+Source: https://github.com/SyndiShanX/COD-GSC-Source — decompiled T6 BO2 SD.gsc.
+These functions may or may not exist in T5 — marked with ⚠ where T5 availability is uncertain.
+
+```gsc
+// ⚠ HUD timer control (T6 SD uses these; T5 SD may differ):
+setbombtimer( seconds );        // sets the bomb countdown HUD timer
+setmatchflag( "halftime" );     // fires halftime-related HUD/state event
+
+// ✅ Already in T5 and confirmed working:
+registernumlives( n );          // sets per-player life count (T5: scr_sd_numlives dvar)
+registerroundswitch( n );       // controls auto-halftime round switch (T5: scr_sd_switchenable)
+registerscorelimit( n );        // round win limit (T5: scr_sd_winlimit)
+```
+
+**Overtime via K/D ratio** (from BO2 SD `getbetterteam()`):
+When rounds tied, BO2 checks combined team K/D ratio as final tiebreaker. For Gunfight, HP comparison is more relevant — already implemented in `gf_roundTimer()`.
+
+**Kill-boosting detection** (from `sd_iskillboosting()`):
+BO2 SD checks if a player's kill count exceeds team size — flags boosting. Not needed for Gunfight (1v1/2v2 format, no incentive to inflate kills).
+
+---
+
+## IW5 (MW3) patterns (bblack16 — same engine generation as T5)
+
+Source: https://github.com/bblack16/plutonium-waypoints — IW5 and T5 share the same IW5 engine; patterns are most likely to transfer directly.
+
+**Key finding:** IW5 Gunfight sets team score to live HP value each tick for a built-in HP bar in the scoreboard:
+```gsc
+maps\mp\gametypes\_gamescore::_setteamscore( "allies", getTeamHealth( "allies" ) );
+```
+**In T5 this does NOT work** — `[[level._setTeamScore]]` is additive, not absolute. Every call adds to the current score rather than setting it. Use `newClientHudElem` bars instead (see T5 HUD system section).
+
+**Equipment delay from IW5** — same pattern as T6 (already documented in BO2/T6 section):
+Give grenades in a separate thread 3s after spawn, checking `self.health > 0` first. Prevents grenades at spawn time during pre-round.
+
+**Loadout sync across all players** — IW5 stores the chosen loadout in a dvar and all players read the same dvar at spawn:
+```gsc
+// On round start (level thread):
+setDvar( "gf_primary", gf_getRandomPrimary() );
+// In each player's spawn handler:
+primary = getDvar( "gf_primary" );
+self GiveWeapon( primary );
+```
+Simpler than our level var approach but equivalent. Our `level.gf_currentLoadout` array is cleaner for multi-property loadouts.
