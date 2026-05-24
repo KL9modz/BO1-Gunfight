@@ -60,16 +60,19 @@
   https://github.com/plutoniummod/t5-scripts
   Key files: `MP/Common/maps/mp/gametypes/shrp.gsc`, `gun.gsc`, `sd.gsc`, `_wager.gsc`, `_globallogic.gsc`, `_class.gsc`, `_hud_util.gsc`, `_rank.gsc`
 - **Local T5 source dump** (user's machine): `C:\Users\klaze\OneDrive - sdccd.edu\Desktop\GSC\MP\Common`
-
+T9 Offiiicial gunfight gsc: https://github.com/ate47/bocw-source/blob/main/scripts/mp_common/gametypes/gunfight.gsc
 ### Community Mods (reference/pattern source)
 - **misterbubb/T6-Gunfight-Gamemode** — BO2/T6 Plutonium Gunfight; closest engine to T5, best code reference for overtime + equipment delay
   https://github.com/misterbubb/T6-Gunfight-Gamemode
+  https://github.com/misterbubb/T6-Gunfight-Gamemode/blob/main/gunfight_mp/maps/mp/gametypes/sd.gsc
   https://forum.plutonium.pw/topic/43931/release-gunfight-gamemode
-- **bblack16/plutonium-waypoints** — IW5/MW3 Gunfight + Reinforce port
+- **bblack16/plutonium-waypoints** — IW5/MW3 Gunfight; 
   https://github.com/bblack16/plutonium-waypoints
+  https://github.com/bblack16/plutonium-waypoints/blob/main/iw5/scripts/gamemode_gunfight.gsc
   https://forum.plutonium.pw/topic/37594/release-custom-game-modes-reinforce-gunfight-and-gun-game
 - **iAmThatMichael/gunfight** — BO3/T7 Gunfight recreation; used for game-mode design reference
   https://github.com/iAmThatMichael/gunfight
+  https://github.com/iAmThatMichael/gunfight/blob/master/scripts/mp/gametypes/gf.gsc
 - **GunMd0wn custom_gunfight.gsc** — community Gunfight mod (runs on HQ/TDM); source of class-select suppression patterns and weapon dvar approach. No GitHub — search Plutonium BO1 forum or megathread.
 - **mp_EMv2_Recreation, mp_iMCSx, mp_EnCoReV8** — Community BO1 mods; source of HUD element patterns (`newHudElem`, `newClientHudElem`, `NewScoreHudElem`, `hud.archived`, `fontPulse`)
 - **Resxt/Plutonium-T5-Scripts** — Collection of community T5 GSC scripts
@@ -96,7 +99,9 @@
   https://forum.plutonium.pw/topic/33166/bo1-item-commands
 - **BO1 mods megathread** (organized collection of mods, tutorials, guides)
   https://forum.plutonium.pw/topic/34555/megathread-organized-collection-of-bo1-mods-releases-tutorials-and-guides
-
+Future projects:
+Ful mods folder mod.ff and map vote: https://github.com/DoktorSAS/PlutoniumT5Mapvote
+t9 port: https://github.com/ProjectDonetsk/T9
 ---
 
 ## Project overview
