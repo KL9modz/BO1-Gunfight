@@ -12,30 +12,30 @@
   - Perk icon shaders: `specialty_marathon`, `specialty_hardened`, `specialty_lightweight` etc.
   - Overtime zone: confirm `hq_hardpoint` entities exist on SD maps (BO1 HQ mode shares maps with SD)
 
-## DONE
-- ✅ Cold War Gunfight HUD — top-left panel (162×38 px): player icons (9×13), HP bars (68 px), score dots (5×5 px). Updated every 0.1s; persists across rounds. Element refs: `gf_hudBg/Sep`, `gf_hudAlliesIcon[0/1]`, `gf_hudAlliesBarBg/Fg`, `gf_hudAlliesHp`, `gf_hudAllyDot[0..5]`, mirrored for axis.
-- ✅ Custom round timer — `gf_hudTimer` text element, center-top, shows MM:SS; driven by `level.gf_timerEnd = gettime() + ms` set at round start; hidden between rounds; `scr_sd_timelimit=0` disables SD's built-in timer
-- ✅ Perks per loadout class — AR/SMG/LMG/Sniper/Shotgun each have tailored 3-perk sets (local vars at top of `gf_initLoadouts()`; `#define` not supported in T5)
-- ✅ Expanded loadout pool — 22 loadouts across 5 weapon classes (AR×7, SMG×6, LMG×4, Sniper×2, Shotgun×2); shuffle-without-repeat, no back-to-back repeat
-- ✅ Perk display notification — `gf_displayPerks()` in `_gf_hud.gsc`: wager-style (icon + name, right side, scale pop-in, 5s fade)
-- ✅ Forfeit handling — `gf_forfeitWatch()` polls every 10s post-prematch; two consecutive empty-team checks (20s grace for reconnects) → `endGame()` awards win to other team
-- ✅ Death sounds — `level.onPlayerKilled = ::gf_onPlayerKilled` wired; kill-ding sound removed (see TODO — `uin_challenge_repeatable` invalid in T5)
-- ✅ Scoreboard score fix — `_setTeamScore` now uses `game["roundswon"][team]` (not hardcoded `1`); scoreboard correctly accumulates round wins
-- ✅ Sessionstate fix — `gf_getAliveCount` / `gf_getTeamHP` now check `p.sessionstate == "playing"`; prevents loading/spectating players from affecting alive counts or HP tiebreaker
-- ✅ Round state init — `level.gf_roundActive`, `level.gf_roundNum`, `level.gf_timerEnd` initialized in `init()` so they're never undefined during early connects
-- ✅ SD timer pause/resume — `pauseTimer()` during 3s pre-round countdown, `resumeTimer()` at round start
-- ✅ Attachment fix — `suppressor` → `silencer` (confirmed correct T5 string)
-- ✅ Class select suppression — `replacefunc` on `beginClassChoice`
-- ✅ Health regen disabled — `level.healthRegenDisabled = true` + `level.playerHealth_RegularRegenDelay = 0`
-- ✅ SD-native round cycling — `onDeadEvent` → `sd_endGame(winner, "")` handles scoring, win-limit, intermission, respawn; no `gf_roundBetween` or manual spawn loop; `gf_tryActivateRound()` detects new round from `onPlayerSpawned`
-- ✅ `gf_roundEnding` bug fix — flag was set on round end but never cleared, blocking round 2+ activation; now cleared inside `gf_tryActivateRound` before opening the new round
-- ✅ HUD recreation per spawn — SD round cycling destroys `newClientHudElem` elements; fixed via `self notify("gf_hud_restart")` on each spawn; `gf_hud()` ends on `"gf_hud_restart"`, destroys stale elements, creates fresh ones
-- ✅ Overtime — equal HP at timer expiry: reuses `hq_hardpoint` map entity as capture zone (hidden at match start via `gf_hideHardpointModels()`); 3s uncontested capture wins; 20s countdown pauses while anyone is on zone; HP comparison if time expires; coin flip if still tied; falls back gracefully on maps with no hardpoint
-- ✅ Bomb suppression loop — 0.5s poll (was 0.1s)
-- ✅ Script split — 4 files under `raw/scripts/mp/`
-- ~~Verify `colt45_mp`~~ — does not exist; replaced with `m1911_mp` ✅
-- ~~More loadout variety~~ — LMGs, Ithaca, Skorpion now included ✅
-- ~~Verify attachment strings~~ — all confirmed: `extclip`, `reflex`, `acog`, `silencer`, `rf`, `vzoom`, `grip` ✅
+## READY TO TEST
+- [ ] Cold War Gunfight HUD — top-left panel (162×38 px): player icons (9×13), HP bars (68 px), score dots (5×5 px). Updated every 0.1s; persists across rounds. Element refs: `gf_hudBg/Sep`, `gf_hudAlliesIcon[0/1]`, `gf_hudAlliesBarBg/Fg`, `gf_hudAlliesHp`, `gf_hudAllyDot[0..5]`, mirrored for axis.
+- [ ] Custom round timer — `gf_hudTimer` text element, center-top, shows MM:SS; driven by `level.gf_timerEnd = gettime() + ms` set at round start; hidden between rounds; `scr_sd_timelimit=0` disables SD's built-in timer
+- [ ] Perks per loadout class — AR/SMG/LMG/Sniper/Shotgun each have tailored 3-perk sets (local vars at top of `gf_initLoadouts()`; `#define` not supported in T5)
+- [ ] Expanded loadout pool — 22 loadouts across 5 weapon classes (AR×7, SMG×6, LMG×4, Sniper×2, Shotgun×2); shuffle-without-repeat, no back-to-back repeat
+- [ ] Perk display notification — `gf_displayPerks()` in `_gf_hud.gsc`: wager-style (icon + name, right side, scale pop-in, 5s fade)
+- [ ] Forfeit handling — `gf_forfeitWatch()` polls every 10s post-prematch; two consecutive empty-team checks (20s grace for reconnects) → `endGame()` awards win to other team
+- [ ] Death sounds — `level.onPlayerKilled = ::gf_onPlayerKilled` wired; kill-ding sound removed (see TODO — `uin_challenge_repeatable` invalid in T5)
+- [ ] Scoreboard score fix — `_setTeamScore` now uses `game["roundswon"][team]` (not hardcoded `1`); scoreboard correctly accumulates round wins
+- [ ] Sessionstate fix — `gf_getAliveCount` / `gf_getTeamHP` now check `p.sessionstate == "playing"`; prevents loading/spectating players from affecting alive counts or HP tiebreaker
+- [ ] Round state init — `level.gf_roundActive`, `level.gf_roundNum`, `level.gf_timerEnd` initialized in `init()` so they're never undefined during early connects
+- [ ] SD timer pause/resume — `pauseTimer()` during 3s pre-round countdown, `resumeTimer()` at round start
+- [ ] Attachment fix — `suppressor` → `silencer` (confirmed correct T5 string)
+- [ ] Class select suppression — `replacefunc` on `beginClassChoice`
+- [ ] Health regen disabled — `level.healthRegenDisabled = true` + `level.playerHealth_RegularRegenDelay = 0`
+- [ ] SD-native round cycling — `onDeadEvent` → `sd_endGame(winner, "")` handles scoring, win-limit, intermission, respawn; no `gf_roundBetween` or manual spawn loop; `gf_tryActivateRound()` detects new round from `onPlayerSpawned`
+- [ ] `gf_roundEnding` bug fix — flag was set on round end but never cleared, blocking round 2+ activation; now cleared inside `gf_tryActivateRound` before opening the new round
+- [ ] HUD recreation per spawn — SD round cycling destroys `newClientHudElem` elements; fixed via `self notify("gf_hud_restart")` on each spawn; `gf_hud()` ends on `"gf_hud_restart"`, destroys stale elements, creates fresh ones
+- [ ] Overtime — equal HP at timer expiry: reuses `hq_hardpoint` map entity as capture zone (hidden at match start via `gf_hideHardpointModels()`); 3s uncontested capture wins; 20s countdown pauses while anyone is on zone; HP comparison if time expires; coin flip if still tied; falls back gracefully on maps with no hardpoint
+- [ ] Bomb suppression loop — 0.5s poll (was 0.1s)
+- [ ] Script split — 4 files under `raw/scripts/mp/`
+- [ ] Verify `colt45_mp` — does not exist; replaced with `m1911_mp`
+- [ ] More loadout variety — LMGs, Ithaca, Skorpion now included
+- [ ] Verify attachment strings — all confirmed: `extclip`, `reflex`, `acog`, `silencer`, `rf`, `vzoom`, `grip`
 
 ---
 
