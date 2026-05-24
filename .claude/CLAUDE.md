@@ -11,6 +11,7 @@
   - Round timer: confirm `scr_sd_timelimit=0` hides SD's HUD timer (not "instant expire"), and that `gettime()` returns milliseconds in T5
   - Perk icon shaders: `specialty_marathon`, `specialty_hardened`, `specialty_lightweight` etc.
   - Overtime zone: confirm `hq_hardpoint` entities exist on SD maps (BO1 HQ mode shares maps with SD)
+  - Weapon icon shaders: confirmed from Xinerki T5 duel.gsc (T5 gametype mod) — see "T5 asset reference — weapon & lethal icon shaders" section below; perk shaders still unverified
 
 ## READY TO TEST
 - [ ] Cold War Gunfight HUD — top-left panel (162×38 px): player icons (9×13), HP bars (68 px), score dots (5×5 px). Updated every 0.1s; persists across rounds. Element refs: `gf_hudBg/Sep`, `gf_hudAlliesIcon[0/1]`, `gf_hudAlliesBarBg/Fg`, `gf_hudAlliesHp`, `gf_hudAllyDot[0..5]`, mirrored for axis.
@@ -821,3 +822,191 @@ This is the same pattern used by our `gf_addRandomAttachment`.
 if ( player.guid == getDvar( "sv_adminGUID" ) ) { ... }
 // Or maintain a level.admins[] array populated at connect time
 ```
+
+---
+
+## T5 asset reference — weapon & lethal icon shaders
+
+Confirmed from Xinerki `t5-gunfight/duel.gsc` (T5 gametype mod, same engine as our scripts).
+
+### Primary weapon shaders
+Default rule: `"menu_mp_weapons_" + baseName` where baseName has no `_mp` and no variant suffix.
+
+Special cases (base name doesn't match shader):
+```
+Weapon base name          Shader
+ithaca_grip             → menu_mp_weapons_ithaca
+stoner63                → menu_mp_weapons_stoner63a
+crossbow_explosive      → menu_mp_weapons_crossbow
+minigun_wager           → menu_mp_weapons_minigun
+```
+
+### Secondary weapon shaders
+```
+python_speed            → menu_mp_weapons_python
+m1911_upgradesight      → menu_mp_weapons_colt
+makarov_upgradesight    → menu_mp_weapons_makarov
+cz75_upgradesight       → menu_mp_weapons_cz75
+Default: "menu_mp_weapons_" + base (strip variant suffix like _speed, _upgradesight)
+```
+
+### Lethal icon shaders
+```
+frag_grenade            → hud_grenadeicon
+sticky_grenade          → hud_icon_sticky_grenade
+hatchet                 → hud_hatchet
+Default: "hud_" + baseName
+```
+
+### Precaching shaders before use
+```gsc
+PreCacheShader( "menu_mp_weapons_famas" );   // call at match start before HUD creation
+e setShader( "menu_mp_weapons_famas", 64, 32 );
+```
+
+---
+
+## Community mod findings — reference mod study (2025-05)
+
+Sources: Xinerki/t5-gunfight (T5), misterbubb/T6-Gunfight-Gamemode (T6), bblack16/plutonium-waypoints iw5 (IW5).
+
+### T5 player methods confirmed (Xinerki duel.gsc — T5 gametype)
+These run in gametype context; standard T5 engine methods, should work in Plutonium mod scripts:
+```gsc
+self DisableWeaponCycling()                   // lock player to current weapon, no scrolling
+self EnableWeaponCycling()                    // re-enable
+self setSpawnWeapon( "famas_mp" )             // sets weapon held on spawn
+maps\mp\gametypes\_wager::setupBlankRandomPlayer( takeAll, chooseBody )
+// clears player and optionally assigns a random body model; call before giveWeapon
+```
+
+### Objective marker system (portable T5/T6 API)
+Simpler than createUseObject — just places a waypoint on the map:
+```gsc
+objId = 150;    // arbitrary ID 0–255
+objective_add( objId, "active", origin );
+objective_icon( objId, "waypoint_defend" );    // waypoint_capture, waypoint_target, etc.
+objective_state( objId, "active" );            // "active", "invisible", "done", "failed"
+objective_setvisibletoplayer( objId, player ); // call per player to show
+objective_delete( objId );                      // cleanup
+```
+
+3D always-on world waypoint via HUD element:
+```gsc
+wp = newClientHudElem( player );
+wp.x = origin[0];
+wp.y = origin[1];
+wp.z = origin[2] + 40;
+wp setShader( "waypoint_defend", 12, 12 );
+wp setwaypoint( true, true );   // arg1: always show off-screen; arg2: onscreen indicator
+wp.color = ( 1, 1, 0 );
+wp.hidewheninmenu = true;
+```
+
+### game[] persistence for loadouts
+`game[]` persists across rounds (SD round cycling doesn't reset it). Use it to pre-generate all loadouts at match start:
+```gsc
+if ( !isDefined( game["gf_init"] ) )
+{
+    game["gf_pool"]  = [];
+    game["gf_loads"] = [];
+    for ( i = 0; i < 6; i++ )
+        game["gf_loads"][i] = gf_buildLoadout();
+    game["gf_idx"]  = 0;
+    game["gf_init"] = 1;
+}
+level.gf_currentLoad = game["gf_loads"][ game["gf_idx"] ];
+// Advance: game["gf_idx"] = int( game["gf_rounds_done"] / 2 ); in onDeadEvent
+```
+
+### Singleton HUD kill pattern
+Prevents stale HUD instances when recreating after round cycling:
+```gsc
+level notify( "kill_healthhud" );
+level endon( "kill_healthhud" );
+// ... create HUD elements below ...
+```
+
+### Overtime countdown — manual decrement, pauses while zone contested
+```gsc
+gf_overtimeCountdown()
+{
+    level endon( "game_ended" );
+    timeLeft = 20.0;
+    while ( timeLeft > 0 )
+    {
+        if ( !level.gf_overtimeCaptureActive )
+            timeLeft -= 0.1;
+        wait 0.1;
+    }
+    level notify( "gf_overtime_expired" );
+}
+```
+
+### Delayed grenade delivery (prevents spawn-instant-throw)
+```gsc
+gf_giveDelayedGrenade( lethal )
+{
+    self endon( "death" );
+    self endon( "disconnect" );
+    level endon( "game_ended" );
+    wait 3;
+    if ( self.health > 0 )
+    {
+        self GiveOffhandWeapon( lethal );
+        self setWeaponAmmoClip( lethal, 1 );   // one grenade only
+    }
+}
+```
+
+### HUD properties — standard combo for live-round elements
+```gsc
+e.archived       = false;   // don't hide during menus / demo playback
+e.hidewheninmenu = true;    // hide during pause menu
+e.glowColor      = ( 1, 0.3, 0 );
+e.glowAlpha      = 0.5;
+```
+
+### Loadout as associative array (confirmed T5)
+```gsc
+load = [];
+load["primary"]   = "famas_reflex_mp";
+load["secondary"] = "python_speed_mp";
+load["lethal"]    = "frag_grenade_mp";
+load["tactical"]  = "flash_grenade_mp";
+```
+
+### hideHardpointModels — canonical pattern (confirmed misterbubb T6 matches our T5 impl)
+```gsc
+hardpoints = getentarray( "hq_hardpoint", "targetname" );
+for ( i = 0; i < hardpoints.size; i++ )
+{
+    hp = hardpoints[i];
+    hp.original_origin = hp.origin;
+    if ( isDefined( hp.target ) )
+    {
+        visuals = getentarray( hp.target, "targetname" );
+        for ( j = 0; j < visuals.size; j++ )
+            if ( isDefined( visuals[j] ) )
+            {
+                visuals[j].origin = visuals[j].origin + ( 0, 0, -10000 );
+                visuals[j] hide();
+            }
+    }
+    if ( isDefined( hp.model ) ) hp hide();
+}
+```
+`hp.original_origin` is read in `gf_overtime()` to place the capture zone at the correct world position.
+
+### T6-only patterns — do NOT use in T5 mod scripts
+
+| T6 pattern | T5 replacement |
+|---|---|
+| `foreach ( p in level.players )` | `for ( i=0; i<level.players.size; i++ )` |
+| `isAlive( player )` | `player.health > 0` |
+| `player.team` | `player.pers["team"]` |
+| `player suicide()` | `player DoDamage( player.health+100, player.origin )` |
+| Attachment format `base + "+reflex"` (T6) | T5: `base + "_reflex_mp"` |
+| `level setClientField( "key", val )` | No T5 equivalent — use notify/HUD |
+| `level.disableclassselection = 1` | T5: `setDvar("scr_disable_cac","1")` + `replacefunc` |
+| `spawnStruct()` in mod scripts | `s = []; s["key"] = val;` |
