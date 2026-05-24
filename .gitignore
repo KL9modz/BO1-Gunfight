@@ -5,3 +5,8 @@ main/
 players/
 plutonium/
 zone/
+
+# Local server / reference files
+dedicated.cfg
+dedicated_sp.cfg
+mods/
