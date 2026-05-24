@@ -56,6 +56,10 @@ Use this as a starting point for a new version. Items marked `[ ]` are built and
 - Weapon camos — no direct GSC function exists in T5; engine ties camos to DDL persistent data. Options: (1) check Plutonium modding API/Discord for a native camo setter, (2) test populating `self.custom_class[0]["camo_num"]` before spawn with class set to `CLASS_CUSTOM1`
 - Wager match modes (Gun Game, Sharpshooter — reference `gun.gsc` and `shrp.gsc` from plutoniummod/t5-scripts)
 - Kill-ding alias — `"uin_challenge_repeatable"` is invalid in T5; causes `DSERR_INVALIDPARAM` DirectSound crash (invalid buffer length). Removed from code. Need a valid alias — try `"mpl_killconfirm_killsound"` or `"mp_level_up"`
+- Multi-gametype support — currently SD only; add HQ and TDM support
+HQ: hook onCapture/onDeadEvent equivalents, suppress hardpoint objective
+TDM: no round cycling built-in, need manual round loop + respawn block
+Abstract gametype-specific callbacks behind a shared interface so round logic stays the same
 
 **Needs in-game verification:**
 - Round timer: confirm `scr_sd_timelimit=0` hides SD's HUD timer (not "instant expire"), and that `gettime()` returns milliseconds in T5
