@@ -73,7 +73,8 @@ T9 Offiiicial gunfight gsc: https://github.com/ate47/bocw-source/blob/main/scrip
 - **iAmThatMichael/gunfight** — BO3/T7 Gunfight recreation; used for game-mode design reference
   https://github.com/iAmThatMichael/gunfight
   https://github.com/iAmThatMichael/gunfight/blob/master/scripts/mp/gametypes/gf.gsc
-- **GunMd0wn custom_gunfight.gsc** — community Gunfight mod (runs on HQ/TDM); source of class-select suppression patterns and weapon dvar approach. No GitHub — search Plutonium BO1 forum or megathread.
+- **GunMd0wn custom_gunfight.gsc** — community Gunfight mod (runs on HQ/TDM); source of class-select suppression patterns and weapon dvar approach. I think its: 
+https://github.com/Xinerki/t5-gunfight/blob/master/maps/mp/gametypes/duel.gsc
 - **mp_EMv2_Recreation, mp_iMCSx, mp_EnCoReV8** — Community BO1 mods; source of HUD element patterns (`newHudElem`, `newClientHudElem`, `NewScoreHudElem`, `hud.archived`, `fontPulse`)
 - **Resxt/Plutonium-T5-Scripts** — Collection of community T5 GSC scripts
   https://github.com/Resxt/Plutonium-T5-Scripts
