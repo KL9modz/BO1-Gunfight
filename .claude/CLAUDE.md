@@ -2,8 +2,8 @@
 
 ## TODO
 - Mid-round join grace period (~10s window to allow spawn instead of hard block)
-- Prematch control lockout (investigate T5 equivalent of `FreezeControlsAllowLook`)
-- Minimap disable
+- Prematch control lockout — `self freezeControls(1)` / `self freezeControls(0)` (confirmed in IW5 `_utility.gsc`; T5 should be same method — needs in-game test)
+- Minimap disable — `setDvar("compass", "0")` hides the minimap; `setDvar("compassSize", "0")` removes it entirely (from dvarlist.txt); call during `init()` before match starts
 - Weapon camos — no direct GSC function exists in T5; engine ties camos to DDL persistent data. Options: (1) check Plutonium modding API/Discord for a native camo setter, (2) test populating `self.custom_class[0]["camo_num"]` before spawn with class set to `CLASS_CUSTOM1`
 - Wager match modes (Gun Game, Sharpshooter — reference gun.gsc and shrp.gsc from plutoniummod/t5-scripts)
 - Kill-ding alias — `"uin_challenge_repeatable"` is invalid in T5; causes `DSERR_INVALIDPARAM` DirectSound crash (invalid buffer length). Removed from code. Need a valid alias — try `"mpl_killconfirm_killsound"` or `"mp_level_up"`.
@@ -180,6 +180,18 @@ Use `"progress_bar_fill"` / `"progress_bar_bg"` instead of `"white"` for native-
 **Timer:** `e setTimerUp(0)` starts counting up from 0. Engine-driven, no script polling needed.
 
 **Persistent HUD pattern:** Create elements once after first `spawned_player`, update every 0.2s in a loop, never destroy/rebuild mid-session. Destroy on `disconnect`.
+
+### HUD transition helpers (from IW5/T5 `_hud_util.gsc`)
+These are wrapper methods on HUD elements — call on an element created with `createIcon` / `createFontString`:
+```gsc
+e transitionSlideIn( duration, direction );   // direction: "left", "right", "up", "down"
+e transitionSlideOut( duration, direction );
+e hideElem();        // sets alpha=0, non-interactive
+e showElem();        // restores alpha
+e updateBar( fraction );     // resizes bar to fraction [0.0 – 1.0] of its max width
+e setFlashFrac( fraction );  // sets flash threshold on a progress bar (flashes below fraction)
+```
+These assume elements were created with `createBar`/`createIcon` which store `.baseWidth` etc. as properties on the element. Raw `newClientHudElem` elements won't have those properties; use `createBar` / `createIcon` instead.
 
 ---
 
@@ -381,7 +393,7 @@ The 0.2s wait is a brief spawn-protection window (PvP blocked via `!gf_roundActi
 - **`updateTeamStatus()` runs async** (waittillframeend) — `level.aliveCount` may be one frame stale after a kill
 - **`level.inGracePeriod = true` blocks forfeit/dead-event checks** — clear it before main gameplay starts
 - **`level.inOvertime = true` prevents all new spawns** — useful for overtime zone capture
-- **`map_restart(true)`** (called between rounds) keeps player positions but resets entities; `false` = full restart
+- **`map_restart(true)`** keeps player positions but resets entities AND `level.*` vars; `false` = full restart. `self.pers[]` and `game[]` are the only things that survive. Do not rely on `level.*` state across a `map_restart`.
 - **`self.pers[]` persists across rounds** — player stats, team, class survive `map_restart`
 - **`scr_disable_cac = 1`** makes `beginClassChoice` auto-assign `level.defaultClass = "CLASS_ASSAULT"` and auto-spawn
 - **SD's `onDeadEvent`** checks `level.bombPlanted` before deciding winner — our override must handle this or replicate the logic
@@ -446,14 +458,25 @@ All T5 weapon strings use `_mp` suffix. Pass these to `giveWeapon()`.
 
 ### Primary weapons
 ```
-Pistols:      python_speed_mp, makarovdw_mp
-Shotguns:     spas_mp, ithaca_mp
-SMG:          mp5k_mp, skorpiondw_mp, ak74u_mp, mp40_mp, spectre_mp, uzi_mp
-Assault:      m16_mp, famas_mp, aug_mp, galil_mp, commando_mp, fnfal_mp, m14_mp
+Pistols:      python_speed_mp, makarovdw_mp, asp_mp, cz75_mp
+Shotguns:     spas_mp, ithaca_mp, hs10_mp
+SMG:          mp5k_mp, skorpiondw_mp, ak74u_mp, mp40_mp, spectre_mp, uzi_mp, pm63_mp
+Assault:      m16_mp, famas_mp, aug_mp, galil_mp, commando_mp, fnfal_mp, m14_mp,
+              g11_mp, enfield_mp
 LMG:          hk21_mp, m60_mp, rpk_mp, stoner63_mp
 Sniper:       l96a1_mp, wa2000_mp, dragunov_mp, psg1_mp
 Launchers:    m72_law_mp, china_lake_mp, strela_mp, rpg_mp
 Special:      crossbow_explosive_mp, knife_ballistic_mp
+```
+
+### Additional weapon strings (confirmed from weapons.txt)
+```
+g11_mp       G11 (burst-fire AR)
+enfield_mp   Enfield (AR)
+ks23_mp      KS-23 (shotgun)
+pm63_mp      PM-63 (SMG)
+hs10_mp      HS-10 (akimbo shotgun)
+asp_mp       ASP (pistol)
 ```
 
 ### Equipment / grenades
@@ -464,13 +487,20 @@ satchel_charge_mp        mine_bouncing_betty_mp
 knife_mp                 (always given, melee slot)
 ```
 
-### Weapon options struct (for giveWeapon 3rd arg)
-```gsc
-options = spawnStruct();   // or use [] associative array in T5 mods
-options["akimbo"] = true;
-options["attachment1"] = "acog_mp";   // attachment suffix strings
-```
+### giveWeapon arguments
+`GiveWeapon( weaponName )` — basic form.
+`GiveWeapon( weaponName, dualWield )` — `dualWield` is a **boolean**, NOT a camo number.
+- `true` gives the akimbo/dualwield variant
+- `false` (or omit) gives the single variant
+- **T6 uses a 3rd camo-number arg; T5 does not** — passing a number here may crash or be silently ignored
+
 Common attachments: `acog_mp`, `reflex_mp`, `silencer_mp`, `dualwield_mp`, `grip_mp`, `masterkey_mp`, `flamethrower_mp`
+
+To give a weapon with an embedded attachment, use the `_attachment_` naming pattern instead:
+```gsc
+self GiveWeapon( "famas_reflex_mp" );   // attachment baked into weapon name
+self GiveWeapon( "python_speed_mp" );   // _speed_ is speed-draw holster variant
+```
 
 ---
 
@@ -497,6 +527,21 @@ specialty_scavenger          Scavenger
 specialty_armorvest          Flak Jacket
 specialty_blindeye           Cold Blooded
 specialty_sprintrecovery     Extreme Conditioning
+```
+
+Additional perks confirmed from T5 source (weapons.txt):
+```
+specialty_twogrenades        Two grenades (extra grenade slot)
+specialty_twoprimaries       Two primary weapons (warlord tier)
+specialty_rof                Increased rate of fire
+specialty_stunprotection     Reduced stun effect duration
+specialty_nomotionsensor     Not visible on motion sensor
+specialty_loudenemies        Hear enemies more clearly
+specialty_showenemyequipment Show enemy equipment on minimap
+specialty_showonradar        Show player on enemy radar (negative perk use)
+specialty_shellshock         Shellshock effect on nearby explosions
+specialty_nottargetedbyai    Not targeted by AI turrets/dogs
+specialty_noname             Unnamed perk slot (test before using)
 ```
 
 ---
@@ -685,6 +730,41 @@ self UnSetPerk( "specialty_killstreak" );
 self SetActionSlot( 1, "weapon", "flash_grenade_mp" );
 ```
 `GiveOffhandWeapon` handles grenades/equipment. `SetActionSlot` maps equipment to UI slots 1-4.
+
+---
+
+## T5 player utility functions (from IW5/T5 `_utility.gsc`)
+
+```gsc
+// Prematch / lockout
+self freezeControls( 1 );        // lock movement + shooting (still allows looking)
+self freezeControls( 0 );        // re-enable controls
+// NOTE: tested in IW5 source; T5 should be identical — verify in-game
+
+// Team messaging
+printBoldOnTeam( text, team );   // send bold center-screen message to entire team
+                                  // team = "allies" | "axis" | undefined (all)
+
+// Menu control
+self closePopupMenu();           // close any open popup
+self closeIngameMenu();          // close in-game menu (pause/settings overlay)
+// or via wrapper:
+closemenus();                    // calls both
+
+// Array utilities (T5 GSC — no built-in sort)
+quickSort( array );              // in-place sort, returns sorted array
+// Usage: sorted = quickSort( myArray );
+```
+
+### T5 dvars useful for Gunfight (from dvarlist.txt)
+```
+compass         "0" / "1"       show/hide the minimap compass
+compassSize     integer         minimap size in pixels (0 = hidden)
+cg_drawHealth   "0" / "1"       show/hide default health bar HUD element
+cg_fov          float           field of view (default 65)
+bg_gravity      float           gravity (default 800)
+```
+Set via `setDvar( name, value )` in `init()`. `compass "0"` resolves the minimap-disable TODO.
 
 ---
 
