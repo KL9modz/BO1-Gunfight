@@ -1,42 +1,67 @@
 # mp_gunfight — Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 
-## TODO
+## T5 Gunfight — Possible Features
+
+Use this as a starting point for a new version. Items marked `[ ]` are built and in the current codebase — needs in-game testing. Unmarked items are not yet implemented.
+
+### Built — ready for in-game testing
+
+**Core Rules**
+- [ ] One life per round, no respawns — SD `scr_sd_numlives = 1`
+- [ ] No killstreaks, no health regen, no weapon drops — `level.killstreaksenabled = 0`, `level.healthRegenDisabled = true`
+- [ ] No `map_restart` between rounds; all state lives in `level`/`game` vars
+- [ ] 6-round win limit (`level.roundWinLimit = 6`; checked via `hitRoundWinLimit()`)
+- [ ] Round wins tracked in `game["roundswon"]["allies"/"axis"]`; scoreboard accumulates correctly
+
+**Round System**
+- [ ] SD-native round cycling — `onDeadEvent` → `sd_endGame(winner, "")` handles scoring, win-limit, intermission, respawn; no manual spawn loop
+- [ ] `gf_tryActivateRound()` detects new round from `onPlayerSpawned`; 0.2s dedup grace window; `gf_timerEnd` set before wait so HUD shows immediately on spawn
+- [ ] `gf_roundEnding` bug fix — flag cleared inside `gf_tryActivateRound` before opening new round (SD never resets it)
+- [ ] SD timer pause/resume — `pauseTimer()` during 3s pre-round countdown, `resumeTimer()` at round start
+- [ ] Round state init — `level.gf_roundActive`, `level.gf_roundNum`, `level.gf_timerEnd` initialized in `init()` so never undefined during early connects
+- [ ] Bomb suppression loop — 0.5s poll suppresses SD bomb plant/defuse mechanics
+
+**Loadout System**
+- [ ] Shared random loadout — all players get same primary/secondary/equipment each round
+- [ ] Expanded loadout pool — 22 loadouts across 5 weapon classes (AR×7, SMG×6, LMG×4, Sniper×2, Shotgun×2); shuffle-without-repeat, no back-to-back repeat
+- [ ] Perks per loadout class — AR/SMG/LMG/Sniper/Shotgun each have tailored 3-perk sets (local vars at top of `gf_initLoadouts()`; `#define` not supported in T5)
+- [ ] Attachment randomizer — `gf_addRandomAttachment(baseWeapon, attList)` picks one random attachment; 2 extra empty slots give ~33% no-attachment chance
+- [ ] Health regen disabled — `level.healthRegenDisabled = true` + `level.playerHealth_RegularRegenDelay = 0`
+- [ ] All weapon+attachment variants precached at startup via `gf_precacheWeapons()`
+- [ ] Attachment strings confirmed: `extclip`, `reflex`, `acog`, `silencer`, `rf`, `vzoom`, `grip`
+- [ ] `colt45_mp` does not exist — replaced with `m1911_mp`
+
+**Class & Spawn**
+- [ ] Class select suppression — `replacefunc` on `beginClassChoice`; `scr_disable_cac=1` as backup (Plutonium ignores the dvar; replacefunc is the real fix)
+- [ ] Sessionstate fix — `gf_getAliveCount` / `gf_getTeamHP` check `p.sessionstate == "playing"` to exclude loading/spectating players
+
+**HUD**
+- [ ] Cold War Gunfight HUD — top-left panel (162×38 px): player icons (9×13), HP bars (68 px), score dots (5×5 px). Updated every 0.1s; persists across rounds. Element refs: `gf_hudBg/Sep`, `gf_hudAlliesIcon[0/1]`, `gf_hudAlliesBarBg/Fg`, `gf_hudAlliesHp`, `gf_hudAllyDot[0..5]`, mirrored for axis
+- [ ] Custom round timer — `gf_hudTimer` text element, center-top, MM:SS; driven by `level.gf_timerEnd = gettime() + ms`; `scr_sd_timelimit=0` disables SD's built-in timer
+- [ ] Perk display notification — `gf_displayPerks()` in `_gf_hud.gsc`: wager-style icon + name, right side, scale pop-in, 5s fade
+- [ ] HUD recreation per spawn — `self notify("gf_hud_restart")` on each spawn; `gf_hud()` ends on that notify, destroys stale elements, creates fresh ones (SD round cycling destroys `newClientHudElem` elements)
+
+**Extra Systems**
+- [ ] Overtime — equal HP at timer expiry: reuses `hq_hardpoint` entity as capture zone (hidden at match start via `gf_hideHardpointModels()`); 3s uncontested capture wins; 20s countdown pauses while anyone on zone; HP comparison if time expires; coin flip if still tied; falls back gracefully on maps with no hardpoint
+- [ ] Forfeit handling — `gf_forfeitWatch()` polls every 10s post-prematch; two consecutive empty-team checks (20s grace for reconnects) → `endGame()` awards win to other team
+- [ ] Death sounds — `level.onPlayerKilled = ::gf_onPlayerKilled` wired; kill-ding sound removed (see TODO — `uin_challenge_repeatable` invalid in T5)
+- [ ] Scoreboard columns set to `kills, deaths, none, none`; player score = total damage dealt per round
+- [ ] Script split — 4 files under `raw/scripts/mp/`
+
+### TODO — not yet implemented
+
 - Mid-round join grace period (~10s window to allow spawn instead of hard block)
 - Prematch control lockout — `self freezeControls(1)` / `self freezeControls(0)` (confirmed in IW5 `_utility.gsc`; T5 should be same method — needs in-game test)
 - Minimap disable — `setDvar("compass", "0")` hides the minimap; `setDvar("compassSize", "0")` removes it entirely (from dvarlist.txt); call during `init()` before match starts
 - Weapon camos — no direct GSC function exists in T5; engine ties camos to DDL persistent data. Options: (1) check Plutonium modding API/Discord for a native camo setter, (2) test populating `self.custom_class[0]["camo_num"]` before spawn with class set to `CLASS_CUSTOM1`
-- Wager match modes (Gun Game, Sharpshooter — reference gun.gsc and shrp.gsc from plutoniummod/t5-scripts)
-- Kill-ding alias — `"uin_challenge_repeatable"` is invalid in T5; causes `DSERR_INVALIDPARAM` DirectSound crash (invalid buffer length). Removed from code. Need a valid alias — try `"mpl_killconfirm_killsound"` or `"mp_level_up"`.
-- **Needs in-game verification:**
-  - Round timer: confirm `scr_sd_timelimit=0` hides SD's HUD timer (not "instant expire"), and that `gettime()` returns milliseconds in T5
-  - Perk icon shaders: `specialty_marathon`, `specialty_hardened`, `specialty_lightweight` etc.
-  - Overtime zone: confirm `hq_hardpoint` entities exist on SD maps (BO1 HQ mode shares maps with SD)
-  - Weapon icon shaders: confirmed from Xinerki T5 duel.gsc (T5 gametype mod) — see "T5 asset reference — weapon & lethal icon shaders" section below; perk shaders still unverified
+- Wager match modes (Gun Game, Sharpshooter — reference `gun.gsc` and `shrp.gsc` from plutoniummod/t5-scripts)
+- Kill-ding alias — `"uin_challenge_repeatable"` is invalid in T5; causes `DSERR_INVALIDPARAM` DirectSound crash (invalid buffer length). Removed from code. Need a valid alias — try `"mpl_killconfirm_killsound"` or `"mp_level_up"`
 
-## READY TO TEST
-- [ ] Cold War Gunfight HUD — top-left panel (162×38 px): player icons (9×13), HP bars (68 px), score dots (5×5 px). Updated every 0.1s; persists across rounds. Element refs: `gf_hudBg/Sep`, `gf_hudAlliesIcon[0/1]`, `gf_hudAlliesBarBg/Fg`, `gf_hudAlliesHp`, `gf_hudAllyDot[0..5]`, mirrored for axis.
-- [ ] Custom round timer — `gf_hudTimer` text element, center-top, shows MM:SS; driven by `level.gf_timerEnd = gettime() + ms` set at round start; hidden between rounds; `scr_sd_timelimit=0` disables SD's built-in timer
-- [ ] Perks per loadout class — AR/SMG/LMG/Sniper/Shotgun each have tailored 3-perk sets (local vars at top of `gf_initLoadouts()`; `#define` not supported in T5)
-- [ ] Expanded loadout pool — 22 loadouts across 5 weapon classes (AR×7, SMG×6, LMG×4, Sniper×2, Shotgun×2); shuffle-without-repeat, no back-to-back repeat
-- [ ] Perk display notification — `gf_displayPerks()` in `_gf_hud.gsc`: wager-style (icon + name, right side, scale pop-in, 5s fade)
-- [ ] Forfeit handling — `gf_forfeitWatch()` polls every 10s post-prematch; two consecutive empty-team checks (20s grace for reconnects) → `endGame()` awards win to other team
-- [ ] Death sounds — `level.onPlayerKilled = ::gf_onPlayerKilled` wired; kill-ding sound removed (see TODO — `uin_challenge_repeatable` invalid in T5)
-- [ ] Scoreboard score fix — `_setTeamScore` now uses `game["roundswon"][team]` (not hardcoded `1`); scoreboard correctly accumulates round wins
-- [ ] Sessionstate fix — `gf_getAliveCount` / `gf_getTeamHP` now check `p.sessionstate == "playing"`; prevents loading/spectating players from affecting alive counts or HP tiebreaker
-- [ ] Round state init — `level.gf_roundActive`, `level.gf_roundNum`, `level.gf_timerEnd` initialized in `init()` so they're never undefined during early connects
-- [ ] SD timer pause/resume — `pauseTimer()` during 3s pre-round countdown, `resumeTimer()` at round start
-- [ ] Attachment fix — `suppressor` → `silencer` (confirmed correct T5 string)
-- [ ] Class select suppression — `replacefunc` on `beginClassChoice`
-- [ ] Health regen disabled — `level.healthRegenDisabled = true` + `level.playerHealth_RegularRegenDelay = 0`
-- [ ] SD-native round cycling — `onDeadEvent` → `sd_endGame(winner, "")` handles scoring, win-limit, intermission, respawn; no `gf_roundBetween` or manual spawn loop; `gf_tryActivateRound()` detects new round from `onPlayerSpawned`
-- [ ] `gf_roundEnding` bug fix — flag was set on round end but never cleared, blocking round 2+ activation; now cleared inside `gf_tryActivateRound` before opening the new round
-- [ ] HUD recreation per spawn — SD round cycling destroys `newClientHudElem` elements; fixed via `self notify("gf_hud_restart")` on each spawn; `gf_hud()` ends on `"gf_hud_restart"`, destroys stale elements, creates fresh ones
-- [ ] Overtime — equal HP at timer expiry: reuses `hq_hardpoint` map entity as capture zone (hidden at match start via `gf_hideHardpointModels()`); 3s uncontested capture wins; 20s countdown pauses while anyone is on zone; HP comparison if time expires; coin flip if still tied; falls back gracefully on maps with no hardpoint
-- [ ] Bomb suppression loop — 0.5s poll (was 0.1s)
-- [ ] Script split — 4 files under `raw/scripts/mp/`
-- [ ] Verify `colt45_mp` — does not exist; replaced with `m1911_mp`
-- [ ] More loadout variety — LMGs, Ithaca, Skorpion now included
-- [ ] Verify attachment strings — all confirmed: `extclip`, `reflex`, `acog`, `silencer`, `rf`, `vzoom`, `grip`
+**Needs in-game verification:**
+- Round timer: confirm `scr_sd_timelimit=0` hides SD's HUD timer (not "instant expire"), and that `gettime()` returns milliseconds in T5
+- Perk icon shaders: `specialty_marathon`, `specialty_hardened`, `specialty_lightweight` etc. — shader names unverified
+- Overtime zone: confirm `hq_hardpoint` entities exist on SD maps (BO1 HQ mode shares maps with SD)
+- Weapon icon shaders: confirmed from Xinerki T5 duel.gsc (T5 gametype mod) — see asset reference section; perk shaders still unverified
 
 ---
 
@@ -111,25 +136,37 @@ Core features modelled after the community duel mod (`mods\mp_gf`) — use this 
 
 ---
 
-## Project overview
+## Project Overview
+
 Custom Gunfight game mode for Black Ops 1 running on Plutonium T5 MP.
 
 **Load:** `loadMod mp_gunfight` in the Plutonium console, then `map_restart`.
 **Mod folder must be prefixed `mp_`** for it to appear in the in-game mod menu.
 
-**File layout:**
 ```
-raw/scripts/mp/
-  mp_gunfight.gsc   -- entry point, init, player lifecycle
-  _gf_loadouts.gsc  -- loadout pool, picking, giving, random attachment, perk display
-  _gf_hud.gsc       -- live HP display, perk pop-in notification
-  _gf_rounds.gsc    -- round management, end conditions, state persistence, audio, bomb suppression
-  mp_spawn_fix.gsc  -- spawn fix utility
+Gunfight/  (GitHub: KL9modz/Gunfight)
+  CLAUDE.md                        <- this file
+  README.md
+  .gitignore
+  mp_gunfight.code-workspace
+  .vscode/
+    settings.json                  <- GSC extension config, runtime folder exclusions, rulers
+    extensions.json                <- recommends eyza.aw-gsc
+  raw/
+    scripts/
+      mp/
+        mp_gunfight.gsc            <- entry point, init, state persistence, player lifecycle
+        _gf_loadouts.gsc           <- loadout pool, picking, giving, attachment randomizer
+        _gf_hud.gsc                <- HP HUD, perk pop-in display
+        _gf_rounds.gsc             <- round management, end conditions, audio, bomb suppression
+        mp_spawn_fix.gsc           <- spawn fix utility
+      sp/
+        zm_spawn_fix.gsc
 ```
 
 ---
 
-## T5 GSC — Critical API differences from T6/T7
+## T5 GSC — Critical API Differences from T6/T7
 
 These are confirmed-broken functions in T5 mod scripts and their correct replacements:
 
@@ -148,103 +185,7 @@ These are confirmed-broken functions in T5 mod scripts and their correct replace
 
 ---
 
-## T5 HUD system
-
-All HUD elements created with `newClientHudElem(player)`.
-
-**Coordinate system:**
-- `horzAlign="left"`, `vertAlign="top"` → x/y are pixel offsets from screen top-left corner
-- `horzAlign="left"`, `vertAlign="middle"` → y is vertical center of element (element straddles y)
-- `alignX` / `alignY` control which edge/center of the element the x/y coordinate refers to
-
-**Colored rectangles (health bars, backgrounds):**
-```gsc
-e = newClientHudElem(player);
-e.horzAlign = "left";
-e.vertAlign = "top";
-e.alignX    = "left";
-e.alignY    = "middle";
-e.x         = 10;
-e.y         = 145;   // vertical center of the rect
-e.color     = (0.3, 0.55, 1);
-e.alpha     = 0.9;
-e.sort      = 2;     // draw order (higher = on top)
-e setShader("white", 68, 5);  // width=68px, height=5px
-```
-
-**To resize a bar:** `e setShader("white", newWidth, height)` — call each update tick.
-Use `"progress_bar_fill"` / `"progress_bar_bg"` instead of `"white"` for native-styled bars.
-
-**Text elements:** set `e.font = "smallfixed"` and `e.fontScale = 1.0`, then `e setText("string")`.
-
-**Timer:** `e setTimerUp(0)` starts counting up from 0. Engine-driven, no script polling needed.
-
-**Persistent HUD pattern:** Create elements once after first `spawned_player`, update every 0.2s in a loop, never destroy/rebuild mid-session. Destroy on `disconnect`.
-
-### HUD transition helpers (from IW5/T5 `_hud_util.gsc`)
-These are wrapper methods on HUD elements — call on an element created with `createIcon` / `createFontString`:
-```gsc
-e transitionSlideIn( duration, direction );   // direction: "left", "right", "up", "down"
-e transitionSlideOut( duration, direction );
-e hideElem();        // sets alpha=0, non-interactive
-e showElem();        // restores alpha
-e updateBar( fraction );     // resizes bar to fraction [0.0 – 1.0] of its max width
-e setFlashFrac( fraction );  // sets flash threshold on a progress bar (flashes below fraction)
-```
-These assume elements were created with `createBar`/`createIcon` which store `.baseWidth` etc. as properties on the element. Raw `newClientHudElem` elements won't have those properties; use `createBar` / `createIcon` instead.
-
----
-
-## Current mod — what's built
-
-### Round flow
-- Based on SD: one life per player, no respawns, no team size limit
-- No `map_restart` between rounds; all state lives in `level` / `game` vars
-- `gf_roundStart()` — loops forever after the single prematch: spawn-wait → reset per-round scores → timer + elimination watchers → `gf_round_result` notify → process result → `gf_roundBetween` → repeat
-- `gf_roundBetween()` — 5s intermission, kills any survivors, respawns all team players via `[[level.spawnClient]]()`
-- Round wins tracked in SD's native `game["roundswon"]["allies"/"axis"]`; match-end via `hitRoundWinLimit()` reading `scr_sd_winlimit` (default 6)
-- `level.gf_roundNum` tracks current round number
-- `level.gf_roundActive` guards `gf_onDeadEvent` and `gf_roundTimer` against firing outside an active round
-
-### Loadout
-- 12 loadouts, randomly cycled without back-to-back repeats; all 4 players share the same loadout
-- Health regen disabled via `level.playerHealth_RegularRegenDelay = 0` + `level.healthRegenDisabled = true`
-- Perks given to all loadouts: `specialty_movefaster`, `specialty_bulletpenetration`, `specialty_longersprint`
-- Attachment system: `gf_addRandomAttachment(baseWeapon, attList)` picks one random attachment from space-separated list (2 extra empty slots give ~33% no-attachment chance)
-- **T5 attachment keyword strings** (used embedded in weapon name: `famas_silencer_mp`) — all confirmed from primetime43 weapon dump:
-  - `reflex` — Reflex sight
-  - `acog` — ACOG scope
-  - `silencer` — Silencer
-  - `extclip` — Extended Mags
-  - `rf` — Rapid Fire (NOT `rapidfire`)
-  - `vzoom` — Variable Zoom sniper scope (NOT `variable`)
-  - `grip` — Grip/Foregrip (not available on SPAS)
-- All weapon+attachment variants precached at startup via `gf_precacheWeapons()`
-
-### Class select suppression — CONFIRMED T5 method (from source)
-
-`allowClassChoice` **does not exist** in the T5 source. The community mod pattern targeting it is wrong.
-
-The real function is `_globallogic_ui::beginClassChoice`. It has a built-in bypass:
-```gsc
-if ( level.oldschool || GetDvarInt("scr_disable_cac") == 1 )
-{
-    self.pers["class"] = level.defaultClass;  // "CLASS_ASSAULT"
-    self.class = level.defaultClass;
-    // auto-spawns if not already playing
-    return;
-}
-```
-
-**Current implementation:** `replacefunc( maps\mp\gametypes\_globallogic_ui::beginClassChoice, ::gf_bypassClassChoice )` — confirmed working in Plutonium T5.
-`setDvar("scr_disable_cac", "1")` is also set but **does not work in Plutonium** (dvar is parsed but ignored at runtime). The replacefunc is the real fix.
-`setDvar("scr_sd_selectclass", "0")` kept as extra insurance.
-
----
-
-## T5 SD source — confirmed facts (from MP/Common source dump)
-
-Source: `C:\Users\klaze\OneDrive - sdccd.edu\Desktop\GSC\MP\Common`
+## T5 Engine Reference
 
 ### SD callbacks registered in `sd.gsc::main()`
 | Level var | Fires when |
@@ -263,22 +204,7 @@ Source: `C:\Users\klaze\OneDrive - sdccd.edu\Desktop\GSC\MP\Common`
 - `game["roundswon"]["allies"]` / `game["roundswon"]["axis"]` — round wins
 - `game["roundsplayed"]` — rounds played so far
 
-### Useful T5 utility functions (maps\mp\_utility)
-```gsc
-getOtherTeam( team )               // "allies"↔"axis"
-getRoundsWon( team )               // game["roundswon"][team]
-getRoundsPlayed()                  // game["roundsplayed"]
-hitRoundWinLimit()                 // true if any team hit level.roundWinLimit
-playSoundOnPlayers( sound, team )  // plays local sound to all players on team
-dvarIntValue( name, def, min, max )  // reads scr_sd_<name>, sets default if unset
-```
-
----
-
-## T5 engine internals — core gametype system
-
 ### Overridable callbacks (set in `_globallogic.gsc::SetupCallbacks()`)
-These are all function-pointer level vars a custom gametype can override:
 ```
 level.onSpawnPlayer          // fires after player spawns into world
 level.playerSpawnedCB        // fires after spawn (SD sets this to notify "spawned_player")
@@ -337,20 +263,6 @@ maps\mp\gametypes\_globallogic::endGame( winningTeam, endReasonText )
 [[level._getTeamScore]]( "allies" )
 ```
 
-### Timer control
-```gsc
-maps\mp\gametypes\_globallogic_utils::pauseTimer()   // stops round clock
-maps\mp\gametypes\_globallogic_utils::resumeTimer()  // resumes round clock
-// Useful for overtime: pause clock, wait for zone capture, then end round
-```
-
-### Score events
-```gsc
-maps\mp\gametypes\_globallogic_score::givePlayerScore( "kill", player )
-// Recognized events: "kill", "headshot", "assist", "assist_25/50/75",
-//                    "plant", "defuse", "win", "loss", "tie"
-```
-
 ### SD round cycling — confirmed working pattern
 
 **`maps\mp\gametypes\sd::sd_endGame( winner, "" )`** — confirmed callable from mod scripts in Plutonium T5.
@@ -361,8 +273,6 @@ Calling this from `onDeadEvent` or a custom timer handler:
 - SD handles intermission display, player respawn, and the next prematch automatically
 - No manual `pers["lives"]` reset needed — SD handles it
 - No manual `[[level.spawnClient]]()` calls needed
-
-This is the cleanest way to end a round in a SD-based mod. Replaces our previous in-place loop + `gf_roundBetween`.
 
 **Round activation pattern** — since SD doesn't expose a "new round started" event, detect it from `onPlayerSpawned`:
 ```gsc
@@ -389,6 +299,45 @@ gf_tryActivateRound()
 
 The 0.2s wait is a brief spawn-protection window (PvP blocked via `!gf_roundActive` in damage handler). `gf_timerEnd` is set before the wait so the HUD countdown shows immediately on spawn. `gf_roundEnding` must be explicitly cleared here — SD never resets it.
 
+### Timer control
+```gsc
+maps\mp\gametypes\_globallogic_utils::pauseTimer()   // stops round clock
+maps\mp\gametypes\_globallogic_utils::resumeTimer()  // resumes round clock
+// Useful for overtime: pause clock, wait for zone capture, then end round
+```
+
+### Score events
+```gsc
+maps\mp\gametypes\_globallogic_score::givePlayerScore( "kill", player )
+// Recognized events: "kill", "headshot", "assist", "assist_25/50/75",
+//                    "plant", "defuse", "win", "loss", "tie"
+```
+
+### Useful T5 utility functions (maps\mp\_utility)
+```gsc
+getOtherTeam( team )               // "allies"<->"axis"
+getRoundsWon( team )               // game["roundswon"][team]
+getRoundsPlayed()                  // game["roundsplayed"]
+hitRoundWinLimit()                 // true if any team hit level.roundWinLimit
+playSoundOnPlayers( sound, team )  // plays local sound to all players on team
+dvarIntValue( name, def, min, max )  // reads scr_sd_<name>, sets default if unset
+```
+
+### Engine callbacks — full list
+Registered by `_callbacksetup.gsc`. These engine events call into GSC:
+```
+CodeCallback_StartGameType()     game init — calls sd.gsc::main()
+CodeCallback_PlayerConnect()     player joins server
+CodeCallback_PlayerDisconnect()  player leaves
+CodeCallback_PlayerDamage()      damage event (before health change)
+CodeCallback_PlayerKilled()      death event
+CodeCallback_ActorDamage()       NPC damage
+CodeCallback_ActorKilled()       NPC death
+CodeCallback_VehicleDamage()     vehicle hit
+CodeCallback_HostMigration()     host migration
+CodeCallback_GlassSmash()        glass break FX
+```
+
 ### Critical gotchas
 - **`updateTeamStatus()` runs async** (waittillframeend) — `level.aliveCount` may be one frame stale after a kill
 - **`level.inGracePeriod = true` blocks forfeit/dead-event checks** — clear it before main gameplay starts
@@ -400,63 +349,105 @@ The 0.2s wait is a brief spawn-protection window (PvP blocked via `!gf_roundActi
 
 ---
 
-## Gunfight mode design (from BOCW source reference)
+## T5 HUD System
 
-Official CW Gunfight logic (not T5-compatible, reference only):
-- `level.gunfightroundsperloadout` — how many rounds per loadout
-- `game.var_96a8ff4a` — shuffled loadout array; `game.var_b6beb735` — current index
-- Win hierarchy: 1) last team standing, 2) overtime zone capture, 3) HP comparison
-- Overtime: map entity `gunfight_zone_center` + `gunfight_zone_trigger` required
-- Timer pauses while zone is being captured
-- `function_c4915ac()` = HP tiebreaker (sum alive players HP per team)
-- Loadout given via `takeallweapons` → `clearperks` → equip from bundle → force `specialty_sprint/slide/sprintreload/sprintheal`
-- Always-on grace period: 3 seconds per round start
+All HUD elements created with `newClientHudElem(player)`.
+
+**Coordinate system:**
+- `horzAlign="left"`, `vertAlign="top"` → x/y are pixel offsets from screen top-left corner
+- `horzAlign="left"`, `vertAlign="middle"` → y is vertical center of element (element straddles y)
+- `alignX` / `alignY` control which edge/center of the element the x/y coordinate refers to
+
+**Colored rectangles (health bars, backgrounds):**
+```gsc
+e = newClientHudElem(player);
+e.horzAlign = "left";
+e.vertAlign = "top";
+e.alignX    = "left";
+e.alignY    = "middle";
+e.x         = 10;
+e.y         = 145;   // vertical center of the rect
+e.color     = (0.3, 0.55, 1);
+e.alpha     = 0.9;
+e.sort      = 2;     // draw order (higher = on top)
+e setShader("white", 68, 5);  // width=68px, height=5px
+```
+
+**To resize a bar:** `e setShader("white", newWidth, height)` — call each update tick.
+Use `"progress_bar_fill"` / `"progress_bar_bg"` instead of `"white"` for native-styled bars.
+
+**Text elements:** set `e.font = "smallfixed"` and `e.fontScale = 1.0`, then `e setText("string")`.
+
+**Timer:** `e setTimerUp(0)` starts counting up from 0. Engine-driven, no script polling needed.
+
+**Persistent HUD pattern:** Create elements once after first `spawned_player`, update every 0.2s in a loop, never destroy/rebuild mid-session. Destroy on `disconnect`.
+
+### Better HUD creation functions (_hud_util.gsc)
+These are cleaner than raw `newClientHudElem` + `setShader`:
+```gsc
+createFontString( font, fontScale )              // text element
+createIcon( shader, width, height )              // icon element
+createBar( color, width, height )                // colored bar (wraps setShader)
+createPrimaryProgressBar()                       // game-styled primary progress bar
+createSecondaryProgressBar()                     // game-styled secondary progress bar
+createServerFontString( font, fontScale, team )  // server-side (all players see same)
+createServerIcon( shader, width, height, team )
+createServerBar( color, width, height, flashFrac, team )
+```
+Font strings: `"default"`, `"bigfixed"`, `"smallfixed"`, `"objective"`, `"extrabig"`
+
+### HUD transition helpers (from IW5/T5 `_hud_util.gsc`)
+These are wrapper methods on HUD elements — call on an element created with `createIcon` / `createFontString`:
+```gsc
+e transitionSlideIn( duration, direction );   // direction: "left", "right", "up", "down"
+e transitionSlideOut( duration, direction );
+e hideElem();        // sets alpha=0, non-interactive
+e showElem();        // restores alpha
+e updateBar( fraction );     // resizes bar to fraction [0.0 - 1.0] of its max width
+e setFlashFrac( fraction );  // sets flash threshold on a progress bar (flashes below fraction)
+```
+These assume elements were created with `createBar`/`createIcon` which store `.baseWidth` etc. as properties on the element. Raw `newClientHudElem` elements won't have those properties; use `createBar` / `createIcon` instead.
+
+### HUD element types
+```gsc
+hud = newHudElem( player );          // server-side, general purpose
+hud = newClientHudElem( player );    // client-side only
+hud = NewScoreHudElem( player );     // score-specific HUD element
+```
+`hud.archived = false` — prevents HUD from being hidden during menus or demo playback.
+
+### HUD animations
+```gsc
+hud fadeOverTime( 0.3 );       // fade alpha over time
+hud moveOverTime( 0.2 );       // smooth position transition (set .x/.y after)
+hud.alpha = 0;                 // set target alpha after fadeOverTime
+hud.x = 100; hud.y = 50;      // set target pos after moveOverTime
+
+// Font glow
+hud.glowAlpha = 1;
+hud.glowColor = ( r/255, g/255, b/255 );
+
+// Pulse (score pop)
+hud fontPulse( player );       // brief scale-up pop effect
+```
+
+### Standard properties for live-round HUD elements
+```gsc
+e.archived       = false;   // don't hide during menus / demo playback
+e.hidewheninmenu = true;    // hide during pause menu
+e.glowColor      = ( 1, 0.3, 0 );
+e.glowAlpha      = 0.5;
+```
 
 ---
 
-##  community Gunfight mod patterns (applicable to this project)
+## T5 Asset Reference
 
-From `custom_gunfight.gsc` by GunMd0wn (runs on ? HQ/TDM):
-
-**Class select suppression — NOTE: `allowClassChoice` does not exist in T5 source.**
-This `replacefunc` pattern from GunMd0wn's mod targets a ghost function and does nothing.
-The correct method (confirmed from T5 source) is `setDvar("scr_disable_cac", "1")` — see the class select section above.
-
-**Weapon randomization via dvars:**
-```gsc
-setDvar("gunfight_current_game_primary", getRandomWeapon("primary"));
-// re-reads each round, all players get same weapon
-level.gunfight_current_game_primary = getDvar("gunfight_current_game_primary");
-```
-
-**Team health score display:**
-```gsc
-maps\mp\gametypes\_gamescore::_setteamscore("allies", getTeamHealth("allies"));
-```
-
-**Health regen disable):**
-```gsc
-level.healthregendisabled = 1;
-```
-
----
-
-## BO3 community Gunfight mod patterns (design reference)
-
-From `gf.gsc` by Michael Akopyan (BO3/T7):
-- Weapon classes loaded from `gf_weapons.csv` via `TableLookup`
-- Attachments in CSV separated by `+`, parsed with `StrTok(str, "+")`
-- HUD pushed server-side via `clientfield::register` + `clientfield::set_to_player`; LUI renders it
-- Singleton HUD update: `level notify("tag"); level endon("tag")` prevents spam
-- Class select: `self.pers["class"] = level.defaultClass` + `self CloseMenu(MENU_CHANGE_CLASS)` + `globallogic_ui::closeMenus()`
-
----
-
-## T5 asset reference — weapons
+### Weapons
 
 All T5 weapon strings use `_mp` suffix. Pass these to `giveWeapon()`.
 
-### Primary weapons
+**Primary weapons**
 ```
 Pistols:      python_speed_mp, makarovdw_mp, asp_mp, cz75_mp
 Shotguns:     spas_mp, ithaca_mp, hs10_mp
@@ -469,7 +460,7 @@ Launchers:    m72_law_mp, china_lake_mp, strela_mp, rpg_mp
 Special:      crossbow_explosive_mp, knife_ballistic_mp
 ```
 
-### Additional weapon strings (confirmed from weapons.txt)
+**Additional weapon strings (confirmed from weapons.txt)**
 ```
 g11_mp       G11 (burst-fire AR)
 enfield_mp   Enfield (AR)
@@ -479,7 +470,7 @@ hs10_mp      HS-10 (akimbo shotgun)
 asp_mp       ASP (pistol)
 ```
 
-### Equipment / grenades
+**Equipment / grenades**
 ```
 frag_grenade_mp          flash_grenade_mp
 smoke_grenade_mp         concussion_grenade_mp
@@ -487,24 +478,21 @@ satchel_charge_mp        mine_bouncing_betty_mp
 knife_mp                 (always given, melee slot)
 ```
 
-### giveWeapon arguments
+**giveWeapon arguments**
 `GiveWeapon( weaponName )` — basic form.
 `GiveWeapon( weaponName, dualWield )` — `dualWield` is a **boolean**, NOT a camo number.
 - `true` gives the akimbo/dualwield variant
 - `false` (or omit) gives the single variant
 - **T6 uses a 3rd camo-number arg; T5 does not** — passing a number here may crash or be silently ignored
 
-Common attachments: `acog_mp`, `reflex_mp`, `silencer_mp`, `dualwield_mp`, `grip_mp`, `masterkey_mp`, `flamethrower_mp`
-
-To give a weapon with an embedded attachment, use the `_attachment_` naming pattern instead:
+To give a weapon with an embedded attachment, use the `_attachment_` naming pattern:
 ```gsc
 self GiveWeapon( "famas_reflex_mp" );   // attachment baked into weapon name
 self GiveWeapon( "python_speed_mp" );   // _speed_ is speed-draw holster variant
 ```
+Common attachments: `acog_mp`, `reflex_mp`, `silencer_mp`, `dualwield_mp`, `grip_mp`, `masterkey_mp`, `flamethrower_mp`
 
----
-
-## T5 asset reference — perks
+### Perks
 
 Pass these strings to `self SetPerk(name)` / check with `self hasPerk(name)`.
 
@@ -544,25 +532,41 @@ specialty_nottargetedbyai    Not targeted by AI turrets/dogs
 specialty_noname             Unnamed perk slot (test before using)
 ```
 
----
+### HUD Shaders
 
-## T5 asset reference — HUD shaders & functions
+**Weapon & lethal icon shaders** — confirmed from Xinerki `t5-gunfight/duel.gsc` (T5 gametype mod).
 
-### Better HUD creation functions (_hud_util.gsc)
-These are cleaner than raw `newClientHudElem` + `setShader`:
-```gsc
-createFontString( font, fontScale )              // text element
-createIcon( shader, width, height )              // icon element
-createBar( color, width, height )                // colored bar (wraps setShader)
-createPrimaryProgressBar()                       // game-styled primary progress bar
-createSecondaryProgressBar()                     // game-styled secondary progress bar
-createServerFontString( font, fontScale, team )  // server-side (all players see same)
-createServerIcon( shader, width, height, team )
-createServerBar( color, width, height, flashFrac, team )
+Default rule: `"menu_mp_weapons_" + baseName` where baseName has no `_mp` and no variant suffix.
+
+Special cases (base name doesn't match shader):
 ```
-Font strings: `"default"`, `"bigfixed"`, `"smallfixed"`, `"objective"`, `"extrabig"`
+Weapon base name          Shader
+ithaca_grip             -> menu_mp_weapons_ithaca
+stoner63                -> menu_mp_weapons_stoner63a
+crossbow_explosive      -> menu_mp_weapons_crossbow
+minigun_wager           -> menu_mp_weapons_minigun
+python_speed            -> menu_mp_weapons_python
+m1911_upgradesight      -> menu_mp_weapons_colt
+makarov_upgradesight    -> menu_mp_weapons_makarov
+cz75_upgradesight       -> menu_mp_weapons_cz75
+Default secondary: "menu_mp_weapons_" + base (strip suffix like _speed, _upgradesight)
+```
 
-### Named shaders (precached by T5 — usable in setShader / createIcon)
+Lethal icon shaders:
+```
+frag_grenade            -> hud_grenadeicon
+sticky_grenade          -> hud_icon_sticky_grenade
+hatchet                 -> hud_hatchet
+Default: "hud_" + baseName
+```
+
+Precaching before use:
+```gsc
+PreCacheShader( "menu_mp_weapons_famas" );   // call at match start before HUD creation
+e setShader( "menu_mp_weapons_famas", 64, 32 );
+```
+
+**Named shaders (precached by T5 — usable in setShader / createIcon)**
 ```
 Progress bars:    progress_bar_bg, progress_bar_fill, progress_bar_fg
 Score bars:       score_bar_bg, score_bar_allies, score_bar_opfor
@@ -575,13 +579,18 @@ Emblems:          composite_emblem_team_allies, composite_emblem_team_axis
 Generic:          white, black
 ```
 
-**`score_bar_allies` / `score_bar_opfor`** are particularly useful — these are the native styled team HP/score bars the game already uses internally.
+`score_bar_allies` / `score_bar_opfor` are particularly useful — native styled team HP/score bars the game uses internally.
 
----
+### Audio
 
-## T5 asset reference — audio
+**Sound playback**
+```gsc
+self playLocalSound( alias )                           // plays to this player only
+maps\mp\_utility::playSoundOnPlayers( alias, team )   // plays to whole team (or all if team undefined)
+play_sound_in_space( alias, origin )                   // positional 3D sound
+```
 
-### leaderDialog (voice callouts)
+**leaderDialog (voice callouts)**
 ```gsc
 maps\mp\gametypes\_globallogic_audio::leaderDialog( dialogKey )
 maps\mp\gametypes\_globallogic_audio::leaderDialog( dialogKey, team )
@@ -599,7 +608,7 @@ Available dialog keys (set via `game["dialog"][key]`):
 "challenge"      challengecomplete
 ```
 
-### Music states
+**Music states**
 ```gsc
 maps\mp\gametypes\_globallogic_audio::set_music_on_team( state, team )
 ```
@@ -611,46 +620,24 @@ maps\mp\gametypes\_globallogic_audio::set_music_on_team( state, team )
 "SILENT"                 mute music
 ```
 
-### Sound playback
+**Dynamic music**
 ```gsc
-self playLocalSound( alias )                           // plays to this player only
-maps\mp\_utility::playSoundOnPlayers( alias, team )   // plays to whole team (or all if team undefined)
-play_sound_in_space( alias, origin )                   // positional 3D sound
+actionMusicSet( "state_name" );   // triggers music state (e.g. "round_end_win", "combat")
 ```
 
----
+### Classes & Menus
 
-## T5 engine callbacks — full list
-
-Registered by `_callbacksetup.gsc`. These engine events call into GSC:
-```
-CodeCallback_StartGameType()     game init — calls sd.gsc::main()
-CodeCallback_PlayerConnect()     player joins server
-CodeCallback_PlayerDisconnect()  player leaves
-CodeCallback_PlayerDamage()      damage event (before health change)
-CodeCallback_PlayerKilled()      death event
-CodeCallback_ActorDamage()       NPC damage
-CodeCallback_ActorKilled()       NPC death
-CodeCallback_VehicleDamage()     vehicle hit
-CodeCallback_HostMigration()     host migration
-CodeCallback_GlassSmash()        glass break FX
-```
-
----
-
-## T5 class & menu constants
-
-### Class name constants
+**Class name constants**
 ```
 CLASS_ASSAULT    CLASS_SMG       CLASS_CQB
 CLASS_LMG        CLASS_SNIPER
-OFFLINE_CLASS1 … OFFLINE_CLASS10    (offline preset classes)
-CLASS_CUSTOM1  … CLASS_CUSTOM5      (online custom classes)
-CLASS_CUSTOM6  … CLASS_CUSTOM10     (prestige custom slots)
+OFFLINE_CLASS1 ... OFFLINE_CLASS10    (offline preset classes)
+CLASS_CUSTOM1  ... CLASS_CUSTOM5      (online custom classes)
+CLASS_CUSTOM6  ... CLASS_CUSTOM10     (prestige custom slots)
 ```
 `level.defaultClass = "CLASS_ASSAULT"` (set in _class.gsc init)
 
-### Menu name constants (game["menu_*"])
+**Menu name constants (game["menu_*"])**
 ```
 game["menu_team"]                  = "team_marinesopfor"
 game["menu_class_allies"]          = "class_marines"
@@ -661,9 +648,21 @@ game["menu_changeclass_custom"]    = "changeclass_custom"
 game["menu_changeclass_barebones"] = "changeclass_barebones"
 ```
 
+### DVARs
+
+Useful dvars for Gunfight (from dvarlist.txt):
+```
+compass         "0" / "1"       show/hide the minimap compass
+compassSize     integer         minimap size in pixels (0 = hidden)
+cg_drawHealth   "0" / "1"       show/hide default health bar HUD element
+cg_fov          float           field of view (default 65)
+bg_gravity      float           gravity (default 800)
+```
+Set via `setDvar( name, value )` in `init()`. `compass "0"` resolves the minimap-disable TODO.
+
 ---
 
-## T5 spawn system
+## T5 Spawn System
 
 ### Getting spawn points
 ```gsc
@@ -682,9 +681,15 @@ maps\mp\gametypes\_spawning::addSpawnInfluencer( origin, radius, weight, influen
 Influencer types: `eINFLUENCER_TYPE_NORMAL`(0), `eINFLUENCER_TYPE_PLAYER`(1), `eINFLUENCER_TYPE_GAME_MODE`(6)
 Team masks: `iSPAWN_TEAMMASK_ALLIES`(4), `iSPAWN_TEAMMASK_AXIS`(2)
 
+Spawn point weighting (from community mods):
+```gsc
+addSphereInfluencer( origin, radius, weight );
+// weight > 0 attracts spawns; weight < 0 repels
+```
+
 ---
 
-## T5 game objects — overtime zone
+## T5 Game Objects — Overtime Zone
 
 For implementing an overtime capture zone (`_gameobjects.gsc`):
 ```gsc
@@ -706,7 +711,7 @@ winningTeam = zone maps\mp\gametypes\_gameobjects::getOwnerTeam();
 
 ---
 
-## T5 loadout delivery — correct pattern
+## T5 Loadout Delivery
 
 ```gsc
 // Full custom loadout override (call after spawned_player):
@@ -733,88 +738,33 @@ self SetActionSlot( 1, "weapon", "flash_grenade_mp" );
 
 ---
 
-## T5 player utility functions (from IW5/T5 `_utility.gsc`)
+## T5 Player Utilities
 
+### Controls & movement
 ```gsc
-// Prematch / lockout
 self freezeControls( 1 );        // lock movement + shooting (still allows looking)
 self freezeControls( 0 );        // re-enable controls
-// NOTE: tested in IW5 source; T5 should be identical — verify in-game
+// NOTE: confirmed in IW5 source; T5 should be identical — verify in-game
 
-// Team messaging
+self DisableWeaponCycling()      // lock player to current weapon, no scrolling
+self EnableWeaponCycling()       // re-enable
+self setSpawnWeapon( "famas_mp" ) // sets weapon held on spawn
+```
+
+### Team messaging & menus
+```gsc
 printBoldOnTeam( text, team );   // send bold center-screen message to entire team
                                   // team = "allies" | "axis" | undefined (all)
 
-// Menu control
 self closePopupMenu();           // close any open popup
 self closeIngameMenu();          // close in-game menu (pause/settings overlay)
-// or via wrapper:
 closemenus();                    // calls both
+```
 
-// Array utilities (T5 GSC — no built-in sort)
+### Array utilities
+```gsc
 quickSort( array );              // in-place sort, returns sorted array
 // Usage: sorted = quickSort( myArray );
-```
-
-### T5 dvars useful for Gunfight (from dvarlist.txt)
-```
-compass         "0" / "1"       show/hide the minimap compass
-compassSize     integer         minimap size in pixels (0 = hidden)
-cg_drawHealth   "0" / "1"       show/hide default health bar HUD element
-cg_fov          float           field of view (default 65)
-bg_gravity      float           gravity (default 800)
-```
-Set via `setDvar( name, value )` in `init()`. `compass "0"` resolves the minimap-disable TODO.
-
----
-
-## File structure
-```
-Gunfight/  (GitHub: KL9modz/Gunfight)
-  CLAUDE.md                        ← this file
-  README.md
-  .gitignore
-  mp_gunfight.code-workspace
-  .vscode/
-    settings.json                  ← GSC extension config, runtime folder exclusions, rulers
-    extensions.json                ← recommends eyza.aw-gsc
-  raw/
-    scripts/
-      mp/
-        mp_gunfight.gsc            ← entry point, init, state persistence, player lifecycle
-        _gf_loadouts.gsc           ← loadout pool, picking, giving, attachment randomizer
-        _gf_hud.gsc                ← HP HUD, perk pop-in display
-        _gf_rounds.gsc             ← round management, end conditions, audio, bomb suppression
-        mp_spawn_fix.gsc           ← spawn fix utility
-      sp/
-        zm_spawn_fix.gsc
-```
-
----
-
-## Community mod findings (from mp_EMv2_Recreation, mp_iMCSx, mp_EnCoReV8)
-
-### HUD element types
-```gsc
-hud = newHudElem( player );          // server-side, general purpose
-hud = newClientHudElem( player );    // client-side only
-hud = NewScoreHudElem( player );     // score-specific HUD element
-```
-`hud.archived = false` — prevents HUD from being hidden during menus or demo playback.
-
-### HUD animations
-```gsc
-hud fadeOverTime( 0.3 );       // fade alpha over time
-hud moveOverTime( 0.2 );       // smooth position transition (set .x/.y after)
-hud.alpha = 0;                 // set target alpha after fadeOverTime
-hud.x = 100; hud.y = 50;      // set target pos after moveOverTime
-
-// Font glow
-hud.glowAlpha = 1;
-hud.glowColor = ( r/255, g/255, b/255 );
-
-// Pulse (score pop)
-hud fontPulse( player );       // brief scale-up pop effect
 ```
 
 ### Button detection (self = player, call in loop with wait 0.05)
@@ -828,6 +778,62 @@ self FragButtonPressed()
 self SecondaryOffHandButtonPressed()
 self ActionSlotOneButtonPressed()    // through ActionSlotFourButtonPressed()
 ```
+
+### String utilities (confirmed working in T5)
+```gsc
+strTok( string, delimiter )        // splits string -> array
+getSubStr( string, start, end )    // substring; end = string.size to go to end
+```
+
+### Weapon attachment name pattern (from shrp.gsc line 267)
+```gsc
+// Strip _mp suffix, append _att_mp
+base = getSubStr( weaponName, 0, weaponName.size - 3 );   // removes "_mp"
+result = base + "_" + attachmentName + "_mp";
+// e.g. "famas_mp" + "reflex" -> "famas_reflex_mp"
+```
+This is the same pattern used by our `gf_addRandomAttachment`.
+
+### Objective markers
+Simpler than createUseObject — just places a waypoint:
+```gsc
+objId = 150;    // arbitrary ID 0-255
+objective_add( objId, "active", origin );
+objective_icon( objId, "waypoint_defend" );    // waypoint_capture, waypoint_target, etc.
+objective_state( objId, "active" );            // "active", "invisible", "done", "failed"
+objective_setvisibletoplayer( objId, player ); // call per player to show
+objective_delete( objId );                      // cleanup
+```
+
+3D always-on world waypoint via HUD element:
+```gsc
+wp = newClientHudElem( player );
+wp.x = origin[0];
+wp.y = origin[1];
+wp.z = origin[2] + 40;
+wp setShader( "waypoint_defend", 12, 12 );
+wp setwaypoint( true, true );   // arg1: always show off-screen; arg2: onscreen indicator
+wp.color = ( 1, 1, 0 );
+wp.hidewheninmenu = true;
+```
+
+### Visual effects
+```gsc
+fxid = loadfx( "fx/path/to/effect" );
+spawnFx( fxid, origin );
+triggerFx( fxid );
+```
+
+### Function pointer arrays (dynamic dispatch / menu systems)
+```gsc
+menu.functions = [];
+menu.functions[0] = ::myFunc;
+menu.functions[1] = ::otherFunc;
+// Call: self [[ menu.functions[selected] ]]();
+```
+
+### notify/waittill as state machine
+Use `level notify("state_name")` + `level waittill("state_name")` to drive state transitions instead of polling flags. Cleaner than busy-wait loops for events like round start/end.
 
 ### Scoreboard column names (valid values for setscoreboardcolumns)
 ```
@@ -850,137 +856,38 @@ givePlayerScore( "hatchet_kill",player );
 givePlayerScore( "other_kill",  player );
 ```
 
-### Spawn point weighting
-```gsc
-addSphereInfluencer( origin, radius, weight );
-// weight > 0 attracts spawns; weight < 0 repels
-// call on a spawn point entity or level-level to bias the engine spawn system
-```
-
-### Dynamic music
-```gsc
-actionMusicSet( "state_name" );   // triggers music state (e.g. "round_end_win", "combat")
-```
-
-### String utilities (confirmed working in T5)
-```gsc
-strTok( string, delimiter )        // splits string → array
-getSubStr( string, start, end )    // substring; end = string.size to go to end
-```
-
-### Visual effects
-```gsc
-fxid = loadfx( "fx/path/to/effect" );
-spawnFx( fxid, origin );
-triggerFx( fxid );
-```
-
-### Function pointer arrays (dynamic dispatch / menu systems)
-```gsc
-// Store function pointers in an array for dynamic menus or option tables
-menu.functions = [];
-menu.functions[0] = ::myFunc;
-menu.functions[1] = ::otherFunc;
-// Call: self [[ menu.functions[selected] ]]();
-```
-
-### notify/waittill as state machine
-Use `level notify("state_name")` + `level waittill("state_name")` to drive state transitions instead of polling flags. Cleaner than busy-wait loops for events like round start/end.
-
-### Weapon attachment name pattern (from shrp.gsc line 267)
-```gsc
-// Strip _mp suffix, append _att_mp
-base = getSubStr( weaponName, 0, weaponName.size - 3 );   // removes "_mp"
-result = base + "_" + attachmentName + "_mp";
-// e.g. "famas_mp" + "reflex" → "famas_reflex_mp"
-```
-This is the same pattern used by our `gf_addRandomAttachment`.
-
-### Admin / permission pattern
-```gsc
-// Check if player is host/admin via GUID or dvar list
-if ( player.guid == getDvar( "sv_adminGUID" ) ) { ... }
-// Or maintain a level.admins[] array populated at connect time
-```
-
 ---
 
-## T5 asset reference — weapon & lethal icon shaders
+## Community Mod Patterns
 
-Confirmed from Xinerki `t5-gunfight/duel.gsc` (T5 gametype mod, same engine as our scripts).
+Aggregated from: GunMd0wn T5 mod, mp_EMv2/iMCSx/EnCoReV8 (community BO1 mods), Xinerki/t5-gunfight, misterbubb/T6-Gunfight-Gamemode, bblack16/plutonium-waypoints IW5.
 
-### Primary weapon shaders
-Default rule: `"menu_mp_weapons_" + baseName` where baseName has no `_mp` and no variant suffix.
+### Class select suppression (confirmed T5 method)
 
-Special cases (base name doesn't match shader):
-```
-Weapon base name          Shader
-ithaca_grip             → menu_mp_weapons_ithaca
-stoner63                → menu_mp_weapons_stoner63a
-crossbow_explosive      → menu_mp_weapons_crossbow
-minigun_wager           → menu_mp_weapons_minigun
-```
+`allowClassChoice` **does not exist** in the T5 source. Community mod patterns targeting it do nothing.
 
-### Secondary weapon shaders
-```
-python_speed            → menu_mp_weapons_python
-m1911_upgradesight      → menu_mp_weapons_colt
-makarov_upgradesight    → menu_mp_weapons_makarov
-cz75_upgradesight       → menu_mp_weapons_cz75
-Default: "menu_mp_weapons_" + base (strip variant suffix like _speed, _upgradesight)
-```
-
-### Lethal icon shaders
-```
-frag_grenade            → hud_grenadeicon
-sticky_grenade          → hud_icon_sticky_grenade
-hatchet                 → hud_hatchet
-Default: "hud_" + baseName
-```
-
-### Precaching shaders before use
+The real function is `_globallogic_ui::beginClassChoice`. Built-in bypass:
 ```gsc
-PreCacheShader( "menu_mp_weapons_famas" );   // call at match start before HUD creation
-e setShader( "menu_mp_weapons_famas", 64, 32 );
+if ( level.oldschool || GetDvarInt("scr_disable_cac") == 1 )
+{
+    self.pers["class"] = level.defaultClass;  // "CLASS_ASSAULT"
+    self.class = level.defaultClass;
+    return;
+}
 ```
 
----
+**Current implementation:** `replacefunc( maps\mp\gametypes\_globallogic_ui::beginClassChoice, ::gf_bypassClassChoice )` — confirmed working in Plutonium T5.
+`setDvar("scr_disable_cac", "1")` is also set but **does not work in Plutonium** (dvar is parsed but ignored at runtime). The replacefunc is the real fix.
 
-## Community mod findings — reference mod study (2025-05)
-
-Sources: Xinerki/t5-gunfight (T5), misterbubb/T6-Gunfight-Gamemode (T6), bblack16/plutonium-waypoints iw5 (IW5).
-
-### T5 player methods confirmed (Xinerki duel.gsc — T5 gametype)
-These run in gametype context; standard T5 engine methods, should work in Plutonium mod scripts:
+### Weapon randomization via dvars (GunMd0wn pattern)
 ```gsc
-self DisableWeaponCycling()                   // lock player to current weapon, no scrolling
-self EnableWeaponCycling()                    // re-enable
-self setSpawnWeapon( "famas_mp" )             // sets weapon held on spawn
-maps\mp\gametypes\_wager::setupBlankRandomPlayer( takeAll, chooseBody )
-// clears player and optionally assigns a random body model; call before giveWeapon
+setDvar("gunfight_current_game_primary", getRandomWeapon("primary"));
+level.gunfight_current_game_primary = getDvar("gunfight_current_game_primary");
 ```
 
-### Objective marker system (portable T5/T6 API)
-Simpler than createUseObject — just places a waypoint on the map:
+### Team health score display (GunMd0wn pattern)
 ```gsc
-objId = 150;    // arbitrary ID 0–255
-objective_add( objId, "active", origin );
-objective_icon( objId, "waypoint_defend" );    // waypoint_capture, waypoint_target, etc.
-objective_state( objId, "active" );            // "active", "invisible", "done", "failed"
-objective_setvisibletoplayer( objId, player ); // call per player to show
-objective_delete( objId );                      // cleanup
-```
-
-3D always-on world waypoint via HUD element:
-```gsc
-wp = newClientHudElem( player );
-wp.x = origin[0];
-wp.y = origin[1];
-wp.z = origin[2] + 40;
-wp setShader( "waypoint_defend", 12, 12 );
-wp setwaypoint( true, true );   // arg1: always show off-screen; arg2: onscreen indicator
-wp.color = ( 1, 1, 0 );
-wp.hidewheninmenu = true;
+maps\mp\gametypes\_gamescore::_setteamscore("allies", getTeamHealth("allies"));
 ```
 
 ### game[] persistence for loadouts
@@ -997,6 +904,15 @@ if ( !isDefined( game["gf_init"] ) )
 }
 level.gf_currentLoad = game["gf_loads"][ game["gf_idx"] ];
 // Advance: game["gf_idx"] = int( game["gf_rounds_done"] / 2 ); in onDeadEvent
+```
+
+### Loadout as associative array (confirmed T5)
+```gsc
+load = [];
+load["primary"]   = "famas_reflex_mp";
+load["secondary"] = "python_speed_mp";
+load["lethal"]    = "frag_grenade_mp";
+load["tactical"]  = "flash_grenade_mp";
 ```
 
 ### Singleton HUD kill pattern
@@ -1039,23 +955,6 @@ gf_giveDelayedGrenade( lethal )
 }
 ```
 
-### HUD properties — standard combo for live-round elements
-```gsc
-e.archived       = false;   // don't hide during menus / demo playback
-e.hidewheninmenu = true;    // hide during pause menu
-e.glowColor      = ( 1, 0.3, 0 );
-e.glowAlpha      = 0.5;
-```
-
-### Loadout as associative array (confirmed T5)
-```gsc
-load = [];
-load["primary"]   = "famas_reflex_mp";
-load["secondary"] = "python_speed_mp";
-load["lethal"]    = "frag_grenade_mp";
-load["tactical"]  = "flash_grenade_mp";
-```
-
 ### hideHardpointModels — canonical pattern (confirmed misterbubb T6 matches our T5 impl)
 ```gsc
 hardpoints = getentarray( "hq_hardpoint", "targetname" );
@@ -1078,6 +977,18 @@ for ( i = 0; i < hardpoints.size; i++ )
 ```
 `hp.original_origin` is read in `gf_overtime()` to place the capture zone at the correct world position.
 
+### Admin / permission pattern
+```gsc
+if ( player.guid == getDvar( "sv_adminGUID" ) ) { ... }
+// Or maintain a level.admins[] array populated at connect time
+```
+
+### T5 player methods confirmed (Xinerki duel.gsc — T5 gametype)
+```gsc
+maps\mp\gametypes\_wager::setupBlankRandomPlayer( takeAll, chooseBody )
+// clears player and optionally assigns a random body model; call before giveWeapon
+```
+
 ### T6-only patterns — do NOT use in T5 mod scripts
 
 | T6 pattern | T5 replacement |
@@ -1090,3 +1001,26 @@ for ( i = 0; i < hardpoints.size; i++ )
 | `level setClientField( "key", val )` | No T5 equivalent — use notify/HUD |
 | `level.disableclassselection = 1` | T5: `setDvar("scr_disable_cac","1")` + `replacefunc` |
 | `spawnStruct()` in mod scripts | `s = []; s["key"] = val;` |
+
+---
+
+## Design Reference (not T5-compatible)
+
+### Official Cold War Gunfight logic (BOCW source reference)
+
+Design reference only — not T5-compatible:
+- `level.gunfightroundsperloadout` — how many rounds per loadout
+- `game.var_96a8ff4a` — shuffled loadout array; `game.var_b6beb735` — current index
+- Win hierarchy: 1) last team standing, 2) overtime zone capture, 3) HP comparison
+- Overtime: map entity `gunfight_zone_center` + `gunfight_zone_trigger` required
+- Timer pauses while zone is being captured
+- `function_c4915ac()` = HP tiebreaker (sum alive players HP per team)
+- Loadout given via `takeallweapons` -> `clearperks` -> equip from bundle -> force `specialty_sprint/slide/sprintreload/sprintheal`
+- Always-on grace period: 3 seconds per round start
+
+### BO3/T7 Gunfight mod patterns (Michael Akopyan, design reference)
+- Weapon classes loaded from `gf_weapons.csv` via `TableLookup`
+- Attachments in CSV separated by `+`, parsed with `StrTok(str, "+")`
+- HUD pushed server-side via `clientfield::register` + `clientfield::set_to_player`; LUI renders it
+- Singleton HUD update: `level notify("tag"); level endon("tag")` prevents spam
+- Class select: `self.pers["class"] = level.defaultClass` + `self CloseMenu(MENU_CHANGE_CLASS)` + `globallogic_ui::closeMenus()`
