@@ -213,8 +213,8 @@ gf_giveLoadout()
     self switchToWeapon( load["primary"] );
     self giveMaxAmmo( load["primary"] );
     self giveMaxAmmo( load["secondary"] );
-    self GiveOffhandWeapon( load["lethal"] );
-    self GiveOffhandWeapon( load["tactical"] );
+    self GiveWeapon( load["lethal"] );
+    self GiveWeapon( load["tactical"] );
 
     perks = load["perks"];
     for ( i = 0; i < perks.size; i++ )
