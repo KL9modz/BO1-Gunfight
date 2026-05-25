@@ -91,7 +91,7 @@ gf_testSuite_config()
     gf_header( "Config" );
     gf_assertEq( getDvarInt( "scr_sd_numlives" ),    1,    "one life per round" );
     gf_assert(   level.healthRegenDisabled == true,        "health regen disabled" );
-    gf_assertEq( level.playerHealth_RegularRegenDelay, 0,  "regen delay = 0" );
+    gf_assert(   level.playerHealth_RegularRegenDelay > 0, "regen delay set (non-zero disables regen)" );
     gf_assertEq( level.killstreaksenabled,           0,    "killstreaks disabled" );
     gf_assertEq( getDvarInt( "compass" ),            0,    "minimap hidden" );
     gf_assertEq( level.gf_cfg_winLimit,              6,    "win limit = 6" );
@@ -114,42 +114,40 @@ gf_testSuite_loadoutPool()
     gf_header( "Loadout Pool" );
     gf_assert( isDefined( game["gf_pool"] ),          "pool exists in game[]" );
     gf_assertEq( game["gf_pool"].size, 22,            "pool has 22 entries" );
+    gf_assert( isDefined( game["gf_schedule"] ),      "schedule exists in game[]" );
+    gf_assertEq( game["gf_schedule"].size,
+        game["gf_pool"].size * level.gf_cfg_roundsPerLoadout, "schedule size = pool * roundsPerLoadout" );
 
-    // spot-check entry fields
+    // spot-check entry fields on pool[0]
     slot = game["gf_pool"][0];
-    gf_assert( isDefined( slot["primaryBase"] ),       "entry has primaryBase" );
-    gf_assert( isDefined( slot["primaryShader"] ),     "entry has primaryShader" );
-    gf_assert( isDefined( slot["primaryName"] ),       "entry has primaryName" );
-    gf_assert( isDefined( slot["primaryAtts"] ),       "entry has primaryAtts" );
-    gf_assert( isDefined( slot["perks"] ),             "entry has perks" );
-    gf_assertEq( slot["perks"].size, 3,                "entry has 3 perks" );
+    gf_assert( isDefined( slot["primary"] ),         "entry has primary" );
+    gf_assert( isDefined( slot["primaryShader"] ),   "entry has primaryShader" );
+    gf_assert( isDefined( slot["primaryName"] ),     "entry has primaryName" );
+    gf_assert( isDefined( slot["secondary"] ),       "entry has secondary" );
+    gf_assert( isDefined( slot["secondaryShader"] ), "entry has secondaryShader" );
+    gf_assert( isDefined( slot["lethal"] ),          "entry has lethal" );
+    gf_assert( isDefined( slot["lethalShader"] ),    "entry has lethalShader" );
+    gf_assert( isDefined( slot["tactical"] ),        "entry has tactical" );
 
-    // check all 22 entries have required fields + _mp suffix on base
+    // check all 22 entries: primary weapon string ends with _mp
     allValid = true;
     for ( i = 0; i < game["gf_pool"].size; i++ )
     {
-        s = game["gf_pool"][i];
-        base = s["primaryBase"];
-        stem = getSubStr( base, base.size - 3, base.size );
+        s    = game["gf_pool"][i];
+        prim = s["primary"];
+        stem = getSubStr( prim, prim.size - 3, prim.size );
         if ( stem != "_mp" )
         {
-            iPrintLn( "[FAIL] pool[" + i + "] primaryBase missing _mp: " + base );
-            logprint( "[FAIL] pool[" + i + "] primaryBase missing _mp: " + base + "\n" );
-            level.gf_tf++;
-            allValid = false;
-        }
-        if ( s["perks"].size != 3 )
-        {
-            iPrintLn( "[FAIL] pool[" + i + "] wrong perk count: " + s["perks"].size );
-            logprint( "[FAIL] pool[" + i + "] wrong perk count: " + s["perks"].size + "\n" );
+            iPrintLn( "[FAIL] pool[" + i + "] primary missing _mp suffix: " + prim );
+            logprint( "[FAIL] pool[" + i + "] primary missing _mp suffix: " + prim + "\n" );
             level.gf_tf++;
             allValid = false;
         }
     }
     if ( allValid )
     {
-        iPrintLn( "[PASS] all 22 pool entries valid" );
-        logprint( "[PASS] all 22 pool entries valid\n" );
+        iPrintLn( "[PASS] all 22 pool entries have valid primary _mp suffix" );
+        logprint( "[PASS] all 22 pool entries have valid primary _mp suffix\n" );
         level.gf_tp++;
     }
 
@@ -157,60 +155,18 @@ gf_testSuite_loadoutPool()
     for ( i = 0; i < game["gf_pool"].size; i++ )
     {
         shader = game["gf_pool"][i]["primaryShader"];
-        pfx    = getSubStr( shader, 0, 18 );   // "menu_mp_weapons_" = 16 chars
+        pfx    = getSubStr( shader, 0, 16 );   // "menu_mp_weapons_" = 16 chars
         gf_assert( pfx == "menu_mp_weapons_", "pool[" + i + "] shader prefix ok: " + shader );
     }
 }
 
 // ─── Suite: Attachment Logic ───────────────────────────────────────────────
+// gf_addRandomAttachment was removed — attachments are now baked into pool entries at init.
 
 gf_testSuite_attachmentLogic()
 {
     gf_header( "Attachment Logic" );
-
-    atts    = [];
-    atts[0] = "reflex";
-    atts[1] = "acog";
-
-    // run 10 times and verify every result ends with _mp
-    allGood = true;
-    for ( i = 0; i < 10; i++ )
-    {
-        r    = gf_addRandomAttachment( "famas_mp", atts );
-        stem = getSubStr( r, r.size - 3, r.size );
-        if ( stem != "_mp" )
-        {
-            gf_assert( false, "attachment result ends with _mp: " + r );
-            allGood = false;
-        }
-    }
-    if ( allGood )
-        gf_assert( true, "10 attachment rolls all end with _mp" );
-
-    // no-attachment path (empty list always returns base)
-    empty   = [];
-    base    = "m16_mp";
-    for ( i = 0; i < 5; i++ )
-    {
-        r = gf_addRandomAttachment( base, empty );
-        gf_assertEq( r, base, "empty att list returns base unchanged" );
-    }
-
-    // single attachment — result must be base OR base_att_mp
-    oneAtt    = [];
-    oneAtt[0] = "silencer";
-    ok = true;
-    for ( i = 0; i < 20; i++ )
-    {
-        r = gf_addRandomAttachment( "mp5k_mp", oneAtt );
-        if ( r != "mp5k_mp" && r != "mp5k_silencer_mp" )
-        {
-            gf_assert( false, "unexpected attachment result: " + r );
-            ok = false;
-        }
-    }
-    if ( ok )
-        gf_assert( true, "single-att results valid over 20 rolls" );
+    gf_skip( "attachment randomization removed — attachments baked into pool entries at init" );
 }
 
 // ─── Suite: Loadout Picking ────────────────────────────────────────────────
@@ -219,23 +175,27 @@ gf_testSuite_loadoutPicking()
 {
     gf_header( "Loadout Picking" );
 
+    if ( !isDefined( game["gf_schedule"] ) )
+    {
+        gf_skip( "loadout picking — schedule not initialized" );
+        return;
+    }
+
     savedRounds  = game["roundsplayed"];
-    savedIdx     = game["gf_idx"];
+    savedIdx     = game["gf_schedIdx"];
     savedLoad    = level.gf_currentLoad;
 
-    // round 0 → idx 0
-    game["roundsplayed"] = 0;
-    game["gf_idx"]       = -1;
-    level.gf_currentLoad = undefined;
+    // round 0 → schedIdx 0
+    game["roundsplayed"]  = 0;
+    game["gf_schedIdx"]   = -1;
+    level.gf_currentLoad  = undefined;
     gf_pickLoadout();
-    gf_assert( isDefined( level.gf_currentLoad ),    "pickLoadout defines currentLoad" );
-    gf_assert( isDefined( level.gf_currentLoad["primary"] ),   "currentLoad has primary" );
-    gf_assert( isDefined( level.gf_currentLoad["secondary"] ), "currentLoad has secondary" );
-    gf_assert( isDefined( level.gf_currentLoad["lethal"] ),    "currentLoad has lethal" );
-    gf_assert( isDefined( level.gf_currentLoad["tactical"] ),  "currentLoad has tactical" );
-    gf_assert( isDefined( level.gf_currentLoad["perks"] ),     "currentLoad has perks" );
-    gf_assertEq( level.gf_currentLoad["perks"].size, 3,        "currentLoad has 3 perks" );
-    gf_assertEq( game["gf_idx"], 0,                            "idx = 0 at round 0" );
+    gf_assert( isDefined( level.gf_currentLoad ),             "pickLoadout defines currentLoad" );
+    gf_assert( isDefined( level.gf_currentLoad["primary"] ),  "currentLoad has primary" );
+    gf_assert( isDefined( level.gf_currentLoad["secondary"] ),"currentLoad has secondary" );
+    gf_assert( isDefined( level.gf_currentLoad["lethal"] ),   "currentLoad has lethal" );
+    gf_assert( isDefined( level.gf_currentLoad["tactical"] ), "currentLoad has tactical" );
+    gf_assertEq( game["gf_schedIdx"], 0,                      "schedIdx = 0 at round 0" );
 
     // idempotent: same roundsplayed → same loadout
     firstPrimary = level.gf_currentLoad["primary"];
@@ -243,16 +203,17 @@ gf_testSuite_loadoutPicking()
     gf_pickLoadout();
     gf_assertEq( level.gf_currentLoad["primary"], firstPrimary, "pickLoadout idempotent" );
 
-    // round 2 → idx 1  (with roundsPerLoadout = 2)
+    // round 2 → schedIdx 2  (schedule is indexed directly by roundsplayed)
     game["roundsplayed"] = 2;
-    game["gf_idx"]       = -1;
+    game["gf_schedIdx"]  = -1;
+    level.gf_currentLoad = undefined;
     gf_pickLoadout();
-    expectedIdx = int( 2 / level.gf_cfg_roundsPerLoadout ) % game["gf_pool"].size;
-    gf_assertEq( game["gf_idx"], expectedIdx, "idx advances at round " + 2 );
+    expectedIdx = 2 % game["gf_schedule"].size;
+    gf_assertEq( game["gf_schedIdx"], expectedIdx, "schedIdx = " + expectedIdx + " at round 2" );
 
     // restore
     game["roundsplayed"] = savedRounds;
-    game["gf_idx"]       = savedIdx;
+    game["gf_schedIdx"]  = savedIdx;
     level.gf_currentLoad = savedLoad;
 }
 
@@ -389,44 +350,46 @@ gf_testSuite_poolShuffle()
         return;
     }
 
-    // no duplicate primaryBase entries
+    // no duplicate primary entries (full baked weapon string is unique per slot)
     seen   = [];
     dupes  = 0;
     for ( i = 0; i < game["gf_pool"].size; i++ )
     {
-        base = game["gf_pool"][i]["primaryBase"];
-        if ( isDefined( seen[base] ) )
+        prim = game["gf_pool"][i]["primary"];
+        if ( isDefined( seen[prim] ) )
         {
-            iPrintLn( "[FAIL] duplicate pool entry: " + base );
-            logprint( "[FAIL] duplicate pool entry: " + base + "\n" );
+            iPrintLn( "[FAIL] duplicate pool entry: " + prim );
+            logprint( "[FAIL] duplicate pool entry: " + prim + "\n" );
             level.gf_tf++;
             dupes++;
         }
         else
-            seen[base] = 1;
+            seen[prim] = 1;
     }
     if ( dupes == 0 )
-        gf_assert( true, "all 22 pool entries have unique primaryBase" );
+        gf_assert( true, "all 22 pool entries have unique primary" );
 
-    // spot-check: representative weapon from each class present
-    mustHave    = [];
-    mustHave[0] = "famas_mp";     // AR
-    mustHave[1] = "mp5k_mp";      // SMG
-    mustHave[2] = "hk21_mp";      // LMG
-    mustHave[3] = "l96a1_mp";     // Sniper
-    mustHave[4] = "spas_mp";      // Shotgun
-    for ( i = 0; i < mustHave.size; i++ )
+    // spot-check: one representative weapon base per class must be present
+    classWeapons    = [];
+    classWeapons[0] = "famas";    // AR
+    classWeapons[1] = "mp5k";     // SMG
+    classWeapons[2] = "hk21";     // LMG
+    classWeapons[3] = "l96a1";    // Sniper
+    classWeapons[4] = "spas";     // Shotgun
+    for ( i = 0; i < classWeapons.size; i++ )
     {
+        base  = classWeapons[i];
         found = false;
         for ( j = 0; j < game["gf_pool"].size; j++ )
         {
-            if ( game["gf_pool"][j]["primaryBase"] == mustHave[i] )
+            prim = game["gf_pool"][j]["primary"];
+            if ( getSubStr( prim, 0, base.size ) == base )
             {
                 found = true;
                 break;
             }
         }
-        gf_assert( found, "pool contains " + mustHave[i] );
+        gf_assert( found, "pool contains " + base + " class" );
     }
 }
 
@@ -459,46 +422,44 @@ gf_testSuite_loadoutCycle()
 {
     gf_header( "Loadout Cycle Rotation" );
 
-    if ( !isDefined( game["gf_pool"] ) )
+    if ( !isDefined( game["gf_schedule"] ) )
     {
-        gf_skip( "loadout cycle — pool not initialized" );
+        gf_skip( "loadout cycle — schedule not initialized" );
         return;
     }
 
     savedRounds = game["roundsplayed"];
-    savedIdx    = game["gf_idx"];
+    savedIdx    = game["gf_schedIdx"];
     savedLoad   = level.gf_currentLoad;
 
-    poolSz = game["gf_pool"].size;   // 22
+    schedSz = game["gf_schedule"].size;   // pool.size * roundsPerLoadout
 
-    // full cycle: rounds = poolSz * roundsPerLoadout → idx wraps back to 0
-    game["roundsplayed"] = poolSz * level.gf_cfg_roundsPerLoadout;
-    game["gf_idx"]       = -1;
+    // full cycle: roundsplayed = schedSz wraps schedIdx back to 0
+    game["roundsplayed"] = schedSz;
+    game["gf_schedIdx"]  = -1;
     level.gf_currentLoad = undefined;
     gf_pickLoadout();
-    gf_assertEq( game["gf_idx"], 0, "idx wraps to 0 at full cycle (round " + game["roundsplayed"] + ")" );
+    gf_assertEq( game["gf_schedIdx"], 0, "schedIdx wraps to 0 at full cycle (round " + game["roundsplayed"] + ")" );
 
-    // last slot before wrap: rounds = (poolSz * roundsPerLoadout) - roundsPerLoadout
-    lastRound = poolSz * level.gf_cfg_roundsPerLoadout - level.gf_cfg_roundsPerLoadout;
+    // last slot: roundsplayed = schedSz - 1 → idx = schedSz - 1
+    lastRound = schedSz - 1;
     game["roundsplayed"] = lastRound;
-    game["gf_idx"]       = -1;
+    game["gf_schedIdx"]  = -1;
     level.gf_currentLoad = undefined;
     gf_pickLoadout();
-    expectedLast = int( lastRound / level.gf_cfg_roundsPerLoadout ) % poolSz;
-    gf_assertEq( game["gf_idx"], expectedLast, "idx = " + expectedLast + " at last slot before wrap" );
+    gf_assertEq( game["gf_schedIdx"], lastRound, "schedIdx = last slot before wrap" );
 
-    // half-way through pool
-    midRound = int( poolSz / 2 ) * level.gf_cfg_roundsPerLoadout;
+    // half-way through schedule
+    midRound = int( schedSz / 2 );
     game["roundsplayed"] = midRound;
-    game["gf_idx"]       = -1;
+    game["gf_schedIdx"]  = -1;
     level.gf_currentLoad = undefined;
     gf_pickLoadout();
-    expectedMid = int( midRound / level.gf_cfg_roundsPerLoadout ) % poolSz;
-    gf_assertEq( game["gf_idx"], expectedMid, "idx = " + expectedMid + " at pool midpoint" );
+    gf_assertEq( game["gf_schedIdx"], midRound % schedSz, "schedIdx = schedule midpoint" );
 
     // restore
     game["roundsplayed"] = savedRounds;
-    game["gf_idx"]       = savedIdx;
+    game["gf_schedIdx"]  = savedIdx;
     level.gf_currentLoad = savedLoad;
 }
 
@@ -511,9 +472,9 @@ gf_testSuite_sdCompatibility()
     gf_header( "SD Compatibility" );
 
     // ── Our callbacks still registered ─────────────────────────────────
-    gf_assert( isDefined( level.onDeadEvent ),   "level.onDeadEvent is set" );
-    gf_assert( isDefined( level.onTimeLimit ),   "level.onTimeLimit is set" );
-    gf_assert( isDefined( level.onGiveLoadout ), "level.onGiveLoadout is set" );
+    gf_assert( isDefined( level.onDeadEvent ),     "level.onDeadEvent is set" );
+    gf_assert( isDefined( level.onTimeLimit ),     "level.onTimeLimit is set" );
+    gf_assert( isDefined( level.playerSpawnedCB ), "level.playerSpawnedCB is set" );
 
     // ── SD game[] state our winner logic depends on ────────────────────
     gf_assert( isDefined( game["attackers"] ), "game[attackers] defined — needed by gf_onDeadEvent" );
@@ -536,17 +497,16 @@ gf_testSuite_sdCompatibility()
     // ── Class select backup dvar ───────────────────────────────────────
     gf_assertEq( getDvarInt( "scr_disable_cac" ), 1, "scr_disable_cac = 1" );
 
-    // ── Bomb vars — SD's default onDeadEvent reads these to pick winner;
-    //    our override bypasses it, but they must stay 0 so bomb HUD
-    //    prompts never appear and SD's bomb timers never fire.
+    // ── Bomb vars — our override bypasses SD's bomb logic; they must stay
+    //    at 0 so bomb HUD prompts never appear and bomb timers never fire.
     gf_assertEq( level.bombplanted,  0, "bombplanted = 0 (suppress working)" );
     gf_assertEq( level.bombexploded, 0, "bombexploded = 0" );
     gf_assertEq( level.bombdefused,  0, "bombdefused = 0" );
 
     // ── Killstreaks and regen still off (verify SD didn't re-enable) ───
-    gf_assertEq( level.killstreaksenabled,           0,    "killstreaks still disabled" );
-    gf_assert(   level.healthRegenDisabled == true,        "health regen still disabled" );
-    gf_assertEq( level.playerHealth_RegularRegenDelay, 0,  "regen delay still 0" );
+    gf_assertEq( level.killstreaksenabled,            0,    "killstreaks still disabled" );
+    gf_assert(   level.healthRegenDisabled == true,         "health regen still disabled" );
+    gf_assert(   level.playerHealth_RegularRegenDelay > 0,  "regen delay still set (non-zero)" );
 
     // ── Minimap still hidden ───────────────────────────────────────────
     gf_assertEq( getDvarInt( "compass" ), 0, "minimap still hidden" );
@@ -557,9 +517,7 @@ gf_testSuite_sdCompatibility()
 gf_testSuite_notImplemented()
 {
     gf_header( "Not Yet Implemented (future)" );
-    gf_skip( "HP tiebreaker on timeout — overtime not built" );
-    gf_skip( "one team 1 HP more wins on timeout — overtime not built" );
-    gf_skip( "timeout tie = draw — overtime not built" );
     gf_skip( "spectator mode on death — engine-handled, verify manually" );
     gf_skip( "damage values — requires live DoDamage call in session" );
+    gf_skip( "perk icon shader names — unverified in T5, check in-game" );
 }
