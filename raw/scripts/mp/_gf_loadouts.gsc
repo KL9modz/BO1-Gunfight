@@ -206,7 +206,6 @@ gf_giveLoadout()
     load = level.gf_currentLoad;
 
     self takeAllWeapons();
-    self clearperks();
 
     self GiveWeapon( load["primary"] );
     self GiveWeapon( load["secondary"] );

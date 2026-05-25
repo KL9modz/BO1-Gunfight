@@ -42,7 +42,8 @@ $banned = @(
     @{ Re = 'level\s+setClientField';        Msg = 'setClientField has no T5 equivalent' },
     @{ Re = 'level\.disableclassselection';  Msg = 'disableclassselection ignored — use replacefunc on beginClassChoice' },
     @{ Re = 'GiveWeapon\s*\([^)]+,\s*\d+';  Msg = 'GiveWeapon with numeric 3rd arg is T6 camo — omit in T5' },
-    @{ Re = '"\s*\+\s*"\+[a-z]';            Msg = 'possible T6 attachment format (+reflex) — use _reflex_mp suffix in T5' }
+    @{ Re = '"\s*\+\s*"\+[a-z]';            Msg = 'possible T6 attachment format (+reflex) — use _reflex_mp suffix in T5' },
+    @{ Re = '\bclearperks\s*\(';            Msg = 'clearperks() is T6-only — remove it; SetPerk() overwrites slots directly in T5' }
 )
 
 Write-Head "── Banned T5 patterns"
