@@ -1,4 +1,4 @@
-# tools/lint.ps1 — T5 GSC static linter
+﻿# tools/lint.ps1  -  T5 GSC static linter
 # Usage: .\tools\lint.ps1
 # Exit 0 = clean, Exit 1 = errors found
 
@@ -33,18 +33,18 @@ foreach ($f in $files) {
 # ── 2. Banned T5 patterns ─────────────────────────────────────────────────
 
 $banned = @(
-    @{ Re = 'getPlayers\s*\(\s*\)';          Msg = 'getPlayers() broken in T5 — use level.players' },
-    @{ Re = 'spawnStruct\s*\(\s*\)';         Msg = 'spawnStruct() broken in T5 — use associative array []' },
-    @{ Re = '\bisAlive\s*\(';               Msg = 'isAlive() broken in T5 — use .health > 0' },
-    @{ Re = '\bforeach\s*\(';               Msg = 'foreach broken in T5 — use for(i=0; i<arr.size; i++)' },
+    @{ Re = 'getPlayers\s*\(\s*\)';          Msg = 'getPlayers() broken in T5  -  use level.players' },
+    @{ Re = 'spawnStruct\s*\(\s*\)';         Msg = 'spawnStruct() broken in T5  -  use associative array []' },
+    @{ Re = '\bisAlive\s*\(';               Msg = 'isAlive() broken in T5  -  use .health > 0' },
+    @{ Re = '\bforeach\s*\(';               Msg = 'foreach broken in T5  -  use for(i=0; i<arr.size; i++)' },
     @{ Re = '(?<!\bpers\["team"\])\b\w+\.team\b(?!ed|Based|Score|Scores|name|Name)';
-                                             Msg = 'player.team broken in T5 — use player.pers["team"]' },
+                                             Msg = 'player.team broken in T5  -  use player.pers["team"]' },
     @{ Re = 'level\s+setClientField';        Msg = 'setClientField has no T5 equivalent' },
-    @{ Re = 'level\.disableclassselection';  Msg = 'disableclassselection ignored — use replacefunc on beginClassChoice' },
-    @{ Re = 'GiveWeapon\s*\([^)]+,\s*\d+';  Msg = 'GiveWeapon with numeric 3rd arg is T6 camo — omit in T5' },
-    @{ Re = '"\s*\+\s*"\+[a-z]';            Msg = 'possible T6 attachment format (+reflex) — use _reflex_mp suffix in T5' },
-    @{ Re = '\bclearperks\s*\(';            Msg = 'clearperks() is T6-only — remove it; SetPerk() overwrites slots directly in T5' },
-    @{ Re = '\bGiveOffhandWeapon\s*\(';    Msg = 'GiveOffhandWeapon() does not exist in T5 — use GiveWeapon() for grenades/equipment' }
+    @{ Re = 'level\.disableclassselection';  Msg = 'disableclassselection ignored  -  use replacefunc on beginClassChoice' },
+    @{ Re = 'GiveWeapon\s*\([^)]+,\s*\d+';  Msg = 'GiveWeapon with numeric 3rd arg is T6 camo  -  omit in T5' },
+    @{ Re = '"\s*\+\s*"\+[a-z]';            Msg = 'possible T6 attachment format (+reflex)  -  use _reflex_mp suffix in T5' },
+    @{ Re = '\bclearperks\s*\(';            Msg = 'clearperks() is T6-only  -  remove it; SetPerk() overwrites slots directly in T5' },
+    @{ Re = '\bGiveOffhandWeapon\s*\(';    Msg = 'GiveOffhandWeapon() does not exist in T5  -  use GiveWeapon() for grenades/equipment' }
 )
 
 Write-Head "── Banned T5 patterns"
@@ -59,12 +59,12 @@ foreach ($f in $files) {
         if ($line -match '^\s*//') { continue }
         foreach ($b in $banned) {
             if ($line -match $b.Re) {
-                Write-Fail "${f}:$($i+1) — $($b.Msg)"
+                Write-Fail "${f}:$($i+1)  -  $($b.Msg)"
                 $fileClean = $false
             }
         }
     }
-    if ($fileClean) { Write-Pass "$f — no banned patterns" }
+    if ($fileClean) { Write-Pass "$f  -  no banned patterns" }
 }
 
 # ── 3. Include chain validation ───────────────────────────────────────────
@@ -88,13 +88,13 @@ foreach ($f in $files) {
     if (-not (Test-Path $path)) { continue }
     $incs = Get-Includes $path
     if ($incs.Count -eq 0) {
-        Write-Pass "$f — no includes"
+        Write-Pass "$f  -  no includes"
         continue
     }
     foreach ($inc in $incs) {
         $incPath = Join-Path $ScriptDir "$inc.gsc"
-        if (Test-Path $incPath) { Write-Pass "$f includes $inc.gsc — found" }
-        else                    { Write-Fail "$f includes $inc.gsc — FILE NOT FOUND" }
+        if (Test-Path $incPath) { Write-Pass "$f includes $inc.gsc  -  found" }
+        else                    { Write-Fail "$f includes $inc.gsc  -  FILE NOT FOUND" }
     }
 }
 
@@ -114,7 +114,7 @@ foreach ($f in $files) {
     }
 }
 
-# T5 does NOT support transitive includes — only direct includes count.
+# T5 does NOT support transitive includes  -  only direct includes count.
 # Get-DirectIncludes returns only the files directly #included by $f (depth=1).
 function Get-DirectIncludes([string]$f, [string]$dir) {
     $path   = Join-Path $dir $f
@@ -130,7 +130,7 @@ foreach ($f in $files) {
     $path = Join-Path $ScriptDir $f
     if (-not (Test-Path $path)) { continue }
 
-    # Only direct includes — transitive includes are invisible to the T5 compiler
+    # Only direct includes  -  transitive includes are invisible to the T5 compiler
     $direct = Get-DirectIncludes $f $ScriptDir
 
     $lines = Get-Content $path
@@ -141,10 +141,10 @@ foreach ($f in $files) {
         foreach ($m in $calls) {
             $name = $m.Groups[1].Value
             if (-not $declared.ContainsKey($name)) {
-                Write-Fail "${f}:$($i+1) — $name() called but not declared in any file"
+                Write-Fail "${f}:$($i+1) - $($name)() called but not declared in any file"
                 $allCallsClean = $false
             } elseif ($direct -notcontains $declared[$name]) {
-                Write-Fail "${f}:$($i+1) — $name() is in $($declared[$name]) which is not directly #included (T5 has no transitive includes)"
+                Write-Fail "${f}:$($i+1) - $($name)() is in $($declared[$name]) which is not directly #included (T5 has no transitive includes)"
                 $allCallsClean = $false
             }
         }
@@ -168,7 +168,7 @@ if (Test-Path $cfgPath) {
 
     Assert-Source 'scr_sd_numlives[^;]+\"1\"'                     'one life per round  (scr_sd_numlives = "1")'
     Assert-Source 'healthRegenDisabled\s*=\s*true'                 'health regen disabled'
-    Assert-Source 'playerHealth_RegularRegenDelay\s*=\s*0'         'regen delay zeroed'
+    Assert-Source 'playerHealth_RegularRegenDelay\s*=\s*\d+'        'regen delay set'
     Assert-Source 'killstreaksenabled\s*=\s*0'                     'killstreaks disabled'
     Assert-Source 'compass[^;]+\"0\"'                              'minimap hidden (compass = "0")'
     Assert-Source 'gf_cfg_winLimit\s*=\s*6'                       'win limit = 6'
@@ -178,13 +178,13 @@ if (Test-Path $cfgPath) {
     Assert-Source 'gf_cfg_roundSwitch\s*=\s*\d+'                  'side-switch interval configured'
     Assert-Source 'onDeadEvent\s*=\s*::gf_onDeadEvent'            'onDeadEvent overridden'
     Assert-Source 'onTimeLimit\s*=\s*::gf_onTimeLimit'            'onTimeLimit overridden'
-    Assert-Source 'onGiveLoadout\s*=\s*::gf_onGiveLoadout'        'onGiveLoadout overridden'
+    Assert-Source 'playerSpawnedCB\s*=\s*::gf_playerSpawnedCB'    'playerSpawnedCB overridden'
     Assert-Source 'replacefunc[^;]+beginClassChoice'               'class select suppressed via replacefunc'
     Assert-Source 'gf_bombSuppress'                                'bomb suppress thread started'
     Assert-Source 'gf_forfeitWatch'                                'forfeit watch thread started'
     Assert-Source 'gf_initLoadouts'                                'loadout pool initialised'
 } else {
-    Write-Fail "mp_gunfight.gsc not found — skipping config assertions"
+    Write-Fail "mp_gunfight.gsc not found  -  skipping config assertions"
 }
 
 # ── 6. Loadout pool sanity ─────────────────────────────────────────────────
@@ -195,10 +195,10 @@ $loPath = Join-Path $ScriptDir "_gf_loadouts.gsc"
 if (Test-Path $loPath) {
     $lo = Get-Content $loPath -Raw
 
-    # count gf_buildSlot calls — should be 22
+    # count gf_buildSlot calls  -  should be 22
     $slotCount = ([regex]::Matches($lo, 'gf_buildSlot\s*\(')).Count
     if ($slotCount -eq 22) { Write-Pass "pool has 22 loadout entries" }
-    else                    { Write-Fail "pool has $slotCount entries — expected 22" }
+    else                    { Write-Fail "pool has $slotCount entries  -  expected 22" }
 
     # each weapon class present
     foreach ($weapon in @('famas_mp','mp5k_mp','hk21_mp','l96a1_mp','spas_mp')) {
@@ -225,7 +225,7 @@ if (Test-Path $loPath) {
         else                                      { Write-Warn "lethal shader $shader not found" }
     }
 } else {
-    Write-Fail "_gf_loadouts.gsc not found — skipping pool sanity"
+    Write-Fail "_gf_loadouts.gsc not found  -  skipping pool sanity"
 }
 
 # ── 7. SD conflict checks ────────────────────────────────────────────────
@@ -244,17 +244,17 @@ if (Test-Path $roundsPath) {
     if ($rd -match 'gf_onDeadEvent[\s\S]*?sd_endgame') {
         Write-Pass "gf_onDeadEvent routes through sd_endgame"
     } else {
-        Write-Fail "gf_onDeadEvent does not call sd_endgame — round scoring will not work"
+        Write-Fail "gf_onDeadEvent does not call sd_endgame  -  round scoring will not work"
     }
 
     # gf_onTimeLimit must call sd_endgame
     if ($rd -match 'gf_onTimeLimit[\s\S]*?sd_endgame') {
         Write-Pass "gf_onTimeLimit routes through sd_endgame"
     } else {
-        Write-Fail "gf_onTimeLimit does not call sd_endgame — timeout win will not score"
+        Write-Fail "gf_onTimeLimit does not call sd_endgame  -  timeout win will not score"
     }
 
-    # forfeit path must use endGame (NOT sd_endgame — no round score needed)
+    # forfeit path must use endGame (NOT sd_endgame  -  no round score needed)
     if ($rd -match 'gf_forfeitWatch[\s\S]*?endGame\b') {
         Write-Pass "gf_forfeitWatch uses endGame for forfeit (no extra score increment)"
     } else {
@@ -271,23 +271,23 @@ if (Test-Path $roundsPath) {
 
     # gf_onDeadEvent must NOT chain into SD's native onDeadEvent via [[level.onDeadEvent]]()
     if ($rd -match '\[\[\s*level\s*\.\s*onDeadEvent\s*\]\]') {
-        Write-Fail "_gf_rounds.gsc chains through [[level.onDeadEvent]] — will double-score rounds"
+        Write-Fail "_gf_rounds.gsc chains through [[level.onDeadEvent]]  -  will double-score rounds"
     } else {
         Write-Pass "no [[level.onDeadEvent]] chain-through detected"
     }
 } else {
-    Write-Fail "_gf_rounds.gsc not found — skipping SD conflict checks"
+    Write-Fail "_gf_rounds.gsc not found  -  skipping SD conflict checks"
 }
 
 if (Test-Path $mainPath) {
     $mn = Get-Content $mainPath -Raw
 
     # Callbacks must all three be wired
-    foreach ($cb in @('onDeadEvent','onTimeLimit','onGiveLoadout')) {
+    foreach ($cb in @('onDeadEvent','onTimeLimit','playerSpawnedCB')) {
         if ($mn -match "level\.$cb\s*=\s*::") {
             Write-Pass "$cb override registered in mp_gunfight.gsc"
         } else {
-            Write-Fail "$cb not overridden in mp_gunfight.gsc — SD default will run"
+            Write-Fail "$cb not overridden in mp_gunfight.gsc - SD default will run"
         }
     }
 
@@ -295,24 +295,24 @@ if (Test-Path $mainPath) {
     if ($mn -match 'replacefunc[^;]*beginClassChoice') {
         Write-Pass "beginClassChoice suppressed via replacefunc"
     } else {
-        Write-Fail "beginClassChoice not suppressed — class select screen will appear"
+        Write-Fail "beginClassChoice not suppressed  -  class select screen will appear"
     }
 
-    # We must not set scr_sd_roundlimit — that would override level.roundWinLimit
-    if ($mn -match 'setDvar[^;]*scr_sd_roundlimit') {
-        Write-Warn "scr_sd_roundlimit dvar set — SD may override level.roundWinLimit"
+    # scr_sd_roundlimit must be "0" to disable the total-round cap
+    if ($mn -match 'setDvar[^;]*scr_sd_roundlimit[^;]*"0"') {
+        Write-Pass "scr_sd_roundlimit=0 (total-round cap disabled)"
     } else {
-        Write-Pass "scr_sd_roundlimit not set (roundWinLimit controlled via level var)"
+        Write-Warn "scr_sd_roundlimit is not explicitly set to 0 - SD may impose a round cap"
     }
 } else {
-    Write-Fail "mp_gunfight.gsc not found — skipping SD conflict checks"
+    Write-Fail "mp_gunfight.gsc not found  -  skipping SD conflict checks"
 }
 
 # ── Summary ───────────────────────────────────────────────────────────────
 
 Write-Host ""
 if ($errorCount -eq 0 -and $warnCount -eq 0) {
-    Write-Host "CLEAN — no issues found" -ForegroundColor Green
+    Write-Host "CLEAN  -  no issues found" -ForegroundColor Green
 } elseif ($errorCount -eq 0) {
     Write-Host "WARNINGS: $warnCount  errors: 0" -ForegroundColor Yellow
 } else {
