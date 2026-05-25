@@ -114,15 +114,15 @@ foreach ($f in $files) {
     }
 }
 
-# build transitive include chain per file
-function Get-IncludeChain([string]$f, [string]$dir, [int]$depth = 0) {
-    if ($depth -gt 5) { return @() }
-    $path  = Join-Path $dir $f
-    $chain = @($f)
+# T5 does NOT support transitive includes — only direct includes count.
+# Get-DirectIncludes returns only the files directly #included by $f (depth=1).
+function Get-DirectIncludes([string]$f, [string]$dir) {
+    $path   = Join-Path $dir $f
+    $result = @($f)
     foreach ($inc in (Get-Includes $path)) {
-        $chain += Get-IncludeChain "$inc.gsc" $dir ($depth + 1)
+        $result += "$inc.gsc"
     }
-    return $chain | Select-Object -Unique
+    return $result | Select-Object -Unique
 }
 
 $allCallsClean = $true
@@ -130,7 +130,8 @@ foreach ($f in $files) {
     $path = Join-Path $ScriptDir $f
     if (-not (Test-Path $path)) { continue }
 
-    $chain = Get-IncludeChain $f $ScriptDir
+    # Only direct includes — transitive includes are invisible to the T5 compiler
+    $direct = Get-DirectIncludes $f $ScriptDir
 
     $lines = Get-Content $path
     for ($i = 0; $i -lt $lines.Count; $i++) {
@@ -142,14 +143,14 @@ foreach ($f in $files) {
             if (-not $declared.ContainsKey($name)) {
                 Write-Fail "${f}:$($i+1) — $name() called but not declared in any file"
                 $allCallsClean = $false
-            } elseif ($chain -notcontains $declared[$name]) {
-                Write-Fail "${f}:$($i+1) — $name() declared in $($declared[$name]) but that file is not in the include chain"
+            } elseif ($direct -notcontains $declared[$name]) {
+                Write-Fail "${f}:$($i+1) — $name() is in $($declared[$name]) which is not directly #included (T5 has no transitive includes)"
                 $allCallsClean = $false
             }
         }
     }
 }
-if ($allCallsClean) { Write-Pass "all gf_* calls resolve in include chain" }
+if ($allCallsClean) { Write-Pass "all gf_* calls have direct #include coverage" }
 
 # ── 5. Config assertions ──────────────────────────────────────────────────
 # Parse mp_gunfight.gsc and assert required game rules are set correctly.
