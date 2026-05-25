@@ -1,5 +1,5 @@
 // Gunfight v2 — In-Engine Test Harness
-// Enable: set gf_test 1  in the Plutonium console, then loadMod + map_restart
+// Disable: set gf_test 0  in the Plutonium console, then loadMod + map_restart
 // Results appear on-screen (iPrintLn) and in the server log (logprint)
 
 #include scripts\mp\_gf_rounds;
@@ -7,7 +7,7 @@
 
 init()
 {
-    if ( getDvarInt( "gf_test" ) != 1 )
+    if ( getDvarInt( "gf_test" ) == 0 )
         return;
 
     // wait one frame for mp_gunfight::init() to finish
