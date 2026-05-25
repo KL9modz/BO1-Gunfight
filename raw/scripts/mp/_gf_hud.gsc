@@ -29,75 +29,100 @@ gf_showLoadoutHUD()
 
     load = level.gf_currentLoad;
 
-    yPos = [];
-    yPos[0] = -128;
-    yPos[1] = -114;
-    yPos[2] = -100;
+    // weapon rows: primary, secondary, lethal
+    wYPos    = [];   wYPos[0]    = -128;   wYPos[1]    = -114;   wYPos[2]    = -100;
+    wIconW   = [];   wIconW[0]   = 64;     wIconW[1]   = 64;     wIconW[2]   = 32;
 
-    shaders = [];
-    shaders[0] = load["primaryShader"];
-    shaders[1] = load["secondaryShader"];
-    shaders[2] = load["lethalShader"];
+    wShaders = [];
+    wShaders[0] = load["primaryShader"];
+    wShaders[1] = load["secondaryShader"];
+    wShaders[2] = load["lethalShader"];
 
-    names = [];
-    names[0] = load["primaryName"];
-    names[1] = load["secondaryName"];
-    names[2] = load["lethalName"];
+    wNames = [];
+    wNames[0] = load["primaryName"];
+    wNames[1] = load["secondaryName"];
+    wNames[2] = load["lethalName"];
 
-    iconW = [];
-    iconW[0] = 64; iconW[1] = 64; iconW[2] = 32;
+    // perk rows: lightweight, hardened, marathon
+    // shader names are unverified in T5 — icon shows blank if wrong, no crash
+    pYPos    = [];   pYPos[0]    = -84;    pYPos[1]    = -70;    pYPos[2]    = -56;
 
-    icons = [];
-    texts = [];
+    pShaders = [];
+    pShaders[0] = "specialty_lightweight";
+    pShaders[1] = "specialty_hardened";
+    pShaders[2] = "specialty_marathon";
+
+    pNames = [];
+    pNames[0] = "Lightweight";
+    pNames[1] = "Hardened";
+    pNames[2] = "Marathon";
+
+    wIcons = [];   wTexts = [];
+    pIcons = [];   pTexts = [];
 
     for ( i = 0; i < 3; i++ )
     {
         e = newClientHudElem( self );
-        e.horzAlign      = "right";
-        e.vertAlign      = "middle";
-        e.alignX         = "right";
-        e.alignY         = "middle";
-        e.hidewheninmenu = true;
-        e.sort           = 2;
-        e.x              = 400;
-        e.y              = yPos[i];
-        e setShader( shaders[i], iconW[i], 32 );
+        e.horzAlign = "right";   e.vertAlign = "middle";
+        e.alignX    = "right";   e.alignY    = "middle";
+        e.hidewheninmenu = true;   e.sort = 2;
+        e.x = 400;   e.y = wYPos[i];
+        e setShader( wShaders[i], wIconW[i], 32 );
         e moveOverTime( 0.3 );
         e.x = -5;
-        icons[i] = e;
+        wIcons[i] = e;
 
         t = newClientHudElem( self );
-        t.horzAlign      = "right";
-        t.vertAlign      = "middle";
-        t.alignX         = "right";
-        t.alignY         = "middle";
-        t.font           = "smallfixed";
-        t.fontScale      = 1.0;
-        t.hidewheninmenu = true;
-        t.sort           = 2;
-        t.x              = 400;
-        t.y              = yPos[i];
-        t setText( names[i] );
+        t.horzAlign = "right";   t.vertAlign = "middle";
+        t.alignX    = "right";   t.alignY    = "middle";
+        t.font = "smallfixed";   t.fontScale = 1.0;
+        t.hidewheninmenu = true;   t.sort = 2;
+        t.x = 400;   t.y = wYPos[i];
+        t setText( wNames[i] );
         t moveOverTime( 0.3 );
         t.x = -72;
-        texts[i] = t;
+        wTexts[i] = t;
+    }
+
+    for ( i = 0; i < 3; i++ )
+    {
+        e = newClientHudElem( self );
+        e.horzAlign = "right";   e.vertAlign = "middle";
+        e.alignX    = "right";   e.alignY    = "middle";
+        e.hidewheninmenu = true;   e.sort = 2;
+        e.x = 400;   e.y = pYPos[i];
+        e setShader( pShaders[i], 32, 16 );
+        e moveOverTime( 0.3 );
+        e.x = -5;
+        pIcons[i] = e;
+
+        t = newClientHudElem( self );
+        t.horzAlign = "right";   t.vertAlign = "middle";
+        t.alignX    = "right";   t.alignY    = "middle";
+        t.font = "smallfixed";   t.fontScale = 1.0;
+        t.hidewheninmenu = true;   t.sort = 2;
+        t.x = 400;   t.y = pYPos[i];
+        t setText( pNames[i] );
+        t moveOverTime( 0.3 );
+        t.x = -72;
+        pTexts[i] = t;
     }
 
     wait 5.5;
 
     for ( i = 0; i < 3; i++ )
     {
-        icons[i] moveOverTime( 0.3 );
-        icons[i].x = 400;
-        texts[i] moveOverTime( 0.3 );
-        texts[i].x = 400;
+        wIcons[i] moveOverTime( 0.3 );   wIcons[i].x = 400;
+        wTexts[i] moveOverTime( 0.3 );   wTexts[i].x = 400;
+        pIcons[i] moveOverTime( 0.3 );   pIcons[i].x = 400;
+        pTexts[i] moveOverTime( 0.3 );   pTexts[i].x = 400;
     }
 
     wait 0.4;
 
     for ( i = 0; i < 3; i++ )
     {
-        icons[i].alpha = 0;
-        texts[i].alpha = 0;
+        wIcons[i].alpha = 0;   wTexts[i].alpha = 0;
+        pIcons[i].alpha = 0;   pTexts[i].alpha = 0;
     }
 }

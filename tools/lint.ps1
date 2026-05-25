@@ -195,15 +195,15 @@ $loPath = Join-Path $ScriptDir "_gf_loadouts.gsc"
 if (Test-Path $loPath) {
     $lo = Get-Content $loPath -Raw
 
-    # count gf_buildSlot calls  -  should be 22
-    $slotCount = ([regex]::Matches($lo, 'gf_buildSlot\s*\(')).Count
+    # count pool slot assignments  -  should be 22
+    $slotCount = ([regex]::Matches($lo, 'pool\[n\]\s*=\s*gf_buildLoadout\s*\(')).Count
     if ($slotCount -eq 22) { Write-Pass "pool has 22 loadout entries" }
     else                    { Write-Fail "pool has $slotCount entries  -  expected 22" }
 
-    # each weapon class present
-    foreach ($weapon in @('famas_mp','mp5k_mp','hk21_mp','l96a1_mp','spas_mp')) {
-        if ($lo -match [regex]::Escape($weapon)) { Write-Pass "pool contains $weapon" }
-        else                                      { Write-Fail "pool missing $weapon" }
+    # each weapon class present (base name only; attachments are now baked in)
+    foreach ($weapon in @('famas','mp5k','hk21','l96a1','spas')) {
+        if ($lo -match $weapon) { Write-Pass "pool contains $weapon" }
+        else                    { Write-Fail "pool missing $weapon" }
     }
 
     # shader prefix sanity

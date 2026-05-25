@@ -1,6 +1,7 @@
 // Gunfight v2 — Loadout System
-// 22-entry pool (AR×7, SMG×6, LMG×4, Sniper×2, Shotgun×2)
-// Persisted in game[] so it survives SD round cycling
+// 22 fully pre-built loadouts, shuffled once per match and expanded into a
+// round schedule. All players read the same game["roundsplayed"] index so
+// loadout sync is guaranteed by construction.
 
 #include scripts\mp\_gf_hud;
 
@@ -11,92 +12,147 @@ gf_initLoadouts()
     if ( isDefined( game["gf_init"] ) )
         return;
 
-    // perk sets per class (no #define in T5)
-    arPerks      = [];
-    arPerks[0]   = "specialty_fastreload";
-    arPerks[1]   = "specialty_bulletaccuracy";
-    arPerks[2]   = "specialty_gpsjammer";
-
-    smgPerks     = [];
-    smgPerks[0]  = "specialty_movefaster";
-    smgPerks[1]  = "specialty_fastreload";
-    smgPerks[2]  = "specialty_quieter";
-
-    lmgPerks     = [];
-    lmgPerks[0]  = "specialty_bulletpenetration";
-    lmgPerks[1]  = "specialty_fastreload";
-    lmgPerks[2]  = "specialty_armorvest";
-
-    snpPerks     = [];
-    snpPerks[0]  = "specialty_holdbreath";
-    snpPerks[1]  = "specialty_gpsjammer";
-    snpPerks[2]  = "specialty_quieter";
-
-    sgPerks      = [];
-    sgPerks[0]   = "specialty_movefaster";
-    sgPerks[1]   = "specialty_fastreload";
-    sgPerks[2]   = "specialty_armorvest";
-
-    // AR attachments
-    arAtts       = [];
-    arAtts[0]    = "reflex";
-    arAtts[1]    = "acog";
-    arAtts[2]    = "silencer";
-    arAtts[3]    = "grip";
-
-    // SMG attachments
-    smgAtts      = [];
-    smgAtts[0]   = "reflex";
-    smgAtts[1]   = "silencer";
-    smgAtts[2]   = "extclip";
-    smgAtts[3]   = "rf";
-
-    // LMG attachments
-    lmgAtts      = [];
-    lmgAtts[0]   = "grip";
-    lmgAtts[1]   = "reflex";
-    lmgAtts[2]   = "extclip";
-
-    // Sniper attachments
-    snpAtts      = [];
-    snpAtts[0]   = "vzoom";
-
     pool = [];
     n    = 0;
 
-    // ── AR ×7 ────────────────────────────────────────────────────────
-    pool[n] = gf_buildSlot( "famas_mp",    "FAMAS",    "menu_mp_weapons_famas",    arAtts, arPerks ); n++;
-    pool[n] = gf_buildSlot( "m16_mp",      "M16",      "menu_mp_weapons_m16",      arAtts, arPerks ); n++;
-    pool[n] = gf_buildSlot( "aug_mp",      "AUG",      "menu_mp_weapons_aug",      arAtts, arPerks ); n++;
-    pool[n] = gf_buildSlot( "galil_mp",    "Galil",    "menu_mp_weapons_galil",    arAtts, arPerks ); n++;
-    pool[n] = gf_buildSlot( "commando_mp", "Commando", "menu_mp_weapons_commando", arAtts, arPerks ); n++;
-    pool[n] = gf_buildSlot( "fnfal_mp",    "FN FAL",   "menu_mp_weapons_fnfal",    arAtts, arPerks ); n++;
-    pool[n] = gf_buildSlot( "m14_mp",      "M14",      "menu_mp_weapons_m14",      arAtts, arPerks ); n++;
+    // ── AR ×8 ────────────────────────────────────────────────────────
+    pool[n] = gf_buildLoadout(
+        gf_item( "famas_reflex_mp",        "FAMAS",    "menu_mp_weapons_famas"    ),
+        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
+        "flash_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "m16_acog_mp",            "M16",      "menu_mp_weapons_m16"      ),
+        gf_item( "m1911_upgradesight_mp",  "M1911",    "menu_mp_weapons_colt"     ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchel_charge"       ),
+        "concussion_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "aug_silencer_mp",        "AUG",      "menu_mp_weapons_aug"      ),
+        gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
+        gf_item( "hatchet_mp",             "Tomahawk", "hud_hatchet"              ),
+        "smoke_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "galil_grip_mp",          "Galil",    "menu_mp_weapons_galil"    ),
+        gf_item( "cz75_upgradesight_mp",   "CZ75",     "menu_mp_weapons_cz75"     ),
+        gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
+        "flash_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "commando_reflex_mp",     "Commando", "menu_mp_weapons_commando" ),
+        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchel_charge"       ),
+        "concussion_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "fnfal_acog_mp",          "FN FAL",   "menu_mp_weapons_fnfal"    ),
+        gf_item( "m1911_upgradesight_mp",  "M1911",    "menu_mp_weapons_colt"     ),
+        gf_item( "hatchet_mp",             "Tomahawk", "hud_hatchet"              ),
+        "flash_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "m14_grip_mp",            "M14",      "menu_mp_weapons_m14"      ),
+        gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
+        gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
+        "smoke_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "galil_silencer_mp",      "Galil",    "menu_mp_weapons_galil"    ),
+        gf_item( "cz75_upgradesight_mp",   "CZ75",     "menu_mp_weapons_cz75"     ),
+        gf_item( "hatchet_mp",             "Tomahawk", "hud_hatchet"              ),
+        "flash_grenade_mp" ); n++;
 
     // ── SMG ×6 ───────────────────────────────────────────────────────
-    pool[n] = gf_buildSlot( "mp5k_mp",    "MP5K",    "menu_mp_weapons_mp5k",    smgAtts, smgPerks ); n++;
-    pool[n] = gf_buildSlot( "ak74u_mp",   "AK74u",   "menu_mp_weapons_ak74u",   smgAtts, smgPerks ); n++;
-    pool[n] = gf_buildSlot( "mp40_mp",    "MP40",    "menu_mp_weapons_mp40",    smgAtts, smgPerks ); n++;
-    pool[n] = gf_buildSlot( "spectre_mp", "Spectre", "menu_mp_weapons_spectre", smgAtts, smgPerks ); n++;
-    pool[n] = gf_buildSlot( "uzi_mp",     "Uzi",     "menu_mp_weapons_uzi",     smgAtts, smgPerks ); n++;
-    pool[n] = gf_buildSlot( "pm63_mp",    "PM63",    "menu_mp_weapons_pm63",    smgAtts, smgPerks ); n++;
+    pool[n] = gf_buildLoadout(
+        gf_item( "mp5k_reflex_mp",         "MP5K",     "menu_mp_weapons_mp5k"     ),
+        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
+        "flash_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "ak74u_silencer_mp",      "AK74u",    "menu_mp_weapons_ak74u"    ),
+        gf_item( "m1911_upgradesight_mp",  "M1911",    "menu_mp_weapons_colt"     ),
+        gf_item( "hatchet_mp",             "Tomahawk", "hud_hatchet"              ),
+        "concussion_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "mp40_extclip_mp",        "MP40",     "menu_mp_weapons_mp40"     ),
+        gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchel_charge"       ),
+        "smoke_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "spectre_rf_mp",          "Spectre",  "menu_mp_weapons_spectre"  ),
+        gf_item( "cz75_upgradesight_mp",   "CZ75",     "menu_mp_weapons_cz75"     ),
+        gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
+        "flash_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "uzi_reflex_mp",          "Uzi",      "menu_mp_weapons_uzi"      ),
+        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchel_charge"       ),
+        "concussion_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "pm63_silencer_mp",       "PM63",     "menu_mp_weapons_pm63"     ),
+        gf_item( "m1911_upgradesight_mp",  "M1911",    "menu_mp_weapons_colt"     ),
+        gf_item( "hatchet_mp",             "Tomahawk", "hud_hatchet"              ),
+        "smoke_grenade_mp" ); n++;
 
     // ── LMG ×4 ───────────────────────────────────────────────────────
-    pool[n] = gf_buildSlot( "hk21_mp",    "HK21",    "menu_mp_weapons_hk21",    lmgAtts, lmgPerks ); n++;
-    pool[n] = gf_buildSlot( "m60_mp",     "M60",     "menu_mp_weapons_m60",     lmgAtts, lmgPerks ); n++;
-    pool[n] = gf_buildSlot( "rpk_mp",     "RPK",     "menu_mp_weapons_rpk",     lmgAtts, lmgPerks ); n++;
-    pool[n] = gf_buildSlot( "stoner63_mp","Stoner63","menu_mp_weapons_stoner63a",lmgAtts,lmgPerks ); n++;
+    pool[n] = gf_buildLoadout(
+        gf_item( "hk21_grip_mp",           "HK21",     "menu_mp_weapons_hk21"     ),
+        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
+        "concussion_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "m60_reflex_mp",          "M60",      "menu_mp_weapons_m60"      ),
+        gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchel_charge"       ),
+        "flash_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "rpk_extclip_mp",         "RPK",      "menu_mp_weapons_rpk"      ),
+        gf_item( "m1911_upgradesight_mp",  "M1911",    "menu_mp_weapons_colt"     ),
+        gf_item( "hatchet_mp",             "Tomahawk", "hud_hatchet"              ),
+        "smoke_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "stoner63_grip_mp",       "Stoner63", "menu_mp_weapons_stoner63a"),
+        gf_item( "cz75_upgradesight_mp",   "CZ75",     "menu_mp_weapons_cz75"     ),
+        gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
+        "concussion_grenade_mp" ); n++;
 
     // ── Sniper ×2 ────────────────────────────────────────────────────
-    pool[n] = gf_buildSlot( "l96a1_mp",  "L96A1",  "menu_mp_weapons_l96a1",  snpAtts, snpPerks ); n++;
-    pool[n] = gf_buildSlot( "wa2000_mp", "WA2000", "menu_mp_weapons_wa2000", snpAtts, snpPerks ); n++;
+    pool[n] = gf_buildLoadout(
+        gf_item( "l96a1_vzoom_mp",         "L96A1",    "menu_mp_weapons_l96a1"    ),
+        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
+        "flash_grenade_mp" ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "wa2000_vzoom_mp",        "WA2000",   "menu_mp_weapons_wa2000"   ),
+        gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchel_charge"       ),
+        "concussion_grenade_mp" ); n++;
 
     // ── Shotgun ×2 ───────────────────────────────────────────────────
-    noAtts = [];
-    pool[n] = gf_buildSlot( "spas_mp",   "SPAS-12", "menu_mp_weapons_spas",        noAtts, sgPerks ); n++;
-    pool[n] = gf_buildSlot( "ithaca_mp", "Ithaca",  "menu_mp_weapons_ithaca",       noAtts, sgPerks ); n++;
+    pool[n] = gf_buildLoadout(
+        gf_item( "spas_mp",                "SPAS-12",  "menu_mp_weapons_spas"     ),
+        gf_item( "m1911_upgradesight_mp",  "M1911",    "menu_mp_weapons_colt"     ),
+        gf_item( "hatchet_mp",             "Tomahawk", "hud_hatchet"              ),
+        "flash_grenade_mp" ); n++;
 
-    // Fisher-Yates shuffle
+    pool[n] = gf_buildLoadout(
+        gf_item( "ithaca_mp",              "Ithaca",   "menu_mp_weapons_ithaca"   ),
+        gf_item( "cz75_upgradesight_mp",   "CZ75",     "menu_mp_weapons_cz75"     ),
+        gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
+        "smoke_grenade_mp" ); n++;
+
+    // Fisher-Yates shuffle — random order per match, no repeat within one cycle
     for ( i = pool.size - 1; i > 0; i-- )
     {
         j       = randomInt( i + 1 );
@@ -105,101 +161,51 @@ gf_initLoadouts()
         pool[j] = temp;
     }
 
-    // precache all primary shaders
+    // expand pool into a flat round schedule: each entry repeated roundsPerLoadout times
+    schedule = [];
+    j = 0;
     for ( i = 0; i < pool.size; i++ )
-        PreCacheShader( pool[i]["primaryShader"] );
+        for ( r = 0; r < level.gf_cfg_roundsPerLoadout; r++ )
+        {
+            schedule[j] = pool[i];
+            j++;
+        }
 
-    // precache secondary shaders
-    PreCacheShader( "menu_mp_weapons_python" );
-    PreCacheShader( "menu_mp_weapons_colt" );
-    PreCacheShader( "menu_mp_weapons_makarov" );
-    PreCacheShader( "menu_mp_weapons_cz75" );
+    // precache shaders (loop pool not schedule to avoid redundant calls)
+    for ( i = 0; i < pool.size; i++ )
+    {
+        PreCacheShader( pool[i]["primaryShader"]   );
+        PreCacheShader( pool[i]["secondaryShader"] );
+        PreCacheShader( pool[i]["lethalShader"]    );
+    }
 
-    // precache lethal shaders
-    PreCacheShader( "hud_grenadeicon" );
-    PreCacheShader( "hud_satchel_charge" );
-    PreCacheShader( "hud_hatchet" );
+    // perk shaders — names unverified in T5; blank icon if wrong, no crash
+    PreCacheShader( "specialty_lightweight" );
+    PreCacheShader( "specialty_hardened"    );
+    PreCacheShader( "specialty_marathon"    );
 
-    game["gf_pool"] = pool;
-    game["gf_idx"]  = -1;
-    game["gf_init"] = 1;
+    game["gf_pool"]     = pool;
+    game["gf_schedule"] = schedule;
+    game["gf_schedIdx"] = -1;
+    game["gf_init"]     = 1;
 }
 
 gf_pickLoadout()
 {
-    if ( !isDefined( game["gf_pool"] ) )
+    if ( !isDefined( game["gf_schedule"] ) )
         return;
 
-    idx = int( game["roundsplayed"] / level.gf_cfg_roundsPerLoadout ) % game["gf_pool"].size;
+    idx = game["roundsplayed"] % game["gf_schedule"].size;
 
-    if ( idx == game["gf_idx"] && isDefined( level.gf_currentLoad ) )
+    if ( idx == game["gf_schedIdx"] && isDefined( level.gf_currentLoad ) )
         return;
 
-    game["gf_idx"] = idx;
-    slot = game["gf_pool"][idx];
-
-    // random lethal
-    lethals         = [];
-    lethals[0]      = [];
-    lethals[0]["w"] = "frag_grenade_mp";
-    lethals[0]["s"] = "hud_grenadeicon";
-    lethals[0]["n"] = "Frag";
-    lethals[1]      = [];
-    lethals[1]["w"] = "satchel_charge_mp";
-    lethals[1]["s"] = "hud_satchel_charge";
-    lethals[1]["n"] = "Semtex";
-    lethals[2]      = [];
-    lethals[2]["w"] = "hatchet_mp";
-    lethals[2]["s"] = "hud_hatchet";
-    lethals[2]["n"] = "Tomahawk";
-    lethal = lethals[ randomInt( lethals.size ) ];
-
-    // random tactical
-    tacticals    = [];
-    tacticals[0] = "flash_grenade_mp";
-    tacticals[1] = "concussion_grenade_mp";
-    tacticals[2] = "smoke_grenade_mp";
-    tactical = tacticals[ randomInt( tacticals.size ) ];
-
-    // random secondary
-    secondaries      = [];
-    secondaries[0]   = [];
-    secondaries[0]["w"] = "python_speed_mp";
-    secondaries[0]["s"] = "menu_mp_weapons_python";
-    secondaries[0]["n"] = "Python";
-    secondaries[1]   = [];
-    secondaries[1]["w"] = "m1911_upgradesight_mp";
-    secondaries[1]["s"] = "menu_mp_weapons_colt";
-    secondaries[1]["n"] = "M1911";
-    secondaries[2]   = [];
-    secondaries[2]["w"] = "makarov_upgradesight_mp";
-    secondaries[2]["s"] = "menu_mp_weapons_makarov";
-    secondaries[2]["n"] = "Makarov";
-    secondaries[3]   = [];
-    secondaries[3]["w"] = "cz75_upgradesight_mp";
-    secondaries[3]["s"] = "menu_mp_weapons_cz75";
-    secondaries[3]["n"] = "CZ75";
-    sec = secondaries[ randomInt( secondaries.size ) ];
-
-    load = [];
-    load["primary"]         = gf_addRandomAttachment( slot["primaryBase"], slot["primaryAtts"] );
-    load["primaryShader"]   = slot["primaryShader"];
-    load["primaryName"]     = slot["primaryName"];
-    load["secondary"]       = sec["w"];
-    load["secondaryShader"] = sec["s"];
-    load["secondaryName"]   = sec["n"];
-    load["lethal"]          = lethal["w"];
-    load["lethalShader"]    = lethal["s"];
-    load["lethalName"]      = lethal["n"];
-    load["tactical"]        = tactical;
-    load["perks"]           = slot["perks"];
-
-    level.gf_currentLoad = load;
+    game["gf_schedIdx"]  = idx;
+    level.gf_currentLoad = game["gf_schedule"][idx];
 }
 
 gf_giveLoadout()
 {
-    // self = player; called from level.onGiveLoadout after engine gives class weapons
     if ( !isDefined( level.gf_currentLoad ) )
         return;
 
@@ -216,9 +222,9 @@ gf_giveLoadout()
     self GiveWeapon( load["lethal"] );
     self GiveWeapon( load["tactical"] );
 
-    perks = load["perks"];
-    for ( i = 0; i < perks.size; i++ )
-        self SetPerk( perks[i] );
+    self SetPerk( "specialty_movefaster"        );   // Lightweight
+    self SetPerk( "specialty_bulletpenetration"  );   // Hardened
+    self SetPerk( "specialty_longersprint"      );   // Marathon
 
     self thread gf_showLoadoutHUD();
     self thread gf_debugHealthHUD();
@@ -226,27 +232,21 @@ gf_giveLoadout()
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-gf_buildSlot( base, name, shader, atts, perks )
+gf_buildLoadout( pri, sec, let, tac )
 {
-    s = [];
-    s["primaryBase"]   = base;
-    s["primaryName"]   = name;
-    s["primaryShader"] = shader;
-    s["primaryAtts"]   = atts;
-    s["perks"]         = perks;
-    return s;
+    load = [];
+    load["primary"]         = pri["w"];   load["primaryName"]     = pri["n"];   load["primaryShader"]   = pri["s"];
+    load["secondary"]       = sec["w"];   load["secondaryName"]   = sec["n"];   load["secondaryShader"] = sec["s"];
+    load["lethal"]          = let["w"];   load["lethalName"]      = let["n"];   load["lethalShader"]    = let["s"];
+    load["tactical"]        = tac;
+    return load;
 }
 
-gf_addRandomAttachment( base, atts )
+gf_item( w, n, s )
 {
-    // 2 empty slots give ~33% no-attachment chance
-    total = atts.size + 2;
-    roll  = randomInt( total );
-
-    if ( roll >= atts.size )
-        return base;
-
-    att  = atts[roll];
-    stem = getSubStr( base, 0, base.size - 3 );   // strips "_mp"
-    return stem + "_" + att + "_mp";
+    it = [];
+    it["w"] = w;
+    it["n"] = n;
+    it["s"] = s;
+    return it;
 }
