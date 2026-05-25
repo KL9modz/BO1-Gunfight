@@ -10,8 +10,13 @@ Use this as a starting point for a new version. Items marked `[ ]` are built and
 - [ ] One life per round, no respawns — SD `scr_sd_numlives = 1`
 - [ ] No killstreaks, no health regen, no weapon drops — `level.killstreaksenabled = 0`, `level.healthRegenDisabled = true`
 - [ ] No `map_restart` between rounds; all state lives in `level`/`game` vars
-- [ ] 6-round win limit (`level.roundWinLimit = 6`; checked via `hitRoundWinLimit()`)
-- [ ] Round wins tracked in `game["roundswon"]["allies"/"axis"]`; scoreboard accumulates correctly
+- [x] 6-round win limit — confirmed working. Requires THREE dvars (all three must be set):
+  - `scr_sd_roundwinlimit = "6"` — real win-limit dvar; constructed as `"scr_" + gameType + "_roundwinlimit"` (NOT `scr_sd_winlimit` — that dvar does not exist)
+  - `scr_sd_scorelimit = "6"` — must match win limit so SD's score UI has a valid 0–6 scale; setting to 0 breaks the UI (bar/indicator positions calculated as score/scoreLimit)
+  - `level.roundWinLimit = 6` — belt-and-suspenders; `hitRoundWinLimit()` reads this level var directly
+- [x] Round wins tracked in `game["roundswon"]["allies"/"axis"]`; scoreboard accumulates correctly
+- [x] HP comparison on timer expiry — confirmed working: `gf_getTeamHP(team)` sums alive player HP; winner = higher HP team; equal HP = draw (`sd_endgame("tie", "")`)
+- [x] Draw rounds don't count toward win limit — `hitRoundWinLimit()` has a second check: `getRoundsWon(team) + game["roundswon"]["tie"] >= limit`, so a tie at 5-x would end the match early. Fix: increment `level.roundWinLimit++` before each `sd_endgame("tie", "")` call. Math holds — a team still needs exactly 6 decisive wins because `realWins + ties >= baseLimit + ties` only triggers when `realWins >= baseLimit`
 
 **Round System**
 - [ ] SD-native round cycling — `onDeadEvent` → `sd_endGame(winner, "")` handles scoring, win-limit, intermission, respawn; no manual spawn loop
@@ -26,16 +31,20 @@ Use this as a starting point for a new version. Items marked `[ ]` are built and
 - [ ] Expanded loadout pool — 22 loadouts across 5 weapon classes (AR×7, SMG×6, LMG×4, Sniper×2, Shotgun×2); shuffle-without-repeat, no back-to-back repeat
 - [ ] Perks per loadout class — AR/SMG/LMG/Sniper/Shotgun each have tailored 3-perk sets (local vars at top of `gf_initLoadouts()`; `#define` not supported in T5)
 - [ ] Attachment randomizer — `gf_addRandomAttachment(baseWeapon, attList)` picks one random attachment; 2 extra empty slots give ~33% no-attachment chance
-- [ ] Health regen disabled — `level.healthRegenDisabled = true` + `level.playerHealth_RegularRegenDelay = 0`
+- [x] Health regen disabled — `setDvar("scr_player_healthregentime", "0")` is the correct fix. `_healthoverlay::init()` is threaded from `_globallogic::init()` and reads this tweakable dvar to set `level.healthRegenDisabled`; setting the dvar to 0 makes the engine disable regen itself. Setting `level.healthRegenDisabled = true` alone is unreliable because the thread can overwrite it after our `init()` runs
 - [ ] All weapon+attachment variants precached at startup via `gf_precacheWeapons()`
 - [ ] Attachment strings confirmed: `extclip`, `reflex`, `acog`, `silencer`, `rf`, `vzoom`, `grip`
 - [ ] `colt45_mp` does not exist — replaced with `m1911_mp`
 
 **Class & Spawn**
-- [ ] Class select suppression — `replacefunc` on `beginClassChoice`; `scr_disable_cac=1` as backup (Plutonium ignores the dvar; replacefunc is the real fix)
-- [ ] Sessionstate fix — `gf_getAliveCount` / `gf_getTeamHP` check `p.sessionstate == "playing"` to exclude loading/spectating players
+- [x] Class select suppression — `replacefunc` on `beginClassChoice`; `scr_disable_cac=1` as backup (Plutonium ignores the dvar; replacefunc is the real fix)
+- [x] Sessionstate fix — `gf_getAliveCount` / `gf_getTeamHP` check `p.sessionstate == "playing"` to exclude loading/spectating players
+- [x] Loadout delivery hook — `level.onGiveLoadout` does NOT exist in T5 (confirmed: not in any T5 source file). Correct hook: override `level.playerSpawnedCB = ::gf_playerSpawnedCB`. Fire `level notify("spawned_player")` inside it to preserve SD behavior, then `self thread gf_onSpawned()`. The thread runs after `giveLoadout` completes because `playerSpawnedCB` (line 169 of `_globallogic_spawn.gsc`) and `giveLoadout` (line 189) are in the same synchronous function with no yield between them — any thread queued from `playerSpawnedCB` is scheduled after the whole function finishes
+- [x] Draw rounds don't count toward win limit — `hitRoundWinLimit()` adds `game["roundswon"]["tie"]` to both teams; fix: call `sd_endgame("tie","")` then immediately `level thread gf_undoTieMark()`. Two threads (endGame and undoTieMark) race to cancel: whichever order they run in, the net change to the tie counter is zero
 
 **HUD**
+- [x] Loadout icon slide-in — `gf_showLoadoutHUD()` confirmed working: primary/secondary/lethal icons slide in from right on spawn, hold 5.5s, slide out. Shader names from `level.gf_currentLoad`, precached in `gf_initLoadouts()`
+- [x] HP debug display — `gf_debugHealthHUD()` confirmed working: `self iPrintLn("HP: " + self.health)` every 1s
 - [ ] Cold War Gunfight HUD — top-left panel (162×38 px): player icons (9×13), HP bars (68 px), score dots (5×5 px). Updated every 0.1s; persists across rounds. Element refs: `gf_hudBg/Sep`, `gf_hudAlliesIcon[0/1]`, `gf_hudAlliesBarBg/Fg`, `gf_hudAlliesHp`, `gf_hudAllyDot[0..5]`, mirrored for axis
 - [ ] Custom round timer — `gf_hudTimer` text element, center-top, MM:SS; driven by `level.gf_timerEnd = gettime() + ms`; `scr_sd_timelimit=0` disables SD's built-in timer
 - [ ] Perk display notification — `gf_displayPerks()` in `_gf_hud.gsc`: wager-style icon + name, right side, scale pop-in, 5s fade
@@ -198,7 +207,8 @@ These are confirmed-broken functions in T5 mod scripts and their correct replace
 | `player isAlive()` (method) | `player.health > 0` |
 | `isAlive(player)` (standalone) | `player.health > 0` |
 | `player.team` | `player.pers["team"]` → returns `"allies"`, `"axis"`, or `"spectator"` |
-| `setDvar("scr_player_healthregentime", "0")` | `level.playerHealth_RegularRegenDelay = 0; level.healthRegenDisabled = true;` |
+| `setDvar("scr_player_healthregentime", "0")` | `setDvar("scr_player_healthregentime", "0")` DOES work — set it before `_healthoverlay::init()` threads so the engine reads 0 and disables regen itself |
+| `level.onGiveLoadout = ::fn` | Does not exist in T5. Use `level.playerSpawnedCB = ::gf_playerSpawnedCB` instead; fire `level notify("spawned_player")` inside it to keep SD happy, then `self thread gf_onSpawned()` — thread runs after `giveLoadout` with no yield gap |
 
 **Compile error diagnosis:** When T5 throws `unknown function: @ scripts/mp/<file>::<func>`, the broken call is INSIDE the named function — scan every call within it for T5 compatibility.
 
@@ -293,7 +303,7 @@ Calling this from `onDeadEvent` or a custom timer handler:
 - Checks `hitRoundWinLimit()` — ends the match if reached, otherwise cycles the round
 - SD handles intermission display, player respawn, and the next prematch automatically
 - No manual `pers["lives"]` reset needed — SD handles it
-- No manual `[[level.spawnClient]]()` calls needed
+- No manual `[[level.spawnClient]]()` calls needed **between rounds** — SD handles respawning. But `gf_bypassClassChoice` must call it for the initial connect spawn (see class select suppression section).
 
 **Round activation pattern** — since SD doesn't expose a "new round started" event, detect it from `onPlayerSpawned`:
 ```gsc
@@ -903,6 +913,20 @@ if ( level.oldschool || GetDvarInt("scr_disable_cac") == 1 )
 
 **Current implementation:** `replacefunc( maps\mp\gametypes\_globallogic_ui::beginClassChoice, ::gf_bypassClassChoice )` — confirmed working in Plutonium T5.
 `setDvar("scr_disable_cac", "1")` is also set but **does not work in Plutonium** (dvar is parsed but ignored at runtime). The replacefunc is the real fix.
+
+**Critical:** the replacement function must also call `[[level.spawnClient]]()` and `updateTeamStatus()` — the original `beginClassChoice` calls these after assigning the class. Omitting them means players connect and pick a team but never spawn (stuck forever). Confirmed broken without it, confirmed fixed with it.
+```gsc
+gf_bypassClassChoice()
+{
+    if ( self.pers["team"] != "allies" && self.pers["team"] != "axis" )
+        return;
+    self.pers["class"] = level.defaultClass;
+    self.class         = level.defaultClass;
+    if ( self.sessionstate != "playing" )
+        self thread [[level.spawnClient]]();
+    level thread maps\mp\gametypes\_globallogic::updateTeamStatus();
+}
+```
 
 ### Weapon randomization via dvars (GunMd0wn pattern)
 ```gsc

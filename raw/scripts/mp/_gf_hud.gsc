@@ -1,6 +1,20 @@
 // Gunfight v2 — HUD
 // Loadout icon slide-in display, adapted from Xinerki t5-gunfight/duel.gsc
 
+gf_debugHealthHUD()
+{
+    self notify( "gf_kill_debug_hp" );
+    self endon(  "gf_kill_debug_hp" );
+    self endon(  "disconnect" );
+    level endon( "game_ended" );
+
+    for ( ;; )
+    {
+        self iPrintLn( "HP: " + self.health );
+        wait 1;
+    }
+}
+
 gf_showLoadoutHUD()
 {
     if ( !isDefined( level.gf_currentLoad ) )

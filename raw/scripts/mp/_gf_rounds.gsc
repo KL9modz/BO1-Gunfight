@@ -59,7 +59,6 @@ gf_onDeadEvent( team )
 
 gf_onTimeLimit()
 {
-    // override of level.onTimeLimit — timer expired, defenders win
     if ( level.gf_roundEnding )
         return;
 
@@ -67,21 +66,56 @@ gf_onTimeLimit()
     level.gf_roundActive = false;
     level notify( "gf_round_over" );
 
-    maps\mp\gametypes\sd::sd_endgame( game["defenders"], "" );
+    alliesHP = gf_getTeamHP( "allies" );
+    axisHP   = gf_getTeamHP( "axis" );
+
+    if ( alliesHP > axisHP )
+        winner = "allies";
+    else if ( axisHP > alliesHP )
+        winner = "axis";
+    else
+    {
+        // Pass "tie" for the round-end screen text, then undo the increment
+        // to game["roundswon"]["tie"] so hitRoundWinLimit never counts draws.
+        // endGame is threaded inside sd_endgame; gf_undoTieMark races it —
+        // in either order the net change to the tie counter is zero.
+        maps\mp\gametypes\sd::sd_endgame( "tie", "" );
+        level thread gf_undoTieMark();
+        return;
+    }
+
+    maps\mp\gametypes\sd::sd_endgame( winner, "" );
 }
 
 // ─── Background Threads ────────────────────────────────────────────────────
 
 gf_bombSuppress()
 {
-    // nullify bomb plant/defuse every 0.5s — keeps SD bomb mechanics inert
     level endon( "game_ended" );
     while ( true )
     {
+        wait 0.5;
+
+        if ( isDefined( level.sdBomb ) )
+        {
+            level.sdBomb maps\mp\gametypes\_gameobjects::setVisibleTeam( "none" );
+            level.sdBomb maps\mp\gametypes\_gameobjects::allowCarry( "none" );
+        }
+
+        if ( isDefined( level.bombZones ) )
+        {
+            for ( i = 0; i < level.bombZones.size; i++ )
+            {
+                if ( !isDefined( level.bombZones[i] ) ) continue;
+                level.bombZones[i] maps\mp\gametypes\_gameobjects::setVisibleTeam( "none" );
+                level.bombZones[i] maps\mp\gametypes\_gameobjects::allowUse( "none" );
+            }
+        }
+
+        level.bombCarrier  = undefined;
         level.bombplanted  = 0;
         level.bombexploded = 0;
         level.bombdefused  = 0;
-        wait 0.5;
     }
 }
 
@@ -111,6 +145,25 @@ gf_forfeitWatch()
 }
 
 // ─── Utilities ─────────────────────────────────────────────────────────────
+
+gf_undoTieMark()
+{
+    game["roundswon"]["tie"]--;
+    if ( game["roundswon"]["tie"] < 0 )
+        game["roundswon"]["tie"] = 0;
+}
+
+gf_getTeamHP( team )
+{
+    total = 0;
+    for ( i = 0; i < level.players.size; i++ )
+    {
+        p = level.players[i];
+        if ( p.pers["team"] == team && p.sessionstate == "playing" && p.health > 0 )
+            total += p.health;
+    }
+    return total;
+}
 
 gf_getAliveCount( team )
 {

@@ -221,6 +221,7 @@ gf_giveLoadout()
         self SetPerk( perks[i] );
 
     self thread gf_showLoadoutHUD();
+    self thread gf_debugHealthHUD();
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
