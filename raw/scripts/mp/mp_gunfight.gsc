@@ -2,6 +2,7 @@
 // Load: loadMod mp_gunfight → map_restart
 
 #include scripts\mp\_gf_rounds;
+#include scripts\mp\_gf_loadouts;
 
 init()
 {
