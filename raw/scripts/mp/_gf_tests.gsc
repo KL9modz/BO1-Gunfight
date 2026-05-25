@@ -3,6 +3,7 @@
 // Results appear on-screen (iPrintLn) and in the server log (logprint)
 
 #include scripts\mp\_gf_rounds;
+#include scripts\mp\_gf_loadouts;
 
 init()
 {
