@@ -124,6 +124,8 @@ Core features modelled after the community duel mod (`mods\mp_gf`) — use this 
 - **mp_EMv2_Recreation, mp_iMCSx, mp_EnCoReV8** — Community BO1 mods; source of HUD element patterns (`newHudElem`, `newClientHudElem`, `NewScoreHudElem`, `hud.archived`, `fontPulse`)
 - **Resxt/Plutonium-T5-Scripts** — Collection of community T5 GSC scripts
   https://github.com/Resxt/Plutonium-T5-Scripts
+- **Xinerki/t5-gunfight** — T5 Gunfight/duel gametype mod; source of confirmed weapon icon shader names and T5 player methods
+  https://github.com/Xinerki/t5-gunfight
 
 ### Weapon & Asset References
 - **BO1 MP Weapon list** — verified full dump by primetime43; authoritative for weapon strings and attachment variants
@@ -200,7 +202,7 @@ These are confirmed-broken functions in T5 mod scripts and their correct replace
 
 **Compile error diagnosis:** When T5 throws `unknown function: @ scripts/mp/<file>::<func>`, the broken call is INSIDE the named function — scan every call within it for T5 compatibility.
 
-**Cross-file calls require `#include`:** Each `.gsc` file must `#include` every other mod script whose functions it calls directly. T5 does not make sibling script functions globally visible. Missing include → `unknown function` compile error on the calling function. Current include chain: `_gf_rounds.gsc` → `_gf_loadouts.gsc` → `_gf_hud.gsc`.
+**Cross-file calls require `#include`:** Each `.gsc` file must `#include` every other mod script whose functions it calls **directly**. T5 does **not** support transitive includes — if A includes B which includes C, A cannot call functions from C. Each file must have its own explicit `#include` for every file it calls into. Missing include → `unknown function` compile error on the calling function. Current include chain: `mp_gunfight.gsc` → `_gf_rounds.gsc` → `_gf_loadouts.gsc` → `_gf_hud.gsc`. `_gf_tests.gsc` includes both `_gf_rounds` and `_gf_loadouts` directly since it calls functions from both.
 
 ---
 
@@ -741,7 +743,8 @@ self GiveWeapon( "knife_mp" );
 self switchToWeapon( "famas_mp" );
 self giveMaxAmmo( "famas_mp" );
 self giveMaxAmmo( "python_speed_mp" );
-self GiveOffhandWeapon( "frag_grenade_mp" );
+self GiveWeapon( "frag_grenade_mp" );      // lethal grenade — use GiveWeapon, NOT GiveOffhandWeapon
+self GiveWeapon( "flash_grenade_mp" );     // tactical grenade — same
 
 // Perks:
 self SetPerk( "specialty_fastreload" );
@@ -750,10 +753,13 @@ self SetPerk( "specialty_gpsjammer" );
 // Remove a perk:
 self UnSetPerk( "specialty_killstreak" );
 
-// Equipment slot (flash, smoke, claymore etc):
-self SetActionSlot( 1, "weapon", "flash_grenade_mp" );
+// Equipment slot (claymore, camera spike etc — NOT grenades):
+self GiveWeapon( equipment_weapon );
+self SetActionSlot( 1, "weapon", equipment_weapon );
 ```
-`GiveOffhandWeapon` handles grenades/equipment. `SetActionSlot` maps equipment to UI slots 1-4.
+**`GiveOffhandWeapon` does NOT exist in T5.** Confirmed from `_class.gsc` in the BO1 install.
+Use `GiveWeapon()` for ALL weapon types including grenades and equipment.
+`SetActionSlot(1, "weapon", ...)` is only needed for equipment (claymores etc.) so they appear in the correct UI slot — grenades do not need it.
 
 ---
 
@@ -968,7 +974,7 @@ gf_giveDelayedGrenade( lethal )
     wait 3;
     if ( self.health > 0 )
     {
-        self GiveOffhandWeapon( lethal );
+        self GiveWeapon( lethal );   // T5: GiveWeapon for grenades, not GiveOffhandWeapon
         self setWeaponAmmoClip( lethal, 1 );   // one grenade only
     }
 }
