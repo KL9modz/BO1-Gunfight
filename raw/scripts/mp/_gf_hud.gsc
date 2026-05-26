@@ -27,19 +27,21 @@ gf_showLoadoutHUD( load )
     self endon( "death" );
     level endon( "game_ended" );
 
-    // weapon rows: primary, secondary, lethal
-    wYPos    = [];   wYPos[0]    = -140;   wYPos[1]    = -112;   wYPos[2]    = -84;
-    wIconW   = [];   wIconW[0]   = 64;     wIconW[1]   = 64;     wIconW[2]   = 32;
+    // weapon rows: primary, secondary, lethal, tactical
+    wYPos    = [];   wYPos[0]    = -168;   wYPos[1]    = -140;   wYPos[2]    = -112;   wYPos[3]    = -84;
+    wIconW   = [];   wIconW[0]   = 64;     wIconW[1]   = 64;     wIconW[2]   = 32;     wIconW[3]   = 32;
 
     wShaders = [];
     wShaders[0] = load["primaryShader"];
     wShaders[1] = load["secondaryShader"];
     wShaders[2] = load["lethalShader"];
+    wShaders[3] = load["tacticalShader"];
 
     wNames = [];
     wNames[0] = load["primaryName"];
     wNames[1] = load["secondaryName"];
     wNames[2] = load["lethalName"];
+    wNames[3] = load["tacticalName"];
 
     // perk rows: lightweight, hardened, marathon
     // shader names are unverified in T5 — icon shows blank if wrong, no crash
@@ -58,7 +60,7 @@ gf_showLoadoutHUD( load )
     wIcons = [];   wTexts = [];
     pIcons = [];   pTexts = [];
 
-    for ( i = 0; i < 3; i++ )
+    for ( i = 0; i < 4; i++ )
     {
         e = newClientHudElem( self );
         e.horzAlign = "right";   e.vertAlign = "middle";
@@ -108,19 +110,25 @@ gf_showLoadoutHUD( load )
 
     wait 5.5;
 
-    for ( i = 0; i < 3; i++ )
+    for ( i = 0; i < 4; i++ )
     {
         wIcons[i] moveOverTime( 0.3 );   wIcons[i].x = 400;
         wTexts[i] moveOverTime( 0.3 );   wTexts[i].x = 400;
+    }
+    for ( i = 0; i < 3; i++ )
+    {
         pIcons[i] moveOverTime( 0.3 );   pIcons[i].x = 400;
         pTexts[i] moveOverTime( 0.3 );   pTexts[i].x = 400;
     }
 
     wait 0.4;
 
-    for ( i = 0; i < 3; i++ )
+    for ( i = 0; i < 4; i++ )
     {
         wIcons[i].alpha = 0;   wTexts[i].alpha = 0;
+    }
+    for ( i = 0; i < 3; i++ )
+    {
         pIcons[i].alpha = 0;   pTexts[i].alpha = 0;
     }
 }
