@@ -592,6 +592,14 @@ hatchet                 -> hud_hatchet
 Default: "hud_" + baseName
 ```
 
+Tactical grenade icon shaders — confirmed from IWD `images/*.iwi` listing:
+```
+flash_grenade_mp       -> hud_us_flashgrenade
+concussion_grenade_mp  -> hud_us_stungrenade
+smoke_grenade_mp       -> hud_us_smokegrenade
+```
+Pattern: `hud_us_` prefix (NOT `hud_` directly).
+
 Precaching before use:
 ```gsc
 PreCacheShader( "menu_mp_weapons_famas" );   // call at match start before HUD creation
