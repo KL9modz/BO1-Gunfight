@@ -39,9 +39,10 @@ init()
     setscoreboardcolumns( "kills", "deaths", "none", "none" );
 
     // ── 4. Callbacks ───────────────────────────────────────────────────
-    level.onDeadEvent      = ::gf_onDeadEvent;
-    level.onTimeLimit      = ::gf_onTimeLimit;
-    level.playerSpawnedCB  = ::gf_playerSpawnedCB;   // level.onGiveLoadout does not exist in T5
+    level.onDeadEvent       = ::gf_onDeadEvent;
+    level.onTimeLimit       = ::gf_onTimeLimit;
+    level.playerSpawnedCB   = ::gf_playerSpawnedCB;
+    level.giveCustomLoadout = ::gf_giveCustomLoadout;   // engine calls this at spawn step 5 (from _class::giveLoadout)
 
     replacefunc(
         maps\mp\gametypes\_globallogic_ui::beginClassChoice,
@@ -54,6 +55,7 @@ init()
     // (missing keys added in later versions) cause script errors in gf_giveLoadout.
     game["gf_init"] = undefined;
     gf_initLoadouts();
+    gf_pickLoadout();   // pre-pick round 1 before any spawn
 
     // ── 6. Background threads ──────────────────────────────────────────
     level thread gf_bombSuppress();
@@ -76,8 +78,6 @@ gf_onSpawned()
 
     if ( !level.gf_roundActive )
         level thread gf_tryActivateRound();
-    else if ( isDefined( level.gf_currentLoad ) )
-        self thread gf_giveLoadout();   // round already active (prematch→round1 respawn)
 }
 
 gf_bypassClassChoice()

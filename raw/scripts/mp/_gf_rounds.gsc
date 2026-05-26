@@ -22,21 +22,10 @@ gf_tryActivateRound()
         return;
     }
 
-    gf_pickLoadout();   // pick once, after all players are present
-
     level.gf_roundNum++;
-    level.gf_roundEnding    = false;
-    level.gf_roundActive    = true;
+    level.gf_roundEnding     = false;
+    level.gf_roundActive     = true;
     level.gf_activatingRound = false;
-
-    // give the same loadout to every player atomically — covers bots too
-    for ( i = 0; i < level.players.size; i++ )
-    {
-        p = level.players[i];
-        if ( ( p.pers["team"] == "allies" || p.pers["team"] == "axis" ) &&
-               p.sessionstate == "playing" )
-            p thread gf_giveLoadout();
-    }
 
     // pause SD's native clock during 3s freeze, then let it run
     maps\mp\gametypes\_globallogic_utils::pauseTimer();
@@ -61,6 +50,7 @@ gf_onDeadEvent( team )
     else
         winner = maps\mp\_utility::getOtherTeam( team );
 
+    gf_pickLoadout();
     maps\mp\gametypes\sd::sd_endgame( winner, "" );
 }
 
@@ -86,11 +76,13 @@ gf_onTimeLimit()
         // to game["roundswon"]["tie"] so hitRoundWinLimit never counts draws.
         // endGame is threaded inside sd_endgame; gf_undoTieMark races it —
         // in either order the net change to the tie counter is zero.
+        gf_pickLoadout();
         maps\mp\gametypes\sd::sd_endgame( "tie", "" );
         level thread gf_undoTieMark();
         return;
     }
 
+    gf_pickLoadout();
     maps\mp\gametypes\sd::sd_endgame( winner, "" );
 }
 

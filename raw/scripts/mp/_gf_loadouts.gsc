@@ -203,13 +203,16 @@ gf_pickLoadout()
     level.gf_currentLoad = game["gf_schedule"][ game["gf_schedIdx"] ];
 }
 
-gf_giveLoadout()
+gf_giveCustomLoadout( takeAll, alreadySpawned )
 {
     if ( !isDefined( level.gf_currentLoad ) )
+        return;
+    if ( self.pers["team"] != "allies" && self.pers["team"] != "axis" )
         return;
 
     load = level.gf_currentLoad;
 
+    self DisableWeaponCycling();
     self takeAllWeapons();
     self GiveWeapon( load["primary"] );
     self GiveWeapon( load["secondary"] );
@@ -219,6 +222,7 @@ gf_giveLoadout()
     self giveMaxAmmo( load["secondary"] );
     self GiveWeapon( load["lethal"] );
     self GiveWeapon( load["tactical"] );
+    self EnableWeaponCycling();
 
     self UnSetPerk( "specialty_armorvest"       );
     self UnSetPerk( "specialty_fastreload"      );
@@ -242,7 +246,6 @@ gf_giveLoadout()
     self SetPerk( "specialty_longersprint"      );   // Marathon
 
     self thread gf_showLoadoutHUD( load );
-    self thread gf_debugHealthHUD();
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
