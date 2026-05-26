@@ -569,6 +569,8 @@ specialty_noname             Unnamed perk slot (test before using)
 
 Default rule: `"menu_mp_weapons_" + baseName` where baseName has no `_mp` and no variant suffix.
 
+**No icon exists for:** `mp40_mp` — `menu_mp_weapons_mp40` is not in any IWD. Use `mpl_mp` / `menu_mp_weapons_mpl` instead (BO1-era SMG with confirmed icon).
+
 Special cases (base name doesn't match shader):
 ```
 Weapon base name          Shader
@@ -586,7 +588,7 @@ Default secondary: "menu_mp_weapons_" + base (strip suffix like _speed, _upgrade
 Lethal icon shaders:
 ```
 frag_grenade            -> hud_grenadeicon
-satchel_charge_mp       -> hud_icon_satchel_charge   (confirmed in-game; hud_satchel_charge is wrong — shows satchel bomb, not Semtex)
+satchel_charge_mp       -> hud_satchelcharge   (confirmed from IWD; hud_icon_satchel_charge and hud_satchel_charge are both wrong)
 sticky_grenade          -> hud_icon_sticky_grenade
 hatchet                 -> hud_hatchet
 Default: "hud_" + baseName
