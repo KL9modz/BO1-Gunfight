@@ -46,9 +46,9 @@ gf_showLoadoutHUD( load )
     pYPos    = [];   pYPos[0]    = -62;    pYPos[1]    = -40;    pYPos[2]    = -18;
 
     pShaders = [];
-    pShaders[0] = "specialty_movefaster";       // Lightweight
-    pShaders[1] = "specialty_bulletpenetration"; // Hardened
-    pShaders[2] = "specialty_longersprint";      // Marathon
+    pShaders[0] = "perk_lightweight";    // Lightweight
+    pShaders[1] = "perk_deep_impact";   // Hardened (Deep Impact in BO1)
+    pShaders[2] = "perk_marathon";      // Marathon
 
     pNames = [];
     pNames[0] = "Lightweight";

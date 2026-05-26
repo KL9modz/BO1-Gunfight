@@ -179,9 +179,9 @@ gf_initLoadouts()
         PreCacheShader( pool[i]["lethalShader"]    );
     }
 
-    PreCacheShader( "specialty_movefaster"        );   // Lightweight
-    PreCacheShader( "specialty_bulletpenetration" );   // Hardened
-    PreCacheShader( "specialty_longersprint"      );   // Marathon
+    PreCacheShader( "perk_lightweight"  );   // Lightweight
+    PreCacheShader( "perk_deep_impact"  );   // Hardened (Deep Impact)
+    PreCacheShader( "perk_marathon"     );   // Marathon
 
     game["gf_pool"]     = pool;
     game["gf_schedule"] = schedule;
@@ -220,8 +220,41 @@ gf_giveLoadout()
     self SetPerk( "specialty_bulletpenetration"  );   // Hardened
     self SetPerk( "specialty_longersprint"      );   // Marathon
 
+    self thread gf_takeOldWeapons( load );
     self thread gf_showLoadoutHUD( load );
     self thread gf_debugHealthHUD();
+}
+
+gf_takeOldWeapons( load )
+{
+    self endon( "disconnect" );
+    self endon( "death" );
+
+    // wait for first weapon switch — engine giveLoadout may inject default weapons
+    // after our takeAllWeapons; this strips anything that snuck in
+    for ( ;; )
+    {
+        self waittill( "weapon_change", newWeapon );
+        if ( newWeapon != "none" )
+            break;
+    }
+
+    allowed = [];
+    allowed[0] = load["primary"];
+    allowed[1] = load["secondary"];
+    allowed[2] = load["lethal"];
+    allowed[3] = load["tactical"];
+    allowed[4] = "knife_mp";
+
+    weaponsList = self GetWeaponsList();
+    for ( i = 0; i < weaponsList.size; i++ )
+    {
+        isAllowed = false;
+        for ( j = 0; j < allowed.size; j++ )
+            if ( weaponsList[i] == allowed[j] ) { isAllowed = true; break; }
+        if ( !isAllowed )
+            self TakeWeapon( weaponsList[i] );
+    }
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
