@@ -25,7 +25,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "m16_acog_mp",            "M16",      "menu_mp_weapons_m16"      ),
         gf_item( "m1911_upgradesight_mp",  "M1911",    "menu_mp_weapons_colt"     ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_sticky_grenade"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchelcharge"       ),
         gf_item( "concussion_grenade_mp",  "Stun",       "hud_us_stungrenade"  ) ); n++;
 
     pool[n] = gf_buildLoadout(
@@ -43,7 +43,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "commando_reflex_mp",     "Commando", "menu_mp_weapons_commando" ),
         gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_sticky_grenade"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchelcharge"       ),
         gf_item( "concussion_grenade_mp",  "Stun",       "hud_us_stungrenade"  ) ); n++;
 
     pool[n] = gf_buildLoadout(
@@ -80,7 +80,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "mpl_extclip_mp",         "MPL",      "menu_mp_weapons_mpl"      ),
         gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_sticky_grenade"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchelcharge"       ),
         gf_item( "smoke_grenade_mp",       "Smoke",      "hud_us_smokegrenade"       ) ); n++;
 
     pool[n] = gf_buildLoadout(
@@ -92,7 +92,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "uzi_reflex_mp",          "Uzi",      "menu_mp_weapons_uzi"      ),
         gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_sticky_grenade"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchelcharge"       ),
         gf_item( "concussion_grenade_mp",  "Stun",       "hud_us_stungrenade"  ) ); n++;
 
     pool[n] = gf_buildLoadout(
@@ -111,7 +111,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "m60_reflex_mp",          "M60",      "menu_mp_weapons_m60"      ),
         gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_sticky_grenade"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchelcharge"       ),
         gf_item( "flash_grenade_mp",       "Flash",      "hud_us_flashgrenade"       ) ); n++;
 
     pool[n] = gf_buildLoadout(
@@ -136,7 +136,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "wa2000_vzoom_mp",        "WA2000",   "menu_mp_weapons_wa2000"   ),
         gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_sticky_grenade"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchelcharge"       ),
         gf_item( "concussion_grenade_mp",  "Stun",       "hud_us_stungrenade"  ) ); n++;
 
     // ── Shotgun ×2 ───────────────────────────────────────────────────
@@ -211,7 +211,6 @@ gf_giveLoadout()
     load = level.gf_currentLoad;
 
     self takeAllWeapons();
-
     self GiveWeapon( load["primary"] );
     self GiveWeapon( load["secondary"] );
     self GiveWeapon( "knife_mp" );
@@ -221,8 +220,25 @@ gf_giveLoadout()
     self GiveWeapon( load["lethal"] );
     self GiveWeapon( load["tactical"] );
 
+    self UnSetPerk( "specialty_armorvest"       );
+    self UnSetPerk( "specialty_fastreload"      );
+    self UnSetPerk( "specialty_gpsjammer"       );
+    self UnSetPerk( "specialty_twoattach"       );
+    self UnSetPerk( "specialty_gas_mask"        );
+    self UnSetPerk( "specialty_scavenger"       );
+    self UnSetPerk( "specialty_bulletaccuracy"  );
+    self UnSetPerk( "specialty_killstreak"      );
+    self UnSetPerk( "specialty_sprintrecovery"  );
+    self UnSetPerk( "specialty_twogrenades"     );
+    self UnSetPerk( "specialty_quieter"         );
+    self UnSetPerk( "specialty_detectexplosive" );
+    self UnSetPerk( "specialty_holdbreath"      );
+    self UnSetPerk( "specialty_blindeye"        );
+    self UnSetPerk( "specialty_pistoldeath"     );
+    self UnSetPerk( "specialty_twoprimaries"    );
+    self UnSetPerk( "specialty_extraammo"       );
     self SetPerk( "specialty_movefaster"        );   // Lightweight
-    self SetPerk( "specialty_bulletpenetration"  );   // Hardened
+    self SetPerk( "specialty_bulletpenetration" );   // Hardened
     self SetPerk( "specialty_longersprint"      );   // Marathon
 
     self thread gf_showLoadoutHUD( load );

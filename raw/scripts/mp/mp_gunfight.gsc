@@ -49,6 +49,10 @@ init()
     );
 
     // ── 5. Pre-generate loadout pool ───────────────────────────────────
+    // Clear init flag so gf_initLoadouts always rebuilds on map_restart.
+    // game[] persists across rounds and map_restart; stale schedule objects
+    // (missing keys added in later versions) cause script errors in gf_giveLoadout.
+    game["gf_init"] = undefined;
     gf_initLoadouts();
 
     // ── 6. Background threads ──────────────────────────────────────────
