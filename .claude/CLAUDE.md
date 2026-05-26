@@ -588,7 +588,7 @@ Default secondary: "menu_mp_weapons_" + base (strip suffix like _speed, _upgrade
 Lethal icon shaders:
 ```
 frag_grenade            -> hud_grenadeicon
-satchel_charge_mp       -> hud_satchelcharge   (confirmed from IWD; hud_icon_satchel_charge and hud_satchel_charge are both wrong)
+satchel_charge_mp       -> hud_sticky_grenade   (confirmed from IWD; hud_satchelcharge / hud_icon_satchel_charge both wrong)
 sticky_grenade          -> hud_icon_sticky_grenade
 hatchet                 -> hud_hatchet
 Default: "hud_" + baseName

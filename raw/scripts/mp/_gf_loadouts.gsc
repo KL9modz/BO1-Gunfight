@@ -25,7 +25,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "m16_acog_mp",            "M16",      "menu_mp_weapons_m16"      ),
         gf_item( "m1911_upgradesight_mp",  "M1911",    "menu_mp_weapons_colt"     ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchelcharge"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_sticky_grenade"       ),
         gf_item( "concussion_grenade_mp",  "Stun",       "hud_us_stungrenade"  ) ); n++;
 
     pool[n] = gf_buildLoadout(
@@ -43,7 +43,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "commando_reflex_mp",     "Commando", "menu_mp_weapons_commando" ),
         gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchelcharge"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_sticky_grenade"       ),
         gf_item( "concussion_grenade_mp",  "Stun",       "hud_us_stungrenade"  ) ); n++;
 
     pool[n] = gf_buildLoadout(
@@ -80,7 +80,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "mpl_extclip_mp",         "MPL",      "menu_mp_weapons_mpl"      ),
         gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchelcharge"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_sticky_grenade"       ),
         gf_item( "smoke_grenade_mp",       "Smoke",      "hud_us_smokegrenade"       ) ); n++;
 
     pool[n] = gf_buildLoadout(
@@ -92,7 +92,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "uzi_reflex_mp",          "Uzi",      "menu_mp_weapons_uzi"      ),
         gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchelcharge"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_sticky_grenade"       ),
         gf_item( "concussion_grenade_mp",  "Stun",       "hud_us_stungrenade"  ) ); n++;
 
     pool[n] = gf_buildLoadout(
@@ -111,7 +111,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "m60_reflex_mp",          "M60",      "menu_mp_weapons_m60"      ),
         gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchelcharge"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_sticky_grenade"       ),
         gf_item( "flash_grenade_mp",       "Flash",      "hud_us_flashgrenade"       ) ); n++;
 
     pool[n] = gf_buildLoadout(
@@ -136,7 +136,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "wa2000_vzoom_mp",        "WA2000",   "menu_mp_weapons_wa2000"   ),
         gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchelcharge"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_sticky_grenade"       ),
         gf_item( "concussion_grenade_mp",  "Stun",       "hud_us_stungrenade"  ) ); n++;
 
     // ── Shotgun ×2 ───────────────────────────────────────────────────
@@ -208,8 +208,6 @@ gf_giveLoadout()
     if ( !isDefined( level.gf_currentLoad ) )
         return;
 
-    self notify( "gf_new_loadout" );   // kill any stale gf_takeOldWeapons from a previous round
-
     load = level.gf_currentLoad;
 
     self takeAllWeapons();
@@ -227,42 +225,8 @@ gf_giveLoadout()
     self SetPerk( "specialty_bulletpenetration"  );   // Hardened
     self SetPerk( "specialty_longersprint"      );   // Marathon
 
-    self thread gf_takeOldWeapons( load );
     self thread gf_showLoadoutHUD( load );
     self thread gf_debugHealthHUD();
-}
-
-gf_takeOldWeapons( load )
-{
-    self endon( "disconnect" );
-    self endon( "death" );
-    self endon( "gf_new_loadout" );   // killed if gf_giveLoadout runs again before we fire
-
-    // wait for first weapon switch — engine giveLoadout may inject default weapons
-    // after our takeAllWeapons; this strips anything that snuck in
-    for ( ;; )
-    {
-        self waittill( "weapon_change", newWeapon );
-        if ( newWeapon != "none" )
-            break;
-    }
-
-    allowed = [];
-    allowed[0] = load["primary"];
-    allowed[1] = load["secondary"];
-    allowed[2] = load["lethal"];
-    allowed[3] = load["tactical"];
-    allowed[4] = "knife_mp";
-
-    weaponsList = self GetWeaponsList();
-    for ( i = 0; i < weaponsList.size; i++ )
-    {
-        isAllowed = false;
-        for ( j = 0; j < allowed.size; j++ )
-            if ( weaponsList[i] == allowed[j] ) { isAllowed = true; break; }
-        if ( !isAllowed )
-            self TakeWeapon( weaponsList[i] );
-    }
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
