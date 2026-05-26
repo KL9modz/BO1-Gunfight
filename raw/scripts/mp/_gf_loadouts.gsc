@@ -195,7 +195,7 @@ gf_pickLoadout()
     if ( !isDefined( game["gf_schedule"] ) )
         return;
 
-    idx = game["roundsplayed"] % game["gf_schedule"].size;
+    idx = level.gf_roundNum % game["gf_schedule"].size;
 
     if ( idx == game["gf_schedIdx"] && isDefined( level.gf_currentLoad ) )
         return;

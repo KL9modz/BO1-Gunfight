@@ -181,14 +181,14 @@ gf_testSuite_loadoutPicking()
         return;
     }
 
-    savedRounds  = game["roundsplayed"];
-    savedIdx     = game["gf_schedIdx"];
-    savedLoad    = level.gf_currentLoad;
+    savedRoundNum = level.gf_roundNum;
+    savedIdx      = game["gf_schedIdx"];
+    savedLoad     = level.gf_currentLoad;
 
     // round 0 → schedIdx 0
-    game["roundsplayed"]  = 0;
-    game["gf_schedIdx"]   = -1;
-    level.gf_currentLoad  = undefined;
+    level.gf_roundNum    = 0;
+    game["gf_schedIdx"]  = -1;
+    level.gf_currentLoad = undefined;
     gf_pickLoadout();
     gf_assert( isDefined( level.gf_currentLoad ),             "pickLoadout defines currentLoad" );
     gf_assert( isDefined( level.gf_currentLoad["primary"] ),  "currentLoad has primary" );
@@ -197,14 +197,14 @@ gf_testSuite_loadoutPicking()
     gf_assert( isDefined( level.gf_currentLoad["tactical"] ), "currentLoad has tactical" );
     gf_assertEq( game["gf_schedIdx"], 0,                      "schedIdx = 0 at round 0" );
 
-    // idempotent: same roundsplayed → same loadout
+    // idempotent: same roundNum → same loadout
     firstPrimary = level.gf_currentLoad["primary"];
-    game["roundsplayed"] = 0;
+    level.gf_roundNum = 0;
     gf_pickLoadout();
     gf_assertEq( level.gf_currentLoad["primary"], firstPrimary, "pickLoadout idempotent" );
 
-    // round 2 → schedIdx 2  (schedule is indexed directly by roundsplayed)
-    game["roundsplayed"] = 2;
+    // round 2 → schedIdx 2  (schedule is indexed directly by gf_roundNum)
+    level.gf_roundNum    = 2;
     game["gf_schedIdx"]  = -1;
     level.gf_currentLoad = undefined;
     gf_pickLoadout();
@@ -212,7 +212,7 @@ gf_testSuite_loadoutPicking()
     gf_assertEq( game["gf_schedIdx"], expectedIdx, "schedIdx = " + expectedIdx + " at round 2" );
 
     // restore
-    game["roundsplayed"] = savedRounds;
+    level.gf_roundNum    = savedRoundNum;
     game["gf_schedIdx"]  = savedIdx;
     level.gf_currentLoad = savedLoad;
 }
@@ -428,22 +428,22 @@ gf_testSuite_loadoutCycle()
         return;
     }
 
-    savedRounds = game["roundsplayed"];
-    savedIdx    = game["gf_schedIdx"];
-    savedLoad   = level.gf_currentLoad;
+    savedRoundNum = level.gf_roundNum;
+    savedIdx      = game["gf_schedIdx"];
+    savedLoad     = level.gf_currentLoad;
 
     schedSz = game["gf_schedule"].size;   // pool.size * roundsPerLoadout
 
-    // full cycle: roundsplayed = schedSz wraps schedIdx back to 0
-    game["roundsplayed"] = schedSz;
+    // full cycle: gf_roundNum = schedSz wraps schedIdx back to 0
+    level.gf_roundNum    = schedSz;
     game["gf_schedIdx"]  = -1;
     level.gf_currentLoad = undefined;
     gf_pickLoadout();
-    gf_assertEq( game["gf_schedIdx"], 0, "schedIdx wraps to 0 at full cycle (round " + game["roundsplayed"] + ")" );
+    gf_assertEq( game["gf_schedIdx"], 0, "schedIdx wraps to 0 at full cycle (round " + level.gf_roundNum + ")" );
 
-    // last slot: roundsplayed = schedSz - 1 → idx = schedSz - 1
+    // last slot: gf_roundNum = schedSz - 1 → idx = schedSz - 1
     lastRound = schedSz - 1;
-    game["roundsplayed"] = lastRound;
+    level.gf_roundNum    = lastRound;
     game["gf_schedIdx"]  = -1;
     level.gf_currentLoad = undefined;
     gf_pickLoadout();
@@ -451,14 +451,14 @@ gf_testSuite_loadoutCycle()
 
     // half-way through schedule
     midRound = int( schedSz / 2 );
-    game["roundsplayed"] = midRound;
+    level.gf_roundNum    = midRound;
     game["gf_schedIdx"]  = -1;
     level.gf_currentLoad = undefined;
     gf_pickLoadout();
     gf_assertEq( game["gf_schedIdx"], midRound % schedSz, "schedIdx = schedule midpoint" );
 
     // restore
-    game["roundsplayed"] = savedRounds;
+    level.gf_roundNum    = savedRoundNum;
     game["gf_schedIdx"]  = savedIdx;
     level.gf_currentLoad = savedLoad;
 }
