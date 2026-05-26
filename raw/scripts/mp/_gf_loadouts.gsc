@@ -179,10 +179,9 @@ gf_initLoadouts()
         PreCacheShader( pool[i]["lethalShader"]    );
     }
 
-    // perk shaders — names unverified in T5; blank icon if wrong, no crash
-    PreCacheShader( "specialty_lightweight" );
-    PreCacheShader( "specialty_hardened"    );
-    PreCacheShader( "specialty_marathon"    );
+    PreCacheShader( "specialty_movefaster"        );   // Lightweight
+    PreCacheShader( "specialty_bulletpenetration" );   // Hardened
+    PreCacheShader( "specialty_longersprint"      );   // Marathon
 
     game["gf_pool"]     = pool;
     game["gf_schedule"] = schedule;

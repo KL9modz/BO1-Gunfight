@@ -72,6 +72,8 @@ gf_onSpawned()
 
     if ( !level.gf_roundActive )
         level thread gf_tryActivateRound();
+    else if ( isDefined( level.gf_currentLoad ) )
+        self thread gf_giveLoadout();   // round already active (prematch→round1 respawn)
 }
 
 gf_bypassClassChoice()

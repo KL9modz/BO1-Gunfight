@@ -28,7 +28,7 @@ gf_showLoadoutHUD( load )
     level endon( "game_ended" );
 
     // weapon rows: primary, secondary, lethal
-    wYPos    = [];   wYPos[0]    = -128;   wYPos[1]    = -114;   wYPos[2]    = -100;
+    wYPos    = [];   wYPos[0]    = -128;   wYPos[1]    = -106;   wYPos[2]    = -84;
     wIconW   = [];   wIconW[0]   = 64;     wIconW[1]   = 64;     wIconW[2]   = 32;
 
     wShaders = [];
@@ -43,12 +43,12 @@ gf_showLoadoutHUD( load )
 
     // perk rows: lightweight, hardened, marathon
     // shader names are unverified in T5 — icon shows blank if wrong, no crash
-    pYPos    = [];   pYPos[0]    = -84;    pYPos[1]    = -70;    pYPos[2]    = -56;
+    pYPos    = [];   pYPos[0]    = -62;    pYPos[1]    = -40;    pYPos[2]    = -18;
 
     pShaders = [];
-    pShaders[0] = "specialty_lightweight";
-    pShaders[1] = "specialty_hardened";
-    pShaders[2] = "specialty_marathon";
+    pShaders[0] = "specialty_movefaster";       // Lightweight
+    pShaders[1] = "specialty_bulletpenetration"; // Hardened
+    pShaders[2] = "specialty_longersprint";      // Marathon
 
     pNames = [];
     pNames[0] = "Lightweight";
