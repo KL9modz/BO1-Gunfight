@@ -220,7 +220,7 @@ if (Test-Path $loPath) {
     }
 
     # lethal shaders
-    foreach ($shader in @('hud_grenadeicon','hud_satchel_charge','hud_hatchet')) {
+    foreach ($shader in @('hud_grenadeicon','hud_icon_satchel_charge','hud_hatchet')) {
         if ($lo -match [regex]::Escape($shader)) { Write-Pass "lethal shader $shader present" }
         else                                      { Write-Warn "lethal shader $shader not found" }
     }

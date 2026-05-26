@@ -43,7 +43,7 @@ Use this as a starting point for a new version. Items marked `[ ]` are built and
 - [x] Draw rounds don't count toward win limit — `hitRoundWinLimit()` adds `game["roundswon"]["tie"]` to both teams; fix: call `sd_endgame("tie","")` then immediately `level thread gf_undoTieMark()`. Two threads (endGame and undoTieMark) race to cancel: whichever order they run in, the net change to the tie counter is zero
 
 **HUD**
-- [x] Loadout icon slide-in — `gf_showLoadoutHUD()` confirmed working: primary/secondary/lethal icons slide in from right on spawn, hold 5.5s, slide out. Shader names from `level.gf_currentLoad`, precached in `gf_initLoadouts()`
+- [x] Loadout icon slide-in — `gf_showLoadoutHUD()` confirmed working: 6 rows (3 weapon + 3 perk) slide in from right on spawn, hold 5.5s, slide out. Layout: 28px row spacing, font `"default"` fontScale 1.3, weapon icons 64×32 (primary/secondary) / 32×32 (lethal), perk icons 32×24. Shader names from `level.gf_currentLoad`, precached in `gf_initLoadouts()`. NOTE: `"smallfixed"` font is too small — use `"default"` at 1.3 for readable labels
 - [x] HP debug display — `gf_debugHealthHUD()` confirmed working: `self iPrintLn("HP: " + self.health)` every 1s
 - [ ] Cold War Gunfight HUD — top-left panel (162×38 px): player icons (9×13), HP bars (68 px), score dots (5×5 px). Updated every 0.1s; persists across rounds. Element refs: `gf_hudBg/Sep`, `gf_hudAlliesIcon[0/1]`, `gf_hudAlliesBarBg/Fg`, `gf_hudAlliesHp`, `gf_hudAllyDot[0..5]`, mirrored for axis
 - [ ] Custom round timer — `gf_hudTimer` text element, center-top, MM:SS; driven by `level.gf_timerEnd = gettime() + ms`; `scr_sd_timelimit=0` disables SD's built-in timer
@@ -586,6 +586,7 @@ Default secondary: "menu_mp_weapons_" + base (strip suffix like _speed, _upgrade
 Lethal icon shaders:
 ```
 frag_grenade            -> hud_grenadeicon
+satchel_charge_mp       -> hud_icon_satchel_charge   (confirmed in-game; hud_satchel_charge is wrong — shows satchel bomb, not Semtex)
 sticky_grenade          -> hud_icon_sticky_grenade
 hatchet                 -> hud_hatchet
 Default: "hud_" + baseName

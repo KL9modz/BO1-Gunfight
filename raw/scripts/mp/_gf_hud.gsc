@@ -28,7 +28,7 @@ gf_showLoadoutHUD( load )
     level endon( "game_ended" );
 
     // weapon rows: primary, secondary, lethal
-    wYPos    = [];   wYPos[0]    = -128;   wYPos[1]    = -106;   wYPos[2]    = -84;
+    wYPos    = [];   wYPos[0]    = -140;   wYPos[1]    = -112;   wYPos[2]    = -84;
     wIconW   = [];   wIconW[0]   = 64;     wIconW[1]   = 64;     wIconW[2]   = 32;
 
     wShaders = [];
@@ -43,7 +43,7 @@ gf_showLoadoutHUD( load )
 
     // perk rows: lightweight, hardened, marathon
     // shader names are unverified in T5 — icon shows blank if wrong, no crash
-    pYPos    = [];   pYPos[0]    = -62;    pYPos[1]    = -40;    pYPos[2]    = -18;
+    pYPos    = [];   pYPos[0]    = -56;    pYPos[1]    = -28;    pYPos[2]    = 0;
 
     pShaders = [];
     pShaders[0] = "perk_lightweight";    // Lightweight
@@ -73,7 +73,7 @@ gf_showLoadoutHUD( load )
         t = newClientHudElem( self );
         t.horzAlign = "right";   t.vertAlign = "middle";
         t.alignX    = "right";   t.alignY    = "middle";
-        t.font = "smallfixed";   t.fontScale = 1.0;
+        t.font = "default";   t.fontScale = 1.3;
         t.hidewheninmenu = true;   t.sort = 2;
         t.x = 400;   t.y = wYPos[i];
         t setText( wNames[i] );
@@ -89,7 +89,7 @@ gf_showLoadoutHUD( load )
         e.alignX    = "right";   e.alignY    = "middle";
         e.hidewheninmenu = true;   e.sort = 2;
         e.x = 400;   e.y = pYPos[i];
-        e setShader( pShaders[i], 32, 16 );
+        e setShader( pShaders[i], 32, 24 );
         e moveOverTime( 0.3 );
         e.x = -5;
         pIcons[i] = e;
@@ -97,7 +97,7 @@ gf_showLoadoutHUD( load )
         t = newClientHudElem( self );
         t.horzAlign = "right";   t.vertAlign = "middle";
         t.alignX    = "right";   t.alignY    = "middle";
-        t.font = "smallfixed";   t.fontScale = 1.0;
+        t.font = "default";   t.fontScale = 1.3;
         t.hidewheninmenu = true;   t.sort = 2;
         t.x = 400;   t.y = pYPos[i];
         t setText( pNames[i] );

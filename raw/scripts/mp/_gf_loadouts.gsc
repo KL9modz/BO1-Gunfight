@@ -25,7 +25,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "m16_acog_mp",            "M16",      "menu_mp_weapons_m16"      ),
         gf_item( "m1911_upgradesight_mp",  "M1911",    "menu_mp_weapons_colt"     ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchel_charge"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchel_charge"       ),
         "concussion_grenade_mp" ); n++;
 
     pool[n] = gf_buildLoadout(
@@ -43,7 +43,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "commando_reflex_mp",     "Commando", "menu_mp_weapons_commando" ),
         gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchel_charge"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchel_charge"       ),
         "concussion_grenade_mp" ); n++;
 
     pool[n] = gf_buildLoadout(
@@ -80,7 +80,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "mp40_extclip_mp",        "MP40",     "menu_mp_weapons_mp40"     ),
         gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchel_charge"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchel_charge"       ),
         "smoke_grenade_mp" ); n++;
 
     pool[n] = gf_buildLoadout(
@@ -92,7 +92,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "uzi_reflex_mp",          "Uzi",      "menu_mp_weapons_uzi"      ),
         gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchel_charge"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchel_charge"       ),
         "concussion_grenade_mp" ); n++;
 
     pool[n] = gf_buildLoadout(
@@ -111,7 +111,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "m60_reflex_mp",          "M60",      "menu_mp_weapons_m60"      ),
         gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchel_charge"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchel_charge"       ),
         "flash_grenade_mp" ); n++;
 
     pool[n] = gf_buildLoadout(
@@ -136,7 +136,7 @@ gf_initLoadouts()
     pool[n] = gf_buildLoadout(
         gf_item( "wa2000_vzoom_mp",        "WA2000",   "menu_mp_weapons_wa2000"   ),
         gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
-        gf_item( "satchel_charge_mp",      "Semtex",   "hud_satchel_charge"       ),
+        gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchel_charge"       ),
         "concussion_grenade_mp" ); n++;
 
     // ── Shotgun ×2 ───────────────────────────────────────────────────
