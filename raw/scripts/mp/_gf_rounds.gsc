@@ -40,6 +40,8 @@ gf_onDeadEvent( team )
     // override of level.onDeadEvent — suppresses SD bomb logic entirely
     if ( level.gf_roundEnding )
         return;
+    if ( !level.gf_roundActive )
+        return;
 
     level.gf_roundEnding = true;
     level.gf_roundActive = false;
@@ -57,6 +59,8 @@ gf_onDeadEvent( team )
 gf_onTimeLimit()
 {
     if ( level.gf_roundEnding )
+        return;
+    if ( !level.gf_roundActive )
         return;
 
     level.gf_roundEnding = true;

@@ -246,6 +246,7 @@ gf_giveCustomLoadout( takeAll, alreadySpawned )
     self SetPerk( "specialty_longersprint"      );   // Marathon
 
     self thread gf_showLoadoutHUD( load );
+    self thread gf_healthHUD();
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
