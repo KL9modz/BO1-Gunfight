@@ -195,13 +195,8 @@ gf_pickLoadout()
     if ( !isDefined( game["gf_schedule"] ) )
         return;
 
-    idx = level.gf_roundNum % game["gf_schedule"].size;
-
-    if ( idx == game["gf_schedIdx"] && isDefined( level.gf_currentLoad ) )
-        return;
-
-    game["gf_schedIdx"]  = idx;
-    level.gf_currentLoad = game["gf_schedule"][idx];
+    game["gf_schedIdx"]  = ( game["gf_schedIdx"] + 1 ) % game["gf_schedule"].size;
+    level.gf_currentLoad = game["gf_schedule"][ game["gf_schedIdx"] ];
 }
 
 gf_giveLoadout()
@@ -226,7 +221,7 @@ gf_giveLoadout()
     self SetPerk( "specialty_bulletpenetration"  );   // Hardened
     self SetPerk( "specialty_longersprint"      );   // Marathon
 
-    self thread gf_showLoadoutHUD();
+    self thread gf_showLoadoutHUD( load );
     self thread gf_debugHealthHUD();
 }
 

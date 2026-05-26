@@ -13,11 +13,7 @@ gf_tryActivateRound()
     level.gf_activatingRound = true;
     level endon( "game_ended" );
 
-    // pick loadout for this round (idempotent if same round index)
-    gf_pickLoadout();
-
-    // 0.2s dedup grace — multiple players spawning at once all call this;
-    // only the first one through should open the round
+    // 0.2s dedup: let all players finish spawning so we give to a complete list
     wait 0.2;
 
     if ( level.gf_roundActive )
@@ -26,10 +22,21 @@ gf_tryActivateRound()
         return;
     }
 
+    gf_pickLoadout();   // pick once, after all players are present
+
     level.gf_roundNum++;
-    level.gf_roundEnding    = false;   // SD never resets this between rounds
+    level.gf_roundEnding    = false;
     level.gf_roundActive    = true;
     level.gf_activatingRound = false;
+
+    // give the same loadout to every player atomically — covers bots too
+    for ( i = 0; i < level.players.size; i++ )
+    {
+        p = level.players[i];
+        if ( ( p.pers["team"] == "allies" || p.pers["team"] == "axis" ) &&
+               p.sessionstate == "playing" )
+            p thread gf_giveLoadout();
+    }
 
     // pause SD's native clock during 3s freeze, then let it run
     maps\mp\gametypes\_globallogic_utils::pauseTimer();

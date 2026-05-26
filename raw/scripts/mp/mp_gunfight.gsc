@@ -70,9 +70,6 @@ gf_onSpawned()
     if ( self.pers["team"] != "allies" && self.pers["team"] != "axis" )
         return;
 
-    gf_pickLoadout();
-    self gf_giveLoadout();
-
     if ( !level.gf_roundActive )
         level thread gf_tryActivateRound();
 }

@@ -15,9 +15,9 @@ gf_debugHealthHUD()
     }
 }
 
-gf_showLoadoutHUD()
+gf_showLoadoutHUD( load )
 {
-    if ( !isDefined( level.gf_currentLoad ) )
+    if ( !isDefined( load ) )
         return;
 
     // kill any lingering instance from previous spawn
@@ -26,8 +26,6 @@ gf_showLoadoutHUD()
     self endon( "disconnect" );
     self endon( "death" );
     level endon( "game_ended" );
-
-    load = level.gf_currentLoad;
 
     // weapon rows: primary, secondary, lethal
     wYPos    = [];   wYPos[0]    = -128;   wYPos[1]    = -114;   wYPos[2]    = -100;
