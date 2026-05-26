@@ -208,6 +208,8 @@ gf_giveLoadout()
     if ( !isDefined( level.gf_currentLoad ) )
         return;
 
+    self notify( "gf_new_loadout" );   // kill any stale gf_takeOldWeapons from a previous round
+
     load = level.gf_currentLoad;
 
     self takeAllWeapons();
@@ -234,6 +236,7 @@ gf_takeOldWeapons( load )
 {
     self endon( "disconnect" );
     self endon( "death" );
+    self endon( "gf_new_loadout" );   // killed if gf_giveLoadout runs again before we fire
 
     // wait for first weapon switch — engine giveLoadout may inject default weapons
     // after our takeAllWeapons; this strips anything that snuck in
