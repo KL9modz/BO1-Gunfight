@@ -61,7 +61,6 @@ Use this as a starting point for a new version. Items marked `[ ]` are built and
 
 - Mid-round join grace period (~10s window to allow spawn instead of hard block)
 - Prematch control lockout — `self freezeControls(1)` / `self freezeControls(0)` (confirmed in IW5 `_utility.gsc`; T5 should be same method — needs in-game test)
-- Minimap disable — `setDvar("compass", "0")` hides the minimap; `setDvar("compassSize", "0")` removes it entirely (from dvarlist.txt); call during `init()` before match starts
 - Weapon camos — no direct GSC function exists in T5; engine ties camos to DDL persistent data. Options: (1) check Plutonium modding API/Discord for a native camo setter, (2) test populating `self.custom_class[0]["camo_num"]` before spawn with class set to `CLASS_CUSTOM1`
 - Wager match modes (Gun Game, Sharpshooter — reference `gun.gsc` and `shrp.gsc` from plutoniummod/t5-scripts)
 - Kill-ding alias — `"uin_challenge_repeatable"` is invalid in T5; causes `DSERR_INVALIDPARAM` DirectSound crash (invalid buffer length). Removed from code. Need a valid alias — try `"mpl_killconfirm_killsound"` or `"mp_level_up"`

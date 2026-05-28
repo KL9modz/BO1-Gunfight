@@ -13,6 +13,11 @@ gf_tryActivateRound()
     level.gf_activatingRound = true;
     level endon( "game_ended" );
 
+    // would this fix the round 1 logic issue? (found in main):
+    // level waittill( "prematch_over" );
+    // level.gf_roundActive        = false;
+	// level.gf_roundNum           = 0;
+
     // 0.2s dedup: let all players finish spawning so we give to a complete list
     wait 0.2;
 
@@ -86,7 +91,7 @@ gf_onTimeLimit()
         return;
     }
 
-    gf_pickLoadout();
+    gf_pickLoadout(); // pre-pick next round's loadout during end-of-round freeze time
     maps\mp\gametypes\sd::sd_endgame( winner, "" );
 }
 
@@ -196,3 +201,12 @@ gf_teamIsEmpty( team )
 {
     return ( gf_getTeamPlayerCount( team ) == 0 );
 }
+
+// stolen from main
+// gf_onOneLeft( team )
+// {
+// 	maps\mp\gametypes\_globallogic_audio::leaderDialog( "last_one" );
+// 	maps\mp\gametypes\_globallogic_audio::set_music_on_team( "MP_LAST_STAND", "allies" );
+// 	maps\mp\gametypes\_globallogic_audio::set_music_on_team( "MP_LAST_STAND", "axis"   );
+// }
+

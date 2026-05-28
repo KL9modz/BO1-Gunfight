@@ -1,6 +1,9 @@
 {
     "gsc.gameRootFolder": "raw",
-    "gsc.includedWorkspaceFolders": ["t5-raw"],
+    "gsc.includedWorkspaceFolders": [
+        "t5-raw",
+        "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Call of Duty Black Ops"
+    ],
     "files.exclude": {
         "demos/": true,
         "imgui.ini": true,

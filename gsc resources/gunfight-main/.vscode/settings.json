@@ -1,0 +1,24 @@
+{
+    "gsc.gameRootFolder": "raw",
+    "gsc.includedWorkspaceFolders": ["t5-raw"],
+    "files.exclude": {
+        "demos/": true,
+        "imgui.ini": true,
+        "main/": true,
+        "players/": true,
+        "plutonium/": true,
+        "zone/": true
+    },
+    "search.exclude": {
+        "demos/": true,
+        "main/": true,
+        "players/": true,
+        "plutonium/": true,
+        "zone/": true
+    },
+    "files.associations": {
+        "*.gsc": "gsc"
+    },
+    "editor.rulers": [100],
+    "git.ignoredRepositories": ["S:\\SteamLibrary\\steamapps\\common\\Call of Duty Black Ops 42740\\raw"]
+}

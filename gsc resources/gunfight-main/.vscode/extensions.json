@@ -1,0 +1,17 @@
+{
+    "recommendations": [
+        "eyza.cod-gsc",        // T5-aware GSC support — already wired to t5-raw source
+        "eamodio.gitlens",     // inline blame, line history
+        "usernamehw.errorlens" // inline error display on the offending line
+    ],
+    "unwantedRecommendations": [
+        "lastdemon99.lb-iw5-gsc",   // IW5 (MW3) — wrong engine
+        "shiversoftdev.vscode-txgsc", // T6/T7 (BO2/BO3) — wrong engine
+        "aspire.aspire-gsc",         // IW4 (MW2) — wrong engine
+        "blakintosh.gscode",         // unknown target, redundant
+        "boy-7.gsc",                 // unknown quality, redundant
+        "molaidev.gscript-tools",    // redundant
+        "atrx.vscode-codscript",     // conflicts with eyza
+        "se2dev.cod-sense"           // unknown, redundant
+    ]
+}
