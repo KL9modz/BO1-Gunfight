@@ -1,9 +1,9 @@
-// Gunfight v2 — Loadout System
+// Gunfight v3 — Loadout System
 // 22 fully pre-built loadouts, shuffled once per match and expanded into a
 // round schedule. All players read the same game["roundsplayed"] index so
 // loadout sync is guaranteed by construction.
 
-#include scripts\mp\_gf_hud;
+#include maps\mp\gametypes\_gf_hud;
 
 // ─── Public API ────────────────────────────────────────────────────────────
 
