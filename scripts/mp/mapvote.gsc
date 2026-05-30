@@ -35,9 +35,9 @@ init()
     // DLC ONLY
     //SetDvarIfNotInizialized("mv_maps", "mp_berlinwall2 mp_discovery mp_kowloon mp_stadium mp_gridlock mp_hotel mp_outskirts mp_zoo mp_drivein mp_area51 mp_golfcourse mp_silo");
     
-    SetDvarIfNotInizialized("mv_gametypefiles", "dm@sd@tdm");
-    SetDvarIfNotInizialized("mv_gametypes", "dm@sd@tdm");
-    SetDvarIfNotInizialized("mv_randomgametypeenable", 1);
+    setDvar("mv_gametypefiles", "gf");
+    setDvar("mv_gametypes", "gf");
+    setDvar("mv_randomgametypeenable", 1);
 
     SetDvarIfNotInizialized("map1", "none");
     SetDvarIfNotInizialized("map2", "none");
