@@ -10,12 +10,15 @@
         },
         {
             "name": "rawfiles",
-            "path": "../../../../../.vscode/extensions/lastdemon99.lb-iw5-gsc-1.6.0/rawfiles"
+            "path": "../../../../../../../.vscode/extensions/lastdemon99.lb-iw5-gsc-1.6.0/rawfiles"
         }
     ],
     "settings": {
         "gsc.includedWorkspaceFolders": [
-            "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Call of Duty Black Ops"
-        ]
+            "S:\\SteamLibrary\\steamapps\\common\\Call of Duty Black Ops",
+            "S:\\SteamLibrary\\steamapps\\common\\Call of Duty Black Ops 42740\\"
+        ],
+        "gsc.game": "Universal game",
+        "gsc.gameRootFolder": "S:\\SteamLibrary\\steamapps\\common\\Call of Duty Black Ops 42740\\"
     }
 }

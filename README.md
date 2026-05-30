@@ -1,12 +1,19 @@
 # Gunfight — Plutonium T5 (Black Ops 1)
 
-Custom Gunfight mode for BO1 MP, layered over SD. Work in progress.
+Custom Gunfight mode for BO1 MP. Work in progress.
 
 ## Installation
 
-1. Copy `raw/` into your Plutonium T5 storage folder (`%appdata%\Plutonium\storage\t5\`)
-2. Set gametype to `sd`
-3. In the Plutonium console: `loadMod mp_gunfight` → `map_restart`
+1. Clone or copy this folder into your Plutonium T5 mods directory:
+   ```
+   %appdata%\Plutonium\storage\t5\mods\mp_gunfight\
+   ```
+2. In the Plutonium console:
+   ```
+   g_gametype gf
+   loadMod mp_gunfight
+   map_restart
+   ```
 
 ## Configuration
 
