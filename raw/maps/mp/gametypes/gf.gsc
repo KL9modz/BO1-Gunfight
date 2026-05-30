@@ -83,7 +83,6 @@ onStartGameType()
     gf_initLoadouts();
     gf_pickLoadout();
 
-    // Spawn infrastructure — required for valid spawn point selection and weighting
     level.spawnMins = ( 0, 0, 0 );
     level.spawnMaxs = ( 0, 0, 0 );
     maps\mp\gametypes\_spawnlogic::placeSpawnPoints( "mp_sd_spawn_attacker" );
@@ -94,7 +93,13 @@ onStartGameType()
     spawnpoint = maps\mp\gametypes\_spawnlogic::getRandomIntermissionPoint();
     setDemoIntermissionPoint( spawnpoint.origin, spawnpoint.angles );
 
+    allowed[0] = "gf";
+    maps\mp\gametypes\_gameobjects::main( allowed );
+
     maps\mp\gametypes\_spawning::create_map_placed_influencers();
+
+    level.spawn_allies_start = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sd_spawn_attacker" );
+    level.spawn_axis_start   = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sd_spawn_defender" );
 }
 
 // ─── Spawn Pipeline ────────────────────────────────────────────────────────
@@ -105,25 +110,24 @@ onSpawnPlayer( teamOverride )
     self.maxhealth    = 100;
     self.health       = self.maxhealth;
 
-    if ( self.pers["team"] == "allies" )
-    {
-        spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sd_spawn_attacker" );
-        if ( !spawnPoints.size )
-            spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_allies_start" );
-    }
+    // Match SD pattern: use game["attackers"] not team name so sides stay
+    // correct after a round switch
+    if ( self.pers["team"] == game["attackers"] )
+        spawnPoints = level.spawn_allies_start;
     else
+        spawnPoints = level.spawn_axis_start;
+
+    // Fallback: try the other side's points rather than re-trying the same empty array
+    if ( !isDefined( spawnPoints ) || !spawnPoints.size )
     {
-        spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sd_spawn_defender" );
+        spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sd_spawn_attacker" );
         if ( !spawnPoints.size )
-            spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_axis_start" );
+            spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sd_spawn_defender" );
     }
 
-    // Last resort — any spawn point on the map
-    if ( !spawnPoints.size )
-        spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sd_spawn_attacker" );
-
+    assert( spawnPoints.size );
     spawnPoint = maps\mp\gametypes\_spawnlogic::getSpawnpoint_Random( spawnPoints );
-    self spawn( spawnPoint.origin, spawnPoint.angles );
+    self spawn( spawnPoint.origin, spawnPoint.angles, "gf" );
 }
 
 onSpawnPlayerUnified()
