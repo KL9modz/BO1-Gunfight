@@ -1,0 +1,38 @@
+VERSION             "1"
+CONFIG              ""
+FILENOTES           ""
+
+REFERENCE           TITLE
+LANG_ENGLISH        "Gunfight"
+
+REFERENCE           TITLE_CAPS
+LANG_ENGLISH        "GUNFIGHT"
+
+REFERENCE           TITLE_SHORT_CAPS
+LANG_ENGLISH        "GF"
+
+REFERENCE           SHORT
+LANG_ENGLISH        "Gunfight"
+
+REFERENCE           WIN_MATCH
+LANG_ENGLISH        ""
+
+REFERENCE           WIN_ROUND
+LANG_ENGLISH        "Enemy team eliminated!"
+
+REFERENCE           MISSION_ACCOMPLISHED
+LANG_ENGLISH        "Enemy team mission accomplished"
+
+REFERENCE           ELIMINATED
+LANG_ENGLISH        "Enemy team eliminated"
+
+REFERENCE           FORFEITED
+LANG_ENGLISH        "Enemy team forfeited"
+
+REFERENCE           NAME
+LANG_ENGLISH        "GUNFIGHT"
+
+REFERENCE           GAMETYPE_DESC
+LANG_ENGLISH        "2v2. One life per round. First team to win 6 rounds wins the match."
+
+ENDMARKER

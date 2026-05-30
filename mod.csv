@@ -1,1 +1,9 @@
 menufile,ui_mp\scriptmenus\mapvote.menu
+rawfile,maps/mp/gametypes/_gametypes.txt
+rawfile,maps/mp/gametypes/gf.txt
+rawfile,maps/mp/gametypes/gf.gsc
+rawfile,maps/mp/gametypes/_gf_rounds.gsc
+rawfile,maps/mp/gametypes/_gf_loadouts.gsc
+rawfile,maps/mp/gametypes/_gf_hud.gsc
+stringtable,mp/gametypesTable.csv
+localize,gf
