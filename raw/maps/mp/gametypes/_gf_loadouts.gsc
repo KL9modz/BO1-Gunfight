@@ -184,10 +184,6 @@ gf_initLoadouts()
     PreCacheShader( "hud_us_stungrenade" );
     PreCacheShader( "hud_us_smokegrenade"      );
 
-    PreCacheShader( "perk_lightweight"  );   // Lightweight
-    PreCacheShader( "perk_deep_impact"  );   // Hardened (Deep Impact)
-    PreCacheShader( "perk_marathon"     );   // Marathon
-
     game["gf_pool"]     = pool;
     game["gf_schedule"] = schedule;
     game["gf_schedIdx"] = -1;
@@ -212,8 +208,11 @@ gf_giveCustomLoadout( takeAll, alreadySpawned )
 
     load = level.gf_currentLoad;
 
+    // setupBlankRandomPlayer clears inventory, applies body model, resets state
+    chooseRandomBody = !isDefined( alreadySpawned ) || !alreadySpawned;
+    self maps\mp\gametypes\_wager::setupBlankRandomPlayer( takeAll, chooseRandomBody );
+
     self DisableWeaponCycling();
-    self takeAllWeapons();
     self GiveWeapon( load["primary"] );
     self GiveWeapon( load["secondary"] );
     self GiveWeapon( "knife_mp" );
@@ -245,7 +244,7 @@ gf_giveCustomLoadout( takeAll, alreadySpawned )
     self SetPerk( "specialty_bulletpenetration" );   // Hardened
     self SetPerk( "specialty_longersprint"      );   // Marathon
 
-    self thread gf_showLoadoutHUD( load );
+    self thread gf_showWeaponHUD( load );
     self thread gf_healthHUD();
 }
 

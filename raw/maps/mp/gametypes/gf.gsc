@@ -79,6 +79,30 @@ onStartGameType()
     if ( !isDefined( game["switchedsides"] ) )
         game["switchedsides"] = false;
 
+    setClientNameMode( "auto_change" );
+
+    maps\mp\gametypes\_globallogic_ui::setObjectiveText( "allies", &"OBJECTIVES_TDM" );
+    maps\mp\gametypes\_globallogic_ui::setObjectiveText( "axis",   &"OBJECTIVES_TDM" );
+    if ( level.splitscreen )
+    {
+        maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "allies", &"OBJECTIVES_TDM" );
+        maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "axis",   &"OBJECTIVES_TDM" );
+    }
+    else
+    {
+        maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "allies", &"OBJECTIVES_TDM_SCORE" );
+        maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "axis",   &"OBJECTIVES_TDM_SCORE" );
+    }
+    maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "allies", &"OBJECTIVES_TDM_HINT" );
+    maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "axis",   &"OBJECTIVES_TDM_HINT" );
+
+    maps\mp\gametypes\_rank::registerScoreInfo( "win",      5   );
+    maps\mp\gametypes\_rank::registerScoreInfo( "loss",     1   );
+    maps\mp\gametypes\_rank::registerScoreInfo( "tie",      2.5 );
+    maps\mp\gametypes\_rank::registerScoreInfo( "kill",     250 );
+    maps\mp\gametypes\_rank::registerScoreInfo( "headshot", 250 );
+    maps\mp\gametypes\_rank::registerScoreInfo( "assist",   100 );
+
     game["gf_init"] = undefined;
     gf_initLoadouts();
     gf_pickLoadout();
