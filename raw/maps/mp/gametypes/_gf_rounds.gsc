@@ -68,6 +68,7 @@ gf_onDeadEvent( team )
 
     game["gf_winner"] = winner;
     gf_pickLoadout();
+    level thread maps\mp\gametypes\_killcam::startLastKillcam();
     maps\mp\gametypes\_globallogic::endGame( winner, "" );
 }
 
