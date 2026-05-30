@@ -85,8 +85,14 @@ onStartGameType()
 
     level.spawnMins = ( 0, 0, 0 );
     level.spawnMaxs = ( 0, 0, 0 );
-    maps\mp\gametypes\_spawnlogic::placeSpawnPoints( "mp_sd_spawn_attacker" );
-    maps\mp\gametypes\_spawnlogic::placeSpawnPoints( "mp_sd_spawn_defender" );
+    maps\mp\gametypes\_spawnlogic::placeSpawnPoints( "mp_tdm_spawn_allies_start" );
+    maps\mp\gametypes\_spawnlogic::placeSpawnPoints( "mp_tdm_spawn_axis_start" );
+    maps\mp\gametypes\_spawnlogic::addSpawnPoints( "allies", "mp_tdm_spawn" );
+    maps\mp\gametypes\_spawnlogic::addSpawnPoints( "axis",   "mp_tdm_spawn" );
+    maps\mp\gametypes\_spawning::updateAllSpawnPoints();
+    level.spawn_allies_start = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_allies_start" );
+    level.spawn_axis_start   = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_axis_start" );
+
     level.mapCenter = maps\mp\gametypes\_spawnlogic::findBoxCenter( level.spawnMins, level.spawnMaxs );
     setMapCenter( level.mapCenter );
 
@@ -97,9 +103,6 @@ onStartGameType()
     maps\mp\gametypes\_gameobjects::main( allowed );
 
     maps\mp\gametypes\_spawning::create_map_placed_influencers();
-
-    level.spawn_allies_start = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sd_spawn_attacker" );
-    level.spawn_axis_start   = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sd_spawn_defender" );
 }
 
 // ─── Spawn Pipeline ────────────────────────────────────────────────────────
@@ -107,32 +110,44 @@ onStartGameType()
 onSpawnPlayer( teamOverride )
 {
     self.sessionstate = "playing";
+    self.usingObj     = undefined;
     self.maxhealth    = 100;
     self.health       = self.maxhealth;
 
-    // Match SD pattern: use game["attackers"] not team name so sides stay
-    // correct after a round switch
-    if ( self.pers["team"] == game["attackers"] )
-        spawnPoints = level.spawn_allies_start;
-    else
-        spawnPoints = level.spawn_axis_start;
-
-    // Fallback: try the other side's points rather than re-trying the same empty array
-    if ( !isDefined( spawnPoints ) || !spawnPoints.size )
+    if ( level.inGracePeriod )
     {
-        spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sd_spawn_attacker" );
+        // Round start — use fixed team start positions
+        spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_" + self.pers["team"] + "_start" );
+
         if ( !spawnPoints.size )
-            spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sd_spawn_defender" );
+            spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sab_spawn_" + self.pers["team"] + "_start" );
+
+        if ( spawnPoints.size )
+            spawnPoint = maps\mp\gametypes\_spawnlogic::getSpawnpoint_Random( spawnPoints );
+        else
+        {
+            spawnPoints = maps\mp\gametypes\_spawnlogic::getTeamSpawnPoints( self.pers["team"] );
+            spawnPoint  = maps\mp\gametypes\_spawnlogic::getSpawnpoint_NearTeam( spawnPoints );
+        }
+    }
+    else
+    {
+        // Mid-round (spectator joining, etc.) — use intelligent spawn selection
+        spawnPoints = maps\mp\gametypes\_spawnlogic::getTeamSpawnPoints( self.pers["team"] );
+        spawnPoint  = maps\mp\gametypes\_spawnlogic::getSpawnpoint_NearTeam( spawnPoints );
     }
 
-    assert( spawnPoints.size );
-    spawnPoint = maps\mp\gametypes\_spawnlogic::getSpawnpoint_Random( spawnPoints );
     self spawn( spawnPoint.origin, spawnPoint.angles, "gf" );
 }
 
 onSpawnPlayerUnified()
 {
-    // fires for all spawn types (including intermission); no-op for one-life mode
+    self.usingObj = undefined;
+
+    if ( level.useStartSpawns && !level.inGracePeriod )
+        level.useStartSpawns = false;
+
+    maps\mp\gametypes\_spawning::onSpawnPlayer_Unified();
 }
 
 // ─── Class Select Bypass ───────────────────────────────────────────────────
