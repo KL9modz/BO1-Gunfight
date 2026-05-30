@@ -1,4 +1,0 @@
-pcserver()
-{
-	pcServerUpdatePlaylist();
-}
