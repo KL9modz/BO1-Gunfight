@@ -165,6 +165,42 @@ Core features modelled after the community duel mod (`mods\mp_gf`) — use this 
 
 ---
 
+## Building mod.ff
+
+`mod.ff` is the compiled zone file that registers the gametype in the UI (strings, gametype table, mapvote menu). Rebuild it whenever `gametypesTable.csv`, `gf.str`, or `mapvote.menu` changes.
+
+**Tools:** `S:\SteamLibrary\steamapps\common\Call of Duty Black Ops 42740\bin\linker_pc.exe`
+
+**Step 1 — stage source files to mod tools `raw/`:**
+```
+mod folder                              → mod tools raw/
+mp/gametypesTable.csv                   → raw/mp/gametypesTable.csv
+localizedstrings/gf.str                 → raw/english/localizedstrings/gf.str
+maps/mp/gametypes/_gametypes.txt        → raw/maps/mp/gametypes/_gametypes.txt
+maps/mp/gametypes/gf.txt               → raw/maps/mp/gametypes/gf.txt
+ui_mp/scriptmenus/mapvote.menu          → raw/ui_mp/scriptmenus/mapvote.menu
+mod.csv                                 → zone_source/mods/mp_gunfight.csv
+mod.csv                                 → zone_source/english/assetinfo/mods/mp_gunfight.csv
+```
+
+**Step 2 — run linker from `bin/`:**
+```
+cd "S:\SteamLibrary\steamapps\common\Call of Duty Black Ops 42740\bin"
+linker_pc.exe -language english mods/mp_gunfight
+```
+GSC rawfile errors are expected — Plutonium loads those directly, they don't need to be in the zone.
+
+**Step 3 — copy output back:**
+```
+zone/english/mods/mp_gunfight.ff  →  mods/mp_gunfight/mod.ff  (Plutonium storage)
+```
+
+**Gametype UI icon** — controlled by the 4th column of the `gf` row in `mp/gametypesTable.csv`.
+Available values: `playlist_tdm`, `playlist_ffa`, `playlist_search_destroy`, `playlist_domination`, `playlist_headquarters`, `playlist_demolition`, `playlist_ctf`, `playlist_sabotage`.
+Currently set to `playlist_tdm`. Change and rebuild mod.ff to update.
+
+---
+
 ## Project Overview
 
 Custom Gunfight game mode for Black Ops 1 running on Plutonium T5 MP.
