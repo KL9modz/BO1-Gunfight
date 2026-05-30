@@ -52,39 +52,43 @@ gf_tryActivateRound()
 
 // ─── Round End ─────────────────────────────────────────────────────────────
 
+// Central round-end helper — mirrors sd_endGame().
+// Updates game["teamScores"] so the native score bar HUD reflects the win,
+// then hands off to _globallogic::endGame() for round cycling / win-limit.
+gf_endRound( winner )
+{
+    level.gf_roundEnding = true;
+    level.gf_roundActive = false;
+    level notify( "gf_round_over" );
+
+    gf_pickLoadout();
+
+    if ( isDefined( winner ) && winner != "tie" )
+        [[level._setTeamScore]]( winner, [[level._getTeamScore]]( winner ) + 1 );
+
+    level thread maps\mp\gametypes\_killcam::startLastKillcam();
+    maps\mp\gametypes\_globallogic::endGame( winner, "" );
+}
+
 gf_onDeadEvent( team )
 {
     if ( level.gf_roundEnding ) return;
     if ( !level.gf_roundActive ) return;
 
-    level.gf_roundEnding = true;
-    level.gf_roundActive = false;
-    level notify( "gf_round_over" );
-
     if ( team == "all" )
-        winner = game["defenders"];
+        winner = "tie";
     else
         winner = maps\mp\_utility::getOtherTeam( team );
 
-    game["gf_winner"] = winner;
-    gf_pickLoadout();
-    level thread maps\mp\gametypes\_killcam::startLastKillcam();
-    maps\mp\gametypes\_globallogic::endGame( winner, "" );
+    gf_endRound( winner );
 }
 
 gf_onTimeLimit()
 {
     if ( level.gf_roundEnding ) return;
-    // Do NOT guard on gf_roundActive — checkTimeLimit() already ensures we're
-    // in game["state"]=="playing". Guarding here caused the timer to silently
-    // no-op if it fired before gf_tryActivateRound() completed.
-
-    level.gf_roundEnding = true;
-    level.gf_roundActive = false;
-    level notify( "gf_round_over" );
 
     alliesHP = gf_getTeamHP( "allies" );
-    axisHP   = gf_getTeamHP( "axis" );
+    axisHP   = gf_getTeamHP( "axis"   );
 
     if ( alliesHP > axisHP )
         winner = "allies";
@@ -93,17 +97,18 @@ gf_onTimeLimit()
     else
         winner = "tie";
 
-    game["gf_winner"] = winner;
-    gf_pickLoadout();
-    maps\mp\gametypes\_globallogic::endGame( winner, "" );
+    gf_endRound( winner );
 }
 
+// Called by _globallogic to determine the overall match leader at round end.
+// Must compare cumulative roundswon — NOT the single-round result.
 gf_onRoundEndGame()
 {
-    // _globallogic calls this to get the winner string for the scoreboard
-    if ( isDefined( game["gf_winner"] ) )
-        return game["gf_winner"];
-    return "tie";
+    if ( game["roundswon"]["allies"] == game["roundswon"]["axis"] )
+        return "tie";
+    else if ( game["roundswon"]["axis"] > game["roundswon"]["allies"] )
+        return "axis";
+    return "allies";
 }
 
 // ─── Optional Callbacks ────────────────────────────────────────────────────

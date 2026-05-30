@@ -57,6 +57,11 @@ main()
 
 onPrecacheGameType()
 {
+    // Score bar — native engine HUD reads these shaders for the round-win display
+    precacheShader( "score_bar_bg" );
+    precacheShader( "score_bar_allies" );
+    precacheShader( "score_bar_opfor" );
+
     precacheShader( "waypoint_kill" );
     precacheShader( "waypoint_defend" );
     precacheShader( "compass_waypoint_defend" );
