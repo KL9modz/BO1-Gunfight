@@ -184,6 +184,8 @@ gf_bypassClassChoice()
     self.pers["class"] = level.defaultClass;
     self.class         = level.defaultClass;
 
+    self thread maps\mp\gametypes\_spectating::setSpectatePermissionsForMachine();
+
     if ( self.sessionstate != "playing" )
         self thread [[level.spawnClient]]();
 

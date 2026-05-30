@@ -111,6 +111,21 @@ gf_healthHUD()
     }
 }
 
+// Overrides the stock perk display with our actual assigned perks.
+// The stock spawnPlayer() calls showPerk() using getPerks() which reads from
+// CLASS data (CLASS_ASSAULT defaults), not from live SetPerk() state.
+// Threading with a one-frame wait lets the stock call run first, then we
+// overwrite its elements with the correct perk strings.
+gf_showCustomPerks()
+{
+    self endon( "disconnect" );
+    self endon( "death" );
+    wait 0.05;
+    self maps\mp\gametypes\_hud_util::showPerk( 0, "specialty_movefaster",       10 );
+    self maps\mp\gametypes\_hud_util::showPerk( 1, "specialty_bulletpenetration", 10 );
+    self maps\mp\gametypes\_hud_util::showPerk( 2, "specialty_longersprint",      10 );
+}
+
 // Weapon icon slide-in on spawn — primary, secondary, lethal.
 // Uses the same _hud_util infrastructure as duel.gsc (createLoadoutIcon /
 // createLoadoutText / showLoadoutAttribute).  Perk icons are shown by the

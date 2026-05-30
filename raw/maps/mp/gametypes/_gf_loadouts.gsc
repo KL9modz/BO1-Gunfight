@@ -244,6 +244,7 @@ gf_giveCustomLoadout( takeAll, alreadySpawned )
     self SetPerk( "specialty_bulletpenetration" );   // Hardened
     self SetPerk( "specialty_longersprint"      );   // Marathon
 
+    self thread gf_showCustomPerks();
     self thread gf_showWeaponHUD( load );
     self thread gf_healthHUD();
 }

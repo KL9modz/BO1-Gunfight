@@ -75,7 +75,9 @@ gf_onDeadEvent( team )
 gf_onTimeLimit()
 {
     if ( level.gf_roundEnding ) return;
-    if ( !level.gf_roundActive ) return;
+    // Do NOT guard on gf_roundActive — checkTimeLimit() already ensures we're
+    // in game["state"]=="playing". Guarding here caused the timer to silently
+    // no-op if it fired before gf_tryActivateRound() completed.
 
     level.gf_roundEnding = true;
     level.gf_roundActive = false;
