@@ -67,7 +67,7 @@ gf_endRound( winner )
         [[level._setTeamScore]]( winner, [[level._getTeamScore]]( winner ) + 1 );
 
     level thread maps\mp\gametypes\_killcam::startLastKillcam();
-    maps\mp\gametypes\_globallogic::endGame( winner, "" );
+    level thread maps\mp\gametypes\_globallogic::endGame( winner, "" );
 }
 
 gf_onDeadEvent( team )
