@@ -108,9 +108,8 @@ onStartGameType()
     maps\mp\gametypes\_rank::registerScoreInfo( "headshot", 250 );
     maps\mp\gametypes\_rank::registerScoreInfo( "assist",   100 );
 
-    game["gf_init"] = undefined;
-    gf_initLoadouts();
-    gf_pickLoadout();
+    gf_initLoadouts();   // guarded by game["gf_init"] — shuffles once per match
+    gf_pickLoadout();    // deterministic: index derived from game["gf_round"]
 
     level.spawnMins = ( 0, 0, 0 );
     level.spawnMaxs = ( 0, 0, 0 );
@@ -132,6 +131,8 @@ onStartGameType()
     maps\mp\gametypes\_gameobjects::main( allowed );
 
     maps\mp\gametypes\_spawning::create_map_placed_influencers();
+
+    setMatchFlag( "pregame", 0 );
 }
 
 // ─── Spawn Pipeline ────────────────────────────────────────────────────────

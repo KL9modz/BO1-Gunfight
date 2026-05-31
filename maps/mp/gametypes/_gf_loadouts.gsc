@@ -161,17 +161,7 @@ gf_initLoadouts()
         pool[j] = temp;
     }
 
-    // expand pool into a flat round schedule: each entry repeated roundsPerLoadout times
-    schedule = [];
-    j = 0;
-    for ( i = 0; i < pool.size; i++ )
-        for ( r = 0; r < level.gf_cfg_roundsPerLoadout; r++ )
-        {
-            schedule[j] = pool[i];
-            j++;
-        }
-
-    // precache shaders (loop pool not schedule to avoid redundant calls)
+    // precache shaders
     for ( i = 0; i < pool.size; i++ )
     {
         PreCacheShader( pool[i]["primaryShader"]   );
@@ -184,19 +174,22 @@ gf_initLoadouts()
     PreCacheShader( "hud_us_stungrenade" );
     PreCacheShader( "hud_us_smokegrenade"      );
 
-    game["gf_pool"]     = pool;
-    game["gf_schedule"] = schedule;
-    game["gf_schedIdx"] = -1;
-    game["gf_init"]     = 1;
+    game["gf_pool"]  = pool;
+    game["gf_round"] = 0;   // round counter — persists across the per-round map_restart
+    game["gf_init"]  = 1;
 }
 
+// Deterministic loadout selection: index is derived from the persisted round
+// counter, so it's idempotent — calling it multiple times per round (e.g. from
+// both onStartGameType and gf_endRound) always yields the same loadout.
+// Loadout changes every level.gf_cfg_roundsPerLoadout rounds.
 gf_pickLoadout()
 {
-    if ( !isDefined( game["gf_schedule"] ) )
+    if ( !isDefined( game["gf_pool"] ) )
         return;
 
-    game["gf_schedIdx"]  = ( game["gf_schedIdx"] + 1 ) % game["gf_schedule"].size;
-    level.gf_currentLoad = game["gf_schedule"][ game["gf_schedIdx"] ];
+    idx = int( game["gf_round"] / level.gf_cfg_roundsPerLoadout ) % game["gf_pool"].size;
+    level.gf_currentLoad = game["gf_pool"][ idx ];
 }
 
 gf_giveCustomLoadout( takeAll, alreadySpawned )

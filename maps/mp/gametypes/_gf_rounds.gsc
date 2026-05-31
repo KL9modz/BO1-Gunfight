@@ -8,6 +8,8 @@
 gf_playerSpawnedCB()
 {
     level notify( "spawned_player" );
+    self setClientUIVisibilityFlag( "hud_visible", 1 );
+    setMatchFlag( "pregame", 0 );
     self thread gf_onSpawned();
 }
 
@@ -61,6 +63,7 @@ gf_endRound( winner )
     level.gf_roundActive = false;
     level notify( "gf_round_over" );
 
+    game["gf_round"]++;   // advance the persisted round counter, then re-pick
     gf_pickLoadout();
 
     if ( isDefined( winner ) && winner != "tie" )
