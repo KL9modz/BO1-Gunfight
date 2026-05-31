@@ -28,6 +28,8 @@ gf_onSpawned()
     if ( self.pers["team"] != "allies" && self.pers["team"] != "axis" )
         return;
 
+    self.gf_assisters = [];
+
     if ( !level.gf_roundActive )
         level thread gf_tryActivateRound();
 }
@@ -128,6 +130,18 @@ gf_onPlayerKilled( eInflictor, attacker, iDamage, sMeansOfDeath, sWeapon, vDir, 
     if ( isDefined( attacker ) && isPlayer( attacker ) )
         attacker gf_syncDamageScore();
 
+    if ( isDefined( self.gf_assisters ) )
+    {
+        for ( i = 0; i < self.gf_assisters.size; i++ )
+        {
+            assister = self.gf_assisters[i];
+            if ( !isDefined( assister ) || !isPlayer( assister ) ) continue;
+            if ( isDefined( attacker ) && assister == attacker ) continue;
+            maps\mp\gametypes\_globallogic_score::givePlayerScore( "assist", assister );
+        }
+        self.gf_assisters = [];
+    }
+
     gf_queueHealthHUDUpdate();
 }
 
@@ -162,7 +176,18 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
             eAttacker.pers["gf_damage"] = 0;
 
         eAttacker.pers["gf_damage"] += damage;
-        eAttacker gf_syncDamageScore();
+
+        // Track unique assisters on the victim for assist awarding on kill
+        if ( !isDefined( self.gf_assisters ) )
+            self.gf_assisters = [];
+        alreadyTracked = false;
+        for ( i = 0; i < self.gf_assisters.size; i++ )
+        {
+            if ( self.gf_assisters[i] == eAttacker ) { alreadyTracked = true; break; }
+        }
+        if ( !alreadyTracked )
+            self.gf_assisters[self.gf_assisters.size] = eAttacker;
+
         gf_queueHealthHUDUpdate();
     }
 
@@ -221,10 +246,12 @@ gf_queueHealthHUDUpdate()
 
 gf_doQueuedHealthHUDUpdate()
 {
-    level endon( "game_ended" );
-
     wait 0.05;
     level.gf_healthUpdateQueued = false;
+
+    for ( i = 0; i < level.players.size; i++ )
+        level.players[i] gf_syncDamageScore();
+
     level notify( "gf_health_hud_update" );
 }
 

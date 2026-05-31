@@ -21,6 +21,7 @@ main()
     maps\mp\gametypes\_globallogic_utils::registerRoundWinLimitDvar( level.gameType, 0, 0, 10   );
     maps\mp\gametypes\_globallogic_utils::registerScoreLimitDvar(    level.gameType, 6, 0, 10   );
     maps\mp\gametypes\_globallogic_utils::registerRoundLimitDvar(    level.gameType, 0, 0, 15   );
+
     maps\mp\gametypes\_weapons::registerGrenadeLauncherDudDvar( level.gameType, 0, 0, 1440 );
     maps\mp\gametypes\_weapons::registerThrownGrenadeDudDvar(   level.gameType, 0, 0, 1440 );
     maps\mp\gametypes\_weapons::registerKillstreakDelay(        level.gameType, 0, 0, 1440 );
@@ -50,9 +51,8 @@ main()
     level.onRoundEndGame       = ::gf_onRoundEndGame;
     level.giveCustomLoadout    = ::gf_giveCustomLoadout;
 
-    game["dialog"]["gametype"] = "sd_start";
 
-    setscoreboardcolumns( "kills", "deaths", "none", "none" );
+    setscoreboardcolumns( "kills", "deaths", "assists", "none" );
 
 }
 
@@ -60,6 +60,9 @@ main()
 
 onPrecacheGameType()
 {
+    game["dialog"]["sudden_death"] = "generic_boost"; //
+	game["dialog"]["last_one"] = "encourage_last";
+
     // Score bar — native engine HUD reads these shaders for the round-win display
     precacheShader( "score_bar_bg" );
     precacheShader( "score_bar_allies" );
@@ -69,21 +72,53 @@ onPrecacheGameType()
     precacheShader( "waypoint_defend" );
     precacheShader( "compass_waypoint_defend" );
     precacheString( &"PLATFORM_PRESS_TO_SPAWN" );
+
+    // Loadout HUD shaders — must be precached here (not in onStartGameType)
+    precacheShader( "menu_mp_weapons_famas"    );
+    precacheShader( "menu_mp_weapons_python"   );
+    precacheShader( "menu_mp_weapons_m16"      );
+    precacheShader( "menu_mp_weapons_colt"     );
+    precacheShader( "menu_mp_weapons_aug"      );
+    precacheShader( "menu_mp_weapons_makarov"  );
+    precacheShader( "menu_mp_weapons_galil"    );
+    precacheShader( "menu_mp_weapons_cz75"     );
+    precacheShader( "menu_mp_weapons_commando" );
+    precacheShader( "menu_mp_weapons_fnfal"    );
+    precacheShader( "menu_mp_weapons_m14"      );
+    precacheShader( "menu_mp_weapons_mp5k"     );
+    precacheShader( "menu_mp_weapons_ak74u"    );
+    precacheShader( "menu_mp_weapons_mpl"      );
+    precacheShader( "menu_mp_weapons_spectre"  );
+    precacheShader( "menu_mp_weapons_uzi"      );
+    precacheShader( "menu_mp_weapons_pm63"     );
+    precacheShader( "menu_mp_weapons_hk21"     );
+    precacheShader( "menu_mp_weapons_m60"      );
+    precacheShader( "menu_mp_weapons_rpk"      );
+    precacheShader( "menu_mp_weapons_stoner63a");
+    precacheShader( "menu_mp_weapons_l96a1"    );
+    precacheShader( "menu_mp_weapons_wa2000"   );
+    precacheShader( "menu_mp_weapons_spas"     );
+    precacheShader( "menu_mp_weapons_ithaca"   );
+    precacheShader( "hud_grenadeicon"          );
+    precacheShader( "hud_icon_satchelcharge"   );
+    precacheShader( "hud_hatchet"              );
+    precacheShader( "hud_us_flashgrenade"      );
+    precacheShader( "hud_us_stungrenade"       );
+    precacheShader( "hud_us_smokegrenade"      );
 }
 
 onStartGameType()
 {
     setDvar( "scr_disable_cac", "1" );
-    makeDvarServerInfo( "scr_disable_cac", 1 );
-    setDvar( "scr_showperksonspawn", "0" );
-    makeDvarServerInfo( "scr_showperksonspawn", 0 );
+    setDvar( "scr_disable_weapondrop", 1 );
+    setDvar( "scr_showperksonspawn", "1" );
 
     setDvar( "scr_player_healthregentime", "0" );
     level.killstreaksenabled             = 0;
     level.healthRegenDisabled            = true;
     level.playerHealth_RegularRegenDelay = 99999;
-    gf_registerLoadoutCycleDvar();
-    gf_initDamageScoring();
+    gf_registerLoadoutCycleDvar(); // also sets level.gf_cfg_roundsPerLoadout
+    gf_initDamageScoring(); // relies on level.gf_cfg_roundsPerLoadout
 
     level.gf_roundActive     = false;
     level.gf_roundEnding     = false;
@@ -92,7 +127,7 @@ onStartGameType()
     if ( !isDefined( game["switchedsides"] ) )
         game["switchedsides"] = false;
 
-    setClientNameMode( "auto_change" );
+    setClientNameMode( "auto_change" ); 
 
     maps\mp\gametypes\_globallogic_ui::setObjectiveText( "allies", &"OBJECTIVES_TDM" );
     maps\mp\gametypes\_globallogic_ui::setObjectiveText( "axis",   &"OBJECTIVES_TDM" );
@@ -109,18 +144,18 @@ onStartGameType()
     maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "allies", &"OBJECTIVES_TDM_HINT" );
     maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "axis",   &"OBJECTIVES_TDM_HINT" );
 
-    maps\mp\gametypes\_rank::registerScoreInfo( "win",      5   );
+    maps\mp\gametypes\_rank::registerScoreInfo( "win",      5   ); 
     maps\mp\gametypes\_rank::registerScoreInfo( "loss",     1   );
-    maps\mp\gametypes\_rank::registerScoreInfo( "tie",      2.5 );
-    maps\mp\gametypes\_rank::registerScoreInfo( "kill",      0 );
+    maps\mp\gametypes\_rank::registerScoreInfo( "tie",      2.5 ); 
+    maps\mp\gametypes\_rank::registerScoreInfo( "kill",      0 ); 
     maps\mp\gametypes\_rank::registerScoreInfo( "headshot",  0 );
     maps\mp\gametypes\_rank::registerScoreInfo( "assist_75", 0 );
     maps\mp\gametypes\_rank::registerScoreInfo( "assist_50", 0 );
     maps\mp\gametypes\_rank::registerScoreInfo( "assist_25", 0 );
     maps\mp\gametypes\_rank::registerScoreInfo( "assist",    0 );
 
-    gf_initLoadouts();   // guarded by game["gf_init"] — shuffles once per match
-    gf_pickLoadout();    // deterministic: index derived from game["roundsplayed"]
+    gf_initLoadouts();   // guarded by game["gf_init"] — shuffles once per match and picks loadout 0 for round 1 
+    gf_pickLoadout();    // deterministic: index derived from game["roundsplayed"] 
 
     level.spawnMins = ( 0, 0, 0 );
     level.spawnMaxs = ( 0, 0, 0 );
@@ -168,7 +203,6 @@ gf_registerLoadoutCycleDvar()
     }
 
     level.gf_cfg_roundsPerLoadout = value;
-    makeDvarServerInfo( dvar, value );
 }
 
 onSpawnPlayer( teamOverride )

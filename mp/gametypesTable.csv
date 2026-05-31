@@ -1,6 +1,6 @@
 #Gametypes Table,,,,,,
 a0,b1,c2,d3,e4,f5,g6
-maxnum_gametype,10,,,,,
+maxnum_gametype,13,,,,,
 total_filesharegametype,12,,,,,
 #gametype reference,#gametype names,#gametype description,#image,#index,#splitscreen,#gametime names lowercase
 tdm,MPUI_TEAM_DEATHMATCH_CAPS,MENU_KILL_PLAYERS_ON_THE_OPPOSING,playlist_tdm,0,YES,MPUI_TEAM_DEATHMATCH
@@ -11,20 +11,18 @@ koth,MPUI_HEADQUARTERS_CAPS,MENU_CAPTURE_THE_HEADQUARTERS,playlist_headquarters,
 dem,MPUI_DEMOLITION_CAPS,MENU_TEAMS_TAKE_TURNS_DEFENDING,playlist_demolition,5,YES,MPUI_DEMOLITION
 ctf,MPUI_CAPTURE_THE_FLAG_CAPS,MENU_CTF_DESC,playlist_ctf,6,YES,MPUI_CAPTURE_THE_FLAG
 sab,MPUI_SABOTAGE_CAPS,MENU_1_BOMB_IN_THE_CENTER,playlist_sabotage,7,YES,MPUI_SABOTAGE
-duel,DUEL_TITLE_CAPS,DUEL_GAMETYPE_DESC,playlist_ffa,8,YES,DUEL_TITLE_CAPS
-gf,GF_TITLE_CAPS,GF_GAMETYPE_DESC,playlist_tdm,9,YES,GF_TITLE_CAPS
-hlnd,MPUI_HLND_CAPS,MENU_KILL_EVERYONE_FIRST_PLAYER,playlist_sticksnstones,10,YES,MPUI_HLND
-oic,MPUI_OIC_CAPS,MENU_TEAMS_TAKE_TURNS_DEFENDING,playlist_oic,11,YES,MPUI_OIC
-gun,MPUI_GUN_CAPS,MENU_TEAMS_TAKE_TURNS_DEFENDING,playlist_gungame,12,YES,MPUI_GUN
-shrp,MPUI_SHRP_CAPS,MENU_TEAMS_TAKE_TURNS_DEFENDING,playlist_sharpshooter,13,YES,MPUI_SHRP
+gf,GF_TITLE_CAPS,GF_GAMETYPE_DESC,playlist_tdm,8,YES,GF_TITLE_CAPS
+hlnd,MPUI_HLND_CAPS,MENU_KILL_EVERYONE_FIRST_PLAYER,playlist_sticksnstones,9,YES,MPUI_HLND
+oic,MPUI_OIC_CAPS,MENU_TEAMS_TAKE_TURNS_DEFENDING,playlist_oic,10,YES,MPUI_OIC
+gun,MPUI_GUN_CAPS,MENU_TEAMS_TAKE_TURNS_DEFENDING,playlist_gungame,11,YES,MPUI_GUN
+shrp,MPUI_SHRP_CAPS,MENU_TEAMS_TAKE_TURNS_DEFENDING,playlist_sharpshooter,12,YES,MPUI_SHRP
 ,,,,,,
-maxnum_basictraining_gametype,5,,,,,
+maxnum_basictraining_gametype,4,,,,,
 #gametype reference,#gametype names,#gametype description,#image,#index,#splitscreen,#gametime names lowercase
 tdm,MPUI_TEAM_DEATHMATCH_CAPS,MENU_KILL_PLAYERS_ON_THE_OPPOSING,playlist_tdm,bt0,YES,MPUI_TEAM_DEATHMATCH
 hc_tdm,MPUI_TDM_HARDCORE_CAPS,MENU_HC_KILL_PLAYERS_ON_THE_OPPOSING,playlist_tdm,bt1,YES,MPUI_TEAM_DEATHMATCH
 dm,MPUI_DEATHMATCH_CAPS,MENU_KILL_EVERYONE_FIRST_PLAYER,playlist_ffa,bt2,YES,MPUI_DEATHMATCH
 hc_dm,MPUI_DM_HARDCORE_CAPS,MENU_HC_KILL_EVERYONE_FIRST_PLAYER,playlist_ffa,bt3,YES,MPUI_DEATHMATCH
-duel,DUEL_TITLE_CAPS,DUEL_GAMETYPE_DESC,playlist_ffa,bt4,YES,DUEL_TITLE_CAPS
 ,,,,,,
 maxnum_lbtype,11,,,,,
 #Leaderboard string names,,,,,,

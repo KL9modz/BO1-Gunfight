@@ -32,10 +32,10 @@ gf_initLoadouts()
         gf_item( "aug_silencer_mp",        "AUG",      "menu_mp_weapons_aug"      ),
         gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
         gf_item( "hatchet_mp",             "Tomahawk", "hud_hatchet"              ),
-        gf_item( "smoke_grenade_mp",       "Smoke",      "hud_us_smokegrenade"       ) ); n++;
+        gf_item( "willy_pete_mp",       "Smoke",      "hud_us_smokegrenade"       ) ); n++;
 
     pool[n] = gf_buildLoadout(
-        gf_item( "galil_grip_mp",          "Galil",    "menu_mp_weapons_galil"    ),
+        gf_item( "galil_extclip_mp",       "Galil",    "menu_mp_weapons_galil"    ),
         gf_item( "cz75_upgradesight_mp",   "CZ75",     "menu_mp_weapons_cz75"     ),
         gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
         gf_item( "flash_grenade_mp",       "Flash",      "hud_us_flashgrenade"       ) ); n++;
@@ -56,7 +56,7 @@ gf_initLoadouts()
         gf_item( "m14_grip_mp",            "M14",      "menu_mp_weapons_m14"      ),
         gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
         gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
-        gf_item( "smoke_grenade_mp",       "Smoke",      "hud_us_smokegrenade"       ) ); n++;
+        gf_item( "willy_pete_mp",       "Smoke",      "hud_us_smokegrenade"       ) ); n++;
 
     pool[n] = gf_buildLoadout(
         gf_item( "galil_silencer_mp",      "Galil",    "menu_mp_weapons_galil"    ),
@@ -78,10 +78,10 @@ gf_initLoadouts()
         gf_item( "concussion_grenade_mp",  "Stun",       "hud_us_stungrenade"  ) ); n++;
 
     pool[n] = gf_buildLoadout(
-        gf_item( "mpl_extclip_mp",         "MPL",      "menu_mp_weapons_mpl"      ),
+        gf_item( "mpl_rf_mp",              "MPL",      "menu_mp_weapons_mpl"      ),
         gf_item( "makarov_upgradesight_mp","Makarov",  "menu_mp_weapons_makarov"  ),
         gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchelcharge"       ),
-        gf_item( "smoke_grenade_mp",       "Smoke",      "hud_us_smokegrenade"       ) ); n++;
+        gf_item( "willy_pete_mp",       "Smoke",      "hud_us_smokegrenade"       ) ); n++;
 
     pool[n] = gf_buildLoadout(
         gf_item( "spectre_rf_mp",          "Spectre",  "menu_mp_weapons_spectre"  ),
@@ -96,14 +96,14 @@ gf_initLoadouts()
         gf_item( "concussion_grenade_mp",  "Stun",       "hud_us_stungrenade"  ) ); n++;
 
     pool[n] = gf_buildLoadout(
-        gf_item( "pm63_silencer_mp",       "PM63",     "menu_mp_weapons_pm63"     ),
+        gf_item( "pm63_extclip_mp",        "PM63",     "menu_mp_weapons_pm63"     ),
         gf_item( "m1911_upgradesight_mp",  "M1911",    "menu_mp_weapons_colt"     ),
         gf_item( "hatchet_mp",             "Tomahawk", "hud_hatchet"              ),
-        gf_item( "smoke_grenade_mp",       "Smoke",      "hud_us_smokegrenade"       ) ); n++;
+        gf_item( "willy_pete_mp",       "Smoke",      "hud_us_smokegrenade"       ) ); n++;
 
     // ── LMG ×4 ───────────────────────────────────────────────────────
     pool[n] = gf_buildLoadout(
-        gf_item( "hk21_grip_mp",           "HK21",     "menu_mp_weapons_hk21"     ),
+        gf_item( "hk21_extclip_mp",        "HK21",     "menu_mp_weapons_hk21"     ),
         gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
         gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
         gf_item( "concussion_grenade_mp",  "Stun",       "hud_us_stungrenade"  ) ); n++;
@@ -118,10 +118,10 @@ gf_initLoadouts()
         gf_item( "rpk_extclip_mp",         "RPK",      "menu_mp_weapons_rpk"      ),
         gf_item( "m1911_upgradesight_mp",  "M1911",    "menu_mp_weapons_colt"     ),
         gf_item( "hatchet_mp",             "Tomahawk", "hud_hatchet"              ),
-        gf_item( "smoke_grenade_mp",       "Smoke",      "hud_us_smokegrenade"       ) ); n++;
+        gf_item( "willy_pete_mp",       "Smoke",      "hud_us_smokegrenade"       ) ); n++;
 
     pool[n] = gf_buildLoadout(
-        gf_item( "stoner63_grip_mp",       "Stoner63", "menu_mp_weapons_stoner63a"),
+        gf_item( "stoner63_extclip_mp",    "Stoner63", "menu_mp_weapons_stoner63a"),
         gf_item( "cz75_upgradesight_mp",   "CZ75",     "menu_mp_weapons_cz75"     ),
         gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
         gf_item( "concussion_grenade_mp",  "Stun",       "hud_us_stungrenade"  ) ); n++;
@@ -147,10 +147,10 @@ gf_initLoadouts()
         gf_item( "flash_grenade_mp",       "Flash",      "hud_us_flashgrenade"       ) ); n++;
 
     pool[n] = gf_buildLoadout(
-        gf_item( "ithaca_mp",              "Ithaca",   "menu_mp_weapons_ithaca"   ),
+        gf_item( "ithaca_grip_mp",         "Ithaca",   "menu_mp_weapons_ithaca"   ),
         gf_item( "cz75_upgradesight_mp",   "CZ75",     "menu_mp_weapons_cz75"     ),
         gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
-        gf_item( "smoke_grenade_mp",       "Smoke",      "hud_us_smokegrenade"       ) ); n++;
+        gf_item( "willy_pete_mp",       "Smoke",      "hud_us_smokegrenade"       ) ); n++;
 
     // Fisher-Yates shuffle — random order per match, no repeat within one cycle
     for ( i = pool.size - 1; i > 0; i-- )
@@ -160,19 +160,6 @@ gf_initLoadouts()
         pool[i] = pool[j];
         pool[j] = temp;
     }
-
-    // precache shaders
-    for ( i = 0; i < pool.size; i++ )
-    {
-        PreCacheShader( pool[i]["primaryShader"]   );
-        PreCacheShader( pool[i]["secondaryShader"] );
-        PreCacheShader( pool[i]["lethalShader"]    );
-    }
-
-    // precache tactical shaders (shader names unverified — blank icon if wrong, no crash)
-    PreCacheShader( "hud_us_flashgrenade"      );
-    PreCacheShader( "hud_us_stungrenade" );
-    PreCacheShader( "hud_us_smokegrenade"      );
 
     game["gf_pool"] = pool;
     game["gf_init"] = 1;
@@ -243,3 +230,71 @@ gf_item( w, n, s )
     it["s"] = s;
     return it;
 }
+
+// ─── Valid T5 MP Weapon Reference ──────────────────────────────────────────
+// All names require _mp suffix.
+// KNOWN INVALID: galil_grip_mp, hk21_grip_mp, stoner63_grip_mp, ithaca_mp,
+//                pm63_silencer_mp, mpl_extclip_mp, smoke_grenade_mp
+// Smoke grenade is willy_pete_mp (not smoke_grenade_mp)
+//
+// AR
+//   ak47:      _mp _acog _dualclip _elbit _extclip _ft _gl _ir _mk _reflex _silencer
+//   aug:       _mp _acog _dualclip _elbit _extclip _ft _gl _ir _mk _reflex _silencer
+//   commando:  _mp _acog _dualclip _elbit _extclip _ft _gl _ir _mk _reflex _silencer
+//   enfield:   _mp _acog _dualclip _elbit _extclip _ft _gl _ir _mk _reflex _silencer
+//   famas:     _mp _acog _dualclip _elbit _extclip _ft _gl _ir _mk _reflex _silencer
+//   fnfal:     _mp _acog _dualclip _elbit _extclip _ft _gl _ir _mk _reflex _silencer
+//   g11:       _mp _lps _vzoom
+//   galil:     _mp _acog _dualclip _elbit _extclip _ft _gl _ir _mk _reflex _silencer  (NO grip)
+//   m14:       _mp _acog _acog_grip _elbit _extclip _ft _gl _grip _ir _ir_grip _mk _reflex _silencer
+//   m16:       _mp _acog _dualclip _elbit _extclip _ft _gl _ir _mk _reflex _silencer
+//
+// SMG
+//   ak74u:     _mp _acog _acog_grip _dualclip _elbit _extclip _gl _grip _grip_dualclip _grip_extclip _reflex _rf _silencer
+//   kiparis:   _mp _acog _acog_grip _elbit _extclip _grip _grip_extclip _reflex _rf _silencer
+//   mac11:     _mp _elbit _extclip _grip _reflex _rf _silencer
+//   mp5k:      _mp _acog _elbit _extclip _reflex _rf _silencer
+//   mpl:       _mp _acog _acog_grip _dualclip _elbit _grip _reflex _rf _silencer  (NO extclip)
+//   pm63:      _mp _extclip _grip _rf  (NO silencer)
+//   skorpion:  _mp _extclip _grip _rf _silencer
+//   spectre:   _mp _acog _acog_grip _elbit _extclip _grip _reflex _rf _silencer
+//   uzi:       _mp _acog _acog_grip _elbit _extclip _grip _reflex _rf _silencer
+//
+// LMG
+//   hk21:      _mp _acog _elbit _extclip _ir _reflex  (NO grip)
+//   m60:       _mp _acog _acog_grip _elbit _extclip _grip _ir _ir_grip _reflex
+//   rpk:       _mp _acog _dualclip _elbit _extclip _ir _reflex
+//   stoner63:  _mp _acog _elbit _extclip _ir _reflex  (NO grip)
+//
+// Sniper
+//   dragunov:  _mp _acog _extclip _ir _silencer _vzoom
+//   l96a1:     _mp _acog _extclip _ir _silencer _vzoom
+//   psg1:      _mp _acog _extclip _ir _silencer _vzoom
+//   wa2000:    _mp _acog _extclip _ir _silencer _vzoom
+//
+// Shotgun
+//   ithaca_grip_mp  (NO plain ithaca_mp)
+//   ks23_mp
+//   rottweil72_mp
+//   spas_mp  spas_silencer_mp
+//
+// Pistol
+//   asp_mp
+//   cz75:      _mp _auto _extclip _silencer _upgradesight
+//   m1911:     _mp _extclip _silencer _upgradesight
+//   makarov:   _mp _extclip _silencer _upgradesight
+//   python:    _mp _acog _snub _speed
+//
+// Launcher / Special
+//   china_lake_mp  crossbow_mp  crossbow_explosive_mp  knife_ballistic_mp
+//   m72_law_mp  m202_flash_mp  m202_flash_wager_mp
+//   minigun_mp  minigun_wager_mp  rpg_mp  strela_mp
+//
+// Equipment / Grenades
+//   claymore_mp  concussion_grenade_mp  flash_grenade_mp  frag_grenade_mp
+//   hatchet_mp  satchel_charge_mp  sticky_grenade_mp  willy_pete_mp
+//   camera_spike_mp  knife_mp  tactical_insertion_mp
+//
+// Dual-wield (pass true as 2nd GiveWeapon arg, or use dw/lh variants)
+//   aspdw/lh  cz75dw/lh  hs10dw/lh  kiparisdw/lh  m1911dw/lh
+//   mac11dw/lh  makarovdw/lh  pm63dw/lh  pythondw/lh  skorpiondw/lh

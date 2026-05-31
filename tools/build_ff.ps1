@@ -164,6 +164,19 @@ finally {
     Pop-Location
 }
 
+# Remove staged files from raw/ so they don't override the stock game between builds.
+# Plutonium reads raw/ as a fallback over IWD files, even without a mod loaded.
+$cleanedCount = 0
+foreach ($asset in ($assetsToStage | Select-Object -Unique)) {
+    $assetPath = Convert-AssetPath $asset
+    $stagedPath = Join-Path $RawRoot $assetPath
+    if (Test-Path -LiteralPath $stagedPath) {
+        Remove-Item -Force -LiteralPath $stagedPath
+        $cleanedCount++
+    }
+}
+Write-Host "Cleaned $cleanedCount staged file(s) from raw/."
+
 $builtModFf = Resolve-RequiredPath (Join-Path $ZoneEnglishRoot "mod.ff") "Built mod.ff"
 Copy-StagedFile $builtModFf (Join-Path $ModRoot "mod.ff")
 

@@ -12,16 +12,24 @@ gf_startHealthHUD()
     self endon( "disconnect" );
     level endon( "game_ended" );
 
+    // Stagger creation so all players' spawns finish before the HUD allocation spike
+    wait 0.05;
+
     self.gf_healthHudElems = [];
     self.gf_healthHudAllies = [];
     self.gf_healthHudAxis = [];
 
+    alliesName = getDvar( "scr_allies" );
+    if ( alliesName == "" ) alliesName = "allies";
+    axisName = getDvar( "scr_axis" );
+    if ( axisName == "" ) axisName = "axis";
+
     aLabel = self gf_createHealthElem( 170, ( 0.4, 0.7, 1.0 ) );
-    aLabel setText( "ALLIES" );
+    aLabel setText( alliesName );
     self.gf_healthHudElems[self.gf_healthHudElems.size] = aLabel;
 
     xLabel = self gf_createHealthElem( 250, ( 1.0, 0.45, 0.45 ) );
-    xLabel setText( "AXIS" );
+    xLabel setText( axisName );
     self.gf_healthHudElems[self.gf_healthHudElems.size] = xLabel;
 
     for ( i = 0; i < 4; i++ )
@@ -61,7 +69,6 @@ gf_createHealthElem( y, color )
     elem.hidewheninmenu = true;
     elem.hidewheninkillcam = true;
     elem.hidewhileremotecontrolling = true;
-    elem moveOverTime( 0.4 );
     elem.x = 10;
     return elem;
 }
@@ -134,7 +141,7 @@ gf_destroyHealthHUD()
     for ( i = 0; i < self.gf_healthHudElems.size; i++ )
     {
         if ( isDefined( self.gf_healthHudElems[i] ) )
-            self.gf_healthHudElems[i] destroyElem();
+            self.gf_healthHudElems[i] destroy();
     }
 
     self.gf_healthHudElems = undefined;
@@ -238,7 +245,7 @@ gf_destroyLoadoutHUD()
     for ( i = 0; i < self.gf_loadoutHudElems.size; i++ )
     {
         if ( isDefined( self.gf_loadoutHudElems[i] ) )
-            self.gf_loadoutHudElems[i] destroyElem();
+            self.gf_loadoutHudElems[i] destroy();
     }
 
     self.gf_loadoutHudElems = undefined;
