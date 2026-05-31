@@ -1,4 +1,8 @@
-# Plutonium runtime
+# Build output
+mod.ff
+
+# Runtime/log output
+*.log
 demos/
 imgui.ini
 main/
@@ -6,8 +10,8 @@ players/
 plutonium/
 zone/
 
-# Local server / reference files
+# Local-only reference/server files
 dedicated.cfg
 dedicated_sp.cfg
-mods/
 gsc resources/
+raw/

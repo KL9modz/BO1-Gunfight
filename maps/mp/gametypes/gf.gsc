@@ -15,19 +15,24 @@ main()
     maps\mp\gametypes\_callbacksetup::SetupCallbacks();
     maps\mp\gametypes\_globallogic::SetupCallbacks();
 
-    maps\mp\gametypes\_globallogic_utils::registerRoundSwitchDvar(   level.gameType, 3, 0, 9    );
+    maps\mp\gametypes\_globallogic_utils::registerRoundSwitchDvar(   level.gameType, 2, 0, 9    );
     maps\mp\gametypes\_globallogic_utils::registerTimeLimitDvar(     level.gameType, 1, 0, 1440 );
     maps\mp\gametypes\_globallogic_utils::registerNumLivesDvar(      level.gameType, 1, 0, 10   );
-    maps\mp\gametypes\_globallogic_utils::registerRoundWinLimitDvar( level.gameType, 6, 0, 10   );
-    maps\mp\gametypes\_globallogic_utils::registerScoreLimitDvar(    level.gameType, 6, 0, 500  );
+    maps\mp\gametypes\_globallogic_utils::registerRoundWinLimitDvar( level.gameType, 0, 0, 10   );
+    maps\mp\gametypes\_globallogic_utils::registerScoreLimitDvar(    level.gameType, 6, 0, 10   );
     maps\mp\gametypes\_globallogic_utils::registerRoundLimitDvar(    level.gameType, 0, 0, 15   );
     maps\mp\gametypes\_weapons::registerGrenadeLauncherDudDvar( level.gameType, 0, 0, 1440 );
     maps\mp\gametypes\_weapons::registerThrownGrenadeDudDvar(   level.gameType, 0, 0, 1440 );
     maps\mp\gametypes\_weapons::registerKillstreakDelay(        level.gameType, 0, 0, 1440 );
     maps\mp\gametypes\_globallogic::registerFriendlyFireDelay(  level.gameType, 0, 0, 1440 );
 
+    level.roundSwitch = false;
+    if ( level.roundswitch > 0 )
+        level.roundSwitch = true;
+
     level.teamBased           = true;
     level.overrideTeamScore   = true;
+    level.overridePlayerScore = true;
     level.endGameOnScoreLimit = false;
 
     level.onPrecacheGameType   = ::onPrecacheGameType;
@@ -36,6 +41,8 @@ main()
     level.onSpawnPlayerUnified = ::onSpawnPlayerUnified;
     level.playerSpawnedCB      = ::gf_playerSpawnedCB;
     level.onPlayerKilled       = ::gf_onPlayerKilled;
+    level.onPlayerDamage       = ::gf_onPlayerDamage;
+    level.onSpawnSpectator     = ::gf_onSpawnSpectator;
     level.onDeadEvent          = ::gf_onDeadEvent;
     level.onOneLeftEvent       = ::gf_onOneLeftEvent;
     level.onTimeLimit          = ::gf_onTimeLimit;
@@ -47,10 +54,6 @@ main()
 
     setscoreboardcolumns( "kills", "deaths", "none", "none" );
 
-    replacefunc(
-        maps\mp\gametypes\_globallogic_ui::beginClassChoice,
-        ::gf_bypassClassChoice
-    );
 }
 
 // ─── Gametype Setup ────────────────────────────────────────────────────────
@@ -70,14 +73,19 @@ onPrecacheGameType()
 
 onStartGameType()
 {
+    setDvar( "scr_disable_cac", "1" );
+    makeDvarServerInfo( "scr_disable_cac", 1 );
+    setDvar( "scr_showperksonspawn", "0" );
+    makeDvarServerInfo( "scr_showperksonspawn", 0 );
+
     setDvar( "scr_player_healthregentime", "0" );
     level.killstreaksenabled             = 0;
     level.healthRegenDisabled            = true;
     level.playerHealth_RegularRegenDelay = 99999;
-    level.gf_cfg_roundsPerLoadout        = 2;
+    gf_registerLoadoutCycleDvar();
+    gf_initDamageScoring();
 
     level.gf_roundActive     = false;
-    level.gf_roundNum        = 0;
     level.gf_roundEnding     = false;
     level.gf_activatingRound = false;
 
@@ -104,12 +112,15 @@ onStartGameType()
     maps\mp\gametypes\_rank::registerScoreInfo( "win",      5   );
     maps\mp\gametypes\_rank::registerScoreInfo( "loss",     1   );
     maps\mp\gametypes\_rank::registerScoreInfo( "tie",      2.5 );
-    maps\mp\gametypes\_rank::registerScoreInfo( "kill",     250 );
-    maps\mp\gametypes\_rank::registerScoreInfo( "headshot", 250 );
-    maps\mp\gametypes\_rank::registerScoreInfo( "assist",   100 );
+    maps\mp\gametypes\_rank::registerScoreInfo( "kill",      0 );
+    maps\mp\gametypes\_rank::registerScoreInfo( "headshot",  0 );
+    maps\mp\gametypes\_rank::registerScoreInfo( "assist_75", 0 );
+    maps\mp\gametypes\_rank::registerScoreInfo( "assist_50", 0 );
+    maps\mp\gametypes\_rank::registerScoreInfo( "assist_25", 0 );
+    maps\mp\gametypes\_rank::registerScoreInfo( "assist",    0 );
 
     gf_initLoadouts();   // guarded by game["gf_init"] — shuffles once per match
-    gf_pickLoadout();    // deterministic: index derived from game["gf_round"]
+    gf_pickLoadout();    // deterministic: index derived from game["roundsplayed"]
 
     level.spawnMins = ( 0, 0, 0 );
     level.spawnMaxs = ( 0, 0, 0 );
@@ -137,6 +148,29 @@ onStartGameType()
 
 // ─── Spawn Pipeline ────────────────────────────────────────────────────────
 
+gf_registerLoadoutCycleDvar()
+{
+    dvar = "scr_" + level.gameType + "_roundsperloadout";
+
+    if ( GetDvar( dvar ) == "" )
+        setDvar( dvar, 2 );
+
+    value = GetDvarInt( dvar );
+    if ( value < 1 )
+    {
+        value = 1;
+        setDvar( dvar, value );
+    }
+    else if ( value > 9 )
+    {
+        value = 9;
+        setDvar( dvar, value );
+    }
+
+    level.gf_cfg_roundsPerLoadout = value;
+    makeDvarServerInfo( dvar, value );
+}
+
 onSpawnPlayer( teamOverride )
 {
     self.sessionstate = "playing";
@@ -144,26 +178,30 @@ onSpawnPlayer( teamOverride )
     self.maxhealth    = 100;
     self.health       = self.maxhealth;
 
+    spawnTeam = self.pers["team"];
+    if ( isDefined( game["switchedsides"] ) && game["switchedsides"] )
+        spawnTeam = maps\mp\_utility::getOtherTeam( spawnTeam );
+
     if ( level.inGracePeriod )
     {
         // Round start — use fixed team start positions
-        spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_" + self.pers["team"] + "_start" );
+        spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_" + spawnTeam + "_start" );
 
         if ( !spawnPoints.size )
-            spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sab_spawn_" + self.pers["team"] + "_start" );
+            spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sab_spawn_" + spawnTeam + "_start" );
 
         if ( spawnPoints.size )
             spawnPoint = maps\mp\gametypes\_spawnlogic::getSpawnpoint_Random( spawnPoints );
         else
         {
-            spawnPoints = maps\mp\gametypes\_spawnlogic::getTeamSpawnPoints( self.pers["team"] );
+            spawnPoints = maps\mp\gametypes\_spawnlogic::getTeamSpawnPoints( spawnTeam );
             spawnPoint  = maps\mp\gametypes\_spawnlogic::getSpawnpoint_NearTeam( spawnPoints );
         }
     }
     else
     {
         // Mid-round (spectator joining, etc.) — use intelligent spawn selection
-        spawnPoints = maps\mp\gametypes\_spawnlogic::getTeamSpawnPoints( self.pers["team"] );
+        spawnPoints = maps\mp\gametypes\_spawnlogic::getTeamSpawnPoints( spawnTeam );
         spawnPoint  = maps\mp\gametypes\_spawnlogic::getSpawnpoint_NearTeam( spawnPoints );
     }
 
@@ -180,20 +218,4 @@ onSpawnPlayerUnified()
     maps\mp\gametypes\_spawning::onSpawnPlayer_Unified();
 }
 
-// ─── Class Select Bypass ───────────────────────────────────────────────────
 
-gf_bypassClassChoice()
-{
-    if ( self.pers["team"] != "allies" && self.pers["team"] != "axis" )
-        return;
-
-    self.pers["class"] = level.defaultClass;
-    self.class         = level.defaultClass;
-
-    self thread maps\mp\gametypes\_spectating::setSpectatePermissionsForMachine();
-
-    if ( self.sessionstate != "playing" )
-        self thread [[level.spawnClient]]();
-
-    level thread maps\mp\gametypes\_globallogic::updateTeamStatus();
-}

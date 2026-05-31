@@ -1,4 +1,8 @@
 menufile,ui_mp\scriptmenus\mapvote.menu
+menufile,ui_mp/hud_gf.txt
+menufile,ui_mp/hud_gf_splitscreen.txt
+rawfile,scripts/mp/mapvote.gsc
+rawfile,scripts/mp/utils.gsc
 rawfile,maps/mp/gametypes/_gametypes.txt
 rawfile,maps/mp/gametypes/gf.txt
 rawfile,maps/mp/gametypes/gf.gsc

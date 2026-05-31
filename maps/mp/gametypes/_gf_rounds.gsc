@@ -1,7 +1,7 @@
 // Gunfight v3 — Round Management
 // _globallogic::endGame handles scoring, win-limit, intermission, and respawn.
 
-#include maps\mp\gametypes\_gf_loadouts;
+#include maps\mp\gametypes\_gf_hud;
 
 // ─── Player Lifecycle ──────────────────────────────────────────────────────
 
@@ -10,7 +10,17 @@ gf_playerSpawnedCB()
     level notify( "spawned_player" );
     self setClientUIVisibilityFlag( "hud_visible", 1 );
     setMatchFlag( "pregame", 0 );
+    self gf_initDamageScore();
+    self thread gf_startHealthHUD();
+    gf_queueHealthHUDUpdate();
     self thread gf_onSpawned();
+}
+
+gf_onSpawnSpectator( origin, angles )
+{
+    maps\mp\gametypes\_globallogic_defaults::default_onSpawnSpectator( origin, angles );
+    self thread gf_startHealthHUD();
+    gf_queueHealthHUDUpdate();
 }
 
 gf_onSpawned()
@@ -33,7 +43,6 @@ gf_tryActivateRound()
     level endon( "game_ended" );
 
     // 0.2s dedup: let all players finish spawning before opening the round
-    level.gf_timerEnd = gettime() + 60 * 1000;   // placeholder; real timer driven by scr_gf_timelimit dvar
     wait 0.2;
 
     if ( level.gf_roundActive )
@@ -42,7 +51,6 @@ gf_tryActivateRound()
         return;
     }
 
-    level.gf_roundNum++;
     level.gf_roundEnding     = false;
     level.gf_roundActive     = true;
     level.gf_activatingRound = false;
@@ -63,8 +71,7 @@ gf_endRound( winner )
     level.gf_roundActive = false;
     level notify( "gf_round_over" );
 
-    game["gf_round"]++;   // advance the persisted round counter, then re-pick
-    gf_pickLoadout();
+    gf_queueHealthHUDUpdate();
 
     if ( isDefined( winner ) && winner != "tie" )
         [[level._setTeamScore]]( winner, [[level._getTeamScore]]( winner ) + 1 );
@@ -118,7 +125,107 @@ gf_onRoundEndGame()
 
 gf_onPlayerKilled( eInflictor, attacker, iDamage, sMeansOfDeath, sWeapon, vDir, sHitLoc, psOffsetTime, deathAnimDuration )
 {
-    // stub — hook here for kill-ding, damage score, etc.
+    if ( isDefined( attacker ) && isPlayer( attacker ) )
+        attacker gf_syncDamageScore();
+
+    gf_queueHealthHUDUpdate();
+}
+
+gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeapon, vPoint, vDir, sHitLoc, psOffsetTime )
+{
+    if ( iDamage <= 0 )
+        return iDamage;
+
+    if ( !isDefined( eAttacker ) || !isPlayer( eAttacker ) || eAttacker == self )
+        return iDamage;
+
+    if ( !isDefined( self.pers["team"] ) || !isDefined( eAttacker.pers["team"] ) )
+        return iDamage;
+
+    if ( self.pers["team"] == eAttacker.pers["team"] )
+        return iDamage;
+
+    if ( self.sessionstate != "playing" || eAttacker.sessionstate != "playing" )
+        return iDamage;
+
+    hp = self.health;
+    if ( hp <= 0 )
+        return iDamage;
+
+    damage = iDamage;
+    if ( damage > hp )
+        damage = hp;
+
+    if ( damage > 0 )
+    {
+        if ( !isDefined( eAttacker.pers["gf_damage"] ) )
+            eAttacker.pers["gf_damage"] = 0;
+
+        eAttacker.pers["gf_damage"] += damage;
+        eAttacker gf_syncDamageScore();
+        gf_queueHealthHUDUpdate();
+    }
+
+    return iDamage;
+}
+
+gf_initDamageScoring()
+{
+    if ( !isDefined( game["gf_damage_match"] ) )
+        game["gf_damage_match"] = gettime();
+
+    if ( isDefined( game["gf_damage_init"] ) )
+        return;
+
+    for ( i = 0; i < level.players.size; i++ )
+    {
+        player = level.players[i];
+        player.pers["gf_damage"] = 0;
+        player.pers["gf_damage_match"] = game["gf_damage_match"];
+        player gf_syncDamageScore();
+    }
+
+    game["gf_damage_init"] = 1;
+}
+
+gf_initDamageScore()
+{
+    if ( !isDefined( game["gf_damage_match"] ) )
+        game["gf_damage_match"] = gettime();
+
+    if ( !isDefined( self.pers["gf_damage_match"] ) || self.pers["gf_damage_match"] != game["gf_damage_match"] )
+    {
+        self.pers["gf_damage"] = 0;
+        self.pers["gf_damage_match"] = game["gf_damage_match"];
+    }
+
+    self gf_syncDamageScore();
+}
+
+gf_syncDamageScore()
+{
+    if ( !isDefined( self.pers["gf_damage"] ) )
+        self.pers["gf_damage"] = 0;
+
+    [[level._setPlayerScore]]( self, self.pers["gf_damage"] );
+}
+
+gf_queueHealthHUDUpdate()
+{
+    if ( isDefined( level.gf_healthUpdateQueued ) && level.gf_healthUpdateQueued )
+        return;
+
+    level.gf_healthUpdateQueued = true;
+    level thread gf_doQueuedHealthHUDUpdate();
+}
+
+gf_doQueuedHealthHUDUpdate()
+{
+    level endon( "game_ended" );
+
+    wait 0.05;
+    level.gf_healthUpdateQueued = false;
+    level notify( "gf_health_hud_update" );
 }
 
 gf_onOneLeftEvent( team )
@@ -130,7 +237,10 @@ gf_onOneLeftEvent( team )
 
 gf_onRoundSwitch()
 {
-    // sides swap automatically via registerRoundSwitchDvar; no extra logic needed
+    if ( !isDefined( game["switchedsides"] ) )
+        game["switchedsides"] = false;
+
+    game["switchedsides"] = !game["switchedsides"];
 }
 
 // ─── Utilities ─────────────────────────────────────────────────────────────
@@ -147,14 +257,3 @@ gf_getTeamHP( team )
     return total;
 }
 
-gf_getAliveCount( team )
-{
-    count = 0;
-    for ( i = 0; i < level.players.size; i++ )
-    {
-        p = level.players[i];
-        if ( p.pers["team"] == team && p.sessionstate == "playing" && p.health > 0 )
-            count++;
-    }
-    return count;
-}

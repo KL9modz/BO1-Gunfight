@@ -15,7 +15,7 @@
     ],
     "settings": {
         "gsc.includedWorkspaceFolders": [
-            "S:\\SteamLibrary\\steamapps\\common\\Call of Duty Black Ops 42740\\raw"
+            "t5-raw"
         ],
         "gsc.game": "Universal game",
         "gsc.gameRootFolder": "S:\\SteamLibrary\\steamapps\\common\\Call of Duty Black Ops 42740\\raw"

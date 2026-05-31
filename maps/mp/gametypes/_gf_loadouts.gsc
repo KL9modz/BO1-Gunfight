@@ -174,9 +174,8 @@ gf_initLoadouts()
     PreCacheShader( "hud_us_stungrenade" );
     PreCacheShader( "hud_us_smokegrenade"      );
 
-    game["gf_pool"]  = pool;
-    game["gf_round"] = 0;   // round counter — persists across the per-round map_restart
-    game["gf_init"]  = 1;
+    game["gf_pool"] = pool;
+    game["gf_init"] = 1;
 }
 
 // Deterministic loadout selection: index is derived from the persisted round
@@ -188,7 +187,7 @@ gf_pickLoadout()
     if ( !isDefined( game["gf_pool"] ) )
         return;
 
-    idx = int( game["gf_round"] / level.gf_cfg_roundsPerLoadout ) % game["gf_pool"].size;
+    idx = int( game["roundsplayed"] / level.gf_cfg_roundsPerLoadout ) % game["gf_pool"].size;
     level.gf_currentLoad = game["gf_pool"][ idx ];
 }
 
@@ -216,30 +215,12 @@ gf_giveCustomLoadout( takeAll, alreadySpawned )
     self GiveWeapon( load["tactical"] );
     self EnableWeaponCycling();
 
-    self UnSetPerk( "specialty_armorvest"       );
-    self UnSetPerk( "specialty_fastreload"      );
-    self UnSetPerk( "specialty_gpsjammer"       );
-    self UnSetPerk( "specialty_twoattach"       );
-    self UnSetPerk( "specialty_gas_mask"        );
-    self UnSetPerk( "specialty_scavenger"       );
-    self UnSetPerk( "specialty_bulletaccuracy"  );
-    self UnSetPerk( "specialty_killstreak"      );
-    self UnSetPerk( "specialty_sprintrecovery"  );
-    self UnSetPerk( "specialty_twogrenades"     );
-    self UnSetPerk( "specialty_quieter"         );
-    self UnSetPerk( "specialty_detectexplosive" );
-    self UnSetPerk( "specialty_holdbreath"      );
-    self UnSetPerk( "specialty_blindeye"        );
-    self UnSetPerk( "specialty_pistoldeath"     );
-    self UnSetPerk( "specialty_twoprimaries"    );
-    self UnSetPerk( "specialty_extraammo"       );
     self SetPerk( "specialty_movefaster"        );   // Lightweight
     self SetPerk( "specialty_bulletpenetration" );   // Hardened
     self SetPerk( "specialty_longersprint"      );   // Marathon
 
     self thread gf_showCustomPerks();
     self thread gf_showWeaponHUD( load );
-    self thread gf_healthHUD();
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
