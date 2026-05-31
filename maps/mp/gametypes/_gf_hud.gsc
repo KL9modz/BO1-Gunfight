@@ -2,6 +2,8 @@
 // Health rows are event-driven: damage, death, spawn, and spectator changes
 // notify waiting clients instead of every client polling all players.
 
+#include maps\mp\gametypes\_hud_util;
+
 gf_startHealthHUD()
 {
     self notify( "gf_restart_health_hud" );
