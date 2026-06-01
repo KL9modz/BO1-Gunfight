@@ -32,10 +32,10 @@ gf_applyVisualTweaks()
     }
 
     self setClientDvar( "r_fog",                "0"   );
-    self setClientDvar( "r_lightTweakAmbient",  "0.3" );
-    self setClientDvar( "r_lightGridIntensity", "1.3" );
-    self setClientDvar( "r_lightGridContrast",  "1.0" );
-    self setClientDvar( "r_gamma",              "1.2" );
+    self setClientDvar( "r_lightTweakAmbient",  "0.1" );
+    self setClientDvar( "r_lightGridIntensity", "1.1" );
+    self setClientDvar( "r_lightGridContrast",  "1.1" );
+    self setClientDvar( "r_gamma",              "1.1" );
     self setClientDvar( "r_fullHDRrendering",   "1"   );
 }
 

@@ -1,5 +1,5 @@
 // Gunfight v3 — Standalone Gametype
-// Load: g_gametype gf → loadMod mp_gunfight → map_restart
+// By KL9
 
 #include maps\mp\_utility;
 #include maps\mp\gametypes\_hud_util;
@@ -48,7 +48,7 @@ main()
     level.giveCustomLoadout    = ::gf_giveCustomLoadout;
 
 
-    setscoreboardcolumns( "kills", "assists", "kdratio", "captures" );
+    setscoreboardcolumns( "kills", "deaths", "assists", "kdratio" );
 
 }
 

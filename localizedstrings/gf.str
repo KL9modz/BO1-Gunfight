@@ -15,7 +15,7 @@ REFERENCE           SHORT
 LANG_ENGLISH        "Gunfight"
 
 REFERENCE           WIN_MATCH
-LANG_ENGLISH        ""
+LANG_ENGLISH        "Your team won the match!"
 
 REFERENCE           WIN_ROUND
 LANG_ENGLISH        "Enemy team eliminated!"
@@ -33,6 +33,18 @@ REFERENCE           NAME
 LANG_ENGLISH        "GUNFIGHT"
 
 REFERENCE           GAMETYPE_DESC
-LANG_ENGLISH        "2v2. One life per round. First team to win 6 rounds wins the match."
+LANG_ENGLISH        "Eliminate enemies to win the round. 6 rounds to win the match. Random loadouts. No respawns. No health regen."
+
+REFERENCE           GUN_DESC
+LANG_ENGLISH        "Gun Game. Get a kill with each weapon to advance. First player to finish the full weapon sequence wins."
+
+REFERENCE           SHRP_DESC
+LANG_ENGLISH        "Sharpshooter. Everyone shares the same randomly rotating weapon. Most kills when time runs out wins."
+
+REFERENCE           HLND_DESC
+LANG_ENGLISH        "Sticks and Stones. Crossbow and ballistic knife only. Melee kills bankrupt an enemy's score. First to the score limit wins."
+
+REFERENCE           OIC_DESC
+LANG_ENGLISH        "One in the Chamber. One bullet, one life. Kill to earn another bullet. Last player standing wins the round."
 
 ENDMARKER

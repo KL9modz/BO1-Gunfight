@@ -184,21 +184,24 @@ gf_showWeaponHUD( load )
     shaders[0] = load["primaryShader"];
     shaders[1] = load["secondaryShader"];
     shaders[2] = load["lethalShader"];
+    shaders[3] = load["tacticalShader"];
 
     names = [];
     names[0] = load["primaryName"];
     names[1] = load["secondaryName"];
     names[2] = load["lethalName"];
+    names[3] = load["tacticalName"];
 
     yPos = [];
     yPos[0] = -128;
     yPos[1] = -120;
     yPos[2] = -112;
+    yPos[3] = -104;
 
     icons = [];
     texts = [];
 
-    for ( i = 0; i < 3; i++ )
+    for ( i = 0; i < 4; i++ )
     {
         icons[i] = self maps\mp\gametypes\_hud_util::createLoadoutIcon( i + 1, 0, 200, yPos[i] );
         texts[i] = self maps\mp\gametypes\_hud_util::createLoadoutText( icons[i], 160 );
@@ -225,7 +228,7 @@ gf_showWeaponHUD( load )
 
     wait 5;
 
-    for ( i = 0; i < 3; i++ )
+    for ( i = 0; i < 4; i++ )
     {
         icons[i] moveOverTime( 0.3 );
         icons[i].x = 400;

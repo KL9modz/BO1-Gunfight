@@ -11,11 +11,11 @@ koth,MPUI_HEADQUARTERS_CAPS,MENU_CAPTURE_THE_HEADQUARTERS,playlist_headquarters,
 dem,MPUI_DEMOLITION_CAPS,MENU_TEAMS_TAKE_TURNS_DEFENDING,playlist_demolition,5,YES,MPUI_DEMOLITION
 ctf,MPUI_CAPTURE_THE_FLAG_CAPS,MENU_CTF_DESC,playlist_ctf,6,YES,MPUI_CAPTURE_THE_FLAG
 sab,MPUI_SABOTAGE_CAPS,MENU_1_BOMB_IN_THE_CENTER,playlist_sabotage,7,YES,MPUI_SABOTAGE
-gf,GF_TITLE_CAPS,GF_GAMETYPE_DESC,playlist_tdm,8,YES,GF_TITLE_CAPS
-hlnd,MPUI_HLND_CAPS,MENU_KILL_EVERYONE_FIRST_PLAYER,playlist_sticksnstones,9,YES,MPUI_HLND
-oic,MPUI_OIC_CAPS,MENU_TEAMS_TAKE_TURNS_DEFENDING,playlist_oic,10,YES,MPUI_OIC
-gun,MPUI_GUN_CAPS,MENU_TEAMS_TAKE_TURNS_DEFENDING,playlist_gungame,11,YES,MPUI_GUN
-shrp,MPUI_SHRP_CAPS,MENU_TEAMS_TAKE_TURNS_DEFENDING,playlist_sharpshooter,12,YES,MPUI_SHRP
+gf,GF_TITLE_CAPS,GF_GAMETYPE_DESC,playlist_search_destroy,8,YES,GF_TITLE_CAPS
+hlnd,MPUI_HLND_CAPS,GF_HLND_DESC,playlist_ffa,9,YES,MPUI_HLND
+oic,MPUI_OIC_CAPS,GF_OIC_DESC,playlist_ffa,10,YES,MPUI_OIC
+gun,MPUI_GUN_CAPS,GF_GUN_DESC,playlist_gungame,11,YES,MPUI_GUN
+shrp,MPUI_SHRP_CAPS,GF_SHRP_DESC,playlist_sharpshooter,12,YES,MPUI_SHRP
 ,,,,,,
 maxnum_basictraining_gametype,4,,,,,
 #gametype reference,#gametype names,#gametype description,#image,#index,#splitscreen,#gametime names lowercase

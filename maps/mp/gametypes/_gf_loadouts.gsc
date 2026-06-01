@@ -178,7 +178,7 @@ gf_pickLoadout()
     level.gf_currentLoad = game["gf_pool"][ idx ];
 }
 
-gf_giveCustomLoadout( takeAll, alreadySpawned )
+gf_giveCustomLoadout()
 {
     if ( !isDefined( level.gf_currentLoad ) )
         return;
@@ -187,13 +187,12 @@ gf_giveCustomLoadout( takeAll, alreadySpawned )
 
     load = level.gf_currentLoad;
 
-    // setupBlankRandomPlayer clears inventory, applies body model, resets state
-    chooseRandomBody = !isDefined( alreadySpawned ) || !alreadySpawned;
-    self maps\mp\gametypes\_wager::setupBlankRandomPlayer( takeAll, chooseRandomBody );
+    self maps\mp\gametypes\_wager::setupBlankRandomPlayer( true, true );
 
+    camoOpts = int( self CalcWeaponOptions( load["camo"], 0, 0, 0 ) );
     self DisableWeaponCycling();
-    self GiveWeapon( load["primary"] );
-    self GiveWeapon( load["secondary"] );
+    self GiveWeapon( load["primary"],   0, camoOpts );
+    self GiveWeapon( load["secondary"], 0, camoOpts );
     self GiveWeapon( "knife_mp" );
     self switchToWeapon( load["primary"] );
     self giveMaxAmmo( load["primary"] );
@@ -219,6 +218,7 @@ gf_buildLoadout( pri, sec, let, tac )
     load["secondary"]       = sec["w"];   load["secondaryName"]   = sec["n"];   load["secondaryShader"] = sec["s"];
     load["lethal"]          = let["w"];   load["lethalName"]      = let["n"];   load["lethalShader"]    = let["s"];
     load["tactical"]        = tac["w"];   load["tacticalName"]    = tac["n"];   load["tacticalShader"]  = tac["s"];
+    load["camo"]            = randomInt( 16 );
     return load;
 }
 

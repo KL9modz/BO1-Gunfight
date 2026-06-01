@@ -1,11 +1,5 @@
 # mp_gunfight — Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 
-## T5 Gunfight — Possible Features
-
-Use this as a starting point for a new version. Items marked `[ ]` are built and in the current codebase — needs in-game testing. Unmarked items are not yet implemented.
-
-### Built — ready for in-game testing
-
 **Core Rules**
 - One life per round, no respawns 
 - No killstreaks, no health regen, no weapon drops — `level.killstreaksenabled = 0`, `level.healthRegenDisabled = true`
@@ -28,16 +22,7 @@ Use this as a starting point for a new version. Items marked `[ ]` are built and
 - Perk display notification 
 - HUD recreation per spawn 
 
-**Extra Systems**
-- Overtime — equal HP at timer expiry: reuses `hq_hardpoint` entity as capture zone (hidden at match start via `gf_hideHardpointModels()`); 3s uncontested capture wins; 20s countdown pauses while anyone on zone; HP comparison if time expires; coin flip if still tied; falls back gracefully on maps with no hardpoint
-- Forfeit handling — `gf_forfeitWatch()` polls every 10s post-prematch; two consecutive empty-team checks (20s grace for reconnects) → `endGame()` awards win to other team
-- Death sounds — `level.onPlayerKilled = ::gf_onPlayerKilled` wired; kill-ding sound removed (see TODO — `uin_challenge_repeatable` invalid in T5)
-- Scoreboard columns set to `kills, deaths, none, none`; player score = total damage dealt per round
-- Script split — 4 files under `raw/scripts/mp/`
-
 ### TODO 
-- Weapon camos —  test populating `self.custom_class[0]["camo_num"]` before spawn with class set to `CLASS_CUSTOM1`
-- Wager match modes (Gun Game, Sharpshooter — reference `gun.gsc` and `shrp.gsc` from plutoniummod/t5-scripts)
 - Kill-ding alias — `"mpl_killconfirm_killsound"` or `"mp_level_up"`
 
 ---
@@ -775,6 +760,42 @@ self SetActionSlot( 1, "weapon", equipment_weapon );
 ```
 Use `GiveWeapon()` for ALL weapon types including grenades and equipment.
 `SetActionSlot(1, "weapon", ...)` is only needed for equipment (claymores etc.) so they appear in the correct UI slot — grenades do not need it.
+
+### Weapon camos — `CalcWeaponOptions` + `GiveWeapon` 3rd arg
+
+Camo is applied via the 3rd parameter of `GiveWeapon`, which is a packed integer produced by the native `CalcWeaponOptions`:
+```gsc
+camoOpts = int( self CalcWeaponOptions( camoIndex, lensIndex, reticleIndex, reticleColorIndex ) );
+self GiveWeapon( weapon, 0, camoOpts );
+// Minimal form — camo only, stock lens/reticle:
+camoOpts = int( self CalcWeaponOptions( 7, 0, 0, 0 ) );   // Jungle ERDL
+self GiveWeapon( "galil_extclip_mp", 0, camoOpts );
+```
+
+**Camo indices** (from `mp/weaponOptions.csv`):
+```
+0   Default (weapon-specific gunmetal / wood / plastic)
+1   Dusty          2   Ice            3   Red
+4   OD Green       5   Desert Nevada  6   Desert Sahara
+7   Jungle ERDL    8   Jungle Tiger   9   Urban German
+10  Urban Warsaw   11  Winter Siberia 12  Winter Yukon
+13  Woodland       14  Woodland Flora 15  Gold
+```
+
+**Lens indices** (0–5): white, red, blue, green, orange, yellow. Pass `0` for stock.
+**Reticle indices** (0–39): various dot/cross/shape patterns. Pass `0` for stock red-dot.
+**Reticle color indices** (0–6): red, green, blue, purple, cyan, yellow, orange.
+
+**Weapons where pattern camos (5–14) won't show** — they use `weapon_camo_neutral` as their base and are unaffected by patterns. Solid colors (1–4) and Gold (15) behavior may vary:
+`python`, `knife`, `m1911`, `cz75`, `makarov`, `asp`, `crossbow_explosive`, `rpg`, `strela`, `m72_law`, `china_lake`
+
+**Why `custom_class["camo_num"]` does NOT work for this mod:**
+`camo_num` is only read in `_weapons.gsc::stow_on_back()` — it affects only the weapon model rendered on the player's *back* (not in-hand). It also requires `isSubStr(self.curclass, "CUSTOM")`, which is false for `CLASS_ASSAULT` (our class when `scr_disable_cac=1`). Dead end.
+
+**Current mod implementation** (`_gf_loadouts.gsc`):
+- Each loadout gets `load["camo"] = randomInt(16)` at pool-build time (match start)
+- `gf_giveCustomLoadout` calls `CalcWeaponOptions(load["camo"], 0, 0, 0)` and passes the result to both primary and secondary `GiveWeapon` calls
+- When adding curated loadouts later, pass camo as a 5th arg to `gf_buildLoadout` and assign it directly instead of using `randomInt(16)`
 
 ---
 
