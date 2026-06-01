@@ -10,6 +10,10 @@ players/
 plutonium/
 zone/
 
+# Claude Code — local permissions (machine-specific paths)
+.claude/settings.json
+.claude/settings.local.json
+
 # Local-only reference/server files
 dedicated.cfg
 dedicated_sp.cfg
