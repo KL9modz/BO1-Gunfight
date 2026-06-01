@@ -2,6 +2,7 @@
 // _globallogic::endGame handles scoring, win-limit, intermission, and respawn.
 
 #include maps\mp\gametypes\_gf_hud;
+#include maps\mp\gametypes\_hud_util;
 
 // ─── Player Lifecycle ──────────────────────────────────────────────────────
 
@@ -11,15 +12,36 @@ gf_playerSpawnedCB()
     self setClientUIVisibilityFlag( "hud_visible", 1 );
     setMatchFlag( "pregame", 0 );
     self gf_initDamageScore();
-    self thread gf_startHealthHUD();
     gf_queueHealthHUDUpdate();
+    self gf_applyVisualTweaks();
     self thread gf_onSpawned();
+}
+
+gf_applyVisualTweaks()
+{
+    dvar = "scr_" + level.gameType + "_visualtweaks";
+    if ( GetDvarInt( dvar ) != 1 )
+    {
+        self setClientDvar( "r_fog",                "1" );
+        self setClientDvar( "r_lightTweakAmbient",  "0"   );
+        self setClientDvar( "r_lightGridIntensity", "1"   );
+        self setClientDvar( "r_lightGridContrast",  "1"   );
+        self setClientDvar( "r_gamma",              "1"   );
+        self setClientDvar( "r_fullHDRrendering",   "0"   );
+        return;
+    }
+
+    self setClientDvar( "r_fog",                "0"   );
+    self setClientDvar( "r_lightTweakAmbient",  "0.3" );
+    self setClientDvar( "r_lightGridIntensity", "1.3" );
+    self setClientDvar( "r_lightGridContrast",  "1.0" );
+    self setClientDvar( "r_gamma",              "1.2" );
+    self setClientDvar( "r_fullHDRrendering",   "1"   );
 }
 
 gf_onSpawnSpectator( origin, angles )
 {
     maps\mp\gametypes\_globallogic_defaults::default_onSpawnSpectator( origin, angles );
-    self thread gf_startHealthHUD();
     gf_queueHealthHUDUpdate();
 }
 
@@ -57,9 +79,61 @@ gf_tryActivateRound()
     level.gf_roundActive     = true;
     level.gf_activatingRound = false;
 
-    maps\mp\gametypes\_globallogic_utils::pauseTimer();
-    wait 3;
-    maps\mp\gametypes\_globallogic_utils::resumeTimer();
+    if ( game["roundsplayed"] > 0 )
+    {
+        for ( i = 0; i < level.players.size; i++ )
+        {
+            p = level.players[i];
+            if ( p.sessionstate == "playing" )
+            {
+                p freezeControls( 1 );
+            }
+        }
+
+        level thread gf_roundStartCountdown();
+        wait 7;
+
+        for ( i = 0; i < level.players.size; i++ )
+        {
+            p = level.players[i];
+            if ( p.sessionstate == "playing" )
+            {
+                p freezeControls( 0 );
+            }
+        }
+    }
+}
+
+gf_roundStartCountdown()
+{
+    level endon( "game_ended" );
+
+    label = createServerFontString( "extrabig", 1.5 );
+    label setPoint( "CENTER", "CENTER", 0, -40 );
+    label.sort = 1001;
+    label.foreground = false;
+    label.hidewheninmenu = true;
+    label setText( "ROUND BEGINS IN" );
+
+    num = createServerFontString( "extrabig", 2.2 );
+    num setPoint( "CENTER", "CENTER", 0, 0 );
+    num.sort = 1001;
+    num.color = ( 1, 1, 0 );
+    num.foreground = false;
+    num.hidewheninmenu = true;
+    num maps\mp\gametypes\_hud::fontPulseInit();
+
+    count = 7;
+    while ( count > 0 )
+    {
+        num setValue( count );
+        num thread maps\mp\gametypes\_hud::fontPulse( level );
+        count--;
+        wait 1.0;
+    }
+
+    num destroyElem();
+    label destroyElem();
 }
 
 // ─── Round End ─────────────────────────────────────────────────────────────
@@ -232,7 +306,19 @@ gf_syncDamageScore()
     if ( !isDefined( self.pers["gf_damage"] ) )
         self.pers["gf_damage"] = 0;
 
-    [[level._setPlayerScore]]( self, self.pers["gf_damage"] );
+    gf_setPlayerScoreSilent( self, self.pers["gf_damage"] );
+}
+
+// Sets player score without triggering updateRankScoreHUD popup.
+// The default _setPlayerScore calls updateRankScoreHUD for private matches,
+// which shows a score delta popup on every damage event.
+gf_setPlayerScoreSilent( player, score )
+{
+    if ( score == player.pers["score"] )
+        return;
+    player.pers["score"] = score;
+    player.score         = player.pers["score"];
+    player notify( "update_playerscore_hud" );
 }
 
 gf_queueHealthHUDUpdate()
@@ -252,7 +338,6 @@ gf_doQueuedHealthHUDUpdate()
     for ( i = 0; i < level.players.size; i++ )
         level.players[i] gf_syncDamageScore();
 
-    level notify( "gf_health_hud_update" );
 }
 
 gf_onOneLeftEvent( team )
@@ -268,6 +353,10 @@ gf_onRoundSwitch()
         game["switchedsides"] = false;
 
     game["switchedsides"] = !game["switchedsides"];
+    level.halftimeType = "halftime";
+
+    maps\mp\gametypes\_globallogic::resetOutcomeForAllPlayers();
+    maps\mp\gametypes\_globallogic_audio::leaderDialog( "side_switch" );
 }
 
 // ─── Utilities ─────────────────────────────────────────────────────────────

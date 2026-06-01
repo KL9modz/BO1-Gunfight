@@ -27,10 +27,6 @@ main()
     maps\mp\gametypes\_weapons::registerKillstreakDelay(        level.gameType, 0, 0, 1440 );
     maps\mp\gametypes\_globallogic::registerFriendlyFireDelay(  level.gameType, 0, 0, 1440 );
 
-    level.roundSwitch = false;
-    if ( level.roundswitch > 0 )
-        level.roundSwitch = true;
-
     level.teamBased           = true;
     level.overrideTeamScore   = true;
     level.overridePlayerScore = true;
@@ -52,7 +48,7 @@ main()
     level.giveCustomLoadout    = ::gf_giveCustomLoadout;
 
 
-    setscoreboardcolumns( "kills", "deaths", "assists", "none" );
+    setscoreboardcolumns( "kills", "assists", "kdratio", "captures" );
 
 }
 
@@ -60,8 +56,9 @@ main()
 
 onPrecacheGameType()
 {
-    game["dialog"]["sudden_death"] = "generic_boost"; //
-	game["dialog"]["last_one"] = "encourage_last";
+    game["dialog"]["sudden_death"] = "generic_boost";
+    game["dialog"]["last_one"]     = "encourage_last";
+    game["dialog"]["side_switch"]  = "sd_halftime";
 
     // Score bar — native engine HUD reads these shaders for the round-win display
     precacheShader( "score_bar_bg" );
@@ -112,6 +109,12 @@ onStartGameType()
     setDvar( "scr_disable_cac", "1" );
     setDvar( "scr_disable_weapondrop", 1 );
     setDvar( "scr_showperksonspawn", "1" );
+    setDvar( "sv_cheats", "1" );
+    setDvar( "cg_drawHealth", "1" );
+
+    dvar = "scr_" + level.gameType + "_visualtweaks";
+    if ( GetDvar( dvar ) == "" )
+        setDvar( dvar, 1 );
 
     setDvar( "scr_player_healthregentime", "0" );
     level.killstreaksenabled             = 0;

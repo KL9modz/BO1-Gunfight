@@ -20,7 +20,9 @@
       "Bash(find /mnt/c/Users/klaze -maxdepth 3 -type d \\\\\\( -iname \"GSC\" -o -iname \"MP\" -o -iname \"Common\" \\\\\\) 2>/dev/null | head -20)",
       "Read(//mnt/c/Users/**)",
       "Bash(xargs -I {} bash -c \"echo '=== {} ==='; ls {} 2>/dev/null | grep -c '.gsc$' || echo '0'\")",
-      "Bash(xargs grep -l \"setTeamScore\\\\|setPlayerScore\\\\|_globallogic\\\\|gsc source\")"
+      "Bash(xargs grep -l \"setTeamScore\\\\|setPlayerScore\\\\|_globallogic\\\\|gsc source\")",
+      "Bash(Get-Item \"C:\\\\Users\\\\klaze\\\\AppData\\\\Local\\\\Plutonium\\\\storage\\\\t5\\\\main\\\\console_mp.log\")",
+      "Bash(Select-Object Length, LastWriteTime)"
     ]
   }
 }
