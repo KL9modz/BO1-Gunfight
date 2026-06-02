@@ -27,6 +27,50 @@
 
 ---
 
+## Wager Map Zone — Research Log (ABANDONED)
+
+Wager match gametypes (gun, shrp, oic, hlnd) use a restricted section of each map: smaller compass overlay, `mp_wager_spawn` entities in a confined area, and on some maps physical barriers that block off the outer areas. This smaller zone would be ideal for Gunfight.
+
+### What was confirmed
+
+- **`mp_wager_spawn` entities** — placed by map designers in a restricted zone. Queried via `GetEntArray("mp_wager_spawn", "classname")`. Present on ~12 base maps. These alone are not sufficient because there are no physical barriers.
+- **Compass overlay** — `_compass::setupMiniMap()` auto-appends `_wager` to the material name whenever `mp_wager_spawn` entities exist and `xblive_wagermatch==0`. This works for free without any code.
+- **Physical barriers** — confirmed real (user verified they exist in actual wager matches). NOT script-spawned by any of the wager gametype GSC files (gun.gsc, shrp.gsc, oic.gsc, hlnd.gsc). Only `mp_cosmodrome` script-spawns wager collision via `isSmallMapVersion()` (3 `spawncollision()` calls). All other maps' barriers are controlled by `xblive_wagermatch=1` read at map load time — either engine-native BSP geometry activation or entities spawned by the engine itself before any GSC runs.
+- **`xblive_wagermatch` is read by the engine at map load time** — before any mod GSC runs. The map's own `main()` reads it for the compass and (on cosmodrome) for collision. This cannot be intercepted by mod scripts.
+
+### What was tried and failed
+
+**Approach 1 — spawn restriction only (no dvar)**
+Result: user confirmed it is not enough; the map feels too open without physical barriers.
+
+**Approach 2 — set `xblive_wagermatch=1` in `mapvote.cfg`**
+Problem: `exec gf` in sv_maprotation reads from `%localappdata%\Plutonium\storage\t5\gamesettings\` NOT the mod folder. The file was never found. Minimap appeared to work (false positive — it was the auto-fallback in `setupMiniMap`, not our dvar).
+
+**Approach 3 — set `xblive_wagermatch=1` in `gf.gsc::main()` and clear it after**
+Problem: map's `main()` runs before gametype `main()`, so the dvar must be set BEFORE map load. Setting it in `main()` only helps future maps, not the current one.
+
+**Approach 4 — set dvar in `gamesettings/gf.cfg` + `replaceFunc(_wager::init)`**
+The dvar must be 1 before map load so the gamesettings file was the correct mechanism. `replaceFunc` on `_wager::init` to force `level.wagerMatch=0` was deterministic. BUT: `xblive_wagermatch=1` is also read directly (not via `level.wagerMatch`) by the engine UI layer, loading screen, `_medals.gsc`, and `_globallogic_player.gsc`. These cannot be intercepted from GSC. User saw "WAGER MATCH" loading screen text and numerous wager UI elements bleeding into gameplay.
+
+**Approach 5 — entity diff to identify barrier entities**
+Attempted a two-phase GSC entity dump: snapshot entities without dvar (Phase A), restart with dvar (Phase B), diff the two. Failed because with `xblive_wagermatch=1` the wager lives system (`level.takeLivesOnDeath`, `level.numLives`) prevents normal player spawning in Phase B — the wager framework marks players as permanently eliminated after dying, blocking respawn for the next round. The entity dump tool itself could not run.
+
+**Approach 6 — proximity entity scanner**
+Built a tool (`gf_debug_ents=1`, `set gf_do_dump 1`) to scan entities near the player while standing at a barrier with `xblive_wagermatch=1` active. Blocked by: `PrintLn()` only goes to the in-game `~` console (not to any log file), `logString()` does not write to `games_mp.log` from client/listen-server GSC context, file I/O via `openFile`/`fprintln`/`closeFile` was not confirmed working before effort was abandoned.
+
+### Root cause (conclusion)
+
+The physical wager barriers on most maps are activated at the engine/BSP level by the `xblive_wagermatch` dvar being set before map load. This is a C++ engine operation, not a GSC operation. There is no way to get those barriers from a mod script without setting the dvar, and setting the dvar activates the full wager match framework (UI, lives system, loading screen text) in ways that cannot be suppressed from GSC. The two goals — barriers active, framework inactive — are mutually exclusive given the engine's architecture.
+
+### If revisiting
+
+1. The entity proximity scanner (`gf_debug_ents=1`) still exists in `_gf_debug.gsc` and works for general entity research.
+2. File I/O (`openFile`/`fprintln`/`closeFile`) needs to be verified in Plutonium T5 client mode before using it for output.
+3. A Plutonium T5 server plugin (DLL, not GSC) could set `xblive_wagermatch=1` before map load and then call `level.wagerMatch = 0` synchronously before the wager init thread reads it — this is the only architectural path that could work. Out of scope for a GSC-only mod.
+4. Custom maps built in Radiant could place wager-zone clip brushes directly, making the dvar unnecessary.
+
+---
+
 ## Design Goals
 
 > Focus on minimizing custom systems in favor of leveraging native engine functionality wherever possible. 

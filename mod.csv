@@ -9,5 +9,6 @@ rawfile,maps/mp/gametypes/gf.gsc
 rawfile,maps/mp/gametypes/_gf_rounds.gsc
 rawfile,maps/mp/gametypes/_gf_loadouts.gsc
 rawfile,maps/mp/gametypes/_gf_hud.gsc
+rawfile,maps/mp/gametypes/_gf_debug.gsc
 stringtable,mp/gametypesTable.csv
 localize,gf

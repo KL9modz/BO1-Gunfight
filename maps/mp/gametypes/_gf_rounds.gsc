@@ -2,6 +2,7 @@
 // _globallogic::endGame handles scoring, win-limit, intermission, and respawn.
 
 #include maps\mp\gametypes\_gf_hud;
+#include maps\mp\gametypes\_gf_debug;
 #include maps\mp\gametypes\_hud_util;
 
 // ─── Player Lifecycle ──────────────────────────────────────────────────────
@@ -15,6 +16,14 @@ gf_playerSpawnedCB()
     gf_queueHealthHUDUpdate();
     self gf_applyVisualTweaks();
     self thread gf_onSpawned();
+
+    if ( getDvarInt( "gf_debug_spawns" ) == 1 )
+        self thread gf_startSpawnRecorder();
+    if ( getDvarInt( "gf_debug_ents" ) == 1 )
+        self thread gf_startEntityDumper();
+
+    if ( getDvarInt( "gf_debug_spawns" ) == 1 )
+        self thread gf_startSpawnRecorder();
 }
 
 gf_applyVisualTweaks()

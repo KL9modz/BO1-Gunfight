@@ -96,8 +96,33 @@ onPrecacheGameType()
     precacheShader( "menu_mp_weapons_wa2000"   );
     precacheShader( "menu_mp_weapons_spas"     );
     precacheShader( "menu_mp_weapons_ithaca"   );
+    // AR expanded
+    precacheShader( "menu_mp_weapons_ak47"     );
+    precacheShader( "menu_mp_weapons_enfield"  );
+    precacheShader( "menu_mp_weapons_g11"      );
+    // SMG expanded
+    precacheShader( "menu_mp_weapons_kiparis"  );
+    precacheShader( "menu_mp_weapons_mac11"    );
+    precacheShader( "menu_mp_weapons_skorpion" );
+    // Sniper expanded
+    precacheShader( "menu_mp_weapons_psg1"     );
+    precacheShader( "menu_mp_weapons_dragunov" );
+    // Shotgun expanded
+    precacheShader( "menu_mp_weapons_rottweil72");
+    // Dual-wield (shared icons with base weapon)
+    precacheShader( "menu_mp_weapons_hs10"     );
+    precacheShader( "menu_mp_weapons_asp"      );
+    // Launchers / specials — icons may be absent for some; fails silently
+    precacheShader( "menu_mp_weapons_crossbow"      );
+    precacheShader( "menu_mp_weapons_minigun"        );
+    precacheShader( "menu_mp_weapons_china_lake"    );
+    precacheShader( "menu_mp_weapons_m72_law"       );
+    precacheShader( "menu_mp_weapons_rpg"           );
+    precacheShader( "menu_mp_weapons_m202_flash"    );
+    precacheShader( "menu_mp_weapons_knife_ballistic");
     precacheShader( "hud_grenadeicon"          );
     precacheShader( "hud_icon_satchelcharge"   );
+    precacheShader( "hud_icon_sticky_grenade"  );
     precacheShader( "hud_hatchet"              );
     precacheShader( "hud_us_flashgrenade"      );
     precacheShader( "hud_us_stungrenade"       );
@@ -221,7 +246,6 @@ onSpawnPlayer( teamOverride )
 
     if ( level.inGracePeriod )
     {
-        // Round start — use fixed team start positions
         spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_" + spawnTeam + "_start" );
 
         if ( !spawnPoints.size )
@@ -237,7 +261,6 @@ onSpawnPlayer( teamOverride )
     }
     else
     {
-        // Mid-round (spectator joining, etc.) — use intelligent spawn selection
         spawnPoints = maps\mp\gametypes\_spawnlogic::getTeamSpawnPoints( spawnTeam );
         spawnPoint  = maps\mp\gametypes\_spawnlogic::getSpawnpoint_NearTeam( spawnPoints );
     }
@@ -254,5 +277,7 @@ onSpawnPlayerUnified()
 
     maps\mp\gametypes\_spawning::onSpawnPlayer_Unified();
 }
+
+
 
 
