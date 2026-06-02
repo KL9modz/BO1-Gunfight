@@ -7,9 +7,8 @@
 //   [4] ActionSlot4  clear recorded spawns
 //
 // ENTITY FINDER  --  set gf_debug_ents 1 before loading the map.
-//   With xblive_wagermatch 1 active, walk to a wager barrier wall.
-//   Then type in console: set gf_do_dump 1
-//   Output is written to gf_dump.log in the game folder.
+//   Walk up to a wager barrier wall, then type: set gf_do_dump 1
+//   Shows classname/targetname/model of everything within 200 units.
 
 // ─── Spawn Recorder ────────────────────────────────────────────────────────
 
@@ -141,9 +140,6 @@ gf_recPrint()
 }
 
 // ─── Entity Finder ─────────────────────────────────────────────────────────
-// Writes to gf_dump.log in the game folder (scr_allowFileIo must be 1).
-// Walk to a wager barrier, type: set gf_do_dump 1
-// Dumps all entities within 200 units with classname/targetname/model/origin.
 
 gf_startEntityDumper()
 {
@@ -167,28 +163,14 @@ gf_startEntityDumper()
     }
 }
 
-gf_log( fh, text )
-{
-    if ( fh != -1 )
-        fprintln( fh, text );
-    PrintLn( text );
-}
-
 gf_findNearbyEnts()
 {
     origin = self.origin;
     ents   = getEntArray();
     found  = 0;
     radius = 200;
-    map    = getDvar( "mapname" );
-    wager  = getDvarInt( "xblive_wagermatch" );
 
-    // Open log file for appending (scr_allowFileIo=1 required)
-    fh = openFile( "gf_dump.log", "append" );
-
-    gf_log( fh, "" );
-    gf_log( fh, "=== NEARBY ENTITIES: " + map + "  wagermatch=" + wager + "  radius=" + radius + " ===" );
-    gf_log( fh, "player_origin=(" + int(origin[0]) + "," + int(origin[1]) + "," + int(origin[2]) + ")" );
+    iPrintLnBold( "^2Scanning " + ents.size + " entities within " + radius + " units..." );
 
     for ( i = 0; i < ents.size; i++ )
     {
@@ -209,17 +191,13 @@ gf_findNearbyEnts()
         line = "NEAR|" + int( dist ) + "|" + cn + "|" + tn + "|" + md
              + "|(" + int(org[0]) + "," + int(org[1]) + "," + int(org[2]) + ")";
 
-        gf_log( fh, line );
+        iPrintLn( "^3" + line );
+        PrintLn( line );
         found++;
     }
-
-    gf_log( fh, "=== END: " + found + " entities ===" );
-
-    if ( fh != -1 )
-        closeFile( fh );
 
     if ( found == 0 )
         iPrintLnBold( "^1Nothing within " + radius + " units - move closer to the barrier" );
     else
-        iPrintLnBold( "^2Found " + found + " nearby - written to gf_dump.log" );
+        iPrintLnBold( "^2Found " + found + " nearby entities" );
 }
