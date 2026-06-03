@@ -127,6 +127,15 @@ onPrecacheGameType()
     precacheShader( "hud_us_flashgrenade"      );
     precacheShader( "hud_us_stungrenade"       );
     precacheShader( "hud_us_smokegrenade"      );
+
+    precacheModel( "mp_flag_neutral" );
+    precacheShader( "compass_waypoint_captureneutral" );
+    precacheShader( "waypoint_captureneutral" );
+    precacheShader( "compass_waypoint_captureneutral_b" );
+    precacheShader( "waypoint_captureneutral_b" );
+    precacheShader( "compass_waypoint_capture_b" );
+    precacheShader( "waypoint_capture_b" );
+    precacheString( &"MP_CAPTURING_FLAG" );
 }
 
 onStartGameType()
@@ -202,6 +211,7 @@ onStartGameType()
     setDemoIntermissionPoint( spawnpoint.origin, spawnpoint.angles );
 
     allowed[0] = "gf";
+    allowed[1] = "dom";
     maps\mp\gametypes\_gameobjects::main( allowed );
 
     maps\mp\gametypes\_spawning::create_map_placed_influencers();

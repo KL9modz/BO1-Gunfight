@@ -185,14 +185,150 @@ gf_onTimeLimit()
     alliesHP = gf_getTeamHP( "allies" );
     axisHP   = gf_getTeamHP( "axis"   );
 
-    if ( alliesHP > axisHP )
-        winner = "allies";
-    else if ( axisHP > alliesHP )
-        winner = "axis";
-    else
-        winner = "tie";
+    // OT clock ran out without a capture → HP comparison resolves it
+    if ( isDefined( level.gf_overtimeActive ) && level.gf_overtimeActive )
+    {
+        if ( alliesHP > axisHP )      winner = "allies";
+        else if ( axisHP > alliesHP ) winner = "axis";
+        else                          winner = "tie";
+        level notify( "gf_ot_done", winner );
+        return;
+    }
+
+    // Both sides still alive → overtime
+    if ( alliesHP > 0 && axisHP > 0 )
+    {
+        level thread gf_overtime();
+        return;
+    }
+
+    if ( alliesHP > axisHP )      winner = "allies";
+    else if ( axisHP > alliesHP ) winner = "axis";
+    else                          winner = "tie";
 
     gf_endRound( winner );
+}
+
+gf_overtime()
+{
+    level endon( "game_ended" );
+
+    level.gf_overtimeActive = true;
+
+    maps\mp\gametypes\_globallogic_utils::pauseTimer();
+
+    for ( i = 0; i < level.players.size; i++ )
+        level.players[i] iPrintLnBold( "OVERTIME" );
+    maps\mp\_utility::playSoundOnPlayers( "mp_sd_bomb_warning", undefined );
+
+    // Wind the clock back 15 s before resuming so the native timer counts down from 0:15
+    level.discardTime += 15000;
+    maps\mp\gametypes\_globallogic_utils::resumeTimer();
+
+    // Ensure _gameobjects vars are ready (guarded in case _gameobjects::init was skipped)
+    if ( !isDefined( level.numGametypeReservedObjectives ) )
+        level.numGametypeReservedObjectives = 0;
+    if ( !isDefined( level.releasedObjectives ) )
+        level.releasedObjectives = [];
+
+    // State vars mirrored from dom.gsc for onBeginUse / statusDialog
+    if ( !isDefined( level.lastDialogTime ) )  level.lastDialogTime = 0;
+    if ( !isDefined( level.lastStatus ) )      level.lastStatus = [];
+    if ( !isDefined( level.lastStatus["allies"] ) ) level.lastStatus["allies"] = 0;
+    if ( !isDefined( level.lastStatus["axis"]   ) ) level.lastStatus["axis"]   = 0;
+
+    zone = gf_createOvertimeZone();
+
+    level waittill( "gf_ot_done", winner );
+
+    level.gf_overtimeActive = false;
+    if ( isDefined( zone ) && isDefined( zone.spawnedModel ) )
+        zone.spawnedModel delete();
+
+    gf_endRound( winner );
+}
+
+gf_createOvertimeZone()
+{
+    // Find the B flag entity kept alive by allowed[1]="dom" in onStartGameType
+    flags = getEntArray( "flag_primary", "targetname" );
+    bFlag = undefined;
+    for ( i = 0; i < flags.size; i++ )
+    {
+        if ( isDefined( flags[i].script_label ) && flags[i].script_label == "_b" )
+        {
+            bFlag = flags[i];
+            break;
+        }
+    }
+    if ( !isDefined( bFlag ) && flags.size > 0 )
+        bFlag = flags[ int( flags.size / 2 ) ];
+
+    if ( !isDefined( bFlag ) )
+        return undefined;
+
+    // Use the map-linked visual if it exists; otherwise spawn one
+    if ( isDefined( bFlag.target ) )
+    {
+        flagModel        = getEnt( bFlag.target, "targetname" );
+        spawnedModel     = undefined;
+    }
+    else
+    {
+        flagModel        = spawn( "script_model", bFlag.origin );
+        flagModel.angles = bFlag.angles;
+        spawnedModel     = flagModel;
+    }
+    flagModel setModel( "mp_flag_neutral" );
+
+    visuals    = [];
+    visuals[0] = flagModel;
+
+    zone = maps\mp\gametypes\_gameobjects::createUseObject( "neutral", bFlag, visuals, ( 0, 0, 100 ) );
+    zone maps\mp\gametypes\_gameobjects::allowUse( "any" );
+    zone maps\mp\gametypes\_gameobjects::setUseTime( 5 );
+    zone maps\mp\gametypes\_gameobjects::setUseText( &"MP_CAPTURING_FLAG" );
+    zone maps\mp\gametypes\_gameobjects::set2DIcon( "any", "compass_waypoint_captureneutral" );
+    zone maps\mp\gametypes\_gameobjects::set3DIcon( "any", "waypoint_captureneutral" );
+    zone maps\mp\gametypes\_gameobjects::setVisibleTeam( "any" );
+    zone.onUse        = ::gf_onZoneCapture;
+    zone.onBeginUse   = ::gf_onZoneBeginUse;
+    zone.onEndUse     = ::gf_onZoneEndUse;
+    zone.spawnedModel = spawnedModel;
+    zone.didStatusNotify = false;
+
+    return zone;
+}
+
+gf_onZoneCapture( player )
+{
+    if ( !isDefined( player ) || !isPlayer( player ) ) return;
+    level notify( "gf_ot_done", player.pers["team"] );
+}
+
+gf_onZoneBeginUse( player )
+{
+    label = self maps\mp\gametypes\_gameobjects::getLabel();
+    setDvar( "scr_obj" + label + "_flash", 1 );
+    self.didStatusNotify = false;
+
+    // For a neutral zone, only the capturing team's objPoint flashes
+    if ( isDefined( self.objPoints ) && isDefined( self.objPoints[player.pers["team"]] ) )
+        self.objPoints[player.pers["team"]] thread maps\mp\gametypes\_objpoints::startFlashing();
+}
+
+gf_onZoneEndUse( team, player, success )
+{
+    label = self maps\mp\gametypes\_gameobjects::getLabel();
+    setDvar( "scr_obj" + label + "_flash", 0 );
+
+    if ( isDefined( self.objPoints ) )
+    {
+        if ( isDefined( self.objPoints["allies"] ) )
+            self.objPoints["allies"] thread maps\mp\gametypes\_objpoints::stopFlashing();
+        if ( isDefined( self.objPoints["axis"] ) )
+            self.objPoints["axis"] thread maps\mp\gametypes\_objpoints::stopFlashing();
+    }
 }
 
 // Called by _globallogic to determine the overall match leader at round end.

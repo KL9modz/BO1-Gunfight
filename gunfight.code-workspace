@@ -14,6 +14,7 @@
             "t5-raw",
             "t5/mods"
         ],
-        "gsc.game": "Universal game"
+        "gsc.game": "Universal game",
+        "powershell.cwd": "t5/mods"
     }
 }
