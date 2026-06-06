@@ -3,6 +3,9 @@ mod.ff
 
 # Runtime/log output
 *.log
+*.log.*
+missingasset.csv
+__converter/
 demos/
 imgui.ini
 main/
@@ -19,3 +22,4 @@ dedicated.cfg
 dedicated_sp.cfg
 gsc resources/
 raw/
+tools/ff_extract/

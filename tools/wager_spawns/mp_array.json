@@ -1,0 +1,52 @@
+﻿[
+    {
+        "angles":  "0 194.6 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "2629.4 -262 284.4"
+    },
+    {
+        "angles":  "0 343.6 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-563.9 -854.5 337.4"
+    },
+    {
+        "angles":  "0 5.79999 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-255.9 188.5 383.4"
+    },
+    {
+        "angles":  "0 84 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "240 -592.4 357.4"
+    },
+    {
+        "angles":  "0 126 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "688.7 -519.9 359.4"
+    },
+    {
+        "angles":  "0 90.6 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "106.9 -2843.9 207.6"
+    },
+    {
+        "angles":  "0 264.6 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "1091 1255.4 431.4"
+    },
+    {
+        "angles":  "0 119.2 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "945.9 -2748.4 271.4"
+    },
+    {
+        "angles":  "0 107.2 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "1513.9 -2268.4 271.4"
+    },
+    {
+        "angles":  "0 238 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "2184 1381.4 433.4"
+    }
+]

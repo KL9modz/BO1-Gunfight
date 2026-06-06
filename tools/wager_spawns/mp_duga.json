@@ -1,0 +1,187 @@
+﻿[
+    {
+        "angles":  "0 145 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-216 -3784 44"
+    },
+    {
+        "angles":  "0 2.50448e-006 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-2682 -2957 44"
+    },
+    {
+        "angles":  "0 270 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-2725 -2325 44"
+    },
+    {
+        "angles":  "0 84.3 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-2526.5 -2487 44"
+    },
+    {
+        "angles":  "0 11.6 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-1376 -2304 44"
+    },
+    {
+        "angles":  "0 295 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "336 -3072 44"
+    },
+    {
+        "angles":  "0 115 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "812 -3486 44"
+    },
+    {
+        "angles":  "0 345 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-1440 -3168 44"
+    },
+    {
+        "angles":  "0 90 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-680 -3784 44"
+    },
+    {
+        "angles":  "0 90 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-1088 -3808 44"
+    },
+    {
+        "angles":  "0 330 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-2280 -2904 44"
+    },
+    {
+        "angles":  "0 180 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "1009 -2707 44"
+    },
+    {
+        "angles":  "0 180 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "768 -3776 44"
+    },
+    {
+        "angles":  "0 240 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-424 -1632 48"
+    },
+    {
+        "angles":  "0 270 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-1904 -856 44"
+    },
+    {
+        "angles":  "0 181.8 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-1662.2 -2993.9 44"
+    },
+    {
+        "angles":  "0 180 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-1487 -2110 44"
+    },
+    {
+        "angles":  "0 215 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-226 -3075 44"
+    },
+    {
+        "angles":  "0 25 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-428 -3340 44"
+    },
+    {
+        "angles":  "0 280 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "904 -2846 58"
+    },
+    {
+        "angles":  "0 1.00179e-005 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-1870.8 -2832.1 44"
+    },
+    {
+        "angles":  "0 1.00179e-005 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-2281 -2090 44"
+    },
+    {
+        "angles":  "0 196 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-1484 -2550 174"
+    },
+    {
+        "angles":  "0 254.8 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-1724 -2464 172"
+    },
+    {
+        "angles":  "0 125.5 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "1052 -3791 44"
+    },
+    {
+        "angles":  "0 1.00179e-005 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-2275 -2308 44"
+    },
+    {
+        "angles":  "0 270 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-816 -1144 44"
+    },
+    {
+        "angles":  "0 270 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-1349 -1136 44"
+    },
+    {
+        "angles":  "0 320 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-2194 -860 44"
+    },
+    {
+        "angles":  "0 355 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "394 -2652 44"
+    },
+    {
+        "angles":  "0 30 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "400 -2924 54"
+    },
+    {
+        "angles":  "0 180 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "688 -2160 44"
+    },
+    {
+        "angles":  "0 200 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "672 -1936 44"
+    },
+    {
+        "angles":  "0 180 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "272 -3280 44"
+    },
+    {
+        "angles":  "0 180 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "360 -3608 44"
+    },
+    {
+        "angles":  "0 190 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "234.7 -1922.9 44"
+    },
+    {
+        "angles":  "0 1.00179e-005 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-1992 -1960 44"
+    }
+]

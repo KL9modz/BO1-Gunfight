@@ -19,7 +19,6 @@ gf_playerSpawnedCB()
 
     if ( getDvarInt( "gf_debug_spawns" ) == 1 )
         self thread gf_startSpawnRecorder();
-    self thread gf_startEntityDumper();
 }
 
 gf_applyVisualTweaks()

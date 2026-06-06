@@ -1,0 +1,74 @@
+﻿[
+    {
+        "angles":  "0 225.6 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "1064 901.3 47"
+    },
+    {
+        "angles":  "0 30.2 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "316.9 -1047.2 50"
+    },
+    {
+        "angles":  "0 23.6 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "-287 -1467 52"
+    },
+    {
+        "angles":  "0 159.8 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "1725.1 -617 44"
+    },
+    {
+        "angles":  "0 235.4 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "1469 1064 20"
+    },
+    {
+        "angles":  "0 354 0",
+        "classname":  "mp_wager_spawn",
+        "origin":  "744.4 1273.1 99"
+    },
+    {
+        "angles":  "0 169.4 0",
+        "classname":  "mp_wager_spawn",
+        "modelscale":  "1.000000",
+        "origin":  "1273.9 -872.5 25"
+    },
+    {
+        "angles":  "0 24.6 0",
+        "classname":  "mp_wager_spawn",
+        "modelscale":  "1.000000",
+        "origin":  "-454.4 -940.9 37"
+    },
+    {
+        "angles":  "0 79.2 0",
+        "classname":  "mp_wager_spawn",
+        "modelscale":  "1.000000",
+        "origin":  "-606.5 -1410.9 43"
+    },
+    {
+        "angles":  "0 359.8 0",
+        "classname":  "mp_wager_spawn",
+        "modelscale":  "1.000000",
+        "origin":  "-746.4 -16 48"
+    },
+    {
+        "angles":  "0 313.4 0",
+        "classname":  "mp_wager_spawn",
+        "modelscale":  "1.000000",
+        "origin":  "-581.4 395 59"
+    },
+    {
+        "angles":  "0 318.2 0",
+        "classname":  "mp_wager_spawn",
+        "modelscale":  "1.000000",
+        "origin":  "-25.4 934 35"
+    },
+    {
+        "angles":  "0 256.6 0",
+        "classname":  "mp_wager_spawn",
+        "modelscale":  "1.000000",
+        "origin":  "1693.5 1020.9 6"
+    }
+]

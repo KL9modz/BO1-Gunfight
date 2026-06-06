@@ -45,6 +45,49 @@ After loading the mod in-game, use `map_restart` to reload script changes during
 | `scr_gf_scorelimit` | `6` | Round wins to win the match |
 | `scr_gf_roundswitch` | `2` | Rounds between side switches |
 | `scr_gf_roundsperloadout` | `2` | Rounds before the shared loadout rotates |
+| `scr_gf_wagerzones` | `1` | Optional kill switch; stock wager-map zones are on by default |
+
+## Wager Zones
+
+Gunfight uses the stock wager-map play spaces automatically. No console setup is required.
+
+The key discovery: wager blockers are already baked into the map entity lump. They are tagged with:
+
+```
+script_gameobjectname "gun oic hlnd shrp"
+```
+
+Stock `_gameobjects::main( allowed )` removes map entities whose `script_gameobjectname` does not match the active gametype allow-list. Gunfight keeps those blockers by adding the stock wager gametype names to the allow-list. The default-on `scr_gf_wagerzones` dvar only exists as an opt-out switch.
+
+What the implementation does:
+
+- Uses `mp_wager_spawn` entities for team spawns when the current map has them.
+- Preserves baked wager blockers by allowing `gun`, `oic`, `hlnd`, and `shrp` gameobject tags.
+- Applies the smaller wager compass material through `_gf_wager_zones.gsc`.
+- Never enables the wager-match framework; do not set `xblive_wagermatch` to `1` for Gunfight.
+- Adds only the extra script-spawned Cosmodrome wager collision helpers.
+
+Verified offline catalogs:
+
+- `tools/wager_spawns/` lists maps with `mp_wager_spawn` entities.
+- `tools/wager_entities/` lists baked wager blockers tagged for `gun oic hlnd shrp`.
+- Confirmed blocker maps: `mp_array`, `mp_cracked`, `mp_duga`, `mp_hanoi`, `mp_havoc`, `mp_russianbase`.
+
+Normal test:
+
+```
+set g_gametype gf
+map mp_havoc
+```
+
+Optional fallback test for the full map:
+
+```
+set scr_gf_wagerzones 0
+map_restart
+```
+
+Do not use runtime entity dumps or local overrides of stock `gun.gsc` / `oic.gsc` for this feature. The proven path is the `_gameobjects` allow-list.
 
 ## References
 

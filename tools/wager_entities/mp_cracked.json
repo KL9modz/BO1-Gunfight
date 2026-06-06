@@ -1,0 +1,190 @@
+﻿[
+    {
+        "angles":  "0.5 270 5.96237e-009",
+        "classname":  "script_model",
+        "model":  "t5_veh_bus_zis154",
+        "origin":  "-604 253.6 -203",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*260",
+        "origin":  "-774 1334 -141",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*261",
+        "origin":  "-932 -1776 -141",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*262",
+        "origin":  "-966 -776 -139",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*263",
+        "origin":  "-952 484 -139",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*264",
+        "origin":  "-964 736 -134",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "355.718 84.986 0.37547",
+        "classname":  "script_model",
+        "model":  "p_glo_barricade_wood_barb",
+        "origin":  "-979.5 1085.3 -198.6",
+        "script_gameobjectname":  "gun oic hlnd shrp"
+    },
+    {
+        "angles":  "0 270.411 0",
+        "classname":  "script_model",
+        "model":  "p_glo_concrete_barrier_damaged",
+        "modelscale":  "1",
+        "origin":  "-988 868 -193",
+        "script_gameobjectname":  "gun oic hlnd shrp"
+    },
+    {
+        "angles":  "0 85 0",
+        "classname":  "script_model",
+        "model":  "p_glo_barricade_wood_barb",
+        "origin":  "-979.5 961.5 -200",
+        "script_gameobjectname":  "gun oic hlnd shrp"
+    },
+    {
+        "angles":  "0 86.4 -90",
+        "classname":  "script_model",
+        "model":  "p_glo_no_entry_sign",
+        "origin":  "-976.5 961.5 -164",
+        "script_gameobjectname":  "gun oic hlnd shrp"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*265",
+        "origin":  "-964 996 -4",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*266",
+        "origin":  "-956 -1370 -8",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 271.611 0",
+        "classname":  "script_model",
+        "model":  "p_glo_concrete_barrier_damaged",
+        "modelscale":  "1",
+        "origin":  "-968 -1390 -177",
+        "script_gameobjectname":  "gun oic hlnd shrp"
+    },
+    {
+        "angles":  "0 86.011 0",
+        "classname":  "script_model",
+        "model":  "p_glo_concrete_barrier_damaged",
+        "modelscale":  "1",
+        "origin":  "-968 -1315 -177",
+        "script_gameobjectname":  "gun oic hlnd shrp"
+    },
+    {
+        "angles":  "0 3 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_lego_mdl",
+        "modelscale":  "1",
+        "origin":  "-957 -1129.8 -155.2",
+        "script_gameobjectname":  "gun oic hlnd shrp"
+    },
+    {
+        "angles":  "0 3 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_lego_mdl",
+        "modelscale":  "1",
+        "origin":  "-957 -1082.8 -155.2",
+        "script_gameobjectname":  "gun oic hlnd shrp"
+    },
+    {
+        "angles":  "350.021 86.3449 -89.3658",
+        "classname":  "script_model",
+        "model":  "p_glo_no_entry_sign",
+        "origin":  "-976.5 1085.5 -164",
+        "script_gameobjectname":  "gun oic hlnd shrp"
+    },
+    {
+        "angles":  "0 85 0",
+        "classname":  "script_model",
+        "model":  "p_glo_barricade_wood_barb",
+        "origin":  "-1073.5 -97.5 -85",
+        "script_gameobjectname":  "gun oic hlnd shrp"
+    },
+    {
+        "angles":  "0 86.4 -90",
+        "classname":  "script_model",
+        "model":  "p_glo_no_entry_sign",
+        "origin":  "-1070.5 -97.5 -49",
+        "script_gameobjectname":  "gun oic hlnd shrp"
+    },
+    {
+        "angles":  "358.108 84.9973 0.165656",
+        "classname":  "script_model",
+        "model":  "p_glo_barricade_wood_barb",
+        "origin":  "-1070 201.3 -64",
+        "script_gameobjectname":  "gun oic hlnd shrp"
+    },
+    {
+        "angles":  "358.104 86.3981 -89.8807",
+        "classname":  "script_model",
+        "model":  "p_glo_no_entry_sign",
+        "origin":  "-1067 200.1 -28.1",
+        "script_gameobjectname":  "gun oic hlnd shrp"
+    },
+    {
+        "angles":  "358.065 100.437 4.96814",
+        "classname":  "script_model",
+        "model":  "p_glo_barricade_wood_barb",
+        "origin":  "-1084.7 22.5 -76.4",
+        "script_gameobjectname":  "gun oic hlnd shrp"
+    },
+    {
+        "angles":  "357.943 101.832 -85.0806",
+        "classname":  "script_model",
+        "model":  "p_glo_no_entry_sign",
+        "origin":  "-1078.6 22.7 -40.9",
+        "script_gameobjectname":  "gun oic hlnd shrp"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*267",
+        "origin":  "-1066 15 44",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*268",
+        "origin":  "-1068 460 -3",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*269",
+        "origin":  "-604 257 -143",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    }
+]
