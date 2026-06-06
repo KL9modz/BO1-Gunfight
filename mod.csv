@@ -3,9 +3,11 @@ menufile,ui_mp/hud_gf_splitscreen.txt
 rawfile,maps/mp/gametypes/_gametypes.txt
 rawfile,maps/mp/gametypes/gf.txt
 rawfile,maps/mp/gametypes/gf.gsc
+rawfile,maps/mp/gametypes/gun.gsc
 rawfile,maps/mp/gametypes/_gf_rounds.gsc
 rawfile,maps/mp/gametypes/_gf_loadouts.gsc
 rawfile,maps/mp/gametypes/_gf_hud.gsc
 rawfile,maps/mp/gametypes/_gf_debug.gsc
+rawfile,scripts/mp/gf_dumper.gsc
 stringtable,mp/gametypesTable.csv
 localize,gf

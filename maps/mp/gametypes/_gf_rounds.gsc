@@ -19,11 +19,7 @@ gf_playerSpawnedCB()
 
     if ( getDvarInt( "gf_debug_spawns" ) == 1 )
         self thread gf_startSpawnRecorder();
-    if ( getDvarInt( "gf_debug_ents" ) == 1 )
-        self thread gf_startEntityDumper();
-
-    if ( getDvarInt( "gf_debug_spawns" ) == 1 )
-        self thread gf_startSpawnRecorder();
+    self thread gf_startEntityDumper();
 }
 
 gf_applyVisualTweaks()
@@ -267,6 +263,15 @@ gf_createOvertimeZone()
     if ( !isDefined( bFlag ) )
         return undefined;
 
+    // Ground-orient and spawn the flag base halo FX (same technique as dom.gsc)
+    traceStart = bFlag.origin + ( 0, 0, 32 );
+    traceEnd   = bFlag.origin + ( 0, 0, -32 );
+    trace      = bulletTrace( traceStart, traceEnd, false, undefined );
+    upAngles   = vectorToAngles( trace["normal"] );
+    baseFx     = spawnFx( level.gf_ot_baseFx, trace["position"],
+                          anglesToForward( upAngles ), anglesToRight( upAngles ) );
+    triggerFx( baseFx );
+
     // Use the map-linked visual if it exists; otherwise spawn one
     if ( isDefined( bFlag.target ) )
     {
@@ -286,10 +291,12 @@ gf_createOvertimeZone()
 
     zone = maps\mp\gametypes\_gameobjects::createUseObject( "neutral", bFlag, visuals, ( 0, 0, 100 ) );
     zone maps\mp\gametypes\_gameobjects::allowUse( "any" );
-    zone maps\mp\gametypes\_gameobjects::setUseTime( 5 );
+    zone maps\mp\gametypes\_gameobjects::setUseTime( 2.5 );
     zone maps\mp\gametypes\_gameobjects::setUseText( &"MP_CAPTURING_FLAG" );
-    zone maps\mp\gametypes\_gameobjects::set2DIcon( "any", "compass_waypoint_captureneutral" );
-    zone maps\mp\gametypes\_gameobjects::set3DIcon( "any", "waypoint_captureneutral" );
+    zone maps\mp\gametypes\_gameobjects::set2DIcon( "friendly", "compass_waypoint_captureneutral" );
+    zone maps\mp\gametypes\_gameobjects::set2DIcon( "enemy",    "compass_waypoint_captureneutral" );
+    zone maps\mp\gametypes\_gameobjects::set3DIcon( "friendly", "waypoint_captureneutral" );
+    zone maps\mp\gametypes\_gameobjects::set3DIcon( "enemy",    "waypoint_captureneutral" );
     zone maps\mp\gametypes\_gameobjects::setVisibleTeam( "any" );
     zone.onUse        = ::gf_onZoneCapture;
     zone.onBeginUse   = ::gf_onZoneBeginUse;
@@ -312,7 +319,6 @@ gf_onZoneBeginUse( player )
     setDvar( "scr_obj" + label + "_flash", 1 );
     self.didStatusNotify = false;
 
-    // For a neutral zone, only the capturing team's objPoint flashes
     if ( isDefined( self.objPoints ) && isDefined( self.objPoints[player.pers["team"]] ) )
         self.objPoints[player.pers["team"]] thread maps\mp\gametypes\_objpoints::startFlashing();
 }
@@ -321,6 +327,8 @@ gf_onZoneEndUse( team, player, success )
 {
     label = self maps\mp\gametypes\_gameobjects::getLabel();
     setDvar( "scr_obj" + label + "_flash", 0 );
+
+    maps\mp\gametypes\_globallogic_utils::resumeTimer();
 
     if ( isDefined( self.objPoints ) )
     {

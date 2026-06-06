@@ -28,9 +28,53 @@
 
 ---
 
-## Wager Map Zone — Research Log (ABANDONED)
+## Wager Map Zone
 
 Wager match gametypes (gun, shrp, oic, hlnd) use a restricted section of each map: smaller compass overlay, `mp_wager_spawn` entities in a confined area, and on some maps physical barriers that block off the outer areas. This smaller zone would be ideal for Gunfight.
+
+### What is implemented (current state)
+
+**`gf_initWagerZone()` in `gf.gsc`** — called from `onStartGameType()`. Currently handles:
+- **mp_cosmodrome** — calls the same 3 `spawncollision()` planes that cosmodrome's own `isSmallMapVersion()` would place. The cosmodrome script unconditionally precaches these models in its `main()` regardless of dvar, so no extra `precacheModel()` is needed here.
+
+**Wager spawn auto-switch** — `onStartGameType()` now checks `getEntArray("mp_wager_spawn", "classname")`. If wager spawns exist on the current map, both teams use them instead of TDM spawns. This is the same check `gun.gsc` uses and works automatically for any wager-capable map.
+
+**`gf_noopFunc()`** — no-op stub in `gf.gsc` for use with `replaceFunc` during research.
+
+### Open research question
+
+**Verify `spawncollision()` timing** — in the engine source, `spawncollision()` is always called from a map's `main()`. Our call happens from `onStartGameType()`, which runs later. Test on cosmodrome: does the invisible clip appear? If not, the call is too late and needs a different path (see "If revisiting" below).
+
+**Visible barriers on other maps** — user confirmed visible 3D barricades appear on other wager maps that are NOT present in normal modes. These are NOT spawned by any GSC — the wager gametype files (`gun.gsc`, `shrp.gsc`, etc.) contain zero `spawn()` or `setModel()` calls for barriers. They are BSP-embedded entities activated by the engine when `xblive_wagermatch=1`. Two theories:
+
+- **Theory 1 (preferred):** Entities exist in the BSP at all times but are hidden/non-solid by default. `GetEntArray()` would find them in non-wager mode. Activating them from script via `show()` + `solid()` would require no dvar.
+- **Theory 2:** Entities are only spawned by the engine when `xblive_wagermatch=1` and don't exist in GSC without the dvar. Would require replicating with `spawn("script_model")` + `setModel()` + coordinates.
+
+**How to identify the entity classname** — map source files (`.map` format) exist at:
+```
+S:\SteamLibrary\steamapps\common\Call of Duty Black Ops 42740\map_source\
+```
+Install a compatible Radiant (CoD WaW community version). Open e.g. `mp_array.map`. Navigate to the wager zone boundary. Select barrier objects and read `classname`, `model`, and any wager-specific keys (e.g. `wagermatch`, `spawnflags`) from the entity inspector. This is the fastest research path.
+
+To add a map once classname/model is known — add a branch in `gf_initWagerZone()`:
+```gsc
+else if ( mapname == "mp_array" )
+{
+    // Theory 1: show hidden BSP entities
+    barriers = getEntArray( "CLASSNAME_TBD", "classname" );
+    for ( i = 0; i < barriers.size; i++ )
+    {
+        barriers[i] show();
+        // barriers[i] makesolid();   // only if non-solid by default
+    }
+    // Theory 2: spawn replicas (if entities aren't in BSP without dvar)
+    // precacheModel( "MODEL_TBD" );  // must be in onPrecacheGameType()
+    // b = spawn( "script_model", (x, y, z) );
+    // b.angles = (0, yaw, 0);
+    // b setModel( "MODEL_TBD" );
+    // spawncollision( "collision_geo_128x128x128", "collider", (x, y, z), (0, yaw, 0) );
+}
+```
 
 ### What was confirmed
 
@@ -38,6 +82,9 @@ Wager match gametypes (gun, shrp, oic, hlnd) use a restricted section of each ma
 - **Compass overlay** — `_compass::setupMiniMap()` auto-appends `_wager` to the material name whenever `mp_wager_spawn` entities exist and `xblive_wagermatch==0`. This works for free without any code.
 - **Physical barriers** — confirmed real (user verified they exist in actual wager matches). NOT script-spawned by any of the wager gametype GSC files (gun.gsc, shrp.gsc, oic.gsc, hlnd.gsc). Only `mp_cosmodrome` script-spawns wager collision via `isSmallMapVersion()` (3 `spawncollision()` calls). All other maps' barriers are controlled by `xblive_wagermatch=1` read at map load time — either engine-native BSP geometry activation or entities spawned by the engine itself before any GSC runs.
 - **`xblive_wagermatch` is read by the engine at map load time** — before any mod GSC runs. The map's own `main()` reads it for the compass and (on cosmodrome) for collision. This cannot be intercepted by mod scripts.
+- **`spawncollision()` creates invisible collision only** — the `collision_geo_*` and `collision_wall_*` model names are invisible clip geometry. No visible mesh component. 30+ pre-built shapes in `raw/xmodel/collision_*`.
+- **`spawn("script_model")` + `setModel()` creates visible props** — usable from any GSC including gametype scripts. Requires `precacheModel()` in `onPrecacheGameType()`.
+- **Map source files exist** — 46 `.map` files (Radiant native format) at `S:\SteamLibrary\steamapps\common\Call of Duty Black Ops 42740\map_source\`. No Radiant exe bundled — must install separately.
 
 ### What was tried and failed
 
@@ -61,14 +108,75 @@ Built a tool (`gf_debug_ents=1`, `set gf_do_dump 1`) to scan entities near the p
 
 ### Root cause (conclusion)
 
-The physical wager barriers on most maps are activated at the engine/BSP level by the `xblive_wagermatch` dvar being set before map load. This is a C++ engine operation, not a GSC operation. There is no way to get those barriers from a mod script without setting the dvar, and setting the dvar activates the full wager match framework (UI, lives system, loading screen text) in ways that cannot be suppressed from GSC. The two goals — barriers active, framework inactive — are mutually exclusive given the engine's architecture.
+The physical wager barriers on most maps are activated at the engine/BSP level by the `xblive_wagermatch` dvar being set before map load. This is a C++ engine operation, not a GSC operation. There is no way to get those barriers from a mod script without setting the dvar, and setting the dvar activates the full wager match framework (UI, lives system, loading screen text) in ways that cannot be suppressed from GSC alone. The two goals — barriers active, framework inactive — require a DLL plugin to bridge the timing gap.
 
-### If revisiting
+### Plutonium Plugin SDK — the architectural path forward
 
-1. The entity proximity scanner (`gf_debug_ents=1`) still exists in `_gf_debug.gsc` and works for general entity research.
-2. File I/O (`openFile`/`fprintln`/`closeFile`) needs to be verified in Plutonium T5 client mode before using it for output.
-3. A Plutonium T5 server plugin (DLL, not GSC) could set `xblive_wagermatch=1` before map load and then call `level.wagerMatch = 0` synchronously before the wager init thread reads it — this is the only architectural path that could work. Out of scope for a GSC-only mod.
-4. Custom maps built in Radiant could place wager-zone clip brushes directly, making the dvar unnecessary.
+A server-side DLL plugin can set `xblive_wagermatch=1` **before** the map's `main()` runs (via `on_game_init()`), then reset it to 0 **before** gametype scripts execute (via `on_scripts_load()`). This gives barriers without the framework.
+
+**External memory editor is NOT safe** — online use triggers a 7-day → permanent anti-cheat ban. The Plugin SDK is officially supported and carries no ban risk.
+
+**SDK resources:**
+- Official SDK: https://github.com/plutoniummod/plutonium-sdk
+- Example plugin: https://github.com/plutoniummod/plutonium-sdk-example
+- Docs (V1 API): https://plutonium.pw/en/docs/modding/plugin-sdk/v1-api/
+- First T5 plugin (full source): https://github.com/diamante0018/BlackOpsPlugin
+- Install path: `%LOCALAPPDATA%\Plutonium\plugins\wager_zone.dll`
+- Build: VS 2022 + Premake5
+
+**Key callbacks (in execution order per map load):**
+```
+on_dvar_init()        → dvar system initializes
+on_after_dvar_init()  → game dvars registered
+on_game_init(t, r)    → ← SET xblive_wagermatch=1 HERE (before map BSP/script)
+  [Map BSP loads]
+  [Map main() runs]   → reads dvar=1, activates BSP barriers + wager minimap ✓
+on_scripts_load()     → ← RESET xblive_wagermatch=0 HERE (before gametype runs)
+  [Gametype main()]   → gf.gsc reads dvar=0, wager framework stays inactive ✓
+on_scripts_execute()  → normal gameplay
+```
+
+**Plugin skeleton:**
+```cpp
+#include <plutonium/sdk.hpp>
+class WagerZonePlugin : public plutonium::sdk::plugin {
+    const char* plugin_name() override { return "WagerZone"; }
+    bool is_game_supported(plutonium::sdk::game g) override { return g == plutonium::sdk::game::T5; }
+    void on_startup(plutonium::sdk::iinterface* iface, plutonium::sdk::game) override {
+        iface_ = iface;
+        iface->callbacks()->on_game_init([this](int, int)  { game_init(); });
+        iface->callbacks()->on_scripts_load([this]()       { scripts_load(); });
+    }
+    void on_shutdown() override { iface_ = nullptr; }
+private:
+    plutonium::sdk::iinterface* iface_ = nullptr;
+    void game_init()   { /* set xblive_wagermatch=1 via SDK dvar API or Dvar_SetInt native call */ }
+    void scripts_load(){ /* reset xblive_wagermatch=0 */ }
+};
+plutonium::sdk::plugin* on_initialize() { return new WagerZonePlugin(); }
+```
+
+**Setting the dvar from C++** — two options:
+- Check `iinterface` headers for a `dvar()` subsystem (preferred if present)
+- Scan `t5mp.exe` memory for the string `"xblive_wagermatch"`, walk back to the `dvar_t` struct (`+0x00` = name ptr, `+0x10` = type, `+0x18` = value union), patch directly. Dvar table base is around `0x29383B0` for T5 MP but string-scan is more reliable across versions.
+
+**Risk — framework may read dvar too early:** If the wager lives system (`_globallogic_player.gsc`) reads the dvar at BSP load time (C++ level) rather than during script execution, resetting in `on_scripts_load()` won't help. Fallback: use MinHook to detour the specific C++ function that reads `xblive_wagermatch` and return 0 from all call sites except the BSP barrier activation path. More complex but fully within DLL scope.
+
+**GSC integration layer** — plugin can register a C++ noop callable from GSC:
+```cpp
+iface->gsc()->register_function("gf_pluginNoop", [](){});
+```
+Then from `gf.gsc::main()`: `replaceFunc(maps\mp\gametypes\_wager::init, ::gf_pluginNoop);`
+`gf_noopFunc()` already exists in `gf.gsc` as a fallback.
+
+**Build setup:**
+```
+git clone https://github.com/plutoniummod/plutonium-sdk-example wager-zone-plugin
+cd wager-zone-plugin
+git submodule update --init --recursive
+premake5 vs2022
+# open .sln in VS 2022, build → wager_zone.dll
+```
 
 ---
 

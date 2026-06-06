@@ -7,8 +7,9 @@
 //   [4] ActionSlot4  clear recorded spawns
 //
 // ENTITY FINDER  --  set gf_debug_ents 1 before loading the map.
-//   Walk up to a wager barrier wall, then type: set gf_do_dump 1
-//   Shows classname/targetname/model of everything within 200 units.
+//   set gf_do_dump 1  — nearby scan (default 200 units; set gf_dump_radius N to change)
+//   set gf_do_dump 2  — full census: every classname + all entities that have a model
+//   Both print to ~ console.  Census is the easiest way to find unknown entity types.
 
 // ─── Spawn Recorder ────────────────────────────────────────────────────────
 
@@ -149,26 +150,41 @@ gf_startEntityDumper()
 
     level endon( "game_ended" );
 
-    iPrintLnBold( "^3Entity Finder ON^7  walk to barrier then: set gf_do_dump 1" );
+    iPrintLnBold( "^3Dump ready^7  2=classnames  3=full" );
 
     while ( true )
     {
         wait 0.5;
 
-        if ( getDvarInt( "gf_do_dump" ) == 1 )
+        mode = getDvarInt( "gf_do_dump" );
+        if ( mode == 1 )
         {
             setDvar( "gf_do_dump", 0 );
             self gf_findNearbyEnts();
         }
+        else if ( mode == 2 )
+        {
+            setDvar( "gf_do_dump", 0 );
+            self gf_censusClassnames();
+        }
+        else if ( mode == 3 )
+        {
+            setDvar( "gf_do_dump", 0 );
+            gf_censusEnts();
+        }
     }
 }
 
+// Nearby scan — walk to an area of interest, then set gf_do_dump 1.
+// Radius controlled by gf_dump_radius dvar (default 200).
 gf_findNearbyEnts()
 {
     origin = self.origin;
     ents   = getEntArray();
     found  = 0;
     radius = 200;
+    if ( getDvar( "gf_dump_radius" ) != "" )
+        radius = getDvarInt( "gf_dump_radius" );
 
     iPrintLnBold( "^2Scanning " + ents.size + " entities within " + radius + " units..." );
 
@@ -197,7 +213,117 @@ gf_findNearbyEnts()
     }
 
     if ( found == 0 )
-        iPrintLnBold( "^1Nothing within " + radius + " units - move closer to the barrier" );
+        iPrintLnBold( "^1Nothing within " + radius + " units - try: set gf_dump_radius 1000" );
     else
         iPrintLnBold( "^2Found " + found + " nearby entities" );
+}
+
+// Classname-only summary — small output, fits in ~ console.  set gf_do_dump 2
+gf_censusClassnames()
+{
+    ents = getEntArray();
+    map  = getDvar( "mapname" );
+
+    counts = [];
+    for ( i = 0; i < ents.size; i++ )
+    {
+        e  = ents[i];
+        cn = "?";
+        if ( isDefined( e.classname ) ) cn = e.classname;
+        if ( !isDefined( counts[cn] ) ) counts[cn] = 0;
+        counts[cn]++;
+    }
+
+    iPrintLn( "^2=== " + map + " ents=" + ents.size + " ===" );
+    keys = getArrayKeys( counts );
+    for ( i = 0; i < keys.size; i++ )
+        iPrintLn( "^3CLS " + keys[i] + " ^7x" + counts[ keys[i] ] );
+
+    self iPrintLnBold( "^2Done — scroll ~ up for CLS list" );
+}
+
+// Full census — dumps every entity grouped by classname, then all modelled entities.
+// set gf_do_dump 2  to trigger.
+// Output written to entity_dump.log in the T5 storage dir; also printed to server console.
+gf_censusEnts()
+{
+    ents = getEntArray();
+    map  = getDvar( "mapname" );
+
+    fh = -1;
+    /# fh = openFile( "entity_dump.log", "write" ); #/
+
+    gf_cOut( fh, "" );
+    gf_cOut( fh, "=== CENSUS " + map + " total=" + ents.size + " ===" );
+
+    counts = [];
+    for ( i = 0; i < ents.size; i++ )
+    {
+        e  = ents[i];
+        cn = "?";
+        if ( isDefined( e.classname ) ) cn = e.classname;
+        if ( !isDefined( counts[cn] ) ) counts[cn] = 0;
+        counts[cn]++;
+    }
+
+    keys = getArrayKeys( counts );
+    for ( i = 0; i < keys.size; i++ )
+        gf_cOut( fh, "CLS|" + keys[i] + "|" + counts[ keys[i] ] );
+
+    // script_brushmodel entities have no .model field — print them separately
+    gf_cOut( fh, "--- script_brushmodel ---" );
+    brushes = getEntArray( "script_brushmodel", "classname" );
+    for ( i = 0; i < brushes.size; i++ )
+    {
+        e  = brushes[i];
+        tn = "";
+        if ( isDefined( e.targetname ) ) tn = e.targetname;
+        org = "?";
+        if ( isDefined( e.origin ) )
+            org = "(" + int(e.origin[0]) + "," + int(e.origin[1]) + "," + int(e.origin[2]) + ")";
+        ang = "?";
+        if ( isDefined( e.angles ) )
+            ang = "(" + int(e.angles[0]) + "," + int(e.angles[1]) + "," + int(e.angles[2]) + ")";
+        gf_cOut( fh, "SBM|" + i + "|" + tn + "|origin=" + org + "|angles=" + ang );
+    }
+
+    gf_cOut( fh, "--- models ---" );
+    for ( i = 0; i < ents.size; i++ )
+    {
+        e  = ents[i];
+        if ( !isDefined( e.model ) ) continue;
+        if ( e.model == "" ) continue;
+
+        cn = "?";
+        tn = "";
+        if ( isDefined( e.classname  ) ) cn = e.classname;
+        if ( isDefined( e.targetname ) ) tn = e.targetname;
+
+        org = "?";
+        if ( isDefined( e.origin ) )
+            org = "(" + int(e.origin[0]) + "," + int(e.origin[1]) + "," + int(e.origin[2]) + ")";
+
+        gf_cOut( fh, "MDL|" + cn + "|" + tn + "|" + e.model + "|" + org );
+    }
+
+    gf_cOut( fh, "=== END CENSUS ===" );
+
+    fileWritten = false;
+    /# if ( fh != -1 ) { closeFile( fh ); fileWritten = true; } #/
+
+    if ( isDefined( self.sessionstate ) )
+    {
+        if ( fileWritten )
+            self iPrintLnBold( "^2Census → entity_dump.log" );
+        else
+            self iPrintLnBold( "^2Census → server console (add 'set developer 1' for file)" );
+    }
+}
+
+// Write to games_mp.log (logString), server console (PrintLn), and file if open.
+gf_cOut( fh, line )
+{
+    PrintLn( line );
+    logString( line );
+    /# if ( fh != -1 ) fprintln( fh, line ); #/
 }

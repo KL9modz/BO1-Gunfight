@@ -5,6 +5,7 @@
 #include maps\mp\gametypes\_hud_util;
 #include maps\mp\gametypes\_gf_rounds;
 #include maps\mp\gametypes\_gf_loadouts;
+#include maps\mp\gametypes\_gf_debug;
 
 main()
 {
@@ -128,6 +129,8 @@ onPrecacheGameType()
     precacheShader( "hud_us_stungrenade"       );
     precacheShader( "hud_us_smokegrenade"      );
 
+    level.gf_ot_baseFx = loadfx( "misc/fx_ui_flagbase_gold_t5" );
+
     precacheModel( "mp_flag_neutral" );
     precacheShader( "compass_waypoint_captureneutral" );
     precacheShader( "waypoint_captureneutral" );
@@ -140,6 +143,8 @@ onPrecacheGameType()
 
 onStartGameType()
 {
+    level thread gf_levelDumpLoop();
+
     setDvar( "scr_disable_cac", "1" );
     setDvar( "scr_disable_weapondrop", 1 );
     setDvar( "scr_showperksonspawn", "1" );
@@ -198,8 +203,17 @@ onStartGameType()
     level.spawnMaxs = ( 0, 0, 0 );
     maps\mp\gametypes\_spawnlogic::placeSpawnPoints( "mp_tdm_spawn_allies_start" );
     maps\mp\gametypes\_spawnlogic::placeSpawnPoints( "mp_tdm_spawn_axis_start" );
-    maps\mp\gametypes\_spawnlogic::addSpawnPoints( "allies", "mp_tdm_spawn" );
-    maps\mp\gametypes\_spawnlogic::addSpawnPoints( "axis",   "mp_tdm_spawn" );
+    wagerSpawns = getEntArray( "mp_wager_spawn", "classname" );
+    if ( wagerSpawns.size > 0 )
+    {
+        maps\mp\gametypes\_spawnlogic::addSpawnPoints( "allies", "mp_wager_spawn" );
+        maps\mp\gametypes\_spawnlogic::addSpawnPoints( "axis",   "mp_wager_spawn" );
+    }
+    else
+    {
+        maps\mp\gametypes\_spawnlogic::addSpawnPoints( "allies", "mp_tdm_spawn" );
+        maps\mp\gametypes\_spawnlogic::addSpawnPoints( "axis",   "mp_tdm_spawn" );
+    }
     maps\mp\gametypes\_spawning::updateAllSpawnPoints();
     level.spawn_allies_start = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_allies_start" );
     level.spawn_axis_start   = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_axis_start" );
@@ -215,6 +229,8 @@ onStartGameType()
     maps\mp\gametypes\_gameobjects::main( allowed );
 
     maps\mp\gametypes\_spawning::create_map_placed_influencers();
+
+    gf_initWagerZone();
 
     setMatchFlag( "pregame", 0 );
 }
@@ -288,6 +304,53 @@ onSpawnPlayerUnified()
     maps\mp\gametypes\_spawning::onSpawnPlayer_Unified();
 }
 
+// ─── Wager Zone ────────────────────────────────────────────────────────────
 
+gf_initWagerZone()
+{
+    mapname = getDvar( "mapname" );
 
+    // mp_cosmodrome: the map script already precaches the mc_ collision models in its
+    // main() unconditionally, so spawncollision() is safe to call here without an
+    // extra precachemodel().  The 3 planes define the wager zone boundary; the rest
+    // of the zone is enclosed by natural map geometry.
+    if ( mapname == "mp_cosmodrome" )
+    {
+        spawncollision( "collision_geo_mc_8x560x190", "collider", (-393,   396.5, -72), (0, 270, 0) );
+        spawncollision( "collision_geo_mc_4x52x190",  "collider", (-358,   676.5, -74), (0, 0,   0) );
+        spawncollision( "collision_geo_mc_4x156x190", "collider", (-328.5, 758,   -74), (0, 270, 0) );
+    }
+}
 
+// noop — used to suppress the wager init when running the entity scanner in wager mode
+gf_noopFunc() {}
+
+// Level-scope dump loop — starts at map load, no player spawn required.
+// Works even when wager framework blocks spawning.
+gf_levelDumpLoop()
+{
+    level endon( "game_ended" );
+    wait 2;
+    PrintLn( "[gf] levelDumpLoop alive — set gf_do_dump 3 for census" );
+
+    // Auto-census when xblive_wagermatch=1 (research mode)
+    if ( getDvarInt( "xblive_wagermatch" ) == 1 )
+    {
+        PrintLn( "[gf] wager mode detected — auto-running census in 1s" );
+        wait 1;
+        gf_censusEnts();
+    }
+
+    while ( true )
+    {
+        wait 0.5;
+        mode = getDvarInt( "gf_do_dump" );
+        if ( mode == 3 )
+        {
+            setDvar( "gf_do_dump", 0 );
+            PrintLn( "[gf] census starting..." );
+            gf_censusEnts();
+            PrintLn( "[gf] census done" );
+        }
+    }
+}
