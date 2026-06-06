@@ -69,6 +69,7 @@ Stock `_gameobjects::main( allowed )` deletes entities whose `script_gameobjectn
 - `maps/mp/gametypes/_gf_wager_zones.gsc` applies the wager minimap material and the extra Cosmodrome small-map collision helpers.
 - `scr_gf_wagerzones` defaults to `1`; it does not need to be set during normal play.
 - Set `scr_gf_wagerzones` to `0` only when intentionally testing full-map fallback behavior.
+- TODO: remove `scr_gf_wagerzones` later, delete any unneeded offline wager extraction catalogs/tools, and hardwire wager zones on once the map pool is fully validated.
 - Do not set `xblive_wagermatch` to `1`; enabling it brings back wager UI/lives/prematch side effects.
 
 ### Verified catalogs

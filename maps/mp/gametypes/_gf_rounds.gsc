@@ -147,6 +147,9 @@ gf_roundStartCountdown()
 // then hands off to _globallogic::endGame() for round cycling / win-limit.
 gf_endRound( winner )
 {
+    if ( gf_resolveOvertime( winner ) )
+        return;
+
     level.gf_roundEnding = true;
     level.gf_roundActive = false;
     level notify( "gf_round_over" );
@@ -186,7 +189,7 @@ gf_onTimeLimit()
         if ( alliesHP > axisHP )      winner = "allies";
         else if ( axisHP > alliesHP ) winner = "axis";
         else                          winner = "tie";
-        level notify( "gf_ot_done", winner );
+        gf_resolveOvertime( winner );
         return;
     }
 
@@ -204,11 +207,25 @@ gf_onTimeLimit()
     gf_endRound( winner );
 }
 
+gf_resolveOvertime( winner )
+{
+    if ( !isDefined( level.gf_overtimeActive ) || !level.gf_overtimeActive )
+        return false;
+
+    if ( isDefined( level.gf_overtimeResolving ) && level.gf_overtimeResolving )
+        return true;
+
+    level.gf_overtimeResolving = true;
+    level notify( "gf_ot_done", winner );
+    return true;
+}
+
 gf_overtime()
 {
     level endon( "game_ended" );
 
-    level.gf_overtimeActive = true;
+    level.gf_overtimeActive    = true;
+    level.gf_overtimeResolving = false;
 
     maps\mp\gametypes\_globallogic_utils::pauseTimer();
 
@@ -226,21 +243,34 @@ gf_overtime()
     if ( !isDefined( level.releasedObjectives ) )
         level.releasedObjectives = [];
 
-    // State vars mirrored from dom.gsc for onBeginUse / statusDialog
-    if ( !isDefined( level.lastDialogTime ) )  level.lastDialogTime = 0;
-    if ( !isDefined( level.lastStatus ) )      level.lastStatus = [];
-    if ( !isDefined( level.lastStatus["allies"] ) ) level.lastStatus["allies"] = 0;
-    if ( !isDefined( level.lastStatus["axis"]   ) ) level.lastStatus["axis"]   = 0;
-
     zone = gf_createOvertimeZone();
 
     level waittill( "gf_ot_done", winner );
 
-    level.gf_overtimeActive = false;
-    if ( isDefined( zone ) && isDefined( zone.spawnedModel ) )
-        zone.spawnedModel delete();
+    gf_cleanupOvertimeZone( zone );
+    level.gf_overtimeActive    = false;
+    level.gf_overtimeResolving = false;
 
     gf_endRound( winner );
+}
+
+gf_cleanupOvertimeZone( zone )
+{
+    if ( !isDefined( zone ) )
+        return;
+
+    zone.interactTeam = "none";
+    zone.onUse        = undefined;
+    zone.onBeginUse   = undefined;
+    zone.onEndUse     = undefined;
+    zone.onUseUpdate  = undefined;
+    zone.curProgress  = 0;
+    zone.claimTeam    = "none";
+    zone.claimPlayer  = undefined;
+    zone maps\mp\gametypes\_gameobjects::setVisibleTeam( "none" );
+
+    if ( isDefined( zone.spawnedModel ) )
+        zone.spawnedModel delete();
 }
 
 gf_createOvertimeZone()
@@ -309,7 +339,7 @@ gf_createOvertimeZone()
 gf_onZoneCapture( player )
 {
     if ( !isDefined( player ) || !isPlayer( player ) ) return;
-    level notify( "gf_ot_done", player.pers["team"] );
+    gf_resolveOvertime( player.pers["team"] );
 }
 
 gf_onZoneBeginUse( player )

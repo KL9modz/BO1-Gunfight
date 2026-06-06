@@ -47,6 +47,16 @@ After loading the mod in-game, use `map_restart` to reload script changes during
 | `scr_gf_roundsperloadout` | `2` | Rounds before the shared loadout rotates |
 | `scr_gf_wagerzones` | `1` | Optional kill switch; stock wager-map zones are on by default |
 
+Note: `scr_gf_wagerzones` and the offline wager extraction catalogs/tools are temporary safety/proof artifacts. Once wager-zone behavior is fully validated across the map pool, remove the dvar, delete any unneeded extraction artifacts, and hardwire wager zones on for simplicity.
+
+## Overtime
+
+When the round timer expires with both teams still alive, Gunfight starts a fixed 15-second overtime instead of ending the round immediately.
+
+Overtime creates a neutral hold-to-capture zone at the map's Domination B flag when that entity exists. Capturing the zone wins the round immediately. If overtime expires without a capture, the round is awarded to the team with higher living HP; equal HP is a tie. If a team is wiped during overtime, the same overtime resolver ends the round immediately.
+
+The B flag is available because `gf.gsc` keeps Domination gameobjects in the `_gameobjects` allow-list. Maps without a B flag fall back to HP-only overtime.
+
 ## Wager Zones
 
 Gunfight uses the stock wager-map play spaces automatically. No console setup is required.
