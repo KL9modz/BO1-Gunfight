@@ -49,7 +49,7 @@ main()
     level.giveCustomLoadout    = ::gf_giveCustomLoadout;
 
 
-    setscoreboardcolumns( "kills", "deaths", "assists", "kdratio" );
+    setscoreboardcolumns( "kills", "deaths", "assists", "captures" );
 
 }
 
@@ -57,9 +57,11 @@ main()
 
 onPrecacheGameType()
 {
-    game["dialog"]["sudden_death"] = "generic_boost";
-    game["dialog"]["last_one"]     = "encourage_last";
-    game["dialog"]["side_switch"]  = "sd_halftime";
+    game["dialog"]["gf_overtime_cue"]    = "ctf_start";
+    game["dialog"]["offense_obj"]        = "generic_boost";
+    game["dialog"]["defense_obj"]        = "generic_boost";
+    game["dialog"]["last_one"]           = "encourage_last";
+    game["dialog"]["side_switch"]        = "sd_halftime";
 
     // Score bar — native engine HUD reads these shaders for the round-win display
     precacheShader( "score_bar_bg" );
@@ -139,6 +141,7 @@ onPrecacheGameType()
     precacheShader( "compass_waypoint_capture_b" );
     precacheShader( "waypoint_capture_b" );
     precacheString( &"MP_CAPTURING_FLAG" );
+    precacheString( &"MP_OVERTIME_CAPS" );
 
     gf_precacheWagerZoneAssets();
 }
@@ -160,11 +163,15 @@ onStartGameType()
     level.healthRegenDisabled            = true;
     level.playerHealth_RegularRegenDelay = 99999;
     gf_registerLoadoutCycleDvar(); // also sets level.gf_cfg_roundsPerLoadout
+    gf_registerOvertimeLimitDvar(); // also sets level.gf_cfg_overtimeLimit
     gf_initDamageScoring(); // relies on level.gf_cfg_roundsPerLoadout
 
     level.gf_roundActive     = false;
     level.gf_roundEnding     = false;
     level.gf_activatingRound = false;
+    level.gf_overtimeActive  = false;
+    level.inOvertime         = false;
+    level.timeLimitOverride  = false;
 
     if ( !isDefined( game["switchedsides"] ) )
         game["switchedsides"] = false;

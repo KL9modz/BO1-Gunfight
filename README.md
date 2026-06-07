@@ -42,6 +42,7 @@ After loading the mod in-game, use `map_restart` to reload script changes during
 | Dvar | Default | Description |
 |------|---------|-------------|
 | `scr_gf_timelimit` | `1` | Minutes per round |
+| `scr_gf_overtimelimit` | `15` | Seconds of overtime after round time expires; `0` disables overtime |
 | `scr_gf_scorelimit` | `6` | Round wins to win the match |
 | `scr_gf_roundswitch` | `2` | Rounds between side switches |
 | `scr_gf_roundsperloadout` | `2` | Rounds before the shared loadout rotates |
@@ -51,9 +52,9 @@ Note: `scr_gf_wagerzones` and the offline wager extraction catalogs/tools are te
 
 ## Overtime
 
-When the round timer expires with both teams still alive, Gunfight starts a fixed 15-second overtime instead of ending the round immediately.
+When the round timer expires with both teams still alive, Gunfight starts overtime instead of ending the round immediately. `scr_gf_overtimelimit` controls the overtime duration in seconds; setting it to `0` skips overtime and resolves the round by living HP immediately.
 
-Overtime creates a neutral hold-to-capture zone at the map's Domination B flag when that entity exists. Capturing the zone wins the round immediately. If overtime expires without a capture, the round is awarded to the team with higher living HP; equal HP is a tie. If a team is wiped during overtime, the same overtime resolver ends the round immediately.
+Overtime creates a neutral hold-to-capture zone at the map's Domination B flag when that entity exists. Capturing the zone wins the round immediately. The overtime clock legitimately pauses while the zone is actively being captured, then resumes if the capture is interrupted. The overtime timer ticks with the stock countdown sound from 15 seconds down. If overtime expires without a capture, the round is awarded to the team with higher living HP; equal HP is a tie. If a team is wiped during overtime, the same overtime resolver ends the round immediately.
 
 The B flag is available because `gf.gsc` keeps Domination gameobjects in the `_gameobjects` allow-list. Maps without a B flag fall back to HP-only overtime.
 

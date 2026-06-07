@@ -43,6 +43,11 @@
 - HUD recreation per spawn 
 
 ### TODO 
+Damage/score
+Health hud (team/self)
+Audio lines
+Improve timer
+Adjust flag and spawns
 - Kill-ding alias â€” `"mpl_killconfirm_killsound"` or `"mp_level_up"`
 - **Mapvote** â€” removed; maps currently cycle via `sv_maprotation`. Needs a clean implementation. Key files preserved in repo (`scripts/mp/mapvote.gsc`, `scripts/mp/utils.gsc`, `ui_mp/scriptmenus/mapvote.menu`) but removed from `mod.csv` so they don't load. The DoktorSAS mapvote was working but is entangled with wager-match logic (`_wager::finalizeWagerRound/Game` calls in `mapvoteEndGame`). A replacement should use a simpler `replaceFunc` on `_globallogic::endGame` without the wager calls, and source its map list from a dvar or cfg rather than a hardcoded default.
 
