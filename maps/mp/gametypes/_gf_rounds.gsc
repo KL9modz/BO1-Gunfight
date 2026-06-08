@@ -37,6 +37,50 @@ gf_getOvertimeLimit()
 
 // ─── Player Lifecycle ──────────────────────────────────────────────────────
 
+gf_startHealthHUDConnectWatcher()
+{
+    level endon( "game_ended" );
+
+    if ( isDefined( level.gf_healthHUDConnectWatcherStarted ) )
+        return;
+
+    level.gf_healthHUDConnectWatcherStarted = true;
+
+    if ( isDefined( level.players ) )
+    {
+        for ( i = 0; i < level.players.size; i++ )
+        {
+            if ( isDefined( level.players[i] ) && isPlayer( level.players[i] ) )
+                level.players[i] thread gf_startPregameHealthHUD();
+        }
+    }
+
+    while ( true )
+    {
+        level waittill( "connected", player );
+
+        if ( isDefined( player ) && isPlayer( player ) )
+            player thread gf_startPregameHealthHUD();
+    }
+}
+
+gf_startPregameHealthHUD()
+{
+    self endon( "disconnect" );
+    level endon( "game_ended" );
+
+    wait 0.05;
+
+    self thread gf_startHealthHUD();
+    self thread gf_startHealthIconGalleryWatcher();
+
+    for ( i = 0; i < 24; i++ )
+    {
+        gf_queueHealthHUDUpdate();
+        wait 0.5;
+    }
+}
+
 gf_playerSpawnedCB()
 {
     level notify( "spawned_player" );
@@ -44,12 +88,17 @@ gf_playerSpawnedCB()
     setMatchFlag( "pregame", 0 );
     self gf_syncCaptureScore();
     self gf_initDamageScore();
+    self thread gf_startHealthHUD();
+    self thread gf_startHealthIconGalleryWatcher();
     gf_queueHealthHUDUpdate();
     self gf_applyVisualTweaks();
     self thread gf_onSpawned();
 
     if ( getDvarInt( "gf_debug_spawns" ) == 1 )
+    {
         self thread gf_startSpawnRecorder();
+        self thread gf_startCoordsHUD();
+    }
 }
 
 gf_applyVisualTweaks()
@@ -77,6 +126,8 @@ gf_applyVisualTweaks()
 gf_onSpawnSpectator( origin, angles )
 {
     maps\mp\gametypes\_globallogic_defaults::default_onSpawnSpectator( origin, angles );
+    self thread gf_startHealthHUD();
+    self thread gf_startHealthIconGalleryWatcher();
     gf_queueHealthHUDUpdate();
 }
 
@@ -114,7 +165,9 @@ gf_tryActivateRound()
     level.gf_roundEnding     = false;
     level.gf_roundActive     = true;
     level.gf_activatingRound = false;
+    level.gf_preMatchHealthHUDActive = false;
     level.gf_warnedLastPlayer = [];
+    gf_forceHealthHUDUpdate();
 
     if ( game["roundsplayed"] > 0 )
     {
@@ -129,8 +182,12 @@ gf_tryActivateRound()
 
         maps\mp\gametypes\_globallogic_utils::pauseTimer();
         gf_hideRoundTimerForCountdown();
+        level.gf_preRoundCountdownActive = true;
+        gf_forceHealthHUDUpdate();
         level thread gf_roundStartCountdown();
         wait 7;
+        level.gf_preRoundCountdownActive = false;
+        gf_forceHealthHUDUpdate();
         maps\mp\gametypes\_globallogic_utils::resumeTimer();
         gf_restoreRoundTimerAfterCountdown();
         gf_playRoundStartDialog();
@@ -232,7 +289,7 @@ gf_endRound( winner )
     level.gf_roundActive = false;
     level notify( "gf_round_over" );
 
-    gf_queueHealthHUDUpdate();
+    gf_forceHealthHUDUpdate();
 
     if ( isDefined( winner ) && winner != "tie" )
         [[level._setTeamScore]]( winner, [[level._getTeamScore]]( winner ) + 1 );
@@ -251,6 +308,7 @@ gf_onDeadEvent( team )
     else
         winner = maps\mp\_utility::getOtherTeam( team );
 
+    gf_forceHealthHUDUpdate();
     gf_endRound( winner );
 }
 
@@ -696,6 +754,11 @@ gf_onPlayerKilled( eInflictor, attacker, iDamage, sMeansOfDeath, sWeapon, vDir, 
         self.gf_assisters = [];
     }
 
+    gf_forceHealthHUDUpdate();
+}
+
+gf_onPlayerDisconnect()
+{
     gf_queueHealthHUDUpdate();
 }
 
@@ -703,6 +766,9 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
 {
     if ( iDamage <= 0 )
         return iDamage;
+
+    if ( self.sessionstate == "playing" && isDefined( self.health ) && self.health > 0 )
+        gf_queueHealthHUDUpdate();
 
     if ( !isDefined( eAttacker ) || !isPlayer( eAttacker ) || eAttacker == self )
         return iDamage;
@@ -840,9 +906,18 @@ gf_doQueuedHealthHUDUpdate()
     wait 0.05;
     level.gf_healthUpdateQueued = false;
 
-    for ( i = 0; i < level.players.size; i++ )
-        level.players[i] gf_syncDamageScore();
+    gf_forceHealthHUDUpdate();
+}
 
+gf_forceHealthHUDUpdate()
+{
+    for ( i = 0; i < level.players.size; i++ )
+    {
+        if ( isDefined( level.players[i] ) )
+            level.players[i] gf_syncDamageScore();
+    }
+
+    level notify( "gf_health_hud_update" );
 }
 
 gf_onOneLeftEvent( team )

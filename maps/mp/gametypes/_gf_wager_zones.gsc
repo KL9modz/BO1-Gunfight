@@ -5,19 +5,8 @@
 // them by adding gun/oic/hlnd/shrp to the _gameobjects allow-list in gf.gsc.
 // This file only handles the remaining wager-zone helpers.
 
-gf_shouldUseWagerZones()
-{
-    if ( getDvar( "scr_gf_wagerzones" ) == "" )
-        setDvar( "scr_gf_wagerzones", "1" );
-
-    return getDvarInt( "scr_gf_wagerzones" ) == 1;
-}
-
 gf_precacheWagerZoneAssets()
 {
-    if ( !gf_shouldUseWagerZones() )
-        return;
-
     mapname = getDvar( "mapname" );
 
     if ( mapname == "mp_cosmodrome" )
@@ -30,9 +19,6 @@ gf_precacheWagerZoneAssets()
 
 gf_applyWagerZoneAssets()
 {
-    if ( !gf_shouldUseWagerZones() )
-        return;
-
     wagerSpawns = getEntArray( "mp_wager_spawn", "classname" );
     if ( wagerSpawns.size <= 0 )
         return;

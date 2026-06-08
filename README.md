@@ -41,14 +41,11 @@ After loading the mod in-game, use `map_restart` to reload script changes during
 
 | Dvar | Default | Description |
 |------|---------|-------------|
-| `scr_gf_timelimit` | `1` | Minutes per round |
+| `set scr_gf_timelimit` | `1` | Minutes per round |
 | `scr_gf_overtimelimit` | `15` | Seconds of overtime after round time expires; `0` disables overtime |
 | `scr_gf_scorelimit` | `6` | Round wins to win the match |
 | `scr_gf_roundswitch` | `2` | Rounds between side switches |
 | `scr_gf_roundsperloadout` | `2` | Rounds before the shared loadout rotates |
-| `scr_gf_wagerzones` | `1` | Optional kill switch; stock wager-map zones are on by default |
-
-Note: `scr_gf_wagerzones` and the offline wager extraction catalogs/tools are temporary safety/proof artifacts. Once wager-zone behavior is fully validated across the map pool, remove the dvar, delete any unneeded extraction artifacts, and hardwire wager zones on for simplicity.
 
 ## Overtime
 
@@ -68,7 +65,7 @@ The key discovery: wager blockers are already baked into the map entity lump. Th
 script_gameobjectname "gun oic hlnd shrp"
 ```
 
-Stock `_gameobjects::main( allowed )` removes map entities whose `script_gameobjectname` does not match the active gametype allow-list. Gunfight keeps those blockers by adding the stock wager gametype names to the allow-list. The default-on `scr_gf_wagerzones` dvar only exists as an opt-out switch.
+Stock `_gameobjects::main( allowed )` removes map entities whose `script_gameobjectname` does not match the active gametype allow-list. Gunfight keeps those blockers by adding the stock wager gametype names to the allow-list.
 
 What the implementation does:
 
@@ -89,13 +86,6 @@ Normal test:
 ```
 set g_gametype gf
 map mp_havoc
-```
-
-Optional fallback test for the full map:
-
-```
-set scr_gf_wagerzones 0
-map_restart
 ```
 
 Do not use runtime entity dumps or local overrides of stock `gun.gsc` / `oic.gsc` for this feature. The proven path is the `_gameobjects` allow-list.

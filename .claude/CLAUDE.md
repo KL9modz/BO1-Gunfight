@@ -43,14 +43,9 @@
 - HUD recreation per spawn 
 
 ### TODO 
-Damage/score
 Health hud (team/self)
-Audio lines
-Improve timer
 Adjust flag and spawns
-- Kill-ding alias â€” `"mpl_killconfirm_killsound"` or `"mp_level_up"`
-- **Mapvote** â€” removed; maps currently cycle via `sv_maprotation`. Needs a clean implementation. Key files preserved in repo (`scripts/mp/mapvote.gsc`, `scripts/mp/utils.gsc`, `ui_mp/scriptmenus/mapvote.menu`) but removed from `mod.csv` so they don't load. The DoktorSAS mapvote was working but is entangled with wager-match logic (`_wager::finalizeWagerRound/Game` calls in `mapvoteEndGame`). A replacement should use a simpler `replaceFunc` on `_globallogic::endGame` without the wager calls, and source its map list from a dvar or cfg rather than a hardcoded default.
-
+Plutonium Server
 ---
 
 ## Wager Map Zone
@@ -65,16 +60,13 @@ The important discovery is that many wager blockers are already baked into the m
 script_gameobjectname "gun oic hlnd shrp"
 ```
 
-Stock `_gameobjects::main( allowed )` deletes entities whose `script_gameobjectname` does not match the gametype allow-list. Gunfight keeps the wager blockers by adding the stock wager gametype tags to `allowed`. The default-on `scr_gf_wagerzones` dvar only exists as an opt-out switch.
+Stock `_gameobjects::main( allowed )` deletes entities whose `script_gameobjectname` does not match the gametype allow-list. Gunfight keeps the wager blockers by adding the stock wager gametype tags to `allowed`.
 
 ### Implementation
 
 - `maps/mp/gametypes/gf.gsc` uses `mp_wager_spawn` for both teams when wager spawns exist.
 - `maps/mp/gametypes/gf.gsc` keeps `gf` and `dom` gameobjects, then adds `gun`, `oic`, `hlnd`, and `shrp` before calling `_gameobjects::main( allowed )`.
 - `maps/mp/gametypes/_gf_wager_zones.gsc` applies the wager minimap material and the extra Cosmodrome small-map collision helpers.
-- `scr_gf_wagerzones` defaults to `1`; it does not need to be set during normal play.
-- Set `scr_gf_wagerzones` to `0` only when intentionally testing full-map fallback behavior.
-- TODO: remove `scr_gf_wagerzones` later, delete any unneeded offline wager extraction catalogs/tools, and hardwire wager zones on once the map pool is fully validated.
 - Do not set `xblive_wagermatch` to `1`; enabling it brings back wager UI/lives/prematch side effects.
 
 ### Verified catalogs
@@ -94,13 +86,6 @@ map mp_havoc
 ```
 
 Expected result: Gunfight loads normally, uses wager spawns/minimap, and preserves the stock visible blockers such as rocks, gates, fencing, sandbags, debris, and brushmodels.
-
-Optional full-map fallback test:
-
-```cfg
-set scr_gf_wagerzones 0
-map_restart
-```
 
 ### Cleanup notes
 

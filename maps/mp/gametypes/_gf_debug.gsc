@@ -5,6 +5,36 @@
 //   [2] ActionSlot2  toggle active team (allies/axis)
 //   [3] ActionSlot3  print recorded spawns to console
 //   [4] ActionSlot4  clear recorded spawns
+//
+// COORDS HUD  --  auto-starts alongside the spawn recorder.
+//   Shows live X/Y/Z and yaw in the bottom-left corner.
+
+gf_startCoordsHUD()
+{
+    self endon( "disconnect" );
+    level endon( "game_ended" );
+
+    elem = newClientHudElem( self );
+    elem.horzAlign    = "left";
+    elem.vertAlign    = "bottom";
+    elem.alignX       = "left";
+    elem.alignY       = "bottom";
+    elem.x            = 10;
+    elem.y            = -10;
+    elem.font         = "smallfixed";
+    elem.fontScale    = 1.0;
+    elem.color        = ( 0.9, 0.9, 0.6 );
+    elem.foreground   = true;
+    elem.hidewheninmenu = false;
+
+    while ( true )
+    {
+        org = self.origin;
+        yaw = int( self.angles[1] );
+        elem setText( int( org[0] ) + "  " + int( org[1] ) + "  " + int( org[2] ) + "  yaw:" + yaw );
+        wait 0.1;
+    }
+}
 
 gf_startSpawnRecorder()
 {

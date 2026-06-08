@@ -40,6 +40,7 @@ main()
     level.playerSpawnedCB      = ::gf_playerSpawnedCB;
     level.onPlayerKilled       = ::gf_onPlayerKilled;
     level.onPlayerDamage       = ::gf_onPlayerDamage;
+    level.onPlayerDisconnect   = ::gf_onPlayerDisconnect;
     level.onSpawnSpectator     = ::gf_onSpawnSpectator;
     level.onDeadEvent          = ::gf_onDeadEvent;
     level.onOneLeftEvent       = ::gf_onOneLeftEvent;
@@ -67,6 +68,26 @@ onPrecacheGameType()
     precacheShader( "score_bar_bg" );
     precacheShader( "score_bar_allies" );
     precacheShader( "score_bar_opfor" );
+    precacheShader( "progress_bar_bg" );
+    precacheShader( "progress_bar_fill" );
+    precacheShader( "progress_bar_fg" );
+    precacheShader( "white" );
+    precacheShader( "hud_score_progress" );
+    precacheShader( "hud_frame_faction_fade" );
+    precacheShader( "hud_frame_black_back_fade" );
+    precacheShader( "hud_frame_faction_lines" );
+    precacheShader( "headicon_dead" );
+    precacheShader( "hud_death_suicide" );
+    precacheShader( "waypoint_bomb" );
+    precacheShader( "waypoint_target" );
+    precacheShader( "waypoint_defuse" );
+    precacheShader( "waypoint_bombsquad" );
+    precacheShader( "waypoint_revive" );
+    precacheShader( "objpoint_default" );
+    precacheShader( "hud_suitcase_bomb" );
+    precacheShader( "hud_scavenger_pickup" );
+    precacheShader( "hud_icon_bomb" );
+    precacheShader( "hud_icon_bomb_defuse" );
 
     precacheShader( "waypoint_kill" );
     precacheShader( "waypoint_defend" );
@@ -153,6 +174,8 @@ onStartGameType()
     setDvar( "scr_showperksonspawn", "1" );
     setDvar( "sv_cheats", "1" );
     setDvar( "cg_drawHealth", "1" );
+    if ( getDvar( "gf_debug_health_icons" ) == "" )
+        setDvar( "gf_debug_health_icons", 0 );
 
     dvar = "scr_" + level.gameType + "_visualtweaks";
     if ( GetDvar( dvar ) == "" )
@@ -170,11 +193,14 @@ onStartGameType()
     level.gf_roundEnding     = false;
     level.gf_activatingRound = false;
     level.gf_overtimeActive  = false;
+    level.gf_preMatchHealthHUDActive = true;
     level.inOvertime         = false;
     level.timeLimitOverride  = false;
 
     if ( !isDefined( game["switchedsides"] ) )
         game["switchedsides"] = false;
+
+    level thread gf_startHealthHUDConnectWatcher();
 
     setClientNameMode( "auto_change" ); 
 
@@ -211,7 +237,7 @@ onStartGameType()
     maps\mp\gametypes\_spawnlogic::placeSpawnPoints( "mp_tdm_spawn_allies_start" );
     maps\mp\gametypes\_spawnlogic::placeSpawnPoints( "mp_tdm_spawn_axis_start" );
     wagerSpawns = getEntArray( "mp_wager_spawn", "classname" );
-    if ( gf_shouldUseWagerZones() && wagerSpawns.size > 0 )
+    if ( wagerSpawns.size > 0 )
     {
         maps\mp\gametypes\_spawnlogic::addSpawnPoints( "allies", "mp_wager_spawn" );
         maps\mp\gametypes\_spawnlogic::addSpawnPoints( "axis",   "mp_wager_spawn" );
@@ -233,13 +259,10 @@ onStartGameType()
 
     allowed[0] = "gf";
     allowed[1] = "dom";
-    if ( gf_shouldUseWagerZones() )
-    {
-        allowed[allowed.size] = "gun";
-        allowed[allowed.size] = "oic";
-        allowed[allowed.size] = "hlnd";
-        allowed[allowed.size] = "shrp";
-    }
+    allowed[allowed.size] = "gun";
+    allowed[allowed.size] = "oic";
+    allowed[allowed.size] = "hlnd";
+    allowed[allowed.size] = "shrp";
     maps\mp\gametypes\_gameobjects::main( allowed );
 
     maps\mp\gametypes\_spawning::create_map_placed_influencers();

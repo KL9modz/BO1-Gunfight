@@ -18,7 +18,7 @@ gf_initLoadouts()
     // ── AR ×8 ────────────────────────────────────────────────────────
     pool[n] = gf_buildLoadout(
         gf_item( "famas_reflex_mp",        "FAMAS",    "menu_mp_weapons_famas"    ),
-        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "python_mp",        "Python",   "menu_mp_weapons_python"   ),
         gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
         gf_item( "flash_grenade_mp",       "Flash",      "hud_us_flashgrenade"       ) ); n++;
 
@@ -42,7 +42,7 @@ gf_initLoadouts()
 
     pool[n] = gf_buildLoadout(
         gf_item( "commando_reflex_mp",     "Commando", "menu_mp_weapons_commando" ),
-        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "python_mp",        "Python",   "menu_mp_weapons_python"   ),
         gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchelcharge"       ),
         gf_item( "concussion_grenade_mp",  "Stun",       "hud_us_stungrenade"  ) ); n++;
 
@@ -67,7 +67,7 @@ gf_initLoadouts()
     // ── SMG ×6 ───────────────────────────────────────────────────────
     pool[n] = gf_buildLoadout(
         gf_item( "mp5k_reflex_mp",         "MP5K",     "menu_mp_weapons_mp5k"     ),
-        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "python_mp",        "Python",   "menu_mp_weapons_python"   ),
         gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
         gf_item( "flash_grenade_mp",       "Flash",      "hud_us_flashgrenade"       ) ); n++;
 
@@ -91,7 +91,7 @@ gf_initLoadouts()
 
     pool[n] = gf_buildLoadout(
         gf_item( "uzi_reflex_mp",          "Uzi",      "menu_mp_weapons_uzi"      ),
-        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "python_mp",        "Python",   "menu_mp_weapons_python"   ),
         gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchelcharge"       ),
         gf_item( "concussion_grenade_mp",  "Stun",       "hud_us_stungrenade"  ) ); n++;
 
@@ -104,7 +104,7 @@ gf_initLoadouts()
     // ── LMG ×4 ───────────────────────────────────────────────────────
     pool[n] = gf_buildLoadout(
         gf_item( "hk21_extclip_mp",        "HK21",     "menu_mp_weapons_hk21"     ),
-        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "python_mp",        "Python",   "menu_mp_weapons_python"   ),
         gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
         gf_item( "concussion_grenade_mp",  "Stun",       "hud_us_stungrenade"  ) ); n++;
 
@@ -129,7 +129,7 @@ gf_initLoadouts()
     // ── Sniper ×2 ────────────────────────────────────────────────────
     pool[n] = gf_buildLoadout(
         gf_item( "l96a1_vzoom_mp",         "L96A1",    "menu_mp_weapons_l96a1"    ),
-        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "python_mp",        "Python",   "menu_mp_weapons_python"   ),
         gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
         gf_item( "flash_grenade_mp",       "Flash",      "hud_us_flashgrenade"       ) ); n++;
 
@@ -155,7 +155,7 @@ gf_initLoadouts()
     // ── AR ×6 (expanded) ─────────────────────────────────────────────
     pool[n] = gf_buildLoadout(
         gf_item( "ak47_acog_mp",           "AK-47",    "menu_mp_weapons_ak47"     ),
-        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "python_mp",        "Python",   "menu_mp_weapons_python"   ),
         gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
         gf_item( "flash_grenade_mp",       "Flash",    "hud_us_flashgrenade"      ) ); n++;
 
@@ -179,7 +179,7 @@ gf_initLoadouts()
 
     pool[n] = gf_buildLoadout(
         gf_item( "commando_acog_mp",       "Commando", "menu_mp_weapons_commando" ),
-        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "python_mp",        "Python",   "menu_mp_weapons_python"   ),
         gf_item( "satchel_charge_mp",      "Semtex",   "hud_icon_satchelcharge"   ),
         gf_item( "concussion_grenade_mp",  "Stun",     "hud_us_stungrenade"       ) ); n++;
 
@@ -192,7 +192,7 @@ gf_initLoadouts()
     // ── SMG ×4 (expanded) ────────────────────────────────────────────
     pool[n] = gf_buildLoadout(
         gf_item( "kiparis_reflex_mp",      "Kiparis",  "menu_mp_weapons_kiparis"  ),
-        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "python_mp",        "Python",   "menu_mp_weapons_python"   ),
         gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
         gf_item( "flash_grenade_mp",       "Flash",    "hud_us_flashgrenade"      ) ); n++;
 
@@ -210,14 +210,14 @@ gf_initLoadouts()
 
     pool[n] = gf_buildLoadout(
         gf_item( "ak74u_acog_mp",          "AK74u",    "menu_mp_weapons_ak74u"    ),
-        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "python_mp",        "Python",   "menu_mp_weapons_python"   ),
         gf_item( "hatchet_mp",             "Tomahawk", "hud_hatchet"              ),
         gf_item( "flash_grenade_mp",       "Flash",    "hud_us_flashgrenade"      ) ); n++;
 
     // ── Sniper ×2 (expanded) ─────────────────────────────────────────
     pool[n] = gf_buildLoadout(
         gf_item( "psg1_vzoom_mp",          "PSG-1",    "menu_mp_weapons_psg1"     ),
-        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "python_mp",        "Python",   "menu_mp_weapons_python"   ),
         gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
         gf_item( "flash_grenade_mp",       "Flash",    "hud_us_flashgrenade"      ) ); n++;
 
@@ -230,14 +230,14 @@ gf_initLoadouts()
     // ── Shotgun ×1 (expanded) ────────────────────────────────────────
     pool[n] = gf_buildLoadout(
         gf_item( "rottweil72_mp",          "Rottweil", "menu_mp_weapons_rottweil72"),
-        gf_item( "python_speed_mp",        "Python",   "menu_mp_weapons_python"   ),
+        gf_item( "python_mp",        "Python",   "menu_mp_weapons_python"   ),
         gf_item( "frag_grenade_mp",        "Frag",     "hud_grenadeicon"          ),
         gf_item( "flash_grenade_mp",       "Flash",    "hud_us_flashgrenade"      ) ); n++;
 
     // ── Dual-wield ×7 ────────────────────────────────────────────────
     pool[n] = gf_buildLoadout(
         gf_item( "kiparisdw_mp",           "Dual Kiparis",  "menu_mp_weapons_kiparis"  ),
-        gf_item( "python_speed_mp",        "Python",        "menu_mp_weapons_python"   ),
+        gf_item( "python_mp",        "Python",        "menu_mp_weapons_python"   ),
         gf_item( "frag_grenade_mp",        "Frag",          "hud_grenadeicon"          ),
         gf_item( "flash_grenade_mp",       "Flash",         "hud_us_flashgrenade"      ) ); n++;
 
@@ -261,7 +261,7 @@ gf_initLoadouts()
 
     pool[n] = gf_buildLoadout(
         gf_item( "hs10dw_mp",              "Dual HS10",     "menu_mp_weapons_hs10"     ),
-        gf_item( "python_speed_mp",        "Python",        "menu_mp_weapons_python"   ),
+        gf_item( "python_mp",        "Python",        "menu_mp_weapons_python"   ),
         gf_item( "frag_grenade_mp",        "Frag",          "hud_grenadeicon"          ),
         gf_item( "concussion_grenade_mp",  "Stun",          "hud_us_stungrenade"       ) ); n++;
 
@@ -277,6 +277,24 @@ gf_initLoadouts()
         gf_item( "sticky_grenade_mp",      "Sticky",        "hud_icon_sticky_grenade"  ),
         gf_item( "flash_grenade_mp",       "Flash",         "hud_us_flashgrenade"      ) ); n++;
 
+    pool[n] = gf_buildLoadout(
+        gf_item( "aspdw_mp",               "Dual ASP",      "menu_mp_weapons_asp"      ),
+        gf_item( "python_mp",        "Python",        "menu_mp_weapons_python"   ),
+        gf_item( "frag_grenade_mp",        "Frag",          "hud_grenadeicon"          ),
+        gf_item( "flash_grenade_mp",       "Flash",         "hud_us_flashgrenade"      ) ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "m1911dw_mp",             "Dual M1911",    "menu_mp_weapons_colt"     ),
+        gf_item( "makarov_upgradesight_mp","Makarov",       "menu_mp_weapons_makarov"  ),
+        gf_item( "satchel_charge_mp",      "Semtex",        "hud_icon_satchelcharge"   ),
+        gf_item( "concussion_grenade_mp",  "Stun",          "hud_us_stungrenade"       ) ); n++;
+
+    pool[n] = gf_buildLoadout(
+        gf_item( "makarovdw_mp",           "Dual Makarov",  "menu_mp_weapons_makarov"  ),
+        gf_item( "cz75_upgradesight_mp",   "CZ75",          "menu_mp_weapons_cz75"     ),
+        gf_item( "hatchet_mp",             "Tomahawk",      "hud_hatchet"              ),
+        gf_item( "willy_pete_mp",          "Smoke",         "hud_us_smokegrenade"      ) ); n++;
+
     // ── Launcher / Special ×8 ────────────────────────────────────────
     pool[n] = gf_buildLoadout(
         gf_item( "china_lake_mp",          "China Lake",  "menu_mp_weapons_china_lake"  ),
@@ -286,7 +304,7 @@ gf_initLoadouts()
 
     pool[n] = gf_buildLoadout(
         gf_item( "m72_law_mp",             "M72 LAW",     "menu_mp_weapons_m72_law"     ),
-        gf_item( "python_speed_mp",        "Python",      "menu_mp_weapons_python"      ),
+        gf_item( "python_mp",        "Python",      "menu_mp_weapons_python"      ),
         gf_item( "satchel_charge_mp",      "Semtex",      "hud_icon_satchelcharge"      ),
         gf_item( "concussion_grenade_mp",  "Stun",        "hud_us_stungrenade"          ) ); n++;
 
@@ -298,7 +316,7 @@ gf_initLoadouts()
 
     pool[n] = gf_buildLoadout(
         gf_item( "crossbow_mp",            "Crossbow",    "menu_mp_weapons_crossbow"    ),
-        gf_item( "python_speed_mp",        "Python",      "menu_mp_weapons_python"      ),
+        gf_item( "python_mp",        "Python",      "menu_mp_weapons_python"      ),
         gf_item( "sticky_grenade_mp",      "Sticky",      "hud_icon_sticky_grenade"     ),
         gf_item( "flash_grenade_mp",       "Flash",       "hud_us_flashgrenade"         ) ); n++;
 
@@ -310,13 +328,13 @@ gf_initLoadouts()
 
     pool[n] = gf_buildLoadout(
         gf_item( "m202_flash_mp",          "M202 FLASH",  "menu_mp_weapons_m202_flash"  ),
-        gf_item( "python_speed_mp",        "Python",      "menu_mp_weapons_python"      ),
+        gf_item( "python_mp",        "Python",      "menu_mp_weapons_python"      ),
         gf_item( "sticky_grenade_mp",      "Sticky",      "hud_icon_sticky_grenade"     ),
         gf_item( "concussion_grenade_mp",  "Stun",        "hud_us_stungrenade"          ) ); n++;
 
     pool[n] = gf_buildLoadout(
         gf_item( "minigun_wager_mp",       "Minigun",     "menu_mp_weapons_minigun"     ),
-        gf_item( "python_speed_mp",        "Python",      "menu_mp_weapons_python"      ),
+        gf_item( "python_mp",        "Python",      "menu_mp_weapons_python"      ),
         gf_item( "frag_grenade_mp",        "Frag",        "hud_grenadeicon"             ),
         gf_item( "flash_grenade_mp",       "Flash",       "hud_us_flashgrenade"         ) ); n++;
 
