@@ -396,91 +396,6 @@ gf_destroyHealthHUD()
     self.gf_healthHudSlideOffset = undefined;
 }
 
-// ─── Self HP Bar ──────────────────────────────────────────────────────────
-
-gf_startSelfHealthBar()
-{
-    self notify( "gf_restart_self_health" );
-    self gf_destroySelfHealthBar();
-    self endon( "gf_restart_self_health" );
-    self endon( "disconnect" );
-    level endon( "game_ended" );
-
-    wait 0.1;
-
-    if ( !isDefined( self.sessionstate ) || self.sessionstate != "playing" )
-        return;
-
-    maxHP = self gf_getPlayerMaxHealth();
-
-    self.gf_selfBar = self maps\mp\gametypes\_hud_util::createBar( ( 1, 1, 1 ), 160, 7 );
-    self.gf_selfBar setPoint( "BOTTOM CENTER", "BOTTOM CENTER", 0, -20 );
-    if ( isDefined( self.gf_selfBar.bar ) )
-    {
-        self.gf_selfBar.bar.shader = "hud_score_progress";
-        self.gf_selfBar.bar setShader( "hud_score_progress", 160, 7 );
-        self.gf_selfBar.bar.color = ( 1, 1, 1 );
-    }
-    self.gf_selfBar.sort                      = 50;
-    self.gf_selfBar.foreground                = true;
-    self.gf_selfBar.hidewheninmenu            = true;
-    self.gf_selfBar.hidewheninkillcam         = true;
-    self.gf_selfBar.hidewhileremotecontrolling = true;
-    self.gf_selfBar.archived                  = false;
-
-    if ( isDefined( self.gf_selfBar.bar ) )
-    {
-        self.gf_selfBar.bar.sort                      = 51;
-        self.gf_selfBar.bar.foreground                = true;
-        self.gf_selfBar.bar.hidewheninmenu            = true;
-        self.gf_selfBar.bar.hidewheninkillcam         = true;
-        self.gf_selfBar.bar.hidewhileremotecontrolling = true;
-        self.gf_selfBar.bar.archived                  = false;
-    }
-    if ( isDefined( self.gf_selfBar.barFrame ) )
-    {
-        self.gf_selfBar.barFrame.sort                      = 52;
-        self.gf_selfBar.barFrame.foreground                = true;
-        self.gf_selfBar.barFrame.hidewheninmenu            = true;
-        self.gf_selfBar.barFrame.hidewheninkillcam         = true;
-        self.gf_selfBar.barFrame.hidewhileremotecontrolling = true;
-        self.gf_selfBar.barFrame.archived                  = false;
-    }
-
-    while ( true )
-    {
-        if ( !isDefined( self.health ) || self.health <= 0 )
-        {
-            self gf_destroySelfHealthBar();
-            return;
-        }
-        self gf_updateSelfHealthBar( maxHP );
-        wait 0.05;
-    }
-}
-
-gf_updateSelfHealthBar( maxHP )
-{
-    if ( !isDefined( self.gf_selfBar ) )
-        return;
-
-    frac = gf_getHealthFraction( self.health, maxHP );
-    self.gf_selfBar maps\mp\gametypes\_hud_util::updateBar( frac );
-}
-
-gf_destroySelfHealthBar()
-{
-    if ( !isDefined( self.gf_selfBar ) )
-        return;
-
-    if ( isDefined( self.gf_selfBar.barFrame ) )
-        self.gf_selfBar.barFrame destroy();
-    if ( isDefined( self.gf_selfBar.bar ) )
-        self.gf_selfBar.bar destroy();
-    self.gf_selfBar destroy();
-    self.gf_selfBar = undefined;
-}
-
 // ─── Loadout HUD ─────────────────────────────────────────────────────────────
 
 gf_showWeaponHUD( load )
@@ -505,6 +420,7 @@ gf_showWeaponHUD( load )
     shaders[5] = gf_getPerkShader( "specialty_movefaster" );
     shaders[6] = gf_getPerkShader( "specialty_bulletpenetration" );
     shaders[7] = gf_getPerkShader( "specialty_longersprint" );
+    shaders[8] = gf_getPerkShader( "specialty_fastreload" );
 
     names = [];
     names[0] = load["primaryName"];
@@ -515,26 +431,28 @@ gf_showWeaponHUD( load )
     names[5] = "Lightweight";
     names[6] = "Hardened";
     names[7] = "Marathon";
+    names[8] = "Sleight of Hand";
 
     // createLoadoutIcon uses setPoint("BOTTOM RIGHT","BOTTOM RIGHT") so y is pixels
     // upward from the screen bottom. We clamp verIndex to 4 (designed max) for all
     // rows and control vertical position entirely through yPos.
     // Formula with verIndex=4: rendered_y = yPos - 58.
-    // 8 rows × 40px spacing = 280px stack, centered at y=-220 → spans y=-360 to y=-80.
+    // 9 rows × 40px spacing = 320px stack, shifted up 20px from prior layout.
     yPos = [];
-    yPos[0] = -342;   // y=-400  (top)
-    yPos[1] = -302;   // y=-360
-    yPos[2] = -262;   // y=-320
-    yPos[3] = -222;   // y=-280
-    yPos[4] = -182;   // y=-240
-    yPos[5] = -142;   // y=-200
-    yPos[6] = -102;   // y=-160
-    yPos[7] = -62;    // y=-120  (bottom)
+    yPos[0] = -362;   // y=-420  (top)
+    yPos[1] = -322;   // y=-380
+    yPos[2] = -282;   // y=-340
+    yPos[3] = -242;   // y=-300
+    yPos[4] = -202;   // y=-260
+    yPos[5] = -162;   // y=-220
+    yPos[6] = -122;   // y=-180
+    yPos[7] = -82;    // y=-140
+    yPos[8] = -42;    // y=-100  (bottom)
 
     icons = [];
     texts = [];
 
-    for ( i = 0; i < 8; i++ )
+    for ( i = 0; i < 9; i++ )
     {
         icons[i] = self maps\mp\gametypes\_hud_util::createLoadoutIcon( 4, 0, 200, yPos[i] );
         texts[i] = self maps\mp\gametypes\_hud_util::createLoadoutText( icons[i], 160 );
@@ -561,7 +479,7 @@ gf_showWeaponHUD( load )
 
     wait 5;
 
-    for ( i = 0; i < 8; i++ )
+    for ( i = 0; i < 9; i++ )
     {
         icons[i] moveOverTime( 0.75 );
         icons[i].x = 400;

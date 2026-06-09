@@ -3,8 +3,8 @@
 // SPAWN RECORDER  --  set gf_debug_spawns 1 before loading the map.
 //   [1] ActionSlot1  record current position for active team
 //   [2] ActionSlot2  toggle active team (allies/axis)
-//   [3] ActionSlot3  print recorded spawns to console
-//   [4] ActionSlot4  clear recorded spawns
+//   [3] ActionSlot3  save current set, then print all sets and current overtime flag
+//   [4] ActionSlot4  clear recorded sets and current working points
 //
 // COORDS HUD  --  auto-starts alongside the spawn recorder.
 //   Shows live X/Y/Z and yaw in the bottom-left corner.
@@ -43,10 +43,11 @@ gf_startSpawnRecorder()
 
     self.gf_rec_allies = [];
     self.gf_rec_axis   = [];
+    self.gf_rec_sets   = [];
     self.gf_rec_team   = "allies";
 
     self gf_recUpdateHUD();
-    iPrintLnBold( "^2Spawn Recorder ON^7  [1]=record  [2]=toggle  [3]=print  [4]=clear" );
+    iPrintLnBold( "^2Spawn Recorder ON^7  [1]=record  [2]=toggle  [3]=save/print  [4]=clear" );
 
     while ( true )
     {
@@ -92,6 +93,7 @@ gf_startSpawnRecorder()
 
         if ( self ActionSlotThreeButtonPressed() )
         {
+            self gf_recCommitCurrentSet();
             self gf_recPrint();
             wait 0.3;
         }
@@ -100,8 +102,9 @@ gf_startSpawnRecorder()
         {
             self.gf_rec_allies = [];
             self.gf_rec_axis   = [];
+            self.gf_rec_sets   = [];
             self gf_recUpdateHUD();
-            iPrintLnBold( "^1Spawns cleared" );
+            iPrintLnBold( "^1Spawn sets cleared" );
             wait 0.3;
         }
     }
@@ -129,38 +132,103 @@ gf_recUpdateHUD()
     else
         self.gf_rec_hudElem.color = ( 1.0, 0.45, 0.45 );
 
-    self.gf_rec_hudElem setText( "REC[" + self.gf_rec_team + "]  A:" + self.gf_rec_allies.size + "  X:" + self.gf_rec_axis.size );
+    setCount = 0;
+    if ( isDefined( self.gf_rec_sets ) )
+        setCount = self.gf_rec_sets.size;
+
+    self.gf_rec_hudElem setText( "REC[" + self.gf_rec_team + "]  S:" + setCount + "  A:" + self.gf_rec_allies.size + "  X:" + self.gf_rec_axis.size );
+}
+
+gf_recCommitCurrentSet()
+{
+    if ( !isDefined( self.gf_rec_sets ) )
+        self.gf_rec_sets = [];
+
+    if ( self.gf_rec_allies.size <= 0 && self.gf_rec_axis.size <= 0 )
+        return;
+
+    if ( self.gf_rec_allies.size <= 0 || self.gf_rec_axis.size <= 0 )
+    {
+        iPrintLnBold( "^1Set not saved:^7 needs allies and axis points" );
+        return;
+    }
+
+    set = [];
+    allies = [];
+    axis   = [];
+
+    for ( i = 0; i < self.gf_rec_allies.size; i++ )
+        allies[allies.size] = self.gf_rec_allies[i];
+
+    for ( i = 0; i < self.gf_rec_axis.size; i++ )
+        axis[axis.size] = self.gf_rec_axis[i];
+
+    set["allies"] = allies;
+    set["axis"]   = axis;
+
+    idx = self.gf_rec_sets.size;
+    self.gf_rec_sets[idx] = set;
+    self.gf_rec_allies = [];
+    self.gf_rec_axis   = [];
+    self gf_recUpdateHUD();
+
+    iPrintLnBold( "^2Saved spawn set #" + idx );
 }
 
 gf_recPrint()
 {
     map = getDvar( "mapname" );
     PrintLn( "" );
-    PrintLn( "// === " + map + " - " + self.gf_rec_allies.size + " allies, " + self.gf_rec_axis.size + " axis ===" );
+    PrintLn( "// === " + map + " - " + self.gf_rec_sets.size + " spawn sets ===" );
     PrintLn( "    if ( mapname == \"" + map + "\" )" );
     PrintLn( "    {" );
-    PrintLn( "        a = result[\"allies\"];" );
 
-    for ( i = 0; i < self.gf_rec_allies.size; i++ )
+    for ( setIndex = 0; setIndex < self.gf_rec_sets.size; setIndex++ )
     {
-        e   = self.gf_rec_allies[i];
-        org = e["origin"];
-        PrintLn( "        a[ a.size ] = gf_sp( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + e["yaw"] + " );" );
-    }
-
-    PrintLn( "        x = result[\"axis\"];" );
-
-    for ( i = 0; i < self.gf_rec_axis.size; i++ )
-    {
-        e   = self.gf_rec_axis[i];
-        org = e["origin"];
-        PrintLn( "        x[ x.size ] = gf_sp( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + e["yaw"] + " );" );
+        self gf_recPrintSet( self.gf_rec_sets[setIndex], setIndex );
     }
 
     PrintLn( "        return result;" );
     PrintLn( "    }" );
     PrintLn( "" );
-    iPrintLnBold( "^2Spawns printed to console" );
+
+    org = self.origin;
+    yaw = int( self.angles[1] );
+    PrintLn( "// === " + map + " overtime flag at current position ===" );
+    PrintLn( "    if ( mapname == \"" + map + "\" )" );
+    PrintLn( "        return gf_ot( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + yaw + " );" );
+    PrintLn( "" );
+
+    iPrintLnBold( "^2Spawn sets printed to console" );
+}
+
+gf_recPrintSet( set, setIndex )
+{
+    allies = set["allies"];
+    axis   = set["axis"];
+
+    PrintLn( "        // set " + setIndex );
+    PrintLn( "        set = gf_spawnSet();" );
+    PrintLn( "        a = set[\"allies\"];" );
+
+    for ( i = 0; i < allies.size; i++ )
+    {
+        e   = allies[i];
+        org = e["origin"];
+        PrintLn( "        a[ a.size ] = gf_sp( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + e["yaw"] + " );" );
+    }
+
+    PrintLn( "        x = set[\"axis\"];" );
+
+    for ( i = 0; i < axis.size; i++ )
+    {
+        e   = axis[i];
+        org = e["origin"];
+        PrintLn( "        x[ x.size ] = gf_sp( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + e["yaw"] + " );" );
+    }
+
+    PrintLn( "        result[\"sets\"][ result[\"sets\"].size ] = set;" );
+    PrintLn( "" );
 }
 
 gf_debugPrintPerks()

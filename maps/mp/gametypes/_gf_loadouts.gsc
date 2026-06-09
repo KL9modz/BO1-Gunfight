@@ -443,7 +443,10 @@ gf_giveCustomLoadout()
     self giveMaxAmmo( load["primary"] );
     self giveMaxAmmo( load["secondary"] );
     self GiveWeapon( load["lethal"] );
+    self giveMaxAmmo( load["lethal"] );
+    self SwitchToOffhand( load["lethal"] );
     self GiveWeapon( load["tactical"] );
+    self giveMaxAmmo( load["tactical"] );
     self GiveWeapon( load["equip"] );
     self SetActionSlot( 1, "weapon", load["equip"] );
     self EnableWeaponCycling();
@@ -451,6 +454,7 @@ gf_giveCustomLoadout()
     self SetPerk( "specialty_movefaster"        );   // Lightweight
     self SetPerk( "specialty_bulletpenetration" );   // Hardened
     self SetPerk( "specialty_longersprint"      );   // Marathon
+    self SetPerk( "specialty_fastreload"        );   // Sleight of Hand
 
     self thread gf_showWeaponHUD( load );
 }

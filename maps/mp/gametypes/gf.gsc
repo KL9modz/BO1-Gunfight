@@ -3,6 +3,7 @@
 
 #include maps\mp\_utility;
 #include maps\mp\gametypes\_hud_util;
+#include maps\mp\gametypes\_gf_locations;
 #include maps\mp\gametypes\_gf_rounds;
 #include maps\mp\gametypes\_gf_loadouts;
 #include maps\mp\gametypes\_gf_wager_zones;
@@ -139,9 +140,7 @@ onPrecacheGameType()
     precacheShader( "hud_acoustic_sensor"      );
     precacheShader( "hud_deployable_camera"    );
 
-    level.gf_ot_baseFx_neutral = loadfx( "misc/fx_ui_flagbase_silver"  );
-    level.gf_ot_baseFx_allies  = loadfx( "misc/fx_ui_flagbase_blue"    );
-    level.gf_ot_baseFx_axis    = loadfx( "misc/fx_ui_flagbase_red_t5"  );
+    level.gf_ot_baseFx_neutral = loadfx( "misc/fx_ui_flagbase_gold_t5" );
 
     precacheModel( "mp_flag_neutral" );
     precacheShader( "compass_waypoint_captureneutral" );
@@ -162,7 +161,6 @@ onStartGameType()
     setDvar( "scr_disable_weapondrop", 1 );
     setDvar( "scr_showperksonspawn", "1" );
     setDvar( "sv_cheats", "1" );
-    setDvar( "cg_drawHealth", "1" );
 
     dvar = "scr_" + level.gameType + "_visualtweaks";
     if ( GetDvar( dvar ) == "" )
@@ -190,16 +188,8 @@ onStartGameType()
 
     maps\mp\gametypes\_globallogic_ui::setObjectiveText( "allies", &"OBJECTIVES_TDM" );
     maps\mp\gametypes\_globallogic_ui::setObjectiveText( "axis",   &"OBJECTIVES_TDM" );
-    if ( level.splitscreen )
-    {
-        maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "allies", &"OBJECTIVES_TDM" );
-        maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "axis",   &"OBJECTIVES_TDM" );
-    }
-    else
-    {
-        maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "allies", &"OBJECTIVES_TDM_SCORE" );
-        maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "axis",   &"OBJECTIVES_TDM_SCORE" );
-    }
+    maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "allies", &"OBJECTIVES_TDM_SCORE" );
+    maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "axis",   &"OBJECTIVES_TDM_SCORE" );
     maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "allies", &"OBJECTIVES_TDM_HINT" );
     maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "axis",   &"OBJECTIVES_TDM_HINT" );
 
@@ -215,6 +205,7 @@ onStartGameType()
 
     gf_initLoadouts();   // guarded by game["gf_init"] — shuffles once per match and picks loadout 0 for round 1 
     gf_pickLoadout();    // deterministic: index derived from game["roundsplayed"] 
+    gf_initCustomLocations();
 
     level.spawnMins = ( 0, 0, 0 );
     level.spawnMaxs = ( 0, 0, 0 );
@@ -288,6 +279,13 @@ onSpawnPlayer( teamOverride )
     spawnTeam = self.pers["team"];
     if ( isDefined( game["switchedsides"] ) && game["switchedsides"] )
         spawnTeam = maps\mp\_utility::getOtherTeam( spawnTeam );
+
+    customSpawn = gf_getCustomSpawnPoint( spawnTeam );
+    if ( isDefined( customSpawn ) )
+    {
+        self spawn( customSpawn["origin"], customSpawn["angles"], "gf" );
+        return;
+    }
 
     if ( level.inGracePeriod )
     {

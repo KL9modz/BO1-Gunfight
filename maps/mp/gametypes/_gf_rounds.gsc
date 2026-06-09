@@ -43,7 +43,6 @@ gf_playerSpawnedCB()
     self gf_syncCaptureScore();
     self gf_initDamageScore();
     self thread gf_startHealthHUD();
-    self thread gf_startSelfHealthBar();
     gf_queueHealthHUDUpdate();
     self gf_applyVisualTweaks();
     self thread gf_onSpawned();
@@ -510,20 +509,9 @@ gf_setOvertimeZoneIconColor( zone, team )
     if ( !isDefined( zone ) )
         return;
 
-    if ( isDefined( zone.baseFxOrigin ) )
-    {
-        if ( isDefined( zone.baseFxHandle ) )
-            zone.baseFxHandle delete();
-
-        fxAsset = level.gf_ot_baseFx_neutral;
-        if ( team == "allies" )
-            fxAsset = level.gf_ot_baseFx_allies;
-        else if ( team == "axis" )
-            fxAsset = level.gf_ot_baseFx_axis;
-
-        zone.baseFxHandle = spawnFx( fxAsset, zone.baseFxOrigin, zone.baseFxFwd, zone.baseFxRight );
-        triggerFx( zone.baseFxHandle );
-    }
+    state = team;
+    if ( state != "allies" && state != "axis" )
+        state = "neutral";
 
     if ( !isDefined( zone.objPoints ) )
         return;
@@ -532,7 +520,7 @@ gf_setOvertimeZoneIconColor( zone, team )
     friendlyColor = ( 0.4, 0.7, 1.0 );
     enemyColor    = ( 1.0, 0.45, 0.45 );
 
-    if ( team != "allies" && team != "axis" )
+    if ( state != "allies" && state != "axis" )
     {
         if ( isDefined( zone.objPoints["allies"] ) )
             zone.objPoints["allies"].color = neutralColor;
@@ -542,11 +530,11 @@ gf_setOvertimeZoneIconColor( zone, team )
     }
 
     otherTeam = "axis";
-    if ( team == "axis" )
+    if ( state == "axis" )
         otherTeam = "allies";
 
-    if ( isDefined( zone.objPoints[team] ) )
-        zone.objPoints[team].color = friendlyColor;
+    if ( isDefined( zone.objPoints[state] ) )
+        zone.objPoints[state].color = friendlyColor;
     if ( isDefined( zone.objPoints[otherTeam] ) )
         zone.objPoints[otherTeam].color = enemyColor;
 }
@@ -574,48 +562,38 @@ gf_cleanupOvertimeZone( zone )
 
     if ( isDefined( zone.spawnedModel ) )
         zone.spawnedModel delete();
+
+    if ( isDefined( zone.customTrigger ) )
+        zone.customTrigger delete();
 }
 
 gf_createOvertimeZone()
 {
-    // Find the B flag entity kept alive by allowed[1]="dom" in onStartGameType
-    flags = getEntArray( "flag_primary", "targetname" );
-    bFlag = undefined;
-    for ( i = 0; i < flags.size; i++ )
-    {
-        if ( isDefined( flags[i].script_label ) && flags[i].script_label == "_b" )
-        {
-            bFlag = flags[i];
-            break;
-        }
-    }
-    if ( !isDefined( bFlag ) && flags.size > 0 )
-        bFlag = flags[ int( flags.size / 2 ) ];
-
-    if ( !isDefined( bFlag ) )
+    flagTrigger = gf_getOvertimeFlagTrigger();
+    if ( !isDefined( flagTrigger ) )
         return undefined;
 
     // Ground-orient and spawn the flag base halo FX (same technique as dom.gsc).
-    // Trace 256 units down so elevated flag triggers still find the ground surface.
-    traceStart = bFlag.origin + ( 0, 0, 32 );
-    traceEnd   = bFlag.origin + ( 0, 0, -256 );
+    traceStart = flagTrigger.origin + ( 0, 0, 32 );
+    traceEnd   = flagTrigger.origin + ( 0, 0, -32 );
     trace      = bulletTrace( traceStart, traceEnd, false, undefined );
     upAngles   = vectorToAngles( trace["normal"] );
     fxFwd      = anglesToForward( upAngles );
     fxRight    = anglesToRight( upAngles );
-    baseFx     = spawnFx( level.gf_ot_baseFx_neutral, trace["position"], fxFwd, fxRight );
+    baseFxPos  = trace["position"] + ( 0, 0, 1 );
+    baseFx     = spawnFx( level.gf_ot_baseFx_neutral, baseFxPos, fxFwd, fxRight );
     triggerFx( baseFx );
 
     // Use the map-linked visual if it exists; otherwise spawn one
-    if ( isDefined( bFlag.target ) )
+    if ( isDefined( flagTrigger.target ) )
     {
-        flagModel        = getEnt( bFlag.target, "targetname" );
+        flagModel        = getEnt( flagTrigger.target, "targetname" );
         spawnedModel     = undefined;
     }
     else
     {
-        flagModel        = spawn( "script_model", bFlag.origin );
-        flagModel.angles = bFlag.angles;
+        flagModel        = spawn( "script_model", flagTrigger.origin );
+        flagModel.angles = flagTrigger.angles;
         spawnedModel     = flagModel;
     }
     flagModel setModel( "mp_flag_neutral" );
@@ -623,7 +601,7 @@ gf_createOvertimeZone()
     visuals    = [];
     visuals[0] = flagModel;
 
-    zone = maps\mp\gametypes\_gameobjects::createUseObject( "neutral", bFlag, visuals, ( 0, 0, 100 ) );
+    zone = maps\mp\gametypes\_gameobjects::createUseObject( "neutral", flagTrigger, visuals, ( 0, 0, 100 ) );
     zone maps\mp\gametypes\_gameobjects::allowUse( "any" );
     zone maps\mp\gametypes\_gameobjects::setUseTime( 2.5 );
     zone maps\mp\gametypes\_gameobjects::setUseText( &"MP_CAPTURING_FLAG" );
@@ -637,15 +615,89 @@ gf_createOvertimeZone()
     zone.onEndUse     = ::gf_onZoneEndUse;
     zone.spawnedModel    = spawnedModel;
     zone.didStatusNotify = false;
+
+    if ( isDefined( flagTrigger.gf_customOvertimeTrigger ) && flagTrigger.gf_customOvertimeTrigger )
+        zone.customTrigger = flagTrigger;
+
     // Set icon colors before storing FX data so this call only touches the waypoint
     // tints — the neutral FX is already spawned and triggered above.
     gf_setOvertimeZoneIconColor( zone, "neutral" );
     zone.baseFxHandle  = baseFx;
-    zone.baseFxOrigin  = trace["position"];
+    zone.baseFxOrigin  = baseFxPos;
     zone.baseFxFwd     = fxFwd;
     zone.baseFxRight   = fxRight;
 
     return zone;
+}
+
+gf_getOvertimeFlagTrigger()
+{
+    flag = gf_findDominationBFlag();
+
+    if ( isDefined( level.gf_customOvertimeLocation ) )
+    {
+        if ( isDefined( flag ) )
+        {
+            gf_applyCustomOvertimeLocationToFlag( flag, level.gf_customOvertimeLocation );
+            return flag;
+        }
+
+        return gf_spawnCustomOvertimeTrigger( level.gf_customOvertimeLocation );
+    }
+
+    return flag;
+}
+
+gf_findDominationBFlag()
+{
+    flags = getEntArray( "flag_primary", "targetname" );
+    flag = undefined;
+    for ( i = 0; i < flags.size; i++ )
+    {
+        if ( isDefined( flags[i].script_label ) && flags[i].script_label == "_b" )
+        {
+            flag = flags[i];
+            break;
+        }
+    }
+
+    if ( !isDefined( flag ) && flags.size > 0 )
+        flag = flags[ int( flags.size / 2 ) ];
+
+    return flag;
+}
+
+gf_applyCustomOvertimeLocationToFlag( flag, location )
+{
+    flag.origin = location["origin"];
+    flag.angles = location["angles"];
+
+    if ( !isDefined( flag.target ) )
+        return;
+
+    visuals = getEntArray( flag.target, "targetname" );
+    for ( i = 0; i < visuals.size; i++ )
+    {
+        visuals[i].origin = location["origin"];
+        visuals[i].angles = location["angles"];
+    }
+}
+
+gf_spawnCustomOvertimeTrigger( location )
+{
+    radius = 96;
+    height = 96;
+
+    if ( isDefined( location["radius"] ) )
+        radius = location["radius"];
+    if ( isDefined( location["height"] ) )
+        height = location["height"];
+
+    trigger = spawn( "trigger_radius", location["origin"], 0, radius, height );
+    trigger.angles = location["angles"];
+    trigger.gf_customOvertimeTrigger = true;
+
+    return trigger;
 }
 
 gf_onZoneCapture( player )

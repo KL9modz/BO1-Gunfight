@@ -51,9 +51,19 @@ After loading the mod in-game, use `map_restart` to reload script changes during
 
 When the round timer expires with both teams still alive, Gunfight starts overtime instead of ending the round immediately. `scr_gf_overtimelimit` controls the overtime duration in seconds; setting it to `0` skips overtime and resolves the round by living HP immediately.
 
-Overtime creates a neutral hold-to-capture zone at the map's Domination B flag when that entity exists. Capturing the zone wins the round immediately. The overtime clock legitimately pauses while the zone is actively being captured, then resumes if the capture is interrupted. The overtime timer ticks with the stock countdown sound from 15 seconds down. If overtime expires without a capture, the round is awarded to the team with higher living HP; equal HP is a tie. If a team is wiped during overtime, the same overtime resolver ends the round immediately.
+Overtime creates a neutral hold-to-capture zone at the custom map location when one is configured, otherwise it falls back to the map's Domination B flag when that entity exists. Capturing the zone wins the round immediately. The overtime clock legitimately pauses while the zone is actively being captured, then resumes if the capture is interrupted. The overtime timer ticks with the stock countdown sound from 15 seconds down. If overtime expires without a capture, the round is awarded to the team with higher living HP; equal HP is a tie. If a team is wiped during overtime, the same overtime resolver ends the round immediately.
 
-The B flag is available because `gf.gsc` keeps Domination gameobjects in the `_gameobjects` allow-list. Maps without a B flag fall back to HP-only overtime.
+The B flag is available because `gf.gsc` keeps Domination gameobjects in the `_gameobjects` allow-list. Maps without a custom overtime location or B flag fall back to HP-only overtime.
+
+## Custom Locations
+
+Map-specific Gunfight spawns and overtime flag points live in:
+
+```
+maps\mp\gametypes\_gf_locations.gsc
+```
+
+Use `set gf_debug_spawns 1` before loading a map to enable the coordinate HUD and recorder. Record allies/axis spawns with ActionSlot1 and ActionSlot2, then press ActionSlot3 to save the current matched spawn set and print all saved sets. Stand on the desired overtime flag point before pressing ActionSlot3 so the console also prints a paste-ready `gf_ot(...)` block. ActionSlot4 clears the saved sets and current working points.
 
 ## Wager Zones
 
