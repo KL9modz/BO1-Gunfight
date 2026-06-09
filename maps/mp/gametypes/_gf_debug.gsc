@@ -162,3 +162,36 @@ gf_recPrint()
     PrintLn( "" );
     iPrintLnBold( "^2Spawns printed to console" );
 }
+
+gf_debugPrintPerks()
+{
+    self endon( "disconnect" );
+    wait 0.1;
+
+    allPerks = [];
+    allPerks[0]  = "specialty_movefaster";
+    allPerks[1]  = "specialty_bulletpenetration";
+    allPerks[2]  = "specialty_longersprint";
+    allPerks[3]  = "specialty_fastreload";
+    allPerks[4]  = "specialty_gpsjammer";
+    allPerks[5]  = "specialty_quieter";
+    allPerks[6]  = "specialty_armorvest";
+    allPerks[7]  = "specialty_blindeye";
+    allPerks[8]  = "specialty_detectexplosive";
+    allPerks[9]  = "specialty_sprintrecovery";
+    allPerks[10] = "specialty_holdbreath";
+    allPerks[11] = "specialty_bulletaccuracy";
+    allPerks[12] = "specialty_killstreak";
+    allPerks[13] = "specialty_scavenger";
+    allPerks[14] = "specialty_extraammo";
+    allPerks[15] = "specialty_twoattach";
+    allPerks[16] = "specialty_gas_mask";
+    allPerks[17] = "specialty_pistoldeath";
+
+    self iPrintLn( "^5-- perks --" );
+    for ( i = 0; i < allPerks.size; i++ )
+    {
+        if ( self hasPerk( allPerks[i] ) )
+            self iPrintLn( "^2+ " + allPerks[i] );
+    }
+}

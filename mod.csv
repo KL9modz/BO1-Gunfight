@@ -1,5 +1,6 @@
 menufile,ui_mp/hud_gf.txt
 menufile,ui_mp/hud_gf_splitscreen.txt
+menufile,ui_mp/hud_gf_health.menu
 rawfile,maps/mp/gametypes/_gametypes.txt
 rawfile,maps/mp/gametypes/gf.txt
 rawfile,maps/mp/gametypes/gf.gsc

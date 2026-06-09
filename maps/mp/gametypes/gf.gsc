@@ -71,27 +71,10 @@ onPrecacheGameType()
     precacheShader( "progress_bar_bg" );
     precacheShader( "progress_bar_fill" );
     precacheShader( "progress_bar_fg" );
-    precacheShader( "white" );
     precacheShader( "hud_score_progress" );
     precacheShader( "hud_frame_faction_fade" );
-    precacheShader( "hud_frame_black_back_fade" );
     precacheShader( "hud_frame_faction_lines" );
-    precacheShader( "headicon_dead" );
     precacheShader( "hud_death_suicide" );
-    precacheShader( "waypoint_bomb" );
-    precacheShader( "waypoint_target" );
-    precacheShader( "waypoint_defuse" );
-    precacheShader( "waypoint_bombsquad" );
-    precacheShader( "waypoint_revive" );
-    precacheShader( "objpoint_default" );
-    precacheShader( "hud_suitcase_bomb" );
-    precacheShader( "hud_scavenger_pickup" );
-    precacheShader( "hud_icon_bomb" );
-    precacheShader( "hud_icon_bomb_defuse" );
-
-    precacheShader( "waypoint_kill" );
-    precacheShader( "waypoint_defend" );
-    precacheShader( "compass_waypoint_defend" );
     precacheString( &"PLATFORM_PRESS_TO_SPAWN" );
 
     // Loadout HUD shaders — must be precached here (not in onStartGameType)
@@ -142,8 +125,8 @@ onPrecacheGameType()
     precacheShader( "menu_mp_weapons_china_lake"    );
     precacheShader( "menu_mp_weapons_m72_law"       );
     precacheShader( "menu_mp_weapons_rpg"           );
-    precacheShader( "menu_mp_weapons_m202_flash"    );
-    precacheShader( "menu_mp_weapons_knife_ballistic");
+    precacheShader( "hud_m202"                       );
+    precacheShader( "menu_mp_weapons_ballistic_knife");
     precacheShader( "hud_grenadeicon"          );
     precacheShader( "hud_icon_satchelcharge"   );
     precacheShader( "hud_icon_sticky_grenade"  );
@@ -151,8 +134,14 @@ onPrecacheGameType()
     precacheShader( "hud_us_flashgrenade"      );
     precacheShader( "hud_us_stungrenade"       );
     precacheShader( "hud_us_smokegrenade"      );
+    precacheShader( "hud_icon_claymore"        );
+    precacheShader( "hud_radar_jammer"         );
+    precacheShader( "hud_acoustic_sensor"      );
+    precacheShader( "hud_deployable_camera"    );
 
-    level.gf_ot_baseFx = loadfx( "misc/fx_ui_flagbase_gold_t5" );
+    level.gf_ot_baseFx_neutral = loadfx( "misc/fx_ui_flagbase_silver"  );
+    level.gf_ot_baseFx_allies  = loadfx( "misc/fx_ui_flagbase_blue"    );
+    level.gf_ot_baseFx_axis    = loadfx( "misc/fx_ui_flagbase_red_t5"  );
 
     precacheModel( "mp_flag_neutral" );
     precacheShader( "compass_waypoint_captureneutral" );
@@ -174,8 +163,6 @@ onStartGameType()
     setDvar( "scr_showperksonspawn", "1" );
     setDvar( "sv_cheats", "1" );
     setDvar( "cg_drawHealth", "1" );
-    if ( getDvar( "gf_debug_health_icons" ) == "" )
-        setDvar( "gf_debug_health_icons", 0 );
 
     dvar = "scr_" + level.gameType + "_visualtweaks";
     if ( GetDvar( dvar ) == "" )
@@ -193,14 +180,11 @@ onStartGameType()
     level.gf_roundEnding     = false;
     level.gf_activatingRound = false;
     level.gf_overtimeActive  = false;
-    level.gf_preMatchHealthHUDActive = true;
     level.inOvertime         = false;
     level.timeLimitOverride  = false;
 
     if ( !isDefined( game["switchedsides"] ) )
         game["switchedsides"] = false;
-
-    level thread gf_startHealthHUDConnectWatcher();
 
     setClientNameMode( "auto_change" ); 
 
@@ -268,8 +252,6 @@ onStartGameType()
     maps\mp\gametypes\_spawning::create_map_placed_influencers();
 
     gf_applyWagerZoneAssets();
-
-    setMatchFlag( "pregame", 0 );
 }
 
 // ─── Spawn Pipeline ────────────────────────────────────────────────────────

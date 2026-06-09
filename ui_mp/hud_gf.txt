@@ -2,4 +2,5 @@
 //
 {
 	loadMenu { "ui_mp/hud_team.menu" }
+	loadMenu { "ui_mp/hud_gf_health.menu" }
 }

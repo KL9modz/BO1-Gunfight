@@ -2,4 +2,5 @@
 //
 {
 	loadMenu { "ui_mp/hud_team_splitscreen.menu" }
+	loadMenu { "ui_mp/hud_gf_health.menu" }
 }

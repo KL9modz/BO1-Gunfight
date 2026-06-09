@@ -37,59 +37,13 @@ gf_getOvertimeLimit()
 
 // ─── Player Lifecycle ──────────────────────────────────────────────────────
 
-gf_startHealthHUDConnectWatcher()
-{
-    level endon( "game_ended" );
-
-    if ( isDefined( level.gf_healthHUDConnectWatcherStarted ) )
-        return;
-
-    level.gf_healthHUDConnectWatcherStarted = true;
-
-    if ( isDefined( level.players ) )
-    {
-        for ( i = 0; i < level.players.size; i++ )
-        {
-            if ( isDefined( level.players[i] ) && isPlayer( level.players[i] ) )
-                level.players[i] thread gf_startPregameHealthHUD();
-        }
-    }
-
-    while ( true )
-    {
-        level waittill( "connected", player );
-
-        if ( isDefined( player ) && isPlayer( player ) )
-            player thread gf_startPregameHealthHUD();
-    }
-}
-
-gf_startPregameHealthHUD()
-{
-    self endon( "disconnect" );
-    level endon( "game_ended" );
-
-    wait 0.05;
-
-    self thread gf_startHealthHUD();
-    self thread gf_startHealthIconGalleryWatcher();
-
-    for ( i = 0; i < 24; i++ )
-    {
-        gf_queueHealthHUDUpdate();
-        wait 0.5;
-    }
-}
-
 gf_playerSpawnedCB()
 {
     level notify( "spawned_player" );
-    self setClientUIVisibilityFlag( "hud_visible", 1 );
-    setMatchFlag( "pregame", 0 );
     self gf_syncCaptureScore();
     self gf_initDamageScore();
     self thread gf_startHealthHUD();
-    self thread gf_startHealthIconGalleryWatcher();
+    self thread gf_startSelfHealthBar();
     gf_queueHealthHUDUpdate();
     self gf_applyVisualTweaks();
     self thread gf_onSpawned();
@@ -127,7 +81,6 @@ gf_onSpawnSpectator( origin, angles )
 {
     maps\mp\gametypes\_globallogic_defaults::default_onSpawnSpectator( origin, angles );
     self thread gf_startHealthHUD();
-    self thread gf_startHealthIconGalleryWatcher();
     gf_queueHealthHUDUpdate();
 }
 
@@ -165,7 +118,6 @@ gf_tryActivateRound()
     level.gf_roundEnding     = false;
     level.gf_roundActive     = true;
     level.gf_activatingRound = false;
-    level.gf_preMatchHealthHUDActive = false;
     level.gf_warnedLastPlayer = [];
     gf_forceHealthHUDUpdate();
 
@@ -182,12 +134,8 @@ gf_tryActivateRound()
 
         maps\mp\gametypes\_globallogic_utils::pauseTimer();
         gf_hideRoundTimerForCountdown();
-        level.gf_preRoundCountdownActive = true;
-        gf_forceHealthHUDUpdate();
         level thread gf_roundStartCountdown();
         wait 7;
-        level.gf_preRoundCountdownActive = false;
-        gf_forceHealthHUDUpdate();
         maps\mp\gametypes\_globallogic_utils::resumeTimer();
         gf_restoreRoundTimerAfterCountdown();
         gf_playRoundStartDialog();
@@ -559,7 +507,25 @@ gf_cleanupOvertimeTimerState()
 
 gf_setOvertimeZoneIconColor( zone, team )
 {
-    if ( !isDefined( zone ) || !isDefined( zone.objPoints ) )
+    if ( !isDefined( zone ) )
+        return;
+
+    if ( isDefined( zone.baseFxOrigin ) )
+    {
+        if ( isDefined( zone.baseFxHandle ) )
+            zone.baseFxHandle delete();
+
+        fxAsset = level.gf_ot_baseFx_neutral;
+        if ( team == "allies" )
+            fxAsset = level.gf_ot_baseFx_allies;
+        else if ( team == "axis" )
+            fxAsset = level.gf_ot_baseFx_axis;
+
+        zone.baseFxHandle = spawnFx( fxAsset, zone.baseFxOrigin, zone.baseFxFwd, zone.baseFxRight );
+        triggerFx( zone.baseFxHandle );
+    }
+
+    if ( !isDefined( zone.objPoints ) )
         return;
 
     neutralColor  = ( 1, 1, 1 );
@@ -589,6 +555,11 @@ gf_cleanupOvertimeZone( zone )
 {
     if ( !isDefined( zone ) )
         return;
+
+    if ( isDefined( zone.baseFxHandle ) )
+        zone.baseFxHandle delete();
+    zone.baseFxHandle = undefined;
+    zone.baseFxOrigin = undefined;
 
     zone.interactTeam = "none";
     zone.onUse        = undefined;
@@ -624,13 +595,15 @@ gf_createOvertimeZone()
     if ( !isDefined( bFlag ) )
         return undefined;
 
-    // Ground-orient and spawn the flag base halo FX (same technique as dom.gsc)
+    // Ground-orient and spawn the flag base halo FX (same technique as dom.gsc).
+    // Trace 256 units down so elevated flag triggers still find the ground surface.
     traceStart = bFlag.origin + ( 0, 0, 32 );
-    traceEnd   = bFlag.origin + ( 0, 0, -32 );
+    traceEnd   = bFlag.origin + ( 0, 0, -256 );
     trace      = bulletTrace( traceStart, traceEnd, false, undefined );
     upAngles   = vectorToAngles( trace["normal"] );
-    baseFx     = spawnFx( level.gf_ot_baseFx, trace["position"],
-                          anglesToForward( upAngles ), anglesToRight( upAngles ) );
+    fxFwd      = anglesToForward( upAngles );
+    fxRight    = anglesToRight( upAngles );
+    baseFx     = spawnFx( level.gf_ot_baseFx_neutral, trace["position"], fxFwd, fxRight );
     triggerFx( baseFx );
 
     // Use the map-linked visual if it exists; otherwise spawn one
@@ -662,9 +635,15 @@ gf_createOvertimeZone()
     zone.onUse        = ::gf_onZoneCapture;
     zone.onBeginUse   = ::gf_onZoneBeginUse;
     zone.onEndUse     = ::gf_onZoneEndUse;
-    zone.spawnedModel = spawnedModel;
+    zone.spawnedModel    = spawnedModel;
     zone.didStatusNotify = false;
+    // Set icon colors before storing FX data so this call only touches the waypoint
+    // tints — the neutral FX is already spawned and triggered above.
     gf_setOvertimeZoneIconColor( zone, "neutral" );
+    zone.baseFxHandle  = baseFx;
+    zone.baseFxOrigin  = trace["position"];
+    zone.baseFxFwd     = fxFwd;
+    zone.baseFxRight   = fxRight;
 
     return zone;
 }

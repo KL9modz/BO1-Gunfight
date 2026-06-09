@@ -12,17 +12,26 @@ gf_startHealthHUD()
     self endon( "disconnect" );
     level endon( "game_ended" );
 
-    // Stagger creation so all players' spawns finish before the HUD allocation spike
+    // Delay creation until the temporary loadout HUD has slid away.
     wait 0.05;
+
+    if ( isDefined( self.sessionstate ) && self.sessionstate == "playing" )
+        wait 5.85;
+    else
+        wait 0.2;
 
     self.gf_healthHudElems = [];
     self.gf_healthHudPanelBg = self gf_createHealthPanelBackground();
     self.gf_healthHudRows = [];
-    self.gf_healthHudRows[0] = self gf_createTeamAliveRow( -45, 13 );
+    self.gf_healthHudRows[0] = self gf_createTeamAliveRow( -45, 10 );
     self.gf_healthHudRows[1] = self gf_createTeamAliveRow( -27, 10 );
-    self.gf_selfHealthHud = self gf_createSelfHealthHud();
+    self.gf_healthHudSlideOffset = -230;
+    self gf_offsetHealthHUDElems( self.gf_healthHudSlideOffset, 0 );
 
     self gf_updateHealthHUD();
+    self gf_slideHealthHUDIn();
+    wait 0.75;
+    self gf_showHealthHUDMenuNumbers();
 
     while ( true )
     {
@@ -34,7 +43,7 @@ gf_startHealthHUD()
 gf_createHealthPanelBackground()
 {
     panel = spawnstruct();
-    panel.bg = self gf_createHealthIcon( 0, -39, 82, 42, "hud_frame_faction_fade", ( 1, 1, 1 ), 37 );
+    panel.bg = self gf_createHealthIcon( -70, -39, 180, 42, "hud_frame_faction_fade", ( 1, 1, 1 ), 37 );
     panel.bg.alpha = 0;
     panel.bg fadeOverTime( 0.25 );
     panel.bg.alpha = 0.34;
@@ -56,7 +65,7 @@ gf_createTeamAliveRow( y, height )
     row.fill = self gf_createHealthBarAt( "CENTER LEFT", "CENTER LEFT", row.x, y, row.width, height, ( 1, 1, 1 ), 40, "hud_score_progress", 0, 0, 0.80 );
 
     row.icons = [];
-    for ( i = 0; i < 4; i++ )
+    for ( i = 0; i < 3; i++ )
     {
         row.icons[i] = self gf_createHealthIcon( 4 + i * 9, y, 7, 7, "hud_death_suicide", ( 1, 1, 1 ), 42 );
         row.icons[i].alpha = 0;
@@ -65,29 +74,49 @@ gf_createTeamAliveRow( y, height )
     return row;
 }
 
-gf_createSelfHealthHud()
+gf_offsetHealthHUDElems( xOffset, moveTime )
 {
-    panel = spawnstruct();
-    panel.name = self gf_createHealthTextAt( "BOTTOM RIGHT", "BOTTOM RIGHT", -34, -80, "default", 1.0, ( 1, 1, 1 ), 45 );
-    panel.name.alignX = "right";
-    panel.bar = self gf_createHealthBarAt( "BOTTOM LEFT", "BOTTOM RIGHT", -194, -64, 160, 8, ( 0.42, 0.68, 0.46 ), 43 );
+    if ( !isDefined( self.gf_healthHudElems ) )
+        return;
 
-    return panel;
+    for ( i = 0; i < self.gf_healthHudElems.size; i++ )
+        gf_offsetHealthHUDElem( self.gf_healthHudElems[i], xOffset, moveTime );
 }
 
-gf_createHealthText( x, y, font, scale, color, sort )
+gf_slideHealthHUDIn()
 {
-    return self gf_createHealthTextAt( "CENTER LEFT", "CENTER LEFT", x, y, font, scale, color, sort );
+    if ( !isDefined( self.gf_healthHudSlideOffset ) )
+        return;
+
+    self gf_offsetHealthHUDElems( 0 - self.gf_healthHudSlideOffset, 0.75 );
+    self.gf_healthHudSlideOffset = 0;
 }
 
-gf_createHealthTextAt( point, relativePoint, x, y, font, scale, color, sort )
+gf_offsetHealthHUDElem( elem, xOffset, moveTime )
 {
-    elem = self maps\mp\gametypes\_hud_util::createFontString( font, scale );
-    elem setPoint( point, relativePoint, x, y );
-    elem.color = color;
-    gf_styleHealthElem( elem, sort );
-    self gf_registerHealthElem( elem );
-    return elem;
+    if ( !isDefined( elem ) )
+        return;
+
+    if ( isDefined( moveTime ) && moveTime > 0 )
+        elem moveOverTime( moveTime );
+    elem.x += xOffset;
+
+    if ( isDefined( elem.elemType ) && elem.elemType == "bar" )
+    {
+        if ( isDefined( elem.bar ) )
+        {
+            if ( isDefined( moveTime ) && moveTime > 0 )
+                elem.bar moveOverTime( moveTime );
+            elem.bar.x += xOffset;
+        }
+
+        if ( isDefined( elem.barFrame ) )
+        {
+            if ( isDefined( moveTime ) && moveTime > 0 )
+                elem.barFrame moveOverTime( moveTime );
+            elem.barFrame.x += xOffset;
+        }
+    }
 }
 
 gf_createHealthIcon( x, y, width, height, shader, color, sort )
@@ -103,11 +132,6 @@ gf_createHealthIconAt( point, relativePoint, x, y, width, height, shader, color,
     gf_styleHealthElem( elem, sort );
     self gf_registerHealthElem( elem );
     return elem;
-}
-
-gf_createHealthBar( x, y, width, height, color, sort )
-{
-    return self gf_createHealthBarAt( "CENTER LEFT", "CENTER LEFT", x, y, width, height, color, sort );
 }
 
 gf_createHealthBarAt( point, relativePoint, x, y, width, height, color, sort, fillShader, bgAlpha, frameAlpha, fillAlpha )
@@ -159,7 +183,7 @@ gf_styleHealthElem( elem, sort )
 
 gf_updateHealthHUD()
 {
-    if ( !isDefined( self.gf_healthHudRows ) || !isDefined( self.gf_selfHealthHud ) )
+    if ( !isDefined( self.gf_healthHudRows ) )
         return;
 
     firstTeam = "allies";
@@ -171,27 +195,36 @@ gf_updateHealthHUD()
         secondTeam = "allies";
     }
 
-    self gf_updateTeamAliveRow( self.gf_healthHudRows[0], firstTeam, ( 0.42, 0.68, 0.46 ), true );
-    self gf_updateTeamAliveRow( self.gf_healthHudRows[1], secondTeam, ( 0.73, 0.29, 0.19 ), false );
-    self gf_updateSelfHealthHUD();
+    self gf_updateTeamAliveRow( self.gf_healthHudRows[0], firstTeam, ( 0.42, 0.68, 0.46 ), 0 );
+    self gf_updateTeamAliveRow( self.gf_healthHudRows[1], secondTeam, ( 0.73, 0.29, 0.19 ), 1 );
 }
 
-gf_updateTeamAliveRow( row, team, color, friendly )
+gf_updateTeamAliveRow( row, team, color, rowIndex )
 {
     if ( !isDefined( row ) )
         return;
 
     stats = gf_getTeamHealthStats( team );
-    frac = gf_getHealthFraction( stats.current, stats.max );
+    frac = gf_getTeamHealthBarFraction( stats.current, stats.max );
     if ( isDefined( row.fill ) && isDefined( row.fill.bar ) )
         row.fill.bar.color = color;
     self gf_setHealthBarFraction( row.fill, frac, stats.current > 0 );
 
-    visibleIcons = stats.players.size;
-    if ( visibleIcons > 4 )
-        visibleIcons = 4;
+    self gf_updateHealthHUDMenuNumber( row, rowIndex, stats, frac );
 
-    for ( i = 0; i < 4; i++ )
+    visibleIcons = stats.players.size;
+    if ( visibleIcons > 3 )
+        visibleIcons = 3;
+
+    aliveCount = 0;
+    for ( i = 0; i < visibleIcons; i++ )
+    {
+        player = stats.players[i];
+        if ( isDefined( player.sessionstate ) && player.sessionstate == "playing" && isDefined( player.health ) && player.health > 0 )
+            aliveCount++;
+    }
+
+    for ( i = 0; i < 3; i++ )
     {
         if ( i >= visibleIcons )
         {
@@ -199,54 +232,39 @@ gf_updateTeamAliveRow( row, team, color, friendly )
             continue;
         }
 
-        player = stats.players[i];
         row.icons[i].alpha = 0.95;
 
-        playerAlive = false;
-        if ( isDefined( player.sessionstate ) && player.sessionstate == "playing" && isDefined( player.health ) && player.health > 0 )
-        {
-            playerAlive = true;
-        }
-        else
-        {
-            pregameActive = false;
-            if ( isDefined( level.gf_preRoundCountdownActive ) && level.gf_preRoundCountdownActive )
-                pregameActive = true;
-            else if ( isDefined( level.gf_preMatchHealthHUDActive ) && level.gf_preMatchHealthHUDActive )
-                pregameActive = true;
-
-            if ( pregameActive )
-                playerAlive = true;
-        }
-
-        if ( playerAlive )
+        if ( i < aliveCount )
             row.icons[i].color = color;
         else
             row.icons[i].color = ( 1, 1, 1 );
     }
 }
 
-gf_updateSelfHealthHUD()
+gf_updateHealthHUDMenuNumber( row, rowIndex, stats, frac )
 {
-    panel = self.gf_selfHealthHud;
-    visible = isDefined( self.sessionstate ) && self.sessionstate == "playing";
+    prefix = "ui_gf_health_hp" + rowIndex;
+    self setClientDvar( prefix, int( stats.current ) + "" );
+    self setClientDvar( prefix + "_x", row.x + int( row.width * frac + 0.5 ) + 4 );
 
-    if ( !visible )
-    {
-        if ( isDefined( panel.name ) )
-            panel.name.alpha = 0;
-        self gf_setHealthBarFraction( panel.bar, 0, false );
-        return;
-    }
+    if ( stats.max > 0 )
+        self setClientDvar( prefix + "_show", "1" );
+    else
+        self setClientDvar( prefix + "_show", "0" );
+}
 
-    maxHP = self gf_getPlayerMaxHealth();
-    hp = 0;
-    if ( isDefined( self.health ) && self.health > 0 )
-        hp = self.health;
+gf_showHealthHUDMenuNumbers()
+{
+    self setClientDvar( "ui_gf_health_hp_visible", "1" );
+}
 
-    panel.name setText( self.name );
-    panel.name.alpha = 1;
-    self gf_setHealthBarFraction( panel.bar, gf_getHealthFraction( hp, maxHP ), true );
+gf_hideHealthHUDMenuNumbers()
+{
+    self setClientDvar( "ui_gf_health_hp_visible", "0" );
+    self setClientDvar( "ui_gf_health_hp0_show", "0" );
+    self setClientDvar( "ui_gf_health_hp1_show", "0" );
+    self setClientDvar( "ui_gf_health_hp0", "" );
+    self setClientDvar( "ui_gf_health_hp1", "" );
 }
 
 gf_getTeamHealthStats( team )
@@ -254,7 +272,6 @@ gf_getTeamHealthStats( team )
     stats = spawnstruct();
     stats.current = 0;
     stats.max = 0;
-    stats.alive = 0;
     stats.players = [];
 
     for ( i = 0; i < level.players.size; i++ )
@@ -273,21 +290,6 @@ gf_getTeamHealthStats( team )
         if ( player.sessionstate == "playing" && isDefined( player.health ) && player.health > 0 )
         {
             stats.current += player.health;
-            stats.alive++;
-        }
-        else
-        {
-            pregameActive = false;
-            if ( isDefined( level.gf_preRoundCountdownActive ) && level.gf_preRoundCountdownActive )
-                pregameActive = true;
-            else if ( isDefined( level.gf_preMatchHealthHUDActive ) && level.gf_preMatchHealthHUDActive )
-                pregameActive = true;
-
-            if ( pregameActive )
-            {
-                stats.current += maxHP;
-                stats.alive++;
-            }
         }
     }
 
@@ -312,6 +314,19 @@ gf_getHealthFraction( current, maxHealth )
         return 0;
     if ( frac > 1 )
         return 1;
+
+    return frac;
+}
+
+gf_getTeamHealthBarFraction( current, maxHealth )
+{
+    frac = gf_getHealthFraction( current, maxHealth );
+    if ( frac <= 0 || frac >= 1 )
+        return frac;
+
+    frac = frac + ( ( 1 - frac ) * frac * 0.45 );
+    if ( current > 0 && frac < 0.10 )
+        return 0.10;
 
     return frac;
 }
@@ -362,32 +377,10 @@ gf_setHealthBarFraction( bar, frac, visible )
         bar.barFrame.alpha = frameAlpha;
 }
 
-gf_getHealthTeamName( team )
-{
-    if ( team == "allies" )
-    {
-        name = getDvar( "scr_allies" );
-        if ( name != "" )
-            return name;
-        return "allies";
-    }
-
-    name = getDvar( "scr_axis" );
-    if ( name != "" )
-        return name;
-    return "axis";
-}
-
-gf_getHealthTeamColor( team )
-{
-    if ( team == "allies" )
-        return ( 0.4, 0.7, 1.0 );
-
-    return ( 1.0, 0.45, 0.45 );
-}
-
 gf_destroyHealthHUD()
 {
+    self gf_hideHealthHUDMenuNumbers();
+
     if ( !isDefined( self.gf_healthHudElems ) )
         return;
 
@@ -400,158 +393,95 @@ gf_destroyHealthHUD()
     self.gf_healthHudElems = undefined;
     self.gf_healthHudPanelBg = undefined;
     self.gf_healthHudRows = undefined;
-    self.gf_selfHealthHud = undefined;
+    self.gf_healthHudSlideOffset = undefined;
 }
 
-gf_startHealthIconGalleryWatcher()
+// ─── Self HP Bar ──────────────────────────────────────────────────────────
+
+gf_startSelfHealthBar()
 {
-    self notify( "gf_restart_health_icon_gallery" );
-    self gf_destroyHealthIconGallery();
-    self endon( "gf_restart_health_icon_gallery" );
+    self notify( "gf_restart_self_health" );
+    self gf_destroySelfHealthBar();
+    self endon( "gf_restart_self_health" );
     self endon( "disconnect" );
     level endon( "game_ended" );
+
+    wait 0.1;
+
+    if ( !isDefined( self.sessionstate ) || self.sessionstate != "playing" )
+        return;
+
+    maxHP = self gf_getPlayerMaxHealth();
+
+    self.gf_selfBar = self maps\mp\gametypes\_hud_util::createBar( ( 1, 1, 1 ), 160, 7 );
+    self.gf_selfBar setPoint( "BOTTOM CENTER", "BOTTOM CENTER", 0, -20 );
+    if ( isDefined( self.gf_selfBar.bar ) )
+    {
+        self.gf_selfBar.bar.shader = "hud_score_progress";
+        self.gf_selfBar.bar setShader( "hud_score_progress", 160, 7 );
+        self.gf_selfBar.bar.color = ( 1, 1, 1 );
+    }
+    self.gf_selfBar.sort                      = 50;
+    self.gf_selfBar.foreground                = true;
+    self.gf_selfBar.hidewheninmenu            = true;
+    self.gf_selfBar.hidewheninkillcam         = true;
+    self.gf_selfBar.hidewhileremotecontrolling = true;
+    self.gf_selfBar.archived                  = false;
+
+    if ( isDefined( self.gf_selfBar.bar ) )
+    {
+        self.gf_selfBar.bar.sort                      = 51;
+        self.gf_selfBar.bar.foreground                = true;
+        self.gf_selfBar.bar.hidewheninmenu            = true;
+        self.gf_selfBar.bar.hidewheninkillcam         = true;
+        self.gf_selfBar.bar.hidewhileremotecontrolling = true;
+        self.gf_selfBar.bar.archived                  = false;
+    }
+    if ( isDefined( self.gf_selfBar.barFrame ) )
+    {
+        self.gf_selfBar.barFrame.sort                      = 52;
+        self.gf_selfBar.barFrame.foreground                = true;
+        self.gf_selfBar.barFrame.hidewheninmenu            = true;
+        self.gf_selfBar.barFrame.hidewheninkillcam         = true;
+        self.gf_selfBar.barFrame.hidewhileremotecontrolling = true;
+        self.gf_selfBar.barFrame.archived                  = false;
+    }
 
     while ( true )
     {
-        if ( getDvarInt( "gf_debug_health_icons" ) == 1 )
+        if ( !isDefined( self.health ) || self.health <= 0 )
         {
-            if ( !isDefined( self.gf_healthIconGalleryElems ) )
-                self gf_createHealthIconGallery();
+            self gf_destroySelfHealthBar();
+            return;
         }
-        else
-        {
-            self gf_destroyHealthIconGallery();
-        }
-
-        wait 0.5;
+        self gf_updateSelfHealthBar( maxHP );
+        wait 0.05;
     }
 }
 
-gf_createHealthIconGallery()
+gf_updateSelfHealthBar( maxHP )
 {
-    self.gf_healthIconGalleryElems = [];
-
-    bg = self gf_createHealthIconGalleryIcon( "hud_frame_black_back_fade", 0, 0, 520, 286, ( 0, 0, 0 ), 90 );
-    bg.alpha = 0.72;
-
-    frame = self gf_createHealthIconGalleryIcon( "hud_frame_faction_lines", 0, -116, 500, 50, ( 0.85, 0.85, 0.85 ), 91 );
-    frame.alpha = 0.25;
-
-    title = self gf_createHealthIconGalleryText( -232, -124, "default", 1.0, ( 1, 1, 1 ), 93 );
-    title setText( "Icon candidates" );
-
-    shaders = [];
-    sizes = [];
-    i = 0;
-
-    shaders[i] = "headicon_dead"; sizes[i] = 18; i++;
-    shaders[i] = "hud_death_suicide"; sizes[i] = 18; i++;
-    shaders[i] = "waypoint_kill"; sizes[i] = 18; i++;
-    shaders[i] = "waypoint_defend"; sizes[i] = 18; i++;
-    shaders[i] = "waypoint_bomb"; sizes[i] = 18; i++;
-    shaders[i] = "waypoint_target"; sizes[i] = 18; i++;
-    shaders[i] = "waypoint_defuse"; sizes[i] = 18; i++;
-    shaders[i] = "waypoint_bombsquad"; sizes[i] = 18; i++;
-    shaders[i] = "waypoint_revive"; sizes[i] = 18; i++;
-    shaders[i] = "objpoint_default"; sizes[i] = 18; i++;
-    shaders[i] = "hud_suitcase_bomb"; sizes[i] = 18; i++;
-    shaders[i] = "hud_scavenger_pickup"; sizes[i] = 24; i++;
-    shaders[i] = "score_bar_allies"; sizes[i] = 18; i++;
-    shaders[i] = "hud_icon_satchelcharge"; sizes[i] = 18; i++;
-    shaders[i] = "hud_icon_sticky_grenade"; sizes[i] = 18; i++;
-    shaders[i] = "hud_hatchet"; sizes[i] = 18; i++;
-    shaders[i] = "menu_mp_weapons_crossbow"; sizes[i] = 28; i++;
-    shaders[i] = "menu_mp_weapons_python"; sizes[i] = 28; i++;
-    shaders[i] = "menu_mp_weapons_makarov"; sizes[i] = 28; i++;
-    shaders[i] = "menu_mp_weapons_asp"; sizes[i] = 28; i++;
-    shaders[i] = "hud_icon_bomb"; sizes[i] = 18; i++;
-    shaders[i] = "hud_icon_bomb_defuse"; sizes[i] = 18; i++;
-    shaders[i] = "white"; sizes[i] = 18; i++;
-
-    for ( row = 0; row < shaders.size; row++ )
-    {
-        col = row % 4;
-        slot = int( row / 4 );
-        x = -198 + col * 132;
-        y = -78 + slot * 38;
-        size = sizes[row];
-
-        num = self gf_createHealthIconGalleryNumber( x - 42, y - 2, row + 1 );
-        self gf_createHealthIconGalleryIcon( shaders[row], x - 14, y, size, size, ( 0.4, 0.7, 1.0 ), 94 );
-        self gf_createHealthIconGalleryIcon( shaders[row], x + 14, y, size, size, ( 1.0, 0.45, 0.45 ), 94 );
-        self gf_createHealthIconGalleryIcon( shaders[row], x + 42, y, size, size, ( 1, 1, 1 ), 94 );
-    }
-}
-
-gf_createHealthIconGalleryIcon( shader, x, y, width, height, color, sort )
-{
-    elem = self maps\mp\gametypes\_hud_util::createIcon( shader, width, height );
-    elem setPoint( "CENTER", "CENTER", x, y );
-    elem.color = color;
-    gf_styleHealthElem( elem, sort );
-    self gf_registerHealthIconGalleryElem( elem );
-    return elem;
-}
-
-gf_createHealthIconGalleryText( x, y, font, scale, color, sort )
-{
-    elem = self maps\mp\gametypes\_hud_util::createFontString( font, scale );
-    elem setPoint( "CENTER", "CENTER", x, y );
-    elem.alignX = "left";
-    elem.color = color;
-    gf_styleHealthElem( elem, sort );
-    self gf_registerHealthIconGalleryElem( elem );
-    return elem;
-}
-
-gf_createHealthIconGalleryNumber( x, y, value )
-{
-    elem = self maps\mp\gametypes\_hud_util::createFontString( "default", 0.72 );
-    elem setPoint( "CENTER", "CENTER", x, y );
-    elem.color = ( 0.82, 0.82, 0.82 );
-    gf_styleHealthElem( elem, 94 );
-    elem setValue( value );
-    self gf_registerHealthIconGalleryElem( elem );
-    return elem;
-}
-
-gf_registerHealthIconGalleryElem( elem )
-{
-    self.gf_healthIconGalleryElems[self.gf_healthIconGalleryElems.size] = elem;
-    return elem;
-}
-
-gf_destroyHealthIconGallery()
-{
-    if ( !isDefined( self.gf_healthIconGalleryElems ) )
+    if ( !isDefined( self.gf_selfBar ) )
         return;
 
-    for ( i = 0; i < self.gf_healthIconGalleryElems.size; i++ )
-    {
-        if ( isDefined( self.gf_healthIconGalleryElems[i] ) )
-            self.gf_healthIconGalleryElems[i] destroyElem();
-    }
-
-    self.gf_healthIconGalleryElems = undefined;
+    frac = gf_getHealthFraction( self.health, maxHP );
+    self.gf_selfBar maps\mp\gametypes\_hud_util::updateBar( frac );
 }
 
-gf_showCustomPerks()
+gf_destroySelfHealthBar()
 {
-    self notify( "gf_kill_perk_hud" );
-    self endon( "gf_kill_perk_hud" );
-    self endon( "disconnect" );
-    level endon( "game_ended" );
+    if ( !isDefined( self.gf_selfBar ) )
+        return;
 
-    self maps\mp\gametypes\_hud_util::showPerk( 0, "specialty_movefaster", 10 );
-    self maps\mp\gametypes\_hud_util::showPerk( 1, "specialty_bulletpenetration", 10 );
-    self maps\mp\gametypes\_hud_util::showPerk( 2, "specialty_longersprint", 10 );
-
-    wait 3;
-
-    self thread maps\mp\gametypes\_hud_util::hidePerk( 0, 0.4 );
-    self thread maps\mp\gametypes\_hud_util::hidePerk( 1, 0.4 );
-    self thread maps\mp\gametypes\_hud_util::hidePerk( 2, 0.4 );
+    if ( isDefined( self.gf_selfBar.barFrame ) )
+        self.gf_selfBar.barFrame destroy();
+    if ( isDefined( self.gf_selfBar.bar ) )
+        self.gf_selfBar.bar destroy();
+    self.gf_selfBar destroy();
+    self.gf_selfBar = undefined;
 }
+
+// ─── Loadout HUD ─────────────────────────────────────────────────────────────
 
 gf_showWeaponHUD( load )
 {
@@ -571,38 +501,55 @@ gf_showWeaponHUD( load )
     shaders[1] = load["secondaryShader"];
     shaders[2] = load["lethalShader"];
     shaders[3] = load["tacticalShader"];
+    shaders[4] = load["equipShader"];
+    shaders[5] = gf_getPerkShader( "specialty_movefaster" );
+    shaders[6] = gf_getPerkShader( "specialty_bulletpenetration" );
+    shaders[7] = gf_getPerkShader( "specialty_longersprint" );
 
     names = [];
     names[0] = load["primaryName"];
     names[1] = load["secondaryName"];
     names[2] = load["lethalName"];
     names[3] = load["tacticalName"];
+    names[4] = load["equipName"];
+    names[5] = "Lightweight";
+    names[6] = "Hardened";
+    names[7] = "Marathon";
 
+    // createLoadoutIcon uses setPoint("BOTTOM RIGHT","BOTTOM RIGHT") so y is pixels
+    // upward from the screen bottom. We clamp verIndex to 4 (designed max) for all
+    // rows and control vertical position entirely through yPos.
+    // Formula with verIndex=4: rendered_y = yPos - 58.
+    // 8 rows × 40px spacing = 280px stack, centered at y=-220 → spans y=-360 to y=-80.
     yPos = [];
-    yPos[0] = -128;
-    yPos[1] = -120;
-    yPos[2] = -112;
-    yPos[3] = -104;
+    yPos[0] = -342;   // y=-400  (top)
+    yPos[1] = -302;   // y=-360
+    yPos[2] = -262;   // y=-320
+    yPos[3] = -222;   // y=-280
+    yPos[4] = -182;   // y=-240
+    yPos[5] = -142;   // y=-200
+    yPos[6] = -102;   // y=-160
+    yPos[7] = -62;    // y=-120  (bottom)
 
     icons = [];
     texts = [];
 
-    for ( i = 0; i < 4; i++ )
+    for ( i = 0; i < 8; i++ )
     {
-        icons[i] = self maps\mp\gametypes\_hud_util::createLoadoutIcon( i + 1, 0, 200, yPos[i] );
+        icons[i] = self maps\mp\gametypes\_hud_util::createLoadoutIcon( 4, 0, 200, yPos[i] );
         texts[i] = self maps\mp\gametypes\_hud_util::createLoadoutText( icons[i], 160 );
         self maps\mp\gametypes\_hud_util::showLoadoutAttribute( icons[i], shaders[i], 1, texts[i], names[i] );
 
         if ( i < 2 )
             icons[i] setShader( shaders[i], 64, 32 );
 
-        icons[i] moveOverTime( 0.3 );
+        icons[i] moveOverTime( 0.75 );
         icons[i].x = -5;
         icons[i].hidewheninmenu = true;
         icons[i].hidewheninkillcam = true;
         icons[i].hidewhileremotecontrolling = true;
 
-        texts[i] moveOverTime( 0.3 );
+        texts[i] moveOverTime( 0.75 );
         texts[i].x = -72;
         texts[i].hidewheninmenu = true;
         texts[i].hidewheninkillcam = true;
@@ -614,16 +561,27 @@ gf_showWeaponHUD( load )
 
     wait 5;
 
-    for ( i = 0; i < 4; i++ )
+    for ( i = 0; i < 8; i++ )
     {
-        icons[i] moveOverTime( 0.3 );
+        icons[i] moveOverTime( 0.75 );
         icons[i].x = 400;
-        texts[i] moveOverTime( 0.3 );
+        texts[i] moveOverTime( 0.75 );
         texts[i].x = 400;
     }
 
-    wait 0.35;
+    wait 0.8;
     self gf_destroyLoadoutHUD();
+}
+
+gf_getPerkShader( specialty )
+{
+    if ( isDefined( level.perkReferenceToIndex ) && isDefined( level.perkReferenceToIndex[specialty] ) )
+    {
+        idx = level.perkReferenceToIndex[specialty];
+        if ( isDefined( level.tbl_PerkData[idx] ) )
+            return level.tbl_PerkData[idx]["reference_full"];
+    }
+    return "white";
 }
 
 gf_destroyLoadoutHUD()
