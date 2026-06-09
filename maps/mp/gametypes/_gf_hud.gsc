@@ -420,7 +420,7 @@ gf_showWeaponHUD( load )
     shaders[5] = gf_getPerkShader( "specialty_movefaster" );
     shaders[6] = gf_getPerkShader( "specialty_bulletpenetration" );
     shaders[7] = gf_getPerkShader( "specialty_longersprint" );
-    shaders[8] = gf_getPerkShader( "specialty_fastreload" );
+    shaders[8] = gf_getPerkShader( "specialty_armorvest" );
 
     names = [];
     names[0] = load["primaryName"];
@@ -431,7 +431,7 @@ gf_showWeaponHUD( load )
     names[5] = "Lightweight";
     names[6] = "Hardened";
     names[7] = "Marathon";
-    names[8] = "Sleight of Hand";
+    names[8] = "Flak Jacket";
 
     // createLoadoutIcon uses setPoint("BOTTOM RIGHT","BOTTOM RIGHT") so y is pixels
     // upward from the screen bottom. We clamp verIndex to 4 (designed max) for all

@@ -452,9 +452,13 @@ gf_giveCustomLoadout()
     self EnableWeaponCycling();
 
     self SetPerk( "specialty_movefaster"        );   // Lightweight
-    self SetPerk( "specialty_bulletpenetration" );   // Hardened
-    self SetPerk( "specialty_longersprint"      );   // Marathon
-    self SetPerk( "specialty_fastreload"        );   // Sleight of Hand
+    self SetPerk( "specialty_fallheight"        );   // Lightweight Pro — no fall damage
+    self SetPerk( "specialty_bulletpenetration" );   // Deep Impact
+    self SetPerk( "specialty_bulletdamage"      );   // Deep Impact Pro — extra penetration damage
+    self SetPerk( "specialty_longersprint"      );   // Marathon (no pro specialty exists in T5 source)
+    self SetPerk( "specialty_armorvest"         );   // Flak Jacket
+    self SetPerk( "specialty_flakjacket"        );   // Flak Jacket Pro — throwback grenades
+    self SetPerk( "specialty_fireproof"         );   // Flak Jacket Pro — fire immunity
 
     self thread gf_showWeaponHUD( load );
 }
