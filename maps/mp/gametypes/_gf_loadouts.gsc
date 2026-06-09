@@ -437,7 +437,7 @@ gf_giveCustomLoadout()
     camoOpts = int( self CalcWeaponOptions( load["camo"], 0, 0, 0 ) );
     self DisableWeaponCycling();
     self GiveWeapon( load["primary"],   0, camoOpts );
-    self GiveWeapon( load["secondary"], 0, camoOpts );
+    self GiveWeapon( load["secondary"] );   // no camo — launchers/pistols reject non-zero camoOpts
     self GiveWeapon( "knife_mp" );
     self switchToWeapon( load["primary"] );
     self giveMaxAmmo( load["primary"] );
