@@ -243,6 +243,8 @@ onStartGameType()
     maps\mp\gametypes\_spawning::create_map_placed_influencers();
 
     gf_applyWagerZoneAssets();
+
+    thread maps\mp\gametypes\_bot::init();
 }
 
 // ─── Spawn Pipeline ────────────────────────────────────────────────────────

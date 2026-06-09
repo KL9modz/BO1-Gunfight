@@ -306,36 +306,36 @@ gf_initLoadouts()
         gf_item( "scrambler_mp",           "Jammer",        "hud_radar_jammer"       ) ); n++;
 
     pool[n] = gf_buildLoadout(
+        gf_item( "mpl_rf_mp",              "MPL",           "menu_mp_weapons_mpl"      ),
         gf_item( "pythondw_mp",            "Dual Python",   "menu_mp_weapons_python"   ),
-        gf_item( "cz75_upgradesight_mp",   "CZ75",          "menu_mp_weapons_cz75"     ),
         gf_item( "satchel_charge_mp",      "Semtex",        "hud_icon_satchelcharge"   ),
         gf_item( "flash_grenade_mp",       "Flash",         "hud_us_flashgrenade"      ),
         gf_item( "claymore_mp",            "Claymore",      "hud_icon_claymore"        ) ); n++;
 
     pool[n] = gf_buildLoadout(
+        gf_item( "fnfal_acog_mp",          "FN FAL",        "menu_mp_weapons_fnfal"    ),
         gf_item( "cz75dw_mp",              "Dual CZ75",     "menu_mp_weapons_cz75"     ),
-        gf_item( "makarov_upgradesight_mp","Makarov",       "menu_mp_weapons_makarov"  ),
         gf_item( "sticky_grenade_mp",      "Sticky",        "hud_icon_sticky_grenade"  ),
         gf_item( "flash_grenade_mp",       "Flash",         "hud_us_flashgrenade"      ),
         gf_item( "acoustic_sensor_mp",     "Motion Sensor", "hud_acoustic_sensor"      ) ); n++;
 
     pool[n] = gf_buildLoadout(
+        gf_item( "spas_silencer_mp",       "SPAS-12",       "menu_mp_weapons_spas"     ),
         gf_item( "aspdw_mp",               "Dual ASP",      "menu_mp_weapons_asp"      ),
-        gf_item( "python_mp",              "Python",        "menu_mp_weapons_python"   ),
         gf_item( "frag_grenade_mp",        "Frag",          "hud_grenadeicon"          ),
         gf_item( "flash_grenade_mp",       "Flash",         "hud_us_flashgrenade"      ),
         gf_item( "camera_spike_mp",        "Camera Spike",  "hud_deployable_camera"    ) ); n++;
 
     pool[n] = gf_buildLoadout(
+        gf_item( "psg1_silencer_mp",       "PSG-1",         "menu_mp_weapons_psg1"     ),
         gf_item( "m1911dw_mp",             "Dual M1911",    "menu_mp_weapons_colt"     ),
-        gf_item( "makarov_upgradesight_mp","Makarov",       "menu_mp_weapons_makarov"  ),
         gf_item( "satchel_charge_mp",      "Semtex",        "hud_icon_satchelcharge"   ),
         gf_item( "concussion_grenade_mp",  "Stun",          "hud_us_stungrenade"       ),
         gf_item( "camera_spike_mp",        "Camera Spike",  "hud_deployable_camera"    ) ); n++;
 
     pool[n] = gf_buildLoadout(
+        gf_item( "kiparis_silencer_mp",    "Kiparis",       "menu_mp_weapons_kiparis"  ),
         gf_item( "makarovdw_mp",           "Dual Makarov",  "menu_mp_weapons_makarov"  ),
-        gf_item( "cz75_upgradesight_mp",   "CZ75",          "menu_mp_weapons_cz75"     ),
         gf_item( "hatchet_mp",             "Tomahawk",      "hud_hatchet"              ),
         gf_item( "willy_pete_mp",          "Smoke",         "hud_us_smokegrenade"      ),
         gf_item( "scrambler_mp",           "Jammer",        "hud_radar_jammer"       ) ); n++;
@@ -385,7 +385,7 @@ gf_initLoadouts()
 
     pool[n] = gf_buildLoadout(
         gf_item( "fnfal_extclip_mp",       "FN FAL",      "menu_mp_weapons_fnfal"       ),
-        gf_item( "strela_mp",              "Strela",      "menu_mp_weapons_strela"      ),
+        gf_item( "python_mp",              "Python",      "menu_mp_weapons_python"      ),
         gf_item( "frag_grenade_mp",        "Frag",        "hud_grenadeicon"             ),
         gf_item( "flash_grenade_mp",       "Flash",       "hud_us_flashgrenade"         ),
         gf_item( "acoustic_sensor_mp",     "Motion Sensor", "hud_acoustic_sensor"       ) ); n++;
@@ -458,7 +458,6 @@ gf_giveCustomLoadout()
     self SetPerk( "specialty_longersprint"      );   // Marathon (no pro specialty exists in T5 source)
     self SetPerk( "specialty_armorvest"         );   // Flak Jacket
     self SetPerk( "specialty_flakjacket"        );   // Flak Jacket Pro — throwback grenades
-    self SetPerk( "specialty_fireproof"         );   // Flak Jacket Pro — fire immunity
 
     self thread gf_showWeaponHUD( load );
 }
@@ -546,7 +545,7 @@ gf_item( w, n, s )
 // Launcher / Special
 //   china_lake_mp  crossbow_explosive_mp  knife_ballistic_mp
 //   m72_law_mp  m202_flash_mp  m202_flash_wager_mp
-//   rpg_mp  strela_mp
+//   rpg_mp
 //
 // Equipment (placed — use GiveWeapon + SetActionSlot(1,"weapon",equip))
 //   claymore_mp          icon: hud_icon_claymore

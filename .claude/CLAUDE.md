@@ -189,6 +189,8 @@ mp/gametypesTable.csv                   â†’ raw/mp/gametypesTable.csv
 localizedstrings/gf.str                 â†’ raw/english/localizedstrings/gf.str
 maps/mp/gametypes/_gametypes.txt        â†’ raw/maps/mp/gametypes/_gametypes.txt
 maps/mp/gametypes/gf.txt               â†’ raw/maps/mp/gametypes/gf.txt
+ui_mp/hud_gf.txt                        â†’ raw/ui_mp/hud_gf.txt
+ui_mp/hud_gf_health.menu               â†’ raw/ui_mp/hud_gf_health.menu
 ui_mp/scriptmenus/mapvote.menu          â†’ raw/ui_mp/scriptmenus/mapvote.menu
 mod.csv                                 â†’ zone_source/mods/mp_gunfight.csv
 mod.csv                                 â†’ zone_source/english/assetinfo/mods/mp_gunfight.csv

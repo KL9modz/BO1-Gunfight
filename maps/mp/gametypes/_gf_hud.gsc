@@ -33,6 +33,10 @@ gf_startHealthHUD()
     wait 0.75;
     self gf_showHealthHUDMenuNumbers();
 
+    // gf_health_hud_update notifications fired during the 5.85s wait are missed; catch up once bots have had time to join.
+    wait 5;
+    self gf_updateHealthHUD();
+
     while ( true )
     {
         level waittill( "gf_health_hud_update" );
@@ -420,7 +424,7 @@ gf_showWeaponHUD( load )
     shaders[5] = gf_getPerkShader( "specialty_movefaster" );
     shaders[6] = gf_getPerkShader( "specialty_bulletpenetration" );
     shaders[7] = gf_getPerkShader( "specialty_longersprint" );
-    shaders[8] = gf_getPerkShader( "specialty_armorvest" );
+    shaders[8] = gf_getPerkShader( "specialty_flakjacket" );
 
     names = [];
     names[0] = load["primaryName"];
@@ -433,26 +437,25 @@ gf_showWeaponHUD( load )
     names[7] = "Marathon";
     names[8] = "Flak Jacket";
 
-    // createLoadoutIcon uses setPoint("BOTTOM RIGHT","BOTTOM RIGHT") so y is pixels
-    // upward from the screen bottom. We clamp verIndex to 4 (designed max) for all
-    // rows and control vertical position entirely through yPos.
+    // Weapon rows: createLoadoutIcon uses setPoint("BOTTOM RIGHT","BOTTOM RIGHT").
     // Formula with verIndex=4: rendered_y = yPos - 58.
-    // 9 rows × 40px spacing = 320px stack, shifted up 20px from prior layout.
+    // Perk rows: raw user_left/user_bottom elements; same y formula applies.
     yPos = [];
-    yPos[0] = -362;   // y=-420  (top)
-    yPos[1] = -322;   // y=-380
-    yPos[2] = -282;   // y=-340
-    yPos[3] = -242;   // y=-300
-    yPos[4] = -202;   // y=-260
-    yPos[5] = -162;   // y=-220
-    yPos[6] = -122;   // y=-180
-    yPos[7] = -82;    // y=-140
-    yPos[8] = -42;    // y=-100  (bottom)
+    yPos[0] = -262;   // y=-320  (top weapon)
+    yPos[1] = -222;   // y=-280
+    yPos[2] = -182;   // y=-240  center
+    yPos[3] = -142;   // y=-200
+    yPos[4] = -102;   // y=-160  (bottom weapon)
+    yPos[5] = -242;   // yIcon=-300  (top perk)
+    yPos[6] = -202;   // yIcon=-260
+    yPos[7] = -162;   // yIcon=-220
+    yPos[8] = -122;   // yIcon=-180  (bottom perk)
 
     icons = [];
     texts = [];
 
-    for ( i = 0; i < 9; i++ )
+    // ── Weapon rows — right side ──────────────────────────────────────
+    for ( i = 0; i < 5; i++ )
     {
         icons[i] = self maps\mp\gametypes\_hud_util::createLoadoutIcon( 4, 0, 200, yPos[i] );
         texts[i] = self maps\mp\gametypes\_hud_util::createLoadoutText( icons[i], 160 );
@@ -477,14 +480,67 @@ gf_showWeaponHUD( load )
         self.gf_loadoutHudElems[self.gf_loadoutHudElems.size] = texts[i];
     }
 
+    // ── Perk rows — left side ─────────────────────────────────────────
+    for ( i = 5; i < 9; i++ )
+    {
+        yIcon = yPos[i] - 58;    // same offset as createLoadoutIcon with verIndex=4
+        yText = yIcon - 16;      // center text on icon (icon 32px tall; -16 from bottom = middle)
+
+        icon = createIcon( "white", 32, 32 );
+        icon.horzAlign = "user_left";
+        icon.vertAlign = "user_bottom";
+        icon.alignX    = "left";
+        icon.alignY    = "bottom";
+        icon.x         = -200;
+        icon.y         = yIcon;
+        icon.archived  = false;
+        icon.foreground = true;
+        icon.hidewheninmenu = true;
+        icon.hidewheninkillcam = true;
+        icon.hidewhileremotecontrolling = true;
+
+        text = createFontString( "default", 1.4 );
+        text.horzAlign = "user_left";
+        text.vertAlign = "user_bottom";
+        text.alignX    = "left";
+        text.alignY    = "middle";
+        text.x         = -200;
+        text.y         = yText;
+        text.archived  = false;
+        text.foreground = true;
+        text.hidewheninmenu = true;
+        text.hidewheninkillcam = true;
+        text.hidewhileremotecontrolling = true;
+
+        self maps\mp\gametypes\_hud_util::showLoadoutAttribute( icon, shaders[i], 1, text, names[i] );
+
+        icon moveOverTime( 0.75 );
+        icon.x = 5;
+        text moveOverTime( 0.75 );
+        text.x = 42;   // 5px (icon left) + 32px (icon width) + 5px gap
+
+        icons[i] = icon;
+        texts[i] = text;
+
+        self.gf_loadoutHudElems[self.gf_loadoutHudElems.size] = icons[i];
+        self.gf_loadoutHudElems[self.gf_loadoutHudElems.size] = texts[i];
+    }
+
     wait 5;
 
-    for ( i = 0; i < 9; i++ )
+    for ( i = 0; i < 5; i++ )
     {
         icons[i] moveOverTime( 0.75 );
         icons[i].x = 400;
         texts[i] moveOverTime( 0.75 );
         texts[i].x = 400;
+    }
+    for ( i = 5; i < 9; i++ )
+    {
+        icons[i] moveOverTime( 0.75 );
+        icons[i].x = -400;
+        texts[i] moveOverTime( 0.75 );
+        texts[i].x = -400;
     }
 
     wait 0.8;

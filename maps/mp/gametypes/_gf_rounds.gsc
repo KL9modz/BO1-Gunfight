@@ -42,7 +42,8 @@ gf_playerSpawnedCB()
     level notify( "spawned_player" );
     self gf_syncCaptureScore();
     self gf_initDamageScore();
-    self thread gf_startHealthHUD();
+    if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+        self thread gf_startHealthHUD();
     gf_queueHealthHUDUpdate();
     self gf_applyVisualTweaks();
     self thread gf_onSpawned();
@@ -79,7 +80,8 @@ gf_applyVisualTweaks()
 gf_onSpawnSpectator( origin, angles )
 {
     maps\mp\gametypes\_globallogic_defaults::default_onSpawnSpectator( origin, angles );
-    self thread gf_startHealthHUD();
+    if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+        self thread gf_startHealthHUD();
     gf_queueHealthHUDUpdate();
 }
 
@@ -128,6 +130,11 @@ gf_tryActivateRound()
             if ( p.sessionstate == "playing" )
             {
                 p freezeControls( 1 );
+                if ( isDefined( p.pers["isBot"] ) && p.pers["isBot"] )
+                {
+                    p.bot_lock_goal = true;
+                    p SetScriptGoal( p.origin, 8 );
+                }
             }
         }
 
@@ -145,6 +152,11 @@ gf_tryActivateRound()
             if ( p.sessionstate == "playing" )
             {
                 p freezeControls( 0 );
+                if ( isDefined( p.pers["isBot"] ) && p.pers["isBot"] )
+                {
+                    p.bot_lock_goal = false;
+                    p ClearScriptGoal();
+                }
             }
         }
     }
