@@ -191,7 +191,6 @@ maps/mp/gametypes/_gametypes.txt        â†’ raw/maps/mp/gametypes/_gametype
 maps/mp/gametypes/gf.txt               â†’ raw/maps/mp/gametypes/gf.txt
 ui_mp/hud_gf.txt                        â†’ raw/ui_mp/hud_gf.txt
 ui_mp/hud_gf_health.menu               â†’ raw/ui_mp/hud_gf_health.menu
-ui_mp/scriptmenus/mapvote.menu          â†’ raw/ui_mp/scriptmenus/mapvote.menu
 mod.csv                                 â†’ zone_source/mods/mp_gunfight.csv
 mod.csv                                 â†’ zone_source/english/assetinfo/mods/mp_gunfight.csv
 ```
@@ -211,6 +210,8 @@ zone/english/mods/mp_gunfight.ff  â†’  mods/mp_gunfight/mod.ff  (Plutonium 
 **Gametype UI icon** â€” controlled by the 4th column of the `gf` row in `mp/gametypesTable.csv`.
 Available values: `playlist_tdm`, `playlist_ffa`, `playlist_search_destroy`, `playlist_domination`, `playlist_headquarters`, `playlist_demolition`, `playlist_ctf`, `playlist_sabotage`.
 Currently set to `playlist_tdm`. Change and rebuild mod.ff to update.
+
+**menufile double-load pitfall** â€” If a `.menu` file is already referenced by a `loadMenu` directive inside another `menufile` (e.g. `hud_gf.txt` loads `hud_gf_health.menu`), do NOT also list it as a separate `menufile` entry in `mod.csv`. The engine registers the menu name twice, which crashes the menu system and makes **all gametypes disappear** from the UI â€” a symptom that looks completely unrelated to the duplicate. Rule: each `.menu` file appears in `mod.csv` exactly once, either as a direct `menufile` OR via a txt loader, never both.
 
 ---
 
