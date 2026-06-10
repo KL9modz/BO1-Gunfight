@@ -1,10 +1,30 @@
-# mp_gunfight — Plutonium T5 (Black Ops 1 MP) Gunfight Mod
+﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
+
+---
+
+## Dedicated Server Setup
+
+**Launch script:** `C:\Users\klaze\AppData\Local\Plutonium\storage\t5\T5ServerConfig-master\!start_mp_server.bat`
+**Config:** `C:\Users\klaze\AppData\Local\Plutonium\storage\t5\dedicated.cfg`
+**Game files:** `S:\SteamLibrary\steamapps\common\Call of Duty Black Ops\`
+**Mod files:** `C:\Users\klaze\AppData\Local\Plutonium\storage\t5\mods\mp_gunfight\`
+
+**To start:** run `!start_mp_server.bat` (auto-restarts on crash).
+**To connect locally:** `connect 127.0.0.1:28960` in the Plutonium client console.
+
+**Deviation from official docs** â€” The [Plutonium T5 server docs](https://plutonium.pw/docs/server/t5/setting-up-a-server/) say to place the bat files inside the game folder so that `set gamepath=%cd%` resolves correctly. Our bat lives in `T5ServerConfig-master` instead; we work around this by hardcoding `set gamepath=S:\SteamLibrary\steamapps\common\Call of Duty Black Ops` in the bat. The server works as-is â€” this note exists so the deviation is understood if the bat is ever moved or reset.
+
+**Known cfg quirks:**
+- `set scr_xpscale "1"` in `dedicated.cfg` is read-only on a dedicated server â€” harmless error, ignore it.
+- `party_minplayers` must be `"1"` for solo testing; set back to `"2"` for a public server.
+
+---
 
 **Core Rules**
 - One life per round, no respawns 
-- No killstreaks, no health regen, no weapon drops — `level.killstreaksenabled = 0`, `level.healthRegenDisabled = true`
+- No killstreaks, no health regen, no weapon drops â€” `level.killstreaksenabled = 0`, `level.healthRegenDisabled = true`
 - 6-round win limit.
-  - `level.roundWinLimit = 6` — belt-and-suspenders; `hitRoundWinLimit()` reads this level var directly
+  - `level.roundWinLimit = 6` â€” belt-and-suspenders; `hitRoundWinLimit()` reads this level var directly
 - Round wins tracked in `game["roundswon"]["allies"/"axis"]`; scoreboard accumulates correctly
 - HP comparison on timer expiry 
 - Draw rounds don't count toward win limit 
@@ -13,9 +33,9 @@
 - SD-style round cycling, intermission, spawns
 
 **Loadout System**
-- Shared random loadout — all players get same primary/secondary/equipment each round
+- Shared random loadout â€” all players get same primary/secondary/equipment each round
 - Expanded loadout pool; shuffle-without-repeat, no back-to-back repeat
-- Class select suppression — `scr_disable_cac=1`
+- Class select suppression â€” `scr_disable_cac=1`
 
 **HUD**
 - Loadout icon slide-in
@@ -23,55 +43,62 @@
 - HUD recreation per spawn 
 
 ### TODO 
-- Kill-ding alias — `"mpl_killconfirm_killsound"` or `"mp_level_up"`
-- **Mapvote** — removed; maps currently cycle via `sv_maprotation`. Needs a clean implementation. Key files preserved in repo (`scripts/mp/mapvote.gsc`, `scripts/mp/utils.gsc`, `ui_mp/scriptmenus/mapvote.menu`) but removed from `mod.csv` so they don't load. The DoktorSAS mapvote was working but is entangled with wager-match logic (`_wager::finalizeWagerRound/Game` calls in `mapvoteEndGame`). A replacement should use a simpler `replaceFunc` on `_globallogic::endGame` without the wager calls, and source its map list from a dvar or cfg rather than a hardcoded default.
-
+Health hud (team/self)
+Adjust flag and spawns
+Plutonium Server
 ---
 
-## Wager Map Zone — Research Log (ABANDONED)
+## Wager Map Zone
 
-Wager match gametypes (gun, shrp, oic, hlnd) use a restricted section of each map: smaller compass overlay, `mp_wager_spawn` entities in a confined area, and on some maps physical barriers that block off the outer areas. This smaller zone would be ideal for Gunfight.
+### Proven approach
 
-### What was confirmed
+Gunfight uses the stock wager-map play spaces automatically without enabling the wager-match framework. No console setup is required.
 
-- **`mp_wager_spawn` entities** — placed by map designers in a restricted zone. Queried via `GetEntArray("mp_wager_spawn", "classname")`. Present on ~12 base maps. These alone are not sufficient because there are no physical barriers.
-- **Compass overlay** — `_compass::setupMiniMap()` auto-appends `_wager` to the material name whenever `mp_wager_spawn` entities exist and `xblive_wagermatch==0`. This works for free without any code.
-- **Physical barriers** — confirmed real (user verified they exist in actual wager matches). NOT script-spawned by any of the wager gametype GSC files (gun.gsc, shrp.gsc, oic.gsc, hlnd.gsc). Only `mp_cosmodrome` script-spawns wager collision via `isSmallMapVersion()` (3 `spawncollision()` calls). All other maps' barriers are controlled by `xblive_wagermatch=1` read at map load time — either engine-native BSP geometry activation or entities spawned by the engine itself before any GSC runs.
-- **`xblive_wagermatch` is read by the engine at map load time** — before any mod GSC runs. The map's own `main()` reads it for the compass and (on cosmodrome) for collision. This cannot be intercepted by mod scripts.
+The important discovery is that many wager blockers are already baked into the map entity lump. They are normal map entities tagged with:
 
-### What was tried and failed
+```gsc
+script_gameobjectname "gun oic hlnd shrp"
+```
 
-**Approach 1 — spawn restriction only (no dvar)**
-Result: user confirmed it is not enough; the map feels too open without physical barriers.
+Stock `_gameobjects::main( allowed )` deletes entities whose `script_gameobjectname` does not match the gametype allow-list. Gunfight keeps the wager blockers by adding the stock wager gametype tags to `allowed`.
 
-**Approach 2 — set `xblive_wagermatch=1` in `mapvote.cfg`**
-Problem: `exec gf` in sv_maprotation reads from `%localappdata%\Plutonium\storage\t5\gamesettings\` NOT the mod folder. The file was never found. Minimap appeared to work (false positive — it was the auto-fallback in `setupMiniMap`, not our dvar).
+### Implementation
 
-**Approach 3 — set `xblive_wagermatch=1` in `gf.gsc::main()` and clear it after**
-Problem: map's `main()` runs before gametype `main()`, so the dvar must be set BEFORE map load. Setting it in `main()` only helps future maps, not the current one.
+- `maps/mp/gametypes/gf.gsc` uses `mp_wager_spawn` for both teams when wager spawns exist.
+- `maps/mp/gametypes/gf.gsc` keeps `gf` and `dom` gameobjects, then adds `gun`, `oic`, `hlnd`, and `shrp` before calling `_gameobjects::main( allowed )`.
+- `maps/mp/gametypes/_gf_wager_zones.gsc` applies the wager minimap material and the extra Cosmodrome small-map collision helpers.
+- Do not set `xblive_wagermatch` to `1`; enabling it brings back wager UI/lives/prematch side effects.
 
-**Approach 4 — set dvar in `gamesettings/gf.cfg` + `replaceFunc(_wager::init)`**
-The dvar must be 1 before map load so the gamesettings file was the correct mechanism. `replaceFunc` on `_wager::init` to force `level.wagerMatch=0` was deterministic. BUT: `xblive_wagermatch=1` is also read directly (not via `level.wagerMatch`) by the engine UI layer, loading screen, `_medals.gsc`, and `_globallogic_player.gsc`. These cannot be intercepted from GSC. User saw "WAGER MATCH" loading screen text and numerous wager UI elements bleeding into gameplay.
+### Verified catalogs
 
-**Approach 5 — entity diff to identify barrier entities**
-Attempted a two-phase GSC entity dump: snapshot entities without dvar (Phase A), restart with dvar (Phase B), diff the two. Failed because with `xblive_wagermatch=1` the wager lives system (`level.takeLivesOnDeath`, `level.numLives`) prevents normal player spawning in Phase B — the wager framework marks players as permanently eliminated after dying, blocking respawn for the next round. The entity dump tool itself could not run.
+Offline fastfile/entity extraction found the stock wager data without needing a runtime dump:
 
-**Approach 6 — proximity entity scanner**
-Built a tool (`gf_debug_ents=1`, `set gf_do_dump 1`) to scan entities near the player while standing at a barrier with `xblive_wagermatch=1` active. Blocked by: `PrintLn()` only goes to the in-game `~` console (not to any log file), `logString()` does not write to `games_mp.log` from client/listen-server GSC context, file I/O via `openFile`/`fprintln`/`closeFile` was not confirmed working before effort was abandoned.
+- `tools/wager_spawns/` lists maps with `mp_wager_spawn` entities.
+- `tools/wager_entities/` lists baked blocker entities tagged with `script_gameobjectname "gun oic hlnd shrp"`.
+- Maps with baked blocker catalogs: `mp_array`, `mp_cracked`, `mp_duga`, `mp_hanoi`, `mp_havoc`, `mp_russianbase`.
+- Maps with wager spawns: `mp_array`, `mp_cairo`, `mp_cosmodrome`, `mp_cracked`, `mp_crisis`, `mp_duga`, `mp_hanoi`, `mp_havoc`, `mp_mountain`, `mp_radiation`, `mp_russianbase`, `mp_villa`.
 
-### Root cause (conclusion)
+### Normal test
 
-The physical wager barriers on most maps are activated at the engine/BSP level by the `xblive_wagermatch` dvar being set before map load. This is a C++ engine operation, not a GSC operation. There is no way to get those barriers from a mod script without setting the dvar, and setting the dvar activates the full wager match framework (UI, lives system, loading screen text) in ways that cannot be suppressed from GSC. The two goals — barriers active, framework inactive — are mutually exclusive given the engine's architecture.
+```cfg
+set g_gametype gf
+map mp_havoc
+```
 
-### If revisiting
+Expected result: Gunfight loads normally, uses wager spawns/minimap, and preserves the stock visible blockers such as rocks, gates, fencing, sandbags, debris, and brushmodels.
 
-1. The entity proximity scanner (`gf_debug_ents=1`) still exists in `_gf_debug.gsc` and works for general entity research.
-2. File I/O (`openFile`/`fprintln`/`closeFile`) needs to be verified in Plutonium T5 client mode before using it for output.
-3. A Plutonium T5 server plugin (DLL, not GSC) could set `xblive_wagermatch=1` before map load and then call `level.wagerMatch = 0` synchronously before the wager init thread reads it — this is the only architectural path that could work. Out of scope for a GSC-only mod.
-4. Custom maps built in Radiant could place wager-zone clip brushes directly, making the dvar unnecessary.
+### Cleanup notes
+
+Removed failed research paths from the project:
+
+- No local overrides of stock `gun.gsc` or `oic.gsc`.
+- No `gf_dumper.gsc` auto-loader script.
+- No `xblive_wagermatch` dvar toggle — setting it was never necessary and activates the full wager framework.
+- No plugin/DLL dvar timing workaround for this feature.
+
+`_gf_debug.gsc` remains in the project as a general dev tool (spawn recorder + `gf_do_dump` entity scanner), but it has no connection to how wager barriers are enabled.
 
 ---
-
 ## Design Goals
 
 > Focus on minimizing custom systems in favor of leveraging native engine functionality wherever possible. 
@@ -84,17 +111,17 @@ The physical wager barriers on most maps are activated at the engine/BSP level b
 > Propose specific refactors to improve structure, readability, and modularity.
 > Suggest simplifications that preserve functionality while reducing code size and complexity.
 > Identify CPU-heavy logic, repeated calls, or inefficient loops.
-> Suggest improvements that align with a more “OEM/stock” feel.
+> Suggest improvements that align with a more â€œOEM/stockâ€ feel.
 
 ### Core gameplay
 - Round-based (last team standing ends the round, then killcam plays)
 - 6 rounds to win the match
-- One life per round — no respawns
+- One life per round â€” no respawns
 - No killstreaks, no perks shown pre-round, no health regen, no weapon drops
 
 
 ### Loadout HUD (priority visual feature)
-- On spawn: weapon icons slide in from the right — primary, secondary, lethal, tactical, then 3 perk icons
+- On spawn: weapon icons slide in from the right â€” primary, secondary, lethal, tactical, then 3 perk icons
 - All rows slide in simultaneously via `moveOverTime(0.5)`, hold 5.5s, slide back out
 
 
@@ -103,29 +130,29 @@ The physical wager barriers on most maps are activated at the engine/BSP level b
 ## Resources
 
 ### T5 Source Code
-- **plutoniummod/t5-scripts** — Official Plutonium T5 source dump (MP + ZM gametypes, utility scripts, etc.)
+- **plutoniummod/t5-scripts** â€” Official Plutonium T5 source dump (MP + ZM gametypes, utility scripts, etc.)
   https://github.com/plutoniummod/t5-scripts
   Key files: `MP/Common/maps/mp/gametypes/shrp.gsc`, `gun.gsc`, `sd.gsc`, `_wager.gsc`, `_globallogic.gsc`, `_class.gsc`, `_hud_util.gsc`, `_rank.gsc`
 - **Local T5 source dump** (user's machine): `S:\SteamLibrary\steamapps\common\Call of Duty Black Ops 42740\raw`
 - https://github.com/JTAG7371/T5-RawFile-Dump
 
 ### Community Mods (reference/pattern source)
-- **Xinerki/t5-gunfight** — T5 Gunfight/duel gametype mod; source of confirmed weapon icon shader names and T5 player methods
+- **Xinerki/t5-gunfight** â€” T5 Gunfight/duel gametype mod; source of confirmed weapon icon shader names and T5 player methods
   https://github.com/Xinerki/t5-gunfight
-- **misterbubb/T6-Gunfight-Gamemode** — BO2/T6 Plutonium Gunfight; closest engine to T5, best code reference for overtime + equipment delay
+- **misterbubb/T6-Gunfight-Gamemode** â€” BO2/T6 Plutonium Gunfight; closest engine to T5, best code reference for overtime + equipment delay
   https://github.com/misterbubb/T6-Gunfight-Gamemode
   https://github.com/misterbubb/T6-Gunfight-Gamemode/blob/main/gunfight_mp/maps/mp/gametypes/sd.gsc
   https://forum.plutonium.pw/topic/43931/release-gunfight-gamemode
-- **bblack16/plutonium-waypoints** — IW5/MW3 Gunfight port
+- **bblack16/plutonium-waypoints** â€” IW5/MW3 Gunfight port
   https://github.com/bblack16/plutonium-waypoints
   https://github.com/bblack16/plutonium-waypoints/blob/main/iw5/scripts/gamemode_gunfight.gsc
   https://forum.plutonium.pw/topic/37594/release-custom-game-modes-reinforce-gunfight-and-gun-game
-- **iAmThatMichael/gunfight** — BO3/T7 Gunfight recreation; used for game-mode design reference
+- **iAmThatMichael/gunfight** â€” BO3/T7 Gunfight recreation; used for game-mode design reference
   https://github.com/iAmThatMichael/gunfight
   https://github.com/iAmThatMichael/gunfight/blob/master/scripts/mp/gametypes/gf.gsc
-- **GunMd0wn custom_gunfight.gsc** — community Gunfight mod (runs on HQ/TDM); source of class-select suppression patterns and weapon dvar approach. No GitHub — search Plutonium BO1 forum or megathread.
-- **mp_EMv2_Recreation, mp_iMCSx, mp_EnCoReV8** — Community BO1 mods; source of HUD element patterns (`newHudElem`, `newClientHudElem`, `NewScoreHudElem`, `hud.archived`, `fontPulse`)
-- **Resxt/Plutonium-T5-Scripts** — Collection of community T5 GSC scripts
+- **GunMd0wn custom_gunfight.gsc** â€” community Gunfight mod (runs on HQ/TDM); source of class-select suppression patterns and weapon dvar approach. No GitHub â€” search Plutonium BO1 forum or megathread.
+- **mp_EMv2_Recreation, mp_iMCSx, mp_EnCoReV8** â€” Community BO1 mods; source of HUD element patterns (`newHudElem`, `newClientHudElem`, `NewScoreHudElem`, `hud.archived`, `fontPulse`)
+- **Resxt/Plutonium-T5-Scripts** â€” Collection of community T5 GSC scripts
   https://github.com/Resxt/Plutonium-T5-Scripts
 - **CabConModding BO1 weapons GSC tutorial**
   https://cabconmodding.com/threads/black-ops-1-all-about-weapons-gsc-tutorial.1268/
@@ -142,9 +169,9 @@ The physical wager barriers on most maps are activated at the engine/BSP level b
   https://forum.plutonium.pw/topic/34555/megathread-organized-collection-of-bo1-mods-releases-tutorials-and-guides
 
 ### Future Projects (reference)
-- **PlutoniumT5 map vote mod** — full mods folder + map vote system
+- **PlutoniumT5 map vote mod** â€” full mods folder + map vote system
   https://github.com/DoktorSAS/PlutoniumT5Mapvote
-- **ProjectDonetsk/T9** — T9 port for Plutonium
+- **ProjectDonetsk/T9** â€” T9 port for Plutonium
   https://github.com/ProjectDonetsk/T9
 
 ---
@@ -155,31 +182,33 @@ The physical wager barriers on most maps are activated at the engine/BSP level b
 
 **Tools:** `S:\SteamLibrary\steamapps\common\Call of Duty Black Ops 42740\bin\linker_pc.exe`
 
-**Step 1 — stage source files to mod tools `raw/`:**
+**Step 1 â€” stage source files to mod tools `raw/`:**
 ```
-mod folder                              → mod tools raw/
-mp/gametypesTable.csv                   → raw/mp/gametypesTable.csv
-localizedstrings/gf.str                 → raw/english/localizedstrings/gf.str
-maps/mp/gametypes/_gametypes.txt        → raw/maps/mp/gametypes/_gametypes.txt
-maps/mp/gametypes/gf.txt               → raw/maps/mp/gametypes/gf.txt
-ui_mp/scriptmenus/mapvote.menu          → raw/ui_mp/scriptmenus/mapvote.menu
-mod.csv                                 → zone_source/mods/mp_gunfight.csv
-mod.csv                                 → zone_source/english/assetinfo/mods/mp_gunfight.csv
+mod folder                              â†’ mod tools raw/
+mp/gametypesTable.csv                   â†’ raw/mp/gametypesTable.csv
+localizedstrings/gf.str                 â†’ raw/english/localizedstrings/gf.str
+maps/mp/gametypes/_gametypes.txt        â†’ raw/maps/mp/gametypes/_gametypes.txt
+maps/mp/gametypes/gf.txt               â†’ raw/maps/mp/gametypes/gf.txt
+ui_mp/hud_gf.txt                        â†’ raw/ui_mp/hud_gf.txt
+ui_mp/hud_gf_health.menu               â†’ raw/ui_mp/hud_gf_health.menu
+ui_mp/scriptmenus/mapvote.menu          â†’ raw/ui_mp/scriptmenus/mapvote.menu
+mod.csv                                 â†’ zone_source/mods/mp_gunfight.csv
+mod.csv                                 â†’ zone_source/english/assetinfo/mods/mp_gunfight.csv
 ```
 
-**Step 2 — run linker from `bin/`:**
+**Step 2 â€” run linker from `bin/`:**
 ```
 cd "S:\SteamLibrary\steamapps\common\Call of Duty Black Ops 42740\bin"
 linker_pc.exe -language english mods/mp_gunfight
 ```
-GSC rawfile errors are expected — Plutonium loads those directly, they don't need to be in the zone.
+GSC rawfile errors are expected â€” Plutonium loads those directly, they don't need to be in the zone.
 
-**Step 3 — copy output back:**
+**Step 3 â€” copy output back:**
 ```
-zone/english/mods/mp_gunfight.ff  →  mods/mp_gunfight/mod.ff  (Plutonium storage)
+zone/english/mods/mp_gunfight.ff  â†’  mods/mp_gunfight/mod.ff  (Plutonium storage)
 ```
 
-**Gametype UI icon** — controlled by the 4th column of the `gf` row in `mp/gametypesTable.csv`.
+**Gametype UI icon** â€” controlled by the 4th column of the `gf` row in `mp/gametypesTable.csv`.
 Available values: `playlist_tdm`, `playlist_ffa`, `playlist_search_destroy`, `playlist_domination`, `playlist_headquarters`, `playlist_demolition`, `playlist_ctf`, `playlist_sabotage`.
 Currently set to `playlist_tdm`. Change and rebuild mod.ff to update.
 
@@ -215,7 +244,7 @@ Gunfight/  (GitHub: KL9modz/Gunfight)
 
 ---
 
-## T5 GSC — Critical API Differences from T6/T7
+## T5 GSC â€” Critical API Differences from T6/T7
 
 These are confirmed-broken functions in T5 mod scripts and their correct replacements:
 
@@ -225,13 +254,13 @@ These are confirmed-broken functions in T5 mod scripts and their correct replace
 | `spawnStruct()` | Associative array: `s = []; s["key"] = val;` |
 | `player isAlive()` (method) | `player.health > 0` |
 | `isAlive(player)` (standalone) | `player.health > 0` |
-| `player.team` | `player.pers["team"]` → returns `"allies"`, `"axis"`, or `"spectator"` |
-| `setDvar("scr_player_healthregentime", "0")` | `setDvar("scr_player_healthregentime", "0")` DOES work — set it before `_healthoverlay::init()` threads so the engine reads 0 and disables regen itself |
-| `level.onGiveLoadout = ::fn` | Does not exist in T5. Use `level.playerSpawnedCB = ::gf_playerSpawnedCB` instead; fire `level notify("spawned_player")` inside it to keep SD happy, then `self thread gf_onSpawned()` — thread runs after `giveLoadout` with no yield gap |
+| `player.team` | `player.pers["team"]` â†’ returns `"allies"`, `"axis"`, or `"spectator"` |
+| `setDvar("scr_player_healthregentime", "0")` | `setDvar("scr_player_healthregentime", "0")` DOES work â€” set it before `_healthoverlay::init()` threads so the engine reads 0 and disables regen itself |
+| `level.onGiveLoadout = ::fn` | Does not exist in T5. Use `level.playerSpawnedCB = ::gf_playerSpawnedCB` instead; fire `level notify("spawned_player")` inside it to keep SD happy, then `self thread gf_onSpawned()` â€” thread runs after `giveLoadout` with no yield gap |
 
-**Compile error diagnosis:** When T5 throws `unknown function: @ scripts/mp/<file>::<func>`, the broken call is INSIDE the named function — scan every call within it for T5 compatibility.
+**Compile error diagnosis:** When T5 throws `unknown function: @ scripts/mp/<file>::<func>`, the broken call is INSIDE the named function â€” scan every call within it for T5 compatibility.
 
-**Cross-file calls require `#include`:** Each `.gsc` file must `#include` every other mod script whose functions it calls **directly**. T5 does **not** support transitive includes — if A includes B which includes C, A cannot call functions from C. Each file must have its own explicit `#include` for every file it calls into. Missing include → `unknown function` compile error on the calling function. Current include chain: `mp_gunfight.gsc` → `_gf_rounds.gsc` → `_gf_loadouts.gsc` → `_gf_hud.gsc`. `_gf_tests.gsc` includes both `_gf_rounds` and `_gf_loadouts` directly since it calls functions from both.
+**Cross-file calls require `#include`:** Each `.gsc` file must `#include` every other mod script whose functions it calls **directly**. T5 does **not** support transitive includes â€” if A includes B which includes C, A cannot call functions from C. Each file must have its own explicit `#include` for every file it calls into. Missing include â†’ `unknown function` compile error on the calling function. Current include chain: `mp_gunfight.gsc` â†’ `_gf_rounds.gsc` â†’ `_gf_loadouts.gsc` â†’ `_gf_hud.gsc`. `_gf_tests.gsc` includes both `_gf_rounds` and `_gf_loadouts` directly since it calls functions from both.
 
 ---
 
@@ -240,19 +269,19 @@ These are confirmed-broken functions in T5 mod scripts and their correct replace
 ### SD callbacks registered in `sd.gsc::main()`
 | Level var | Fires when |
 |---|---|
-| `level.playerSpawnedCB` | Player spawns → fires `level notify("spawned_player")` |
+| `level.playerSpawnedCB` | Player spawns â†’ fires `level notify("spawned_player")` |
 | `level.onPlayerKilled` | Player dies |
 | `level.onDeadEvent(team)` | A team is fully eliminated |
 | `level.onOneLeftEvent(team)` | Last player alive on a team |
-| `level.onTimeLimit` | Round timer expires → defenders win |
+| `level.onTimeLimit` | Round timer expires â†’ defenders win |
 | `level.onRoundSwitch` | Halftime / side swap |
 | `level.onRoundEndGame` | Returns overall round winner string |
 
 ### SD state vars
-- `game["attackers"]` / `game["defenders"]` — team role assignment
-- `level.aliveCount[team]` — engine-maintained alive count per team
-- `game["roundswon"]["allies"]` / `game["roundswon"]["axis"]` — round wins
-- `game["roundsplayed"]` — rounds played so far
+- `game["attackers"]` / `game["defenders"]` â€” team role assignment
+- `level.aliveCount[team]` â€” engine-maintained alive count per team
+- `game["roundswon"]["allies"]` / `game["roundswon"]["axis"]` â€” round wins
+- `game["roundsplayed"]` â€” rounds played so far
 
 ### Overridable callbacks (set in `_globallogic.gsc::SetupCallbacks()`)
 ```
@@ -264,7 +293,7 @@ level.onOneLeftEvent(team)   // fires when last player on team is alive
 level.onTimeLimit            // fires when round clock hits 0
 level.onRoundSwitch          // fires at halftime / side swap
 level.onRoundEndGame         // should return winner string "allies"/"axis"/"tie"
-level.onGiveLoadout          // fires at end of giveLoadout — override to swap weapons
+level.onGiveLoadout          // fires at end of giveLoadout â€” override to swap weapons
 level.spawnClient            // queues/delays client spawn; default: _globallogic_spawn::spawnClient
 level.spawnPlayer            // puts player into world; default: _globallogic_spawn::spawnPlayer
 level._setTeamScore          // set team score directly (default updates game["teamScores"])
@@ -273,14 +302,14 @@ level._getTeamScore          // read team score (default returns game["teamScore
 
 ### Spawn pipeline (what happens inside `spawnPlayer()`)
 Order of operations every time a player spawns:
-1. `setSpawnVariables()` — sets player origin, angles, team, sessionstate = "playing"
-2. `[[level.onSpawnPlayer]]()` — SD's callback; sets `isBombCarrier = false`, selects spawnpoint, calls `self spawn(...)`
-3. `[[level.playerSpawnedCB]]()` — SD fires `level notify("spawned_player")` here ← our waittill
-4. `maps\mp\gametypes\_class::setClass(self.class)` — sets perk state
-5. `maps\mp\gametypes\_class::giveLoadout(team, class)` — gives default class weapons
+1. `setSpawnVariables()` â€” sets player origin, angles, team, sessionstate = "playing"
+2. `[[level.onSpawnPlayer]]()` â€” SD's callback; sets `isBombCarrier = false`, selects spawnpoint, calls `self spawn(...)`
+3. `[[level.playerSpawnedCB]]()` â€” SD fires `level notify("spawned_player")` here â† our waittill
+4. `maps\mp\gametypes\_class::setClass(self.class)` â€” sets perk state
+5. `maps\mp\gametypes\_class::giveLoadout(team, class)` â€” gives default class weapons
 6. **Our `gf_roundLoop` thread wakes** from `waittill("spawned_player")` and overwrites weapons with gunfight loadout
 
-Step 6 is correct — our `takeAllWeapons` + custom weapons run *after* the engine's `giveLoadout`, replacing whatever it gave.
+Step 6 is correct â€” our `takeAllWeapons` + custom weapons run *after* the engine's `giveLoadout`, replacing whatever it gave.
 
 ### Key game state vars
 ```gsc
@@ -290,9 +319,9 @@ game["defenders"]             // team string of defending team
 game["roundswon"]["allies"]   // rounds won by allies
 game["roundswon"]["axis"]     // rounds won by axis
 game["roundsplayed"]          // total rounds completed
-level.gameEnded               // bool — set true when endGame() is called
-level.inGracePeriod           // bool — grace period blocks deaths/forfeits
-level.inOvertime              // bool — setting true blocks new spawns automatically
+level.gameEnded               // bool â€” set true when endGame() is called
+level.inGracePeriod           // bool â€” grace period blocks deaths/forfeits
+level.inOvertime              // bool â€” setting true blocks new spawns automatically
 level.aliveCount["allies"]    // engine-maintained alive player count (updated by updateTeamStatus)
 level.aliveCount["axis"]
 level.alivePlayers["allies"]  // array of alive player entities
@@ -302,10 +331,10 @@ level.playerCount["allies"]   // total connected players per team (alive + dead)
 
 ### Ending a round / game
 ```gsc
-// SD's wrapper — increments winning team score by 1, then ends round/game:
+// SD's wrapper â€” increments winning team score by 1, then ends round/game:
 sd_endGame( winningTeam, endReasonText )
 
-// Core engine function — use for our own endgame calls if not going through SD:
+// Core engine function â€” use for our own endgame calls if not going through SD:
 maps\mp\gametypes\_globallogic::endGame( winningTeam, endReasonText )
 
 // Direct team score manipulation:
@@ -313,18 +342,18 @@ maps\mp\gametypes\_globallogic::endGame( winningTeam, endReasonText )
 [[level._getTeamScore]]( "allies" )
 ```
 
-### SD round cycling — confirmed working pattern
+### SD round cycling â€” confirmed working pattern
 
-**`maps\mp\gametypes\sd::sd_endGame( winner, "" )`** — confirmed callable from mod scripts in Plutonium T5.
+**`maps\mp\gametypes\sd::sd_endGame( winner, "" )`** â€” confirmed callable from mod scripts in Plutonium T5.
 
 Calling this from `onDeadEvent` or a custom timer handler:
 - Increments `game["roundswon"][winner]` by 1 and updates the scoreboard
-- Checks `hitRoundWinLimit()` — ends the match if reached, otherwise cycles the round
+- Checks `hitRoundWinLimit()` â€” ends the match if reached, otherwise cycles the round
 - SD handles intermission display, player respawn, and the next prematch automatically
-- No manual `pers["lives"]` reset needed — SD handles it
-- No manual `[[level.spawnClient]]()` calls needed **between rounds** — SD handles respawning. But `gf_bypassClassChoice` must call it for the initial connect spawn (see class select suppression section).
+- No manual `pers["lives"]` reset needed â€” SD handles it
+- No manual `[[level.spawnClient]]()` calls needed **between rounds** â€” SD handles respawning. But `gf_bypassClassChoice` must call it for the initial connect spawn (see class select suppression section).
 
-The 0.2s wait is a brief spawn-protection window (PvP blocked via `!gf_roundActive` in damage handler). `gf_timerEnd` is set before the wait so the HUD countdown shows immediately on spawn. `gf_roundEnding` must be explicitly cleared here — SD never resets it.
+The 0.2s wait is a brief spawn-protection window (PvP blocked via `!gf_roundActive` in damage handler). `gf_timerEnd` is set before the wait so the HUD countdown shows immediately on spawn. `gf_roundEnding` must be explicitly cleared here â€” SD never resets it.
 
 ### Timer control
 ```gsc
@@ -350,10 +379,10 @@ playSoundOnPlayers( sound, team )  // plays local sound to all players on team
 dvarIntValue( name, def, min, max )  // reads scr_sd_<name>, sets default if unset
 ```
 
-### Engine callbacks — full list
+### Engine callbacks â€” full list
 Registered by `_callbacksetup.gsc`. These engine events call into GSC:
 ```
-CodeCallback_StartGameType()     game init — calls sd.gsc::main()
+CodeCallback_StartGameType()     game init â€” calls sd.gsc::main()
 CodeCallback_PlayerConnect()     player joins server
 CodeCallback_PlayerDisconnect()  player leaves
 CodeCallback_PlayerDamage()      damage event (before health change)
@@ -366,13 +395,13 @@ CodeCallback_GlassSmash()        glass break FX
 ```
 
 ### Critical gotchas
-- **`updateTeamStatus()` runs async** (waittillframeend) — `level.aliveCount` may be one frame stale after a kill
-- **`level.inGracePeriod = true` blocks forfeit/dead-event checks** — clear it before main gameplay starts
-- **`level.inOvertime = true` prevents all new spawns** — useful for overtime zone capture
+- **`updateTeamStatus()` runs async** (waittillframeend) â€” `level.aliveCount` may be one frame stale after a kill
+- **`level.inGracePeriod = true` blocks forfeit/dead-event checks** â€” clear it before main gameplay starts
+- **`level.inOvertime = true` prevents all new spawns** â€” useful for overtime zone capture
 - **`map_restart(true)`** keeps player positions but resets entities AND `level.*` vars; `false` = full restart. `self.pers[]` and `game[]` are the only things that survive. Do not rely on `level.*` state across a `map_restart`.
-- **`self.pers[]` persists across rounds** — player stats, team, class survive `map_restart`
+- **`self.pers[]` persists across rounds** â€” player stats, team, class survive `map_restart`
 - **`scr_disable_cac = 1`** makes `beginClassChoice` auto-assign `level.defaultClass = "CLASS_ASSAULT"` and auto-spawn
-- **SD's `onDeadEvent`** checks `level.bombPlanted` before deciding winner — our override must handle this or replicate the logic
+- **SD's `onDeadEvent`** checks `level.bombPlanted` before deciding winner â€” our override must handle this or replicate the logic
 
 ---
 
@@ -381,8 +410,8 @@ CodeCallback_GlassSmash()        glass break FX
 All HUD elements created with `newClientHudElem(player)`.
 
 **Coordinate system:**
-- `horzAlign="left"`, `vertAlign="top"` → x/y are pixel offsets from screen top-left corner
-- `horzAlign="left"`, `vertAlign="middle"` → y is vertical center of element (element straddles y)
+- `horzAlign="left"`, `vertAlign="top"` â†’ x/y are pixel offsets from screen top-left corner
+- `horzAlign="left"`, `vertAlign="middle"` â†’ y is vertical center of element (element straddles y)
 - `alignX` / `alignY` control which edge/center of the element the x/y coordinate refers to
 
 **Colored rectangles (health bars, backgrounds):**
@@ -400,7 +429,7 @@ e.sort      = 2;     // draw order (higher = on top)
 e setShader("white", 68, 5);  // width=68px, height=5px
 ```
 
-**To resize a bar:** `e setShader("white", newWidth, height)` — call each update tick.
+**To resize a bar:** `e setShader("white", newWidth, height)` â€” call each update tick.
 Use `"progress_bar_fill"` / `"progress_bar_bg"` instead of `"white"` for native-styled bars.
 
 **Text elements:** set `e.font = "smallfixed"` and `e.fontScale = 1.0`, then `e setText("string")`.
@@ -424,7 +453,7 @@ createServerBar( color, width, height, flashFrac, team )
 Font strings: `"default"`, `"bigfixed"`, `"smallfixed"`, `"objective"`, `"extrabig"`
 
 ### HUD transition helpers (from IW5/T5 `_hud_util.gsc`)
-These are wrapper methods on HUD elements — call on an element created with `createIcon` / `createFontString`:
+These are wrapper methods on HUD elements â€” call on an element created with `createIcon` / `createFontString`:
 ```gsc
 e transitionSlideIn( duration, direction );   // direction: "left", "right", "up", "down"
 e transitionSlideOut( duration, direction );
@@ -441,7 +470,7 @@ hud = newHudElem( player );          // server-side, general purpose
 hud = newClientHudElem( player );    // client-side only
 hud = NewScoreHudElem( player );     // score-specific HUD element
 ```
-`hud.archived = false` — prevents HUD from being hidden during menus or demo playback.
+`hud.archived = false` â€” prevents HUD from being hidden during menus or demo playback.
 
 ### HUD animations
 ```gsc
@@ -473,11 +502,11 @@ e.glowAlpha      = 0.5;
 ### Weapons
 
 **giveWeapon arguments**
-`GiveWeapon( weaponName )` — basic form.
-`GiveWeapon( weaponName, dualWield )` — `dualWield` is a **boolean**, NOT a camo number.
+`GiveWeapon( weaponName )` â€” basic form.
+`GiveWeapon( weaponName, dualWield )` â€” `dualWield` is a **boolean**, NOT a camo number.
 - `true` gives the akimbo/dualwield variant
 - `false` (or omit) gives the single variant
-- **T6 uses a 3rd camo-number arg; T5 does not** — passing a number here may crash or be silently ignored
+- **T6 uses a 3rd camo-number arg; T5 does not** â€” passing a number here may crash or be silently ignored
 
 To give a weapon with an embedded attachment, use the `_attachment_` naming pattern:
 ```gsc
@@ -528,7 +557,7 @@ specialty_noname             Unnamed perk slot (test before using)
 
 ### HUD Shaders
 
-**Weapon & lethal icon shaders** — confirmed from Xinerki `t5-gunfight/duel.gsc` (T5 gametype mod).
+**Weapon & lethal icon shaders** â€” confirmed from Xinerki `t5-gunfight/duel.gsc` (T5 gametype mod).
 
 Default rule: `"menu_mp_weapons_" + baseName` where baseName has no `_mp` and no variant suffix.
 
@@ -549,13 +578,13 @@ Default secondary: "menu_mp_weapons_" + base (strip suffix like _speed, _upgrade
 Lethal icon shaders:
 ```
 frag_grenade            -> hud_grenadeicon
-satchel_charge_mp       -> hud_icon_satchelcharge   (confirmed from weapon def file hudIcon field; NOT in loose IWDs — compiled into .ff zone; hud_sticky_grenade / hud_satchelcharge both wrong)
+satchel_charge_mp       -> hud_icon_satchelcharge   (confirmed from weapon def file hudIcon field; NOT in loose IWDs â€” compiled into .ff zone; hud_sticky_grenade / hud_satchelcharge both wrong)
 sticky_grenade          -> hud_icon_sticky_grenade
 hatchet                 -> hud_hatchet
 Default: "hud_" + baseName
 ```
 
-Tactical grenade icon shaders — confirmed from IWD `images/*.iwi` listing:
+Tactical grenade icon shaders â€” confirmed from IWD `images/*.iwi` listing:
 ```
 flash_grenade_mp       -> hud_us_flashgrenade
 concussion_grenade_mp  -> hud_us_stungrenade
@@ -569,7 +598,7 @@ PreCacheShader( "menu_mp_weapons_famas" );   // call at match start before HUD c
 e setShader( "menu_mp_weapons_famas", 64, 32 );
 ```
 
-**Named shaders (precached by T5 — usable in setShader / createIcon)**
+**Named shaders (precached by T5 â€” usable in setShader / createIcon)**
 ```
 Progress bars:    progress_bar_bg, progress_bar_fill, progress_bar_fg
 Score bars:       score_bar_bg, score_bar_allies, score_bar_opfor
@@ -582,7 +611,7 @@ Emblems:          composite_emblem_team_allies, composite_emblem_team_axis
 Generic:          white, black
 ```
 
-`score_bar_allies` / `score_bar_opfor` are particularly useful — native styled team HP/score bars the game uses internally.
+`score_bar_allies` / `score_bar_opfor` are particularly useful â€” native styled team HP/score bars the game uses internally.
 
 ### Audio
 
@@ -724,9 +753,7 @@ reset bg_fallDamageMinHeight
 reset bg_fallDamageMaxHeight
 // end oldschool dvars set in script
 
-// wager dvars set in script
-set xblive_wagermatch 0
-set sidebet_made ""
+// wager-zone blockers are preserved via _gameobjects allow-list, not wager dvars
 ---
 
 ## T5 Spawn System
@@ -756,7 +783,7 @@ addSphereInfluencer( origin, radius, weight );
 
 ---
 
-## T5 Game Objects — Overtime Zone
+## T5 Game Objects â€” Overtime Zone
 
 For implementing an overtime capture zone (`_gameobjects.gsc`):
 ```gsc
@@ -789,8 +816,8 @@ self GiveWeapon( "knife_mp" );
 self switchToWeapon( "famas_mp" );
 self giveMaxAmmo( "famas_mp" );
 self giveMaxAmmo( "python_speed_mp" );
-self GiveWeapon( "frag_grenade_mp" );      // lethal grenade — use GiveWeapon, NOT GiveOffhandWeapon
-self GiveWeapon( "flash_grenade_mp" );     // tactical grenade — same
+self GiveWeapon( "frag_grenade_mp" );      // lethal grenade â€” use GiveWeapon, NOT GiveOffhandWeapon
+self GiveWeapon( "flash_grenade_mp" );     // tactical grenade â€” same
 
 // Perks:
 self SetPerk( "specialty_fastreload" );
@@ -799,20 +826,20 @@ self SetPerk( "specialty_gpsjammer" );
 // Remove a perk:
 self UnSetPerk( "specialty_killstreak" );
 
-// Equipment slot (claymore, camera spike etc — NOT grenades):
+// Equipment slot (claymore, camera spike etc â€” NOT grenades):
 self GiveWeapon( equipment_weapon );
 self SetActionSlot( 1, "weapon", equipment_weapon );
 ```
 Use `GiveWeapon()` for ALL weapon types including grenades and equipment.
-`SetActionSlot(1, "weapon", ...)` is only needed for equipment (claymores etc.) so they appear in the correct UI slot — grenades do not need it.
+`SetActionSlot(1, "weapon", ...)` is only needed for equipment (claymores etc.) so they appear in the correct UI slot â€” grenades do not need it.
 
-### Weapon camos — `CalcWeaponOptions` + `GiveWeapon` 3rd arg
+### Weapon camos â€” `CalcWeaponOptions` + `GiveWeapon` 3rd arg
 
 Camo is applied via the 3rd parameter of `GiveWeapon`, which is a packed integer produced by the native `CalcWeaponOptions`:
 ```gsc
 camoOpts = int( self CalcWeaponOptions( camoIndex, lensIndex, reticleIndex, reticleColorIndex ) );
 self GiveWeapon( weapon, 0, camoOpts );
-// Minimal form — camo only, stock lens/reticle:
+// Minimal form â€” camo only, stock lens/reticle:
 camoOpts = int( self CalcWeaponOptions( 7, 0, 0, 0 ) );   // Jungle ERDL
 self GiveWeapon( "galil_extclip_mp", 0, camoOpts );
 ```
@@ -827,15 +854,15 @@ self GiveWeapon( "galil_extclip_mp", 0, camoOpts );
 13  Woodland       14  Woodland Flora 15  Gold
 ```
 
-**Lens indices** (0–5): white, red, blue, green, orange, yellow. Pass `0` for stock.
-**Reticle indices** (0–39): various dot/cross/shape patterns. Pass `0` for stock red-dot.
-**Reticle color indices** (0–6): red, green, blue, purple, cyan, yellow, orange.
+**Lens indices** (0â€“5): white, red, blue, green, orange, yellow. Pass `0` for stock.
+**Reticle indices** (0â€“39): various dot/cross/shape patterns. Pass `0` for stock red-dot.
+**Reticle color indices** (0â€“6): red, green, blue, purple, cyan, yellow, orange.
 
-**Weapons where pattern camos (5–14) won't show** — they use `weapon_camo_neutral` as their base and are unaffected by patterns. Solid colors (1–4) and Gold (15) behavior may vary:
+**Weapons where pattern camos (5â€“14) won't show** â€” they use `weapon_camo_neutral` as their base and are unaffected by patterns. Solid colors (1â€“4) and Gold (15) behavior may vary:
 `python`, `knife`, `m1911`, `cz75`, `makarov`, `asp`, `crossbow_explosive`, `rpg`, `strela`, `m72_law`, `china_lake`
 
 **Why `custom_class["camo_num"]` does NOT work for this mod:**
-`camo_num` is only read in `_weapons.gsc::stow_on_back()` — it affects only the weapon model rendered on the player's *back* (not in-hand). It also requires `isSubStr(self.curclass, "CUSTOM")`, which is false for `CLASS_ASSAULT` (our class when `scr_disable_cac=1`). Dead end.
+`camo_num` is only read in `_weapons.gsc::stow_on_back()` â€” it affects only the weapon model rendered on the player's *back* (not in-hand). It also requires `isSubStr(self.curclass, "CUSTOM")`, which is false for `CLASS_ASSAULT` (our class when `scr_disable_cac=1`). Dead end.
 
 **Current mod implementation** (`_gf_loadouts.gsc`):
 - Each loadout gets `load["camo"] = randomInt(16)` at pool-build time (match start)
@@ -850,7 +877,7 @@ self GiveWeapon( "galil_extclip_mp", 0, camoOpts );
 ```gsc
 self freezeControls( 1 );        // lock movement + shooting (still allows looking)
 self freezeControls( 0 );        // re-enable controls
-// NOTE: confirmed in IW5 source; T5 should be identical — verify in-game
+// NOTE: confirmed in IW5 source; T5 should be identical â€” verify in-game
 
 self DisableWeaponCycling()      // lock player to current weapon, no scrolling
 self EnableWeaponCycling()       // re-enable
@@ -900,7 +927,7 @@ result = base + "_" + attachmentName + "_mp";
 ```
 
 ### Objective markers
-Simpler than createUseObject — just places a waypoint:
+Simpler than createUseObject â€” just places a waypoint:
 ```gsc
 objId = 150;    // arbitrary ID 0-255
 objective_add( objId, "active", origin );
@@ -946,7 +973,7 @@ kills  deaths  assists  captures  defends  returns  plants  defuses
 stabs  humiliated  tomahawks  kdratio  x2score  survived  headshots  none
 ```
 
-### givePlayerScore — event types
+### givePlayerScore â€” event types
 ```gsc
 givePlayerScore( "kill",        player );
 givePlayerScore( "headshot",    player );
@@ -1001,7 +1028,7 @@ level endon( "kill_healthhud" );
 // ... create HUD elements below ...
 ```
 
-### Overtime countdown — manual decrement, pauses while zone contested
+### Overtime countdown â€” manual decrement, pauses while zone contested
 ```gsc
 gf_overtimeCountdown()
 {
@@ -1033,7 +1060,7 @@ gf_giveDelayedGrenade( lethal )
 }
 ```
 
-### hideHardpointModels — canonical pattern (confirmed misterbubb T6 matches our T5 impl)
+### hideHardpointModels â€” canonical pattern (confirmed misterbubb T6 matches our T5 impl)
 ```gsc
 hardpoints = getentarray( "hq_hardpoint", "targetname" );
 for ( i = 0; i < hardpoints.size; i++ )
@@ -1061,10 +1088,11 @@ if ( player.guid == getDvar( "sv_adminGUID" ) ) { ... }
 // Or maintain a level.admins[] array populated at connect time
 ```
 
-### T5 player methods confirmed (Xinerki duel.gsc — T5 gametype)
+### T5 player methods confirmed (Xinerki duel.gsc â€” T5 gametype)
 ```gsc
 maps\mp\gametypes\_wager::setupBlankRandomPlayer( takeAll, chooseBody )
 // clears player and optionally assigns a random body model; call before giveWeapon
 ```
 
 ---
+

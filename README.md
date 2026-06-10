@@ -41,10 +41,64 @@ After loading the mod in-game, use `map_restart` to reload script changes during
 
 | Dvar | Default | Description |
 |------|---------|-------------|
-| `scr_gf_timelimit` | `1` | Minutes per round |
+| `set scr_gf_timelimit` | `1` | Minutes per round |
+| `scr_gf_overtimelimit` | `15` | Seconds of overtime after round time expires; `0` disables overtime |
 | `scr_gf_scorelimit` | `6` | Round wins to win the match |
 | `scr_gf_roundswitch` | `2` | Rounds between side switches |
 | `scr_gf_roundsperloadout` | `2` | Rounds before the shared loadout rotates |
+
+## Overtime
+
+When the round timer expires with both teams still alive, Gunfight starts overtime instead of ending the round immediately. `scr_gf_overtimelimit` controls the overtime duration in seconds; setting it to `0` skips overtime and resolves the round by living HP immediately.
+
+Overtime creates a neutral hold-to-capture zone at the custom map location when one is configured, otherwise it falls back to the map's Domination B flag when that entity exists. Capturing the zone wins the round immediately. The overtime clock legitimately pauses while the zone is actively being captured, then resumes if the capture is interrupted. The overtime timer ticks with the stock countdown sound from 15 seconds down. If overtime expires without a capture, the round is awarded to the team with higher living HP; equal HP is a tie. If a team is wiped during overtime, the same overtime resolver ends the round immediately.
+
+The B flag is available because `gf.gsc` keeps Domination gameobjects in the `_gameobjects` allow-list. Maps without a custom overtime location or B flag fall back to HP-only overtime.
+
+## Custom Locations
+
+Map-specific Gunfight spawns and overtime flag points live in:
+
+```
+maps\mp\gametypes\_gf_locations.gsc
+```
+
+Use `set gf_debug_spawns 1` before loading a map to enable the coordinate HUD and recorder. Record allies/axis spawns with ActionSlot1 and ActionSlot2, then press ActionSlot3 to save the current matched spawn set and print all saved sets. Stand on the desired overtime flag point before pressing ActionSlot3 so the console also prints a paste-ready `gf_ot(...)` block. ActionSlot4 clears the saved sets and current working points.
+
+## Wager Zones
+
+Gunfight uses the stock wager-map play spaces automatically. No console setup is required.
+
+The key discovery: wager blockers are already baked into the map entity lump. They are tagged with:
+
+```
+script_gameobjectname "gun oic hlnd shrp"
+```
+
+Stock `_gameobjects::main( allowed )` removes map entities whose `script_gameobjectname` does not match the active gametype allow-list. Gunfight keeps those blockers by adding the stock wager gametype names to the allow-list.
+
+What the implementation does:
+
+- Uses `mp_wager_spawn` entities for team spawns when the current map has them.
+- Preserves baked wager blockers by allowing `gun`, `oic`, `hlnd`, and `shrp` gameobject tags.
+- Applies the smaller wager compass material through `_gf_wager_zones.gsc`.
+- Never enables the wager-match framework; do not set `xblive_wagermatch` to `1` for Gunfight.
+- Adds only the extra script-spawned Cosmodrome wager collision helpers.
+
+Verified offline catalogs:
+
+- `tools/wager_spawns/` lists maps with `mp_wager_spawn` entities.
+- `tools/wager_entities/` lists baked wager blockers tagged for `gun oic hlnd shrp`.
+- Confirmed blocker maps: `mp_array`, `mp_cracked`, `mp_duga`, `mp_hanoi`, `mp_havoc`, `mp_russianbase`.
+
+Normal test:
+
+```
+set g_gametype gf
+map mp_havoc
+```
+
+Do not use runtime entity dumps or local overrides of stock `gun.gsc` / `oic.gsc` for this feature. The proven path is the `_gameobjects` allow-list.
 
 ## References
 

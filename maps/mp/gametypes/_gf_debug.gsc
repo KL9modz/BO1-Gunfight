@@ -3,14 +3,38 @@
 // SPAWN RECORDER  --  set gf_debug_spawns 1 before loading the map.
 //   [1] ActionSlot1  record current position for active team
 //   [2] ActionSlot2  toggle active team (allies/axis)
-//   [3] ActionSlot3  print recorded spawns to console
-//   [4] ActionSlot4  clear recorded spawns
+//   [3] ActionSlot3  save current set, then print all sets and current overtime flag
+//   [4] ActionSlot4  clear recorded sets and current working points
 //
-// ENTITY FINDER  --  set gf_debug_ents 1 before loading the map.
-//   Walk up to a wager barrier wall, then type: set gf_do_dump 1
-//   Shows classname/targetname/model of everything within 200 units.
+// COORDS HUD  --  auto-starts alongside the spawn recorder.
+//   Shows live X/Y/Z and yaw in the bottom-left corner.
 
-// ─── Spawn Recorder ────────────────────────────────────────────────────────
+gf_startCoordsHUD()
+{
+    self endon( "disconnect" );
+    level endon( "game_ended" );
+
+    elem = newClientHudElem( self );
+    elem.horzAlign    = "left";
+    elem.vertAlign    = "bottom";
+    elem.alignX       = "left";
+    elem.alignY       = "bottom";
+    elem.x            = 10;
+    elem.y            = -10;
+    elem.font         = "smallfixed";
+    elem.fontScale    = 1.0;
+    elem.color        = ( 0.9, 0.9, 0.6 );
+    elem.foreground   = true;
+    elem.hidewheninmenu = false;
+
+    while ( true )
+    {
+        org = self.origin;
+        yaw = int( self.angles[1] );
+        elem setText( int( org[0] ) + "  " + int( org[1] ) + "  " + int( org[2] ) + "  yaw:" + yaw );
+        wait 0.1;
+    }
+}
 
 gf_startSpawnRecorder()
 {
@@ -19,10 +43,11 @@ gf_startSpawnRecorder()
 
     self.gf_rec_allies = [];
     self.gf_rec_axis   = [];
+    self.gf_rec_sets   = [];
     self.gf_rec_team   = "allies";
 
     self gf_recUpdateHUD();
-    iPrintLnBold( "^2Spawn Recorder ON^7  [1]=record  [2]=toggle  [3]=print  [4]=clear" );
+    iPrintLnBold( "^2Spawn Recorder ON^7  [1]=record  [2]=toggle  [3]=save/print  [4]=clear" );
 
     while ( true )
     {
@@ -68,6 +93,7 @@ gf_startSpawnRecorder()
 
         if ( self ActionSlotThreeButtonPressed() )
         {
+            self gf_recCommitCurrentSet();
             self gf_recPrint();
             wait 0.3;
         }
@@ -76,8 +102,9 @@ gf_startSpawnRecorder()
         {
             self.gf_rec_allies = [];
             self.gf_rec_axis   = [];
+            self.gf_rec_sets   = [];
             self gf_recUpdateHUD();
-            iPrintLnBold( "^1Spawns cleared" );
+            iPrintLnBold( "^1Spawn sets cleared" );
             wait 0.3;
         }
     }
@@ -105,99 +132,134 @@ gf_recUpdateHUD()
     else
         self.gf_rec_hudElem.color = ( 1.0, 0.45, 0.45 );
 
-    self.gf_rec_hudElem setText( "REC[" + self.gf_rec_team + "]  A:" + self.gf_rec_allies.size + "  X:" + self.gf_rec_axis.size );
+    setCount = 0;
+    if ( isDefined( self.gf_rec_sets ) )
+        setCount = self.gf_rec_sets.size;
+
+    self.gf_rec_hudElem setText( "REC[" + self.gf_rec_team + "]  S:" + setCount + "  A:" + self.gf_rec_allies.size + "  X:" + self.gf_rec_axis.size );
+}
+
+gf_recCommitCurrentSet()
+{
+    if ( !isDefined( self.gf_rec_sets ) )
+        self.gf_rec_sets = [];
+
+    if ( self.gf_rec_allies.size <= 0 && self.gf_rec_axis.size <= 0 )
+        return;
+
+    if ( self.gf_rec_allies.size <= 0 || self.gf_rec_axis.size <= 0 )
+    {
+        iPrintLnBold( "^1Set not saved:^7 needs allies and axis points" );
+        return;
+    }
+
+    set = [];
+    allies = [];
+    axis   = [];
+
+    for ( i = 0; i < self.gf_rec_allies.size; i++ )
+        allies[allies.size] = self.gf_rec_allies[i];
+
+    for ( i = 0; i < self.gf_rec_axis.size; i++ )
+        axis[axis.size] = self.gf_rec_axis[i];
+
+    set["allies"] = allies;
+    set["axis"]   = axis;
+
+    idx = self.gf_rec_sets.size;
+    self.gf_rec_sets[idx] = set;
+    self.gf_rec_allies = [];
+    self.gf_rec_axis   = [];
+    self gf_recUpdateHUD();
+
+    iPrintLnBold( "^2Saved spawn set #" + idx );
 }
 
 gf_recPrint()
 {
     map = getDvar( "mapname" );
     PrintLn( "" );
-    PrintLn( "// === " + map + " - " + self.gf_rec_allies.size + " allies, " + self.gf_rec_axis.size + " axis ===" );
+    PrintLn( "// === " + map + " - " + self.gf_rec_sets.size + " spawn sets ===" );
     PrintLn( "    if ( mapname == \"" + map + "\" )" );
     PrintLn( "    {" );
-    PrintLn( "        a = result[\"allies\"];" );
 
-    for ( i = 0; i < self.gf_rec_allies.size; i++ )
+    for ( setIndex = 0; setIndex < self.gf_rec_sets.size; setIndex++ )
     {
-        e   = self.gf_rec_allies[i];
-        org = e["origin"];
-        PrintLn( "        a[ a.size ] = gf_sp( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + e["yaw"] + " );" );
-    }
-
-    PrintLn( "        x = result[\"axis\"];" );
-
-    for ( i = 0; i < self.gf_rec_axis.size; i++ )
-    {
-        e   = self.gf_rec_axis[i];
-        org = e["origin"];
-        PrintLn( "        x[ x.size ] = gf_sp( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + e["yaw"] + " );" );
+        self gf_recPrintSet( self.gf_rec_sets[setIndex], setIndex );
     }
 
     PrintLn( "        return result;" );
     PrintLn( "    }" );
     PrintLn( "" );
-    iPrintLnBold( "^2Spawns printed to console" );
+
+    org = self.origin;
+    yaw = int( self.angles[1] );
+    PrintLn( "// === " + map + " overtime flag at current position ===" );
+    PrintLn( "    if ( mapname == \"" + map + "\" )" );
+    PrintLn( "        return gf_ot( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + yaw + " );" );
+    PrintLn( "" );
+
+    iPrintLnBold( "^2Spawn sets printed to console" );
 }
 
-// ─── Entity Finder ─────────────────────────────────────────────────────────
-
-gf_startEntityDumper()
+gf_recPrintSet( set, setIndex )
 {
-    if ( isDefined( level.gf_entityDumperRunning ) && level.gf_entityDumperRunning )
-        return;
-    level.gf_entityDumperRunning = true;
+    allies = set["allies"];
+    axis   = set["axis"];
 
-    level endon( "game_ended" );
+    PrintLn( "        // set " + setIndex );
+    PrintLn( "        set = gf_spawnSet();" );
+    PrintLn( "        a = set[\"allies\"];" );
 
-    iPrintLnBold( "^3Entity Finder ON^7  walk to barrier then: set gf_do_dump 1" );
-
-    while ( true )
+    for ( i = 0; i < allies.size; i++ )
     {
-        wait 0.5;
-
-        if ( getDvarInt( "gf_do_dump" ) == 1 )
-        {
-            setDvar( "gf_do_dump", 0 );
-            self gf_findNearbyEnts();
-        }
+        e   = allies[i];
+        org = e["origin"];
+        PrintLn( "        a[ a.size ] = gf_sp( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + e["yaw"] + " );" );
     }
+
+    PrintLn( "        x = set[\"axis\"];" );
+
+    for ( i = 0; i < axis.size; i++ )
+    {
+        e   = axis[i];
+        org = e["origin"];
+        PrintLn( "        x[ x.size ] = gf_sp( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + e["yaw"] + " );" );
+    }
+
+    PrintLn( "        result[\"sets\"][ result[\"sets\"].size ] = set;" );
+    PrintLn( "" );
 }
 
-gf_findNearbyEnts()
+gf_debugPrintPerks()
 {
-    origin = self.origin;
-    ents   = getEntArray();
-    found  = 0;
-    radius = 200;
+    self endon( "disconnect" );
+    wait 0.1;
 
-    iPrintLnBold( "^2Scanning " + ents.size + " entities within " + radius + " units..." );
+    allPerks = [];
+    allPerks[0]  = "specialty_movefaster";
+    allPerks[1]  = "specialty_bulletpenetration";
+    allPerks[2]  = "specialty_longersprint";
+    allPerks[3]  = "specialty_fastreload";
+    allPerks[4]  = "specialty_gpsjammer";
+    allPerks[5]  = "specialty_quieter";
+    allPerks[6]  = "specialty_armorvest";
+    allPerks[7]  = "specialty_blindeye";
+    allPerks[8]  = "specialty_detectexplosive";
+    allPerks[9]  = "specialty_sprintrecovery";
+    allPerks[10] = "specialty_holdbreath";
+    allPerks[11] = "specialty_bulletaccuracy";
+    allPerks[12] = "specialty_killstreak";
+    allPerks[13] = "specialty_scavenger";
+    allPerks[14] = "specialty_extraammo";
+    allPerks[15] = "specialty_twoattach";
+    allPerks[16] = "specialty_gas_mask";
+    allPerks[17] = "specialty_pistoldeath";
 
-    for ( i = 0; i < ents.size; i++ )
+    self iPrintLn( "^5-- perks --" );
+    for ( i = 0; i < allPerks.size; i++ )
     {
-        e = ents[i];
-        if ( !isDefined( e.origin ) ) continue;
-
-        dist = distance( origin, e.origin );
-        if ( dist > radius ) continue;
-
-        cn = "?";
-        tn = "";
-        md = "";
-        if ( isDefined( e.classname  ) ) cn = e.classname;
-        if ( isDefined( e.targetname ) ) tn = e.targetname;
-        if ( isDefined( e.model      ) ) md = e.model;
-
-        org  = e.origin;
-        line = "NEAR|" + int( dist ) + "|" + cn + "|" + tn + "|" + md
-             + "|(" + int(org[0]) + "," + int(org[1]) + "," + int(org[2]) + ")";
-
-        iPrintLn( "^3" + line );
-        PrintLn( line );
-        found++;
+        if ( self hasPerk( allPerks[i] ) )
+            self iPrintLn( "^2+ " + allPerks[i] );
     }
-
-    if ( found == 0 )
-        iPrintLnBold( "^1Nothing within " + radius + " units - move closer to the barrier" );
-    else
-        iPrintLnBold( "^2Found " + found + " nearby entities" );
 }

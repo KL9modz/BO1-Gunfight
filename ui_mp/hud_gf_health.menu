@@ -1,0 +1,46 @@
+// Gunfight health HUD menu overlay.
+// Tiny HP labels are menu text so they do not consume script HUD elems.
+
+#include "ui/menudef.h"
+#include "ui_mp/hud_gametypes.inc"
+
+{
+	menuDef
+	{
+		name			"gf_health_hp_numbers"
+		rect			0 0 640 480 HORIZONTAL_ALIGN_FULLSCREEN VERTICAL_ALIGN_FULLSCREEN
+		fullScreen		0
+		visible			1
+		visibilityBits	bits( BIT_HUD_VISIBLE !BIT_IN_KILLCAM !BIT_UI_ACTIVE HUD_VISIBILITY )
+
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			0 -50 30 10 HORIZONTAL_ALIGN_USER_LEFT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_health_hp0_x" ) )
+			exp				text( dvarString( "ui_gf_health_hp0" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.20
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.42 0.68 0.46 0.85
+			visible			when( dvarInt( "ui_gf_health_hp_visible" ) && dvarInt( "ui_gf_health_hp0_show" ) )
+			decoration
+		}
+
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			0 -32 30 10 HORIZONTAL_ALIGN_USER_LEFT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_health_hp1_x" ) )
+			exp				text( dvarString( "ui_gf_health_hp1" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.20
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.73 0.29 0.19 0.85
+			visible			when( dvarInt( "ui_gf_health_hp_visible" ) && dvarInt( "ui_gf_health_hp1_show" ) )
+			decoration
+		}
+	}
+}

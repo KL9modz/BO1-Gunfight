@@ -1,0 +1,155 @@
+﻿[
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*63",
+        "origin":  "-1352 -1093 77",
+        "script_gameobjectname":  "tdm dm koth sd ctf hq gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*72",
+        "origin":  "55 -3826 65",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 89.7 0",
+        "classname":  "script_model",
+        "model":  "p_rus_soviet_gate_right_snow",
+        "origin":  "-720.5 -3836.8 -1.5",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*73",
+        "origin":  "-809 -3837 36",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*74",
+        "origin":  "-2251 -3181 130",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*75",
+        "origin":  "385 -1892 151",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*76",
+        "origin":  "-560 -1318 132",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*77",
+        "origin":  "847 -3832 128",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 180 0",
+        "classname":  "script_model",
+        "model":  "p_rus_door_white_60",
+        "origin":  "-1634 -3455 136",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 180 0",
+        "classname":  "script_model",
+        "model":  "p_rus_door_white_left",
+        "origin":  "-1754 -3455 136",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 180 0",
+        "classname":  "script_model",
+        "model":  "p_rus_door_white_60",
+        "origin":  "-1824 -3455 136",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*78",
+        "origin":  "-1760 -3453 187",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*79",
+        "origin":  "-2129 -2029 47",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*80",
+        "origin":  "-2040 -1540 84",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*81",
+        "origin":  "-2129 -2028 135",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 0 0",
+        "classname":  "script_model",
+        "model":  "p_rus_bunker_door_duga",
+        "origin":  "-2164.9 -1207 3.5",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*82",
+        "origin":  "-2128 -1227 67",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 180 0",
+        "classname":  "script_model",
+        "model":  "p_rus_bunker_door_duga",
+        "origin":  "-2087 -1914 3",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*83",
+        "origin":  "-2124 -1894 67",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*84",
+        "origin":  "-809 -3837 -35",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*89",
+        "origin":  "56 -3826 200",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    }
+]

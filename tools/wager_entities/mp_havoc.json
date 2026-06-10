@@ -1,0 +1,358 @@
+﻿[
+    {
+        "angles":  "17.4461 338.649 -130.212",
+        "classname":  "script_model",
+        "model":  "p_glo_rock_moss_large01_havoc",
+        "modelscale":  "1.35",
+        "origin":  "1411.4 1352.8 101.7",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "346.412 257.381 -87.1775",
+        "classname":  "script_model",
+        "model":  "p_glo_rock_moss_large01_havoc",
+        "modelscale":  "1.35",
+        "origin":  "1281.6 1302.2 101.9",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "10.7315 226.285 -6.21503",
+        "classname":  "script_model",
+        "model":  "p_glo_rock_moss_large01",
+        "modelscale":  "1.35",
+        "origin":  "2013.3 -1790.3 251.5",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 146.8 0",
+        "classname":  "script_model",
+        "model":  "p_glo_corrugated_metal8x8_holes",
+        "origin":  "2442.4 -1983.9 314",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "1.37136e-006 326 -180",
+        "classname":  "script_model",
+        "model":  "p_glo_corrugated_metal8x8_holes",
+        "origin":  "2394.6 -1956.9 313.5",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0.115691 135.3 4.94904",
+        "classname":  "script_model",
+        "model":  "p_glo_rock_moss_large02_dry",
+        "modelscale":  "1",
+        "origin":  "316.4 -1871.7 134.5",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "357.779 98.7012 -0.904689",
+        "classname":  "script_model",
+        "model":  "t5_foliage_bush06b",
+        "modelscale":  "1.000000",
+        "origin":  "300.1 -1784.5 133.7",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "1.40701 266.869 -1.13618",
+        "classname":  "script_model",
+        "model":  "t5_foliage_bush06b",
+        "modelscale":  "1.000000",
+        "origin":  "302.7 -1755.9 121.6",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 199.2 0",
+        "classname":  "script_model",
+        "model":  "p_jun_bamboo_fence_medium_burnt",
+        "origin":  "825.8 -1841.2 56",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 199.2 0",
+        "classname":  "script_model",
+        "model":  "p_jun_bamboo_fence_medium_burnt",
+        "origin":  "713.1 -1880.6 63",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 280.891 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_green",
+        "modelscale":  "1.000000",
+        "origin":  "785 -1868.4 131",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 280.891 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_green",
+        "modelscale":  "1.000000",
+        "origin":  "732.5 -1883.5 131",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 52.361 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_green",
+        "modelscale":  "1.000000",
+        "origin":  "639.9 -1931.7 94",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 115.6 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_green_lego_end_ripped",
+        "origin":  "672.2 -1907.9 90",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 293.6 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_green_lego_mdl_ripped",
+        "origin":  "710.8 -1893.1 94",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 293.6 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_green_lego_mdl_ripped",
+        "origin":  "758.1 -1876.9 94",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 290.8 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_green_lego_mdl_ripped",
+        "origin":  "802.1 -1862 94",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 286.8 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_green_lego_end_ripped",
+        "origin":  "976.7 -1800.5 90",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 199.2 0",
+        "classname":  "script_model",
+        "model":  "p_jun_bamboo_fence_medium_burnt",
+        "origin":  "947.5 -1798.2 56",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 290.8 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_green_lego_mdl_ripped",
+        "origin":  "845.8 -1847 94",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 290.8 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_green_lego_mdl_ripped",
+        "origin":  "892.8 -1831 94",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 290.8 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_green_lego_mdl_ripped",
+        "origin":  "935.5 -1815.3 94",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 280.891 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_green",
+        "modelscale":  "1.000000",
+        "origin":  "863.5 -1840.9 131",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 280.891 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_green",
+        "modelscale":  "1.000000",
+        "origin":  "891.5 -1830.4 131",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 280.891 0",
+        "classname":  "script_model",
+        "model":  "p_glo_sandbags_green",
+        "modelscale":  "1.000000",
+        "origin":  "946.8 -1810.7 131",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 44.8 0",
+        "classname":  "script_model",
+        "model":  "p_glo_corrugated_metal8x8_holes",
+        "origin":  "2712.3 -1522.2 287.5",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 44.8 0",
+        "classname":  "script_model",
+        "model":  "p_glo_corrugated_metal8x8_holes",
+        "origin":  "2780.7 -1454.3 284.5",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 272 0",
+        "classname":  "script_model",
+        "model":  "p_jun_bamboo_fence_medium",
+        "origin":  "2919 -1162.2 263.9",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 267.8 0",
+        "classname":  "script_model",
+        "model":  "p_jun_bamboo_fence_medium",
+        "origin":  "2924.7 -1261.5 263.9",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0.309997 183.26 -0.0514815",
+        "classname":  "script_model",
+        "model":  "vehicle_uaz_50cal_single_dead",
+        "modelscale":  "1",
+        "origin":  "-198.3 -588.6 248.1",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "359.292 83.402 -0.37065",
+        "classname":  "script_model",
+        "model":  "p_glo_crate02_wet",
+        "origin":  "-90.7 -585.3 254.4",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 87.6 0",
+        "classname":  "script_model",
+        "model":  "p_glo_crate02_wet",
+        "origin":  "-58.4 -592.9 254.6",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 186.1 0",
+        "classname":  "script_model",
+        "model":  "p_glo_crate02_wet",
+        "origin":  "-75.2 -598.1 284.6",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "359.292 293.002 -0.37065",
+        "classname":  "script_model",
+        "model":  "p_glo_crate02_wet",
+        "origin":  "16 -574 254.4",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 297.2 0",
+        "classname":  "script_model",
+        "model":  "p_glo_crate02_wet",
+        "origin":  "-15.9 -583.3 254.6",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 35.7 0",
+        "classname":  "script_model",
+        "model":  "p_glo_crate02_wet",
+        "origin":  "-3.8 -570.5 284.6",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "1.42287 175.451 -0.130776",
+        "classname":  "script_model",
+        "model":  "anim_jun_com_door_wood_handleft",
+        "modelscale":  "1",
+        "origin":  "-339.3 -764.5 290.2",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*52",
+        "origin":  "1504 1153 186",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "359.999 224.6 179.996",
+        "classname":  "script_model",
+        "model":  "p_glo_corrugated_metal8x8_holes",
+        "origin":  "2746.6 -1491 296.2",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*53",
+        "origin":  "1297 -178 384",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*54",
+        "origin":  "1060 766 384",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "classname":  "script_brushmodel",
+        "model":  "*55",
+        "origin":  "-149 -586 151",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1"
+    },
+    {
+        "angles":  "0 69.7 0",
+        "classname":  "script_model",
+        "destructibledef":  "veh_jeep_destructible_mp",
+        "model":  "t5_veh_ultimate_jeep_pristine",
+        "origin":  "2562.5 -1806 266.8",
+        "script_gameobjectname":  "gun oic hlnd shrp",
+        "spawnflags":  "1",
+        "targetname":  "destructible"
+    }
+]

@@ -3,8 +3,10 @@
 
 #include maps\mp\_utility;
 #include maps\mp\gametypes\_hud_util;
+#include maps\mp\gametypes\_gf_locations;
 #include maps\mp\gametypes\_gf_rounds;
 #include maps\mp\gametypes\_gf_loadouts;
+#include maps\mp\gametypes\_gf_wager_zones;
 
 main()
 {
@@ -39,6 +41,7 @@ main()
     level.playerSpawnedCB      = ::gf_playerSpawnedCB;
     level.onPlayerKilled       = ::gf_onPlayerKilled;
     level.onPlayerDamage       = ::gf_onPlayerDamage;
+    level.onPlayerDisconnect   = ::gf_onPlayerDisconnect;
     level.onSpawnSpectator     = ::gf_onSpawnSpectator;
     level.onDeadEvent          = ::gf_onDeadEvent;
     level.onOneLeftEvent       = ::gf_onOneLeftEvent;
@@ -48,7 +51,7 @@ main()
     level.giveCustomLoadout    = ::gf_giveCustomLoadout;
 
 
-    setscoreboardcolumns( "kills", "deaths", "assists", "kdratio" );
+    setscoreboardcolumns( "kills", "deaths", "assists", "captures" );
 
 }
 
@@ -56,18 +59,23 @@ main()
 
 onPrecacheGameType()
 {
-    game["dialog"]["sudden_death"] = "generic_boost";
-    game["dialog"]["last_one"]     = "encourage_last";
-    game["dialog"]["side_switch"]  = "sd_halftime";
+    game["dialog"]["gf_overtime_cue"]    = "ctf_start";
+    game["dialog"]["offense_obj"]        = "generic_boost";
+    game["dialog"]["defense_obj"]        = "generic_boost";
+    game["dialog"]["last_one"]           = "encourage_last";
+    game["dialog"]["side_switch"]        = "sd_halftime";
 
     // Score bar — native engine HUD reads these shaders for the round-win display
     precacheShader( "score_bar_bg" );
     precacheShader( "score_bar_allies" );
     precacheShader( "score_bar_opfor" );
-
-    precacheShader( "waypoint_kill" );
-    precacheShader( "waypoint_defend" );
-    precacheShader( "compass_waypoint_defend" );
+    precacheShader( "progress_bar_bg" );
+    precacheShader( "progress_bar_fill" );
+    precacheShader( "progress_bar_fg" );
+    precacheShader( "hud_score_progress" );
+    precacheShader( "hud_frame_faction_fade" );
+    precacheShader( "hud_frame_faction_lines" );
+    precacheShader( "hud_death_suicide" );
     precacheString( &"PLATFORM_PRESS_TO_SPAWN" );
 
     // Loadout HUD shaders — must be precached here (not in onStartGameType)
@@ -118,8 +126,8 @@ onPrecacheGameType()
     precacheShader( "menu_mp_weapons_china_lake"    );
     precacheShader( "menu_mp_weapons_m72_law"       );
     precacheShader( "menu_mp_weapons_rpg"           );
-    precacheShader( "menu_mp_weapons_m202_flash"    );
-    precacheShader( "menu_mp_weapons_knife_ballistic");
+    precacheShader( "hud_m202"                       );
+    precacheShader( "menu_mp_weapons_ballistic_knife");
     precacheShader( "hud_grenadeicon"          );
     precacheShader( "hud_icon_satchelcharge"   );
     precacheShader( "hud_icon_sticky_grenade"  );
@@ -127,6 +135,24 @@ onPrecacheGameType()
     precacheShader( "hud_us_flashgrenade"      );
     precacheShader( "hud_us_stungrenade"       );
     precacheShader( "hud_us_smokegrenade"      );
+    precacheShader( "hud_icon_claymore"        );
+    precacheShader( "hud_radar_jammer"         );
+    precacheShader( "hud_acoustic_sensor"      );
+    precacheShader( "hud_deployable_camera"    );
+
+    level.gf_ot_baseFx_neutral = loadfx( "misc/fx_ui_flagbase_gold_t5" );
+
+    precacheModel( "mp_flag_neutral" );
+    precacheShader( "compass_waypoint_captureneutral" );
+    precacheShader( "waypoint_captureneutral" );
+    precacheShader( "compass_waypoint_captureneutral_b" );
+    precacheShader( "waypoint_captureneutral_b" );
+    precacheShader( "compass_waypoint_capture_b" );
+    precacheShader( "waypoint_capture_b" );
+    precacheString( &"MP_CAPTURING_FLAG" );
+    precacheString( &"MP_OVERTIME_CAPS" );
+
+    gf_precacheWagerZoneAssets();
 }
 
 onStartGameType()
@@ -135,7 +161,6 @@ onStartGameType()
     setDvar( "scr_disable_weapondrop", 1 );
     setDvar( "scr_showperksonspawn", "1" );
     setDvar( "sv_cheats", "1" );
-    setDvar( "cg_drawHealth", "1" );
 
     dvar = "scr_" + level.gameType + "_visualtweaks";
     if ( GetDvar( dvar ) == "" )
@@ -146,11 +171,15 @@ onStartGameType()
     level.healthRegenDisabled            = true;
     level.playerHealth_RegularRegenDelay = 99999;
     gf_registerLoadoutCycleDvar(); // also sets level.gf_cfg_roundsPerLoadout
+    gf_registerOvertimeLimitDvar(); // also sets level.gf_cfg_overtimeLimit
     gf_initDamageScoring(); // relies on level.gf_cfg_roundsPerLoadout
 
     level.gf_roundActive     = false;
     level.gf_roundEnding     = false;
     level.gf_activatingRound = false;
+    level.gf_overtimeActive  = false;
+    level.inOvertime         = false;
+    level.timeLimitOverride  = false;
 
     if ( !isDefined( game["switchedsides"] ) )
         game["switchedsides"] = false;
@@ -159,16 +188,8 @@ onStartGameType()
 
     maps\mp\gametypes\_globallogic_ui::setObjectiveText( "allies", &"OBJECTIVES_TDM" );
     maps\mp\gametypes\_globallogic_ui::setObjectiveText( "axis",   &"OBJECTIVES_TDM" );
-    if ( level.splitscreen )
-    {
-        maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "allies", &"OBJECTIVES_TDM" );
-        maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "axis",   &"OBJECTIVES_TDM" );
-    }
-    else
-    {
-        maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "allies", &"OBJECTIVES_TDM_SCORE" );
-        maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "axis",   &"OBJECTIVES_TDM_SCORE" );
-    }
+    maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "allies", &"OBJECTIVES_TDM_SCORE" );
+    maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "axis",   &"OBJECTIVES_TDM_SCORE" );
     maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "allies", &"OBJECTIVES_TDM_HINT" );
     maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "axis",   &"OBJECTIVES_TDM_HINT" );
 
@@ -184,13 +205,23 @@ onStartGameType()
 
     gf_initLoadouts();   // guarded by game["gf_init"] — shuffles once per match and picks loadout 0 for round 1 
     gf_pickLoadout();    // deterministic: index derived from game["roundsplayed"] 
+    gf_initCustomLocations();
 
     level.spawnMins = ( 0, 0, 0 );
     level.spawnMaxs = ( 0, 0, 0 );
     maps\mp\gametypes\_spawnlogic::placeSpawnPoints( "mp_tdm_spawn_allies_start" );
     maps\mp\gametypes\_spawnlogic::placeSpawnPoints( "mp_tdm_spawn_axis_start" );
-    maps\mp\gametypes\_spawnlogic::addSpawnPoints( "allies", "mp_tdm_spawn" );
-    maps\mp\gametypes\_spawnlogic::addSpawnPoints( "axis",   "mp_tdm_spawn" );
+    wagerSpawns = getEntArray( "mp_wager_spawn", "classname" );
+    if ( wagerSpawns.size > 0 )
+    {
+        maps\mp\gametypes\_spawnlogic::addSpawnPoints( "allies", "mp_wager_spawn" );
+        maps\mp\gametypes\_spawnlogic::addSpawnPoints( "axis",   "mp_wager_spawn" );
+    }
+    else
+    {
+        maps\mp\gametypes\_spawnlogic::addSpawnPoints( "allies", "mp_tdm_spawn" );
+        maps\mp\gametypes\_spawnlogic::addSpawnPoints( "axis",   "mp_tdm_spawn" );
+    }
     maps\mp\gametypes\_spawning::updateAllSpawnPoints();
     level.spawn_allies_start = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_allies_start" );
     level.spawn_axis_start   = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_axis_start" );
@@ -202,11 +233,18 @@ onStartGameType()
     setDemoIntermissionPoint( spawnpoint.origin, spawnpoint.angles );
 
     allowed[0] = "gf";
+    allowed[1] = "dom";
+    allowed[allowed.size] = "gun";
+    allowed[allowed.size] = "oic";
+    allowed[allowed.size] = "hlnd";
+    allowed[allowed.size] = "shrp";
     maps\mp\gametypes\_gameobjects::main( allowed );
 
     maps\mp\gametypes\_spawning::create_map_placed_influencers();
 
-    setMatchFlag( "pregame", 0 );
+    gf_applyWagerZoneAssets();
+
+    thread maps\mp\gametypes\_bot::init();
 }
 
 // ─── Spawn Pipeline ────────────────────────────────────────────────────────
@@ -244,6 +282,13 @@ onSpawnPlayer( teamOverride )
     if ( isDefined( game["switchedsides"] ) && game["switchedsides"] )
         spawnTeam = maps\mp\_utility::getOtherTeam( spawnTeam );
 
+    customSpawn = gf_getCustomSpawnPoint( spawnTeam );
+    if ( isDefined( customSpawn ) )
+    {
+        self spawn( customSpawn["origin"], customSpawn["angles"], "gf" );
+        return;
+    }
+
     if ( level.inGracePeriod )
     {
         spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_" + spawnTeam + "_start" );
@@ -277,7 +322,4 @@ onSpawnPlayerUnified()
 
     maps\mp\gametypes\_spawning::onSpawnPlayer_Unified();
 }
-
-
-
 
