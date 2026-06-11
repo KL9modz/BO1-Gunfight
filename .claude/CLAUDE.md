@@ -1,5 +1,16 @@
 ﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
+---
+## BUGS
+- Gametype shows "gf" not Gunfight on other players screens
+- Minigun & M202 not working
+- Many classes missing a lethal
+- Need more iron sights
+- confirm native functionaly works like showing who u killed's calling card, first blood, double kill medals, etc
 
+### TODO 
+- Ingame mod menu for: dVars, pause game, map, mods, etc
+- Plutonium Server
+- Improve bot warfare mod so I have easy bot fill add/kick options for Gunfight
 ---
 
 ## Dedicated Server Setup
@@ -42,10 +53,40 @@
 - Perk display notification 
 - HUD recreation per spawn 
 
-### TODO 
-Health hud (team/self)
-Adjust flag and spawns
-Plutonium Server
+
+---
+
+## Overtime Zone Color System
+
+### Required behavior
+| State | Apron (FX) — same for all viewers | 3D icon — allies viewer | 3D icon — axis viewer |
+|---|---|---|---|
+| Nobody capturing | White | White | White |
+| Allies capturing | Blue | Green (friendly) | Red (enemy) |
+| Axis capturing | Red | Red (enemy) | Green (friendly) |
+| Contested | White | Gold | Gold |
+
+### Why icons are team-relative but FX is absolute
+**3D icons** (`level.gf_ot_wi_allies` / `level.gf_ot_wi_axis`) are `newTeamHudElem(team)` elements — server-side, each visible only to its own team. They can therefore show different colors simultaneously. **Green = your team is capturing, Red = enemy is capturing** (matching dom.gsc convention).
+
+**FX apron** entities are **world-space** in T5 — they render identically for every player. Per-team FX visibility does not exist. The apron therefore uses an absolute palette (blue = allies, red = axis, white = neutral/contested) as a secondary "zone activity" cue. The 3D icon carries the authoritative team-relative information.
+
+The 2D minimap compass icon uses `setOwnerTeam` + `set2DIcon` (separate, built into `_gameobjects`).
+
+### Implementation
+- **FX** (`gf_setOvertimeZoneIconColor`): spawns `gf_ot_baseFx_neutral/allies/axis/contested` (contested reuses neutral/white — no gold .efx exists). World-space, same for all viewers.
+- **3D icons** (`gf_updateOvertimeWorldIcons`): sets `level.gf_ot_wi_allies` and `level.gf_ot_wi_axis` to **different** colors based on `iconState` — green for the capturing team's element, red for the other.
+- **Visual driver**: `gf_overtimeZoneVisuals` polling thread (100 ms tick) — uses `isTouching` to count players per team, drives all visual state transitions. Replaced the old `_gameobjects` `onBeginUse/onEndUse/onUseUpdate` callbacks which had a race condition (`setClaimTeam` fires before `triggerTouchThink` increments `numTouching`, causing spurious neutral resets on ~50 % of zone entries).
+
+### FX rebuild requirement
+The apron FX assets must be compiled into mod.ff for `loadfx()` to return non-zero. Three `.efx` files live in `raw/fx/misc/` — they must be staged to the linker `raw/` before building:
+```
+raw/fx/misc/fx_ui_flagbase_gf_white.efx   (neutral + contested)
+raw/fx/misc/fx_ui_flagbase_gf_blue.efx    (allies capturing)
+raw/fx/misc/fx_ui_flagbase_gf_red.efx     (axis capturing)
+```
+`mod.csv` lists these three; the gold entry was removed (no source file). Rebuild mod.ff whenever these change.
+
 ---
 
 ## Wager Map Zone
@@ -178,7 +219,7 @@ Removed failed research paths from the project:
 
 ## Building mod.ff
 
-`mod.ff` is the compiled zone file that registers the gametype in the UI (strings, gametype table, mapvote menu). Rebuild it whenever `gametypesTable.csv`, `gf.str`, or `mapvote.menu` changes.
+`mod.ff` is the compiled zone file that registers the gametype in the UI (strings, gametype table, mapvote menu) and compiles binary assets (FX, models, images). Rebuild it whenever `gametypesTable.csv`, `gf.str`, `mapvote.menu`, or any `.efx` file under `raw/fx/` changes.
 
 **Tools:** `S:\SteamLibrary\steamapps\common\Call of Duty Black Ops 42740\bin\linker_pc.exe`
 
@@ -191,16 +232,18 @@ maps/mp/gametypes/_gametypes.txt        â†’ raw/maps/mp/gametypes/_gametype
 maps/mp/gametypes/gf.txt               â†’ raw/maps/mp/gametypes/gf.txt
 ui_mp/hud_gf.txt                        â†’ raw/ui_mp/hud_gf.txt
 ui_mp/hud_gf_health.menu               â†’ raw/ui_mp/hud_gf_health.menu
+raw/fx/misc/*.efx                       â†’ raw/fx/misc/*.efx   (FX assets — must be staged or they are silently dropped from the zone)
 mod.csv                                 â†’ zone_source/mods/mp_gunfight.csv
 mod.csv                                 â†’ zone_source/english/assetinfo/mods/mp_gunfight.csv
 ```
 
 **Step 2 â€” run linker from `bin/`:**
 ```
-cd "S:\SteamLibrary\steamapps\common\Call of Duty Black Ops 42740\bin"
+cd “S:\SteamLibrary\steamapps\common\Call of Duty Black Ops 42740\bin”
 linker_pc.exe -language english mods/mp_gunfight
 ```
-GSC rawfile errors are expected â€” Plutonium loads those directly, they don't need to be in the zone.
+GSC rawfile errors are expected â€” Plutonium loads those directly, they don’t need to be in the zone.
+FX image-missing errors for stock T5 materials (e.g. `fxt_ui_tickring`) are harmless â€” those images live in the base game fastfiles and are available at runtime.
 
 **Step 3 â€” copy output back:**
 ```
@@ -407,6 +450,40 @@ CodeCallback_GlassSmash()        glass break FX
 ---
 
 ## T5 HUD System
+
+### Server-side HUD (current approach)
+
+Both the Loadout HUD and Health HUD use `newTeamHudElem(team)` (server-side elements) so one element pair per team covers the full lobby without consuming per-player client pool slots.
+
+**Key APIs:**
+- `createServerIcon(shader, w, h, team)` — icon visible to `team` ("allies" or "axis")
+- `createServerFontString(font, scale, team)` — text visible to `team`
+- `createServerBar(color, w, h, flashFrac, team)` — progress bar visible to `team`
+- All three live in `maps\mp\gametypes\_hud_util.gsc`. With `#include maps\mp\gametypes\_hud_util` they're callable directly (no namespace prefix needed).
+- Can be called from a **level-thread** context because with `team` provided they never touch `self`.
+
+**What changed vs client-side:**
+- `gf_startHealthHUD()` — level-scope; callers changed to `level thread gf_startHealthHUD()` with no bot guard. Spectator spawn no longer restarts the HUD.
+- `gf_showWeaponHUD(load)` — level-scope; caller changed to `level thread gf_showWeaponHUD(load)`.
+- `gf_destroyLoadoutHUD()` / `gf_destroyHealthHUD()` — use `level.gf_loadoutHudElems` / `level.gf_healthHud` instead of `self.*`.
+- Two sets of health HUD elements are created per round: one for allies viewers (allies=green row 0, axis=red row 1) and one for axis viewers (reversed). `gf_updateHealthHUD()` updates both.
+
+**To revert to client-side:** See the comment block at the top of `_gf_hud.gsc` for a step-by-step reverting guide.
+
+**Server-side font string sizing — confirmed working pattern:**
+```gsc
+elem = createServerFontString( "default", 1.4, team );
+elem setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
+gf_styleHealthElem( elem, sort );   // sets sort, foreground, hidewheninmenu, etc.
+elem.alpha = 0;
+```
+- `fontscale` is a multiplier on the font's **native rasterization size**, NOT a pixel height cap. Small values on large-native fonts (like `"bigfixed"`) still render huge and pixelated.
+- **`"default"` at `1.4`** is the correct combination for small readable UI text — confirmed working in both the health HUD HP numbers and the loadout weapon name labels.
+- **`"bigfixed"` at any scale ≤ 1.0 is unusable** — renders oversized and aliased because bigfixed has a very large native raster size.
+- Do NOT add a redundant `elem.fontScale = X` line after `createServerFontString` — the fontscale is already set internally.
+- Server-side text elements (`newTeamHudElem`) always render **above** client elements (`newClientHudElem`) regardless of sort values. If text must appear on top of server bars, make it a server element too and give it a higher sort number (e.g., bar frame = sort 42, icons = sort 45, HP text = sort 46).
+
+---
 
 All HUD elements created with `newClientHudElem(player)`.
 
@@ -687,7 +764,6 @@ Useful dvars for Gunfight (from dvarlist.txt):
 ```
 compass         "0" / "1"       show/hide the minimap compass
 compassSize     integer         minimap size in pixels (0 = hidden)
-cg_drawHealth   "0" / "1"       show/hide default health bar HUD element
 cg_fov          float           field of view (default 65)
 bg_gravity      float           gravity (default 800)
 set scr_game_prematchperiod	15

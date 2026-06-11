@@ -42,16 +42,27 @@ gf_playerSpawnedCB()
     level notify( "spawned_player" );
     self gf_syncCaptureScore();
     self gf_initDamageScore();
-    if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
-        self thread gf_startHealthHUD();
+    if ( !isDefined( level.gf_healthHud ) || !isDefined( level.gf_hudCreatedRound ) || level.gf_hudCreatedRound != game["roundsplayed"] )
+    {
+        if ( !isDefined( level.gf_healthHudStartRound ) || level.gf_healthHudStartRound != game["roundsplayed"] )
+        {
+            level.gf_healthHudStartRound = game["roundsplayed"];
+            level thread gf_startHealthHUD();
+        }
+    }
+    else
+        level thread gf_refreshHealthHUD();
     gf_queueHealthHUDUpdate();
     self gf_applyVisualTweaks();
     self thread gf_onSpawned();
 
     if ( getDvarInt( "gf_debug_spawns" ) == 1 )
-    {
         self thread gf_startSpawnRecorder();
-        self thread gf_startCoordsHUD();
+
+    if ( getDvarInt( "gf_debug_hud_pool" ) == 1 )
+    {
+        if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+            self thread gf_startHUDPoolOverlay();
     }
 }
 
@@ -80,8 +91,6 @@ gf_applyVisualTweaks()
 gf_onSpawnSpectator( origin, angles )
 {
     maps\mp\gametypes\_globallogic_defaults::default_onSpawnSpectator( origin, angles );
-    if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
-        self thread gf_startHealthHUD();
     gf_queueHealthHUDUpdate();
 }
 
@@ -516,39 +525,243 @@ gf_cleanupOvertimeTimerState()
     setGameEndTime( 0 );
 }
 
+gf_createOvertimeWorldIcons( origin )
+{
+    gf_destroyOvertimeWorldIcons();
+
+    wi = newTeamHudElem( "allies" );
+    wi.x = origin[0];
+    wi.y = origin[1];
+    wi.z = origin[2];
+    wi.alpha = 1.0;
+    wi.archived = false;
+    wi.hidewheninmenu = true;
+    wi setShader( "waypoint_captureneutral", 24, 24 );
+    wi setWaypoint( true, "waypoint_captureneutral" );
+    level.gf_ot_wi_allies = wi;
+
+    wi = newTeamHudElem( "axis" );
+    wi.x = origin[0];
+    wi.y = origin[1];
+    wi.z = origin[2];
+    wi.alpha = 1.0;
+    wi.archived = false;
+    wi.hidewheninmenu = true;
+    wi setShader( "waypoint_captureneutral", 24, 24 );
+    wi setWaypoint( true, "waypoint_captureneutral" );
+    level.gf_ot_wi_axis = wi;
+}
+
+gf_destroyOvertimeWorldIcons()
+{
+    if ( isDefined( level.gf_ot_wi_allies ) )
+    {
+        level.gf_ot_wi_allies destroy();
+        level.gf_ot_wi_allies = undefined;
+    }
+    if ( isDefined( level.gf_ot_wi_axis ) )
+    {
+        level.gf_ot_wi_axis destroy();
+        level.gf_ot_wi_axis = undefined;
+    }
+}
+
+// Team-relative icon colors: green = your team capturing, red = enemy capturing.
+// wi_allies and wi_axis are separate newTeamHudElem elements so they can show different
+// colors simultaneously. FX apron is world-space (same for all viewers).
+gf_updateOvertimeWorldIcons( iconState )
+{
+    alliesShader = "waypoint_captureneutral";
+    axisShader   = "waypoint_captureneutral";
+    alliesColor  = ( 1, 1, 1 );
+    axisColor    = ( 1, 1, 1 );
+
+    if ( iconState == "allies" )
+    {
+        alliesShader = "waypoint_capture";
+        axisShader   = "waypoint_capture";
+        alliesColor  = ( 0.2, 0.9, 0.2 );   // allies see green (friendly capturing)
+        axisColor    = ( 1.0, 0.35, 0.35 );  // axis see red (enemy capturing)
+    }
+    else if ( iconState == "axis" )
+    {
+        alliesShader = "waypoint_capture";
+        axisShader   = "waypoint_capture";
+        alliesColor  = ( 1.0, 0.35, 0.35 );  // allies see red (enemy capturing)
+        axisColor    = ( 0.2, 0.9, 0.2 );    // axis see green (friendly capturing)
+    }
+    else if ( iconState == "contested" )
+    {
+        alliesShader = "waypoint_defend";
+        axisShader   = "waypoint_defend";
+        alliesColor  = ( 1.0, 0.6, 0.0 );
+        axisColor    = ( 1.0, 0.6, 0.0 );
+    }
+
+    if ( isDefined( level.gf_ot_wi_allies ) )
+    {
+        level.gf_ot_wi_allies setShader( alliesShader, 24, 24 );
+        level.gf_ot_wi_allies setWaypoint( true, alliesShader );
+        level.gf_ot_wi_allies.color = alliesColor;
+    }
+    if ( isDefined( level.gf_ot_wi_axis ) )
+    {
+        level.gf_ot_wi_axis setShader( axisShader, 24, 24 );
+        level.gf_ot_wi_axis setWaypoint( true, axisShader );
+        level.gf_ot_wi_axis.color = axisColor;
+    }
+}
+
 gf_setOvertimeZoneIconColor( zone, team )
 {
     if ( !isDefined( zone ) )
         return;
 
-    state = team;
-    if ( state != "allies" && state != "axis" )
-        state = "neutral";
-
-    if ( !isDefined( zone.objPoints ) )
-        return;
-
-    neutralColor  = ( 1, 1, 1 );
-    friendlyColor = ( 0.4, 0.7, 1.0 );
-    enemyColor    = ( 1.0, 0.45, 0.45 );
-
-    if ( state != "allies" && state != "axis" )
+    if ( isDefined( zone.flagModel ) )
     {
-        if ( isDefined( zone.objPoints["allies"] ) )
-            zone.objPoints["allies"].color = neutralColor;
-        if ( isDefined( zone.objPoints["axis"] ) )
-            zone.objPoints["axis"].color = neutralColor;
-        return;
+        if ( team == "allies" )
+            zone.flagModel setModel( "mp_flag_allies_1" );
+        else if ( team == "axis" )
+            zone.flagModel setModel( "mp_flag_axis_1" );
+        else
+            zone.flagModel setModel( "mp_flag_neutral" );
     }
 
-    otherTeam = "axis";
-    if ( state == "axis" )
-        otherTeam = "allies";
+    // Ground apron FX — delete old handle, spawn new one (no apron for neutral).
+    if ( isDefined( zone.baseFxPos ) )
+    {
+        if ( isDefined( zone.baseFxHandle ) )
+        {
+            zone.baseFxHandle delete();
+            zone.baseFxHandle = undefined;
+        }
 
-    if ( isDefined( zone.objPoints[state] ) )
-        zone.objPoints[state].color = friendlyColor;
-    if ( isDefined( zone.objPoints[otherTeam] ) )
-        zone.objPoints[otherTeam].color = enemyColor;
+        fxAsset = undefined;
+        if ( team == "allies" )
+            fxAsset = level.gf_ot_baseFx_allies;
+        else if ( team == "axis" )
+            fxAsset = level.gf_ot_baseFx_axis;
+        else if ( team == "contested" )
+            fxAsset = level.gf_ot_baseFx_contested;
+
+        if ( isDefined( fxAsset ) )
+        {
+            zone.baseFxHandle = spawnFx( fxAsset, zone.baseFxPos, zone.baseFxFwd, zone.baseFxRight );
+            triggerFx( zone.baseFxHandle );
+        }
+    }
+
+    // Route "friendly"/"enemy" icon slots to the correct teams.
+    // With ownerTeam = "neutral" all players land in "enemy" (both see the same icon).
+    // With ownerTeam = the capturing team, capturers see "friendly", defenders see "enemy".
+    if ( team == "allies" )
+        zone maps\mp\gametypes\_gameobjects::setOwnerTeam( "allies" );
+    else if ( team == "axis" )
+        zone maps\mp\gametypes\_gameobjects::setOwnerTeam( "axis" );
+    else
+        zone maps\mp\gametypes\_gameobjects::setOwnerTeam( "neutral" );
+
+    // Minimap icons mirror the 3D world icons: friendly team sees capture (green),
+    // enemy team sees defend (red). Matches dom.gsc convention.
+    if ( team == "contested" )
+    {
+        zone maps\mp\gametypes\_gameobjects::set2DIcon( "friendly", "compass_waypoint_defend" );
+        zone maps\mp\gametypes\_gameobjects::set2DIcon( "enemy",    "compass_waypoint_defend" );
+    }
+    else if ( team == "allies" || team == "axis" )
+    {
+        zone maps\mp\gametypes\_gameobjects::set2DIcon( "friendly", "compass_waypoint_capture" );
+        zone maps\mp\gametypes\_gameobjects::set2DIcon( "enemy",    "compass_waypoint_defend" );
+    }
+    else
+    {
+        zone maps\mp\gametypes\_gameobjects::set2DIcon( "friendly", "compass_waypoint_captureneutral" );
+        zone maps\mp\gametypes\_gameobjects::set2DIcon( "enemy",    "compass_waypoint_captureneutral" );
+    }
+
+    gf_updateOvertimeWorldIcons( team );
+}
+
+// Polls player positions every 0.1 s and drives all OT zone visuals (FX apron,
+// 3D icons, 2D flash, timer pause/resume).  Replaces the onBeginUse / onEndUse /
+// onUseUpdate callbacks, which suffered from a _gameobjects numTouching race
+// condition that caused flicker and missed-capture visual glitches.
+gf_overtimeZoneVisuals( zone, flagTrigger )
+{
+    level endon( "game_ended" );
+    level endon( "gf_ot_done" );
+
+    curState  = "neutral";
+    label     = zone maps\mp\gametypes\_gameobjects::getLabel();
+    heartbeat = 0;
+    logPrint( "GF_OT: visuals thread STARTED label=" + label + "\n" );
+
+    while ( true )
+    {
+        wait 0.1;
+
+        if ( !isDefined( zone ) || !isDefined( flagTrigger ) )
+        {
+            logPrint( "GF_OT: visuals thread EXITING - zone or trigger undefined\n" );
+            return;
+        }
+
+        alliesCount = 0;
+        axisCount   = 0;
+
+        for ( i = 0; i < level.players.size; i++ )
+        {
+            p = level.players[i];
+            if ( p.sessionstate != "playing" ) continue;
+            if ( !isAlive( p ) ) continue;
+            if ( !( p isTouching( flagTrigger ) ) ) continue;
+
+            team = p.pers["team"];
+            if ( team == "allies" )      alliesCount++;
+            else if ( team == "axis" )   axisCount++;
+        }
+
+        newState = "neutral";
+        if ( alliesCount > 0 && axisCount > 0 )   newState = "contested";
+        else if ( alliesCount > 0 )                newState = "allies";
+        else if ( axisCount   > 0 )                newState = "axis";
+
+        heartbeat++;
+        if ( heartbeat >= 50 )
+        {
+            logPrint( "GF_OT: heartbeat state=" + curState + " al=" + alliesCount + " ax=" + axisCount + "\n" );
+            heartbeat = 0;
+        }
+
+        if ( newState == curState )
+            continue;
+
+        oldState = curState;
+        curState  = newState;
+
+        logPrint( "GF_OT: TRANSITION " + oldState + " -> " + curState + " al=" + alliesCount + " ax=" + axisCount + "\n" );
+        gf_setOvertimeZoneIconColor( zone, curState );
+        setDvar( "scr_obj" + label + "_flash", int( curState != "neutral" ) );
+        setDvar( "scr_obj" + label, curState );
+
+        if ( isDefined( zone.objPoints ) )
+        {
+            if ( curState != "neutral" && curState != "contested" && isDefined( zone.objPoints[curState] ) )
+                zone.objPoints[curState] thread maps\mp\gametypes\_objpoints::startFlashing();
+            if ( oldState != "neutral" && oldState != "contested" && isDefined( zone.objPoints[oldState] ) )
+                zone.objPoints[oldState] thread maps\mp\gametypes\_objpoints::stopFlashing();
+        }
+
+        if ( oldState == "neutral" && curState != "neutral" )
+        {
+            gf_pauseOvertimeForCapture();
+        }
+        else if ( oldState != "neutral" && curState == "neutral" )
+        {
+            if ( !isDefined( level.gf_overtimeResolving ) || !level.gf_overtimeResolving )
+                gf_resumeOvertimeForCapture();
+        }
+    }
 }
 
 gf_cleanupOvertimeZone( zone )
@@ -556,21 +769,39 @@ gf_cleanupOvertimeZone( zone )
     if ( !isDefined( zone ) )
         return;
 
+    gf_destroyOvertimeWorldIcons();
+
     if ( isDefined( zone.baseFxHandle ) )
         zone.baseFxHandle delete();
     zone.baseFxHandle = undefined;
-    zone.baseFxOrigin = undefined;
+    zone.baseFxPos    = undefined;
 
     zone.interactTeam = "none";
     zone.onUse        = undefined;
-    zone.onBeginUse   = undefined;
-    zone.onEndUse     = undefined;
-    zone.onUseUpdate  = undefined;
     zone.curProgress  = 0;
     zone.claimTeam    = "none";
     zone.claimPlayer  = undefined;
-    gf_setOvertimeZoneIconColor( zone, "neutral" );
+
+    // Reset ownerTeam before hiding so updateCompassIcons sees a clean state.
+    zone maps\mp\gametypes\_gameobjects::setOwnerTeam( "neutral" );
     zone maps\mp\gametypes\_gameobjects::setVisibleTeam( "none" );
+
+    // Delete objectives so their IDs are freed each round (they accumulate otherwise).
+    if ( isDefined( zone.objIDAllies ) )
+        objective_delete( zone.objIDAllies );
+    if ( isDefined( zone.objIDAxis ) )
+        objective_delete( zone.objIDAxis );
+
+    // Delete 3D objPoint HUD elements. Custom trigger maps spawn a new trigger entity
+    // each overtime round (new entNum → new name), so _gameobjects won't recycle them.
+    if ( isDefined( zone.objPoints ) )
+    {
+        if ( isDefined( zone.objPoints["allies"] ) )
+            maps\mp\gametypes\_objpoints::deleteObjPoint( zone.objPoints["allies"] );
+        if ( isDefined( zone.objPoints["axis"] ) )
+            maps\mp\gametypes\_objpoints::deleteObjPoint( zone.objPoints["axis"] );
+        zone.objPoints = [];
+    }
 
     if ( isDefined( zone.spawnedModel ) )
         zone.spawnedModel delete();
@@ -585,16 +816,13 @@ gf_createOvertimeZone()
     if ( !isDefined( flagTrigger ) )
         return undefined;
 
-    // Ground-orient and spawn the flag base halo FX (same technique as dom.gsc).
     traceStart = flagTrigger.origin + ( 0, 0, 32 );
-    traceEnd   = flagTrigger.origin + ( 0, 0, -32 );
+    traceEnd   = flagTrigger.origin + ( 0, 0, -256 );
     trace      = bulletTrace( traceStart, traceEnd, false, undefined );
     upAngles   = vectorToAngles( trace["normal"] );
     fxFwd      = anglesToForward( upAngles );
     fxRight    = anglesToRight( upAngles );
-    baseFxPos  = trace["position"] + ( 0, 0, 1 );
-    baseFx     = spawnFx( level.gf_ot_baseFx_neutral, baseFxPos, fxFwd, fxRight );
-    triggerFx( baseFx );
+    fxPos      = trace["position"] + ( 0, 0, 1 );
 
     // Use the map-linked visual if it exists; otherwise spawn one
     if ( isDefined( flagTrigger.target ) )
@@ -619,25 +847,22 @@ gf_createOvertimeZone()
     zone maps\mp\gametypes\_gameobjects::setUseText( &"MP_CAPTURING_FLAG" );
     zone maps\mp\gametypes\_gameobjects::set2DIcon( "friendly", "compass_waypoint_captureneutral" );
     zone maps\mp\gametypes\_gameobjects::set2DIcon( "enemy",    "compass_waypoint_captureneutral" );
-    zone maps\mp\gametypes\_gameobjects::set3DIcon( "friendly", "waypoint_captureneutral" );
-    zone maps\mp\gametypes\_gameobjects::set3DIcon( "enemy",    "waypoint_captureneutral" );
     zone maps\mp\gametypes\_gameobjects::setVisibleTeam( "any" );
-    zone.onUse        = ::gf_onZoneCapture;
-    zone.onBeginUse   = ::gf_onZoneBeginUse;
-    zone.onEndUse     = ::gf_onZoneEndUse;
+    zone.onUse           = ::gf_onZoneCapture;
     zone.spawnedModel    = spawnedModel;
     zone.didStatusNotify = false;
 
     if ( isDefined( flagTrigger.gf_customOvertimeTrigger ) && flagTrigger.gf_customOvertimeTrigger )
         zone.customTrigger = flagTrigger;
 
-    // Set icon colors before storing FX data so this call only touches the waypoint
-    // tints — the neutral FX is already spawned and triggered above.
+    zone.flagModel   = flagModel;
+    zone.baseFxPos   = fxPos;
+    zone.baseFxFwd   = fxFwd;
+    zone.baseFxRight = fxRight;
     gf_setOvertimeZoneIconColor( zone, "neutral" );
-    zone.baseFxHandle  = baseFx;
-    zone.baseFxOrigin  = baseFxPos;
-    zone.baseFxFwd     = fxFwd;
-    zone.baseFxRight   = fxRight;
+
+    gf_createOvertimeWorldIcons( flagTrigger.origin + ( 0, 0, 100 ) );
+    level thread gf_overtimeZoneVisuals( zone, flagTrigger );
 
     return zone;
 }
@@ -721,43 +946,6 @@ gf_onZoneCapture( player )
     gf_resolveOvertime( player.pers["team"] );
 }
 
-gf_onZoneBeginUse( player )
-{
-    label = self maps\mp\gametypes\_gameobjects::getLabel();
-    setDvar( "scr_obj" + label + "_flash", 1 );
-    setDvar( "scr_obj" + label, player.pers["team"] );
-    self.didStatusNotify = false;
-    gf_setOvertimeZoneIconColor( self, player.pers["team"] );
-
-    if ( isDefined( self.objPoints ) && isDefined( self.objPoints[player.pers["team"]] ) )
-        self.objPoints[player.pers["team"]] thread maps\mp\gametypes\_objpoints::startFlashing();
-
-    gf_pauseOvertimeForCapture();
-}
-
-gf_onZoneEndUse( team, player, success )
-{
-    label = self maps\mp\gametypes\_gameobjects::getLabel();
-    setDvar( "scr_obj" + label + "_flash", 0 );
-    setDvar( "scr_obj" + label, "neutral" );
-    gf_setOvertimeZoneIconColor( self, "neutral" );
-
-    if ( isDefined( self.objPoints ) )
-    {
-        if ( isDefined( self.objPoints["allies"] ) )
-            self.objPoints["allies"] thread maps\mp\gametypes\_objpoints::stopFlashing();
-        if ( isDefined( self.objPoints["axis"] ) )
-            self.objPoints["axis"] thread maps\mp\gametypes\_objpoints::stopFlashing();
-    }
-
-    if ( isDefined( success ) && success )
-        return;
-
-    if ( isDefined( level.gf_overtimeResolving ) && level.gf_overtimeResolving )
-        return;
-
-    gf_resumeOvertimeForCapture();
-}
 
 // Called by _globallogic to determine the overall match leader at round end.
 // Must compare cumulative roundswon — NOT the single-round result.
@@ -839,6 +1027,7 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
             eAttacker.pers["gf_damage"] = 0;
 
         eAttacker.pers["gf_damage"] += damage;
+        gf_setPlayerScoreSilent( eAttacker, eAttacker.pers["gf_damage"] );
 
         // Per-target damage for kill popup
         victimKey = "v" + int( self.entnum );
@@ -954,12 +1143,6 @@ gf_doQueuedHealthHUDUpdate()
 
 gf_forceHealthHUDUpdate()
 {
-    for ( i = 0; i < level.players.size; i++ )
-    {
-        if ( isDefined( level.players[i] ) )
-            level.players[i] gf_syncDamageScore();
-    }
-
     level notify( "gf_health_hud_update" );
 }
 

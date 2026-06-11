@@ -8,6 +8,11 @@
 //
 // COORDS HUD  --  auto-starts alongside the spawn recorder.
 //   Shows live X/Y/Z and yaw in the bottom-left corner.
+//
+// HUD POOL OVERLAY  --  set gf_debug_hud_pool 1 before loading the map.
+//   Shows live SV (server team elems) and CL (client elems this player) counts.
+//   Note: SV counts elems created by gf_sv_create* helpers only.
+//         Limits are approximate — T5 engine cap is not queryable at runtime.
 
 gf_startCoordsHUD()
 {
@@ -47,7 +52,7 @@ gf_startSpawnRecorder()
     self.gf_rec_team   = "allies";
 
     self gf_recUpdateHUD();
-    iPrintLnBold( "^2Spawn Recorder ON^7  [1]=record  [2]=toggle  [3]=save/print  [4]=clear" );
+    iPrintLnBold( "^2Spawn Recorder ON^7  [1]=record  [2]=toggle  [3]=save/print  [4]=undo" );
 
     while ( true )
     {
@@ -66,13 +71,15 @@ gf_startSpawnRecorder()
             {
                 idx = self.gf_rec_allies.size;
                 self.gf_rec_allies[ idx ] = entry;
-                iPrintLnBold( "^4Allies #" + idx + "^7  (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + ")  yaw:" + yaw );
+                iPrintLnBold( "^4Allies #" + idx + " recorded" );
+                logPrint( "  Allies #" + idx + "  (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + ")  yaw:" + yaw + "\n" );
             }
             else
             {
                 idx = self.gf_rec_axis.size;
                 self.gf_rec_axis[ idx ] = entry;
-                iPrintLnBold( "^1Axis #" + idx + "^7  (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + ")  yaw:" + yaw );
+                iPrintLnBold( "^1Axis #" + idx + " recorded" );
+                logPrint( "  Axis #" + idx + "  (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + ")  yaw:" + yaw + "\n" );
             }
 
             self gf_recUpdateHUD();
@@ -100,11 +107,43 @@ gf_startSpawnRecorder()
 
         if ( self ActionSlotFourButtonPressed() )
         {
-            self.gf_rec_allies = [];
-            self.gf_rec_axis   = [];
-            self.gf_rec_sets   = [];
+            if ( self.gf_rec_team == "allies" )
+            {
+                if ( self.gf_rec_allies.size > 0 )
+                {
+                    removed = self.gf_rec_allies[ self.gf_rec_allies.size - 1 ];
+                    newList = [];
+                    for ( i = 0; i < self.gf_rec_allies.size - 1; i++ )
+                        newList[i] = self.gf_rec_allies[i];
+                    self.gf_rec_allies = newList;
+                    org = removed["origin"];
+                    iPrintLnBold( "^1Undo allies #" + self.gf_rec_allies.size );
+                    logPrint( "  Undo allies #" + self.gf_rec_allies.size + "  (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + ")\n" );
+                }
+                else
+                {
+                    iPrintLnBold( "^7No allies points to undo" );
+                }
+            }
+            else
+            {
+                if ( self.gf_rec_axis.size > 0 )
+                {
+                    removed = self.gf_rec_axis[ self.gf_rec_axis.size - 1 ];
+                    newList = [];
+                    for ( i = 0; i < self.gf_rec_axis.size - 1; i++ )
+                        newList[i] = self.gf_rec_axis[i];
+                    self.gf_rec_axis = newList;
+                    org = removed["origin"];
+                    iPrintLnBold( "^1Undo axis #" + self.gf_rec_axis.size );
+                    logPrint( "  Undo axis #" + self.gf_rec_axis.size + "  (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + ")\n" );
+                }
+                else
+                {
+                    iPrintLnBold( "^7No axis points to undo" );
+                }
+            }
             self gf_recUpdateHUD();
-            iPrintLnBold( "^1Spawn sets cleared" );
             wait 0.3;
         }
     }
@@ -178,28 +217,28 @@ gf_recCommitCurrentSet()
 gf_recPrint()
 {
     map = getDvar( "mapname" );
-    PrintLn( "" );
-    PrintLn( "// === " + map + " - " + self.gf_rec_sets.size + " spawn sets ===" );
-    PrintLn( "    if ( mapname == \"" + map + "\" )" );
-    PrintLn( "    {" );
+    logPrint( "\n" );
+    logPrint( "// === " + map + " - " + self.gf_rec_sets.size + " spawn sets ===\n" );
+    logPrint( "    if ( mapname == \"" + map + "\" )\n" );
+    logPrint( "    {\n" );
 
     for ( setIndex = 0; setIndex < self.gf_rec_sets.size; setIndex++ )
     {
         self gf_recPrintSet( self.gf_rec_sets[setIndex], setIndex );
     }
 
-    PrintLn( "        return result;" );
-    PrintLn( "    }" );
-    PrintLn( "" );
+    logPrint( "        return result;\n" );
+    logPrint( "    }\n" );
+    logPrint( "\n" );
 
     org = self.origin;
     yaw = int( self.angles[1] );
-    PrintLn( "// === " + map + " overtime flag at current position ===" );
-    PrintLn( "    if ( mapname == \"" + map + "\" )" );
-    PrintLn( "        return gf_ot( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + yaw + " );" );
-    PrintLn( "" );
+    logPrint( "// === " + map + " overtime flag at current position ===\n" );
+    logPrint( "    if ( mapname == \"" + map + "\" )\n" );
+    logPrint( "        return gf_ot( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + yaw + " );\n" );
+    logPrint( "\n" );
 
-    iPrintLnBold( "^2Spawn sets printed to console" );
+    iPrintLnBold( "^2Spawn sets printed to log" );
 }
 
 gf_recPrintSet( set, setIndex )
@@ -207,28 +246,73 @@ gf_recPrintSet( set, setIndex )
     allies = set["allies"];
     axis   = set["axis"];
 
-    PrintLn( "        // set " + setIndex );
-    PrintLn( "        set = gf_spawnSet();" );
-    PrintLn( "        a = set[\"allies\"];" );
+    logPrint( "        // set " + setIndex + "\n" );
+    logPrint( "        set = gf_spawnSet();\n" );
+    logPrint( "        a = set[\"allies\"];\n" );
 
     for ( i = 0; i < allies.size; i++ )
     {
         e   = allies[i];
         org = e["origin"];
-        PrintLn( "        a[ a.size ] = gf_sp( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + e["yaw"] + " );" );
+        logPrint( "        a[ a.size ] = gf_sp( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + e["yaw"] + " );\n" );
     }
 
-    PrintLn( "        x = set[\"axis\"];" );
+    logPrint( "        set[\"allies\"] = a;\n" );
+    logPrint( "        x = set[\"axis\"];\n" );
 
     for ( i = 0; i < axis.size; i++ )
     {
         e   = axis[i];
         org = e["origin"];
-        PrintLn( "        x[ x.size ] = gf_sp( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + e["yaw"] + " );" );
+        logPrint( "        x[ x.size ] = gf_sp( (" + int( org[0] ) + ", " + int( org[1] ) + ", " + int( org[2] ) + "), " + e["yaw"] + " );\n" );
     }
 
-    PrintLn( "        result[\"sets\"][ result[\"sets\"].size ] = set;" );
-    PrintLn( "" );
+    logPrint( "        set[\"axis\"] = x;\n" );
+    logPrint( "        result[\"sets\"][ result[\"sets\"].size ] = set;\n" );
+    logPrint( "\n" );
+}
+
+gf_startHUDPoolOverlay()
+{
+    // Singleton per player — kill the previous update loop but reuse the element.
+    self notify( "gf_hud_pool_overlay_kill" );
+    self endon( "disconnect" );
+    self endon( "gf_hud_pool_overlay_kill" );
+
+    if ( !isDefined( self.gf_hudPoolOverlayElem ) )
+    {
+        overlay = newClientHudElem( self );
+        overlay.horzAlign      = "left";
+        overlay.vertAlign      = "bottom";
+        overlay.alignX         = "left";
+        overlay.alignY         = "bottom";
+        overlay.x              = 10;
+        overlay.y              = -30;
+        overlay.font           = "smallfixed";
+        overlay.fontScale      = 1.0;
+        overlay.color          = ( 0.5, 1.0, 0.7 );
+        overlay.foreground     = true;
+        overlay.hidewheninmenu = false;
+        self.gf_hudPoolOverlayElem = overlay;
+    }
+    overlay = self.gf_hudPoolOverlayElem;
+
+    svMax = 64;
+    clMax = 64;
+
+    while ( true )
+    {
+        svCount = 0;
+        if ( isDefined( level.gf_sv_elem_count ) )
+            svCount = level.gf_sv_elem_count;
+
+        clCount = 0;
+        if ( isDefined( self.gf_loadoutHudElems ) )
+            clCount = self.gf_loadoutHudElems.size;
+
+        overlay setText( "SV: " + svCount + "/" + svMax + "  CL: " + clCount + "/" + clMax );
+        wait 0.2;
+    }
 }
 
 gf_debugPrintPerks()

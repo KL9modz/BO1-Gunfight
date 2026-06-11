@@ -140,11 +140,22 @@ onPrecacheGameType()
     precacheShader( "hud_acoustic_sensor"      );
     precacheShader( "hud_deployable_camera"    );
 
-    level.gf_ot_baseFx_neutral = loadfx( "misc/fx_ui_flagbase_gold_t5" );
+    // Stock ground location markers from common_mp_fx.csv — re-registered every session,
+    // so loadfx() works reliably on every round (unlike mod.ff custom FX).
+    level.gf_ot_baseFx_allies    = loadfx( "env/light/fx_ray_grnd_loc_marker_grn_mp" );
+    level.gf_ot_baseFx_axis      = loadfx( "env/light/fx_ray_grnd_loc_marker_red_mp" );
+    level.gf_ot_baseFx_contested = loadfx( "env/light/fx_ray_grnd_loc_marker_ylw_mp" );
+    logPrint( "GF_OT: apron FX allies=" + int( isDefined( level.gf_ot_baseFx_allies ) ) + " axis=" + int( isDefined( level.gf_ot_baseFx_axis ) ) + " contested=" + int( isDefined( level.gf_ot_baseFx_contested ) ) + "\n" );
 
     precacheModel( "mp_flag_neutral" );
+    precacheModel( "mp_flag_allies_1" );
+    precacheModel( "mp_flag_axis_1" );
     precacheShader( "compass_waypoint_captureneutral" );
     precacheShader( "waypoint_captureneutral" );
+    precacheShader( "compass_waypoint_capture" );
+    precacheShader( "waypoint_capture" );
+    precacheShader( "compass_waypoint_defend" );
+    precacheShader( "waypoint_defend" );
     precacheShader( "compass_waypoint_captureneutral_b" );
     precacheShader( "waypoint_captureneutral_b" );
     precacheShader( "compass_waypoint_capture_b" );
@@ -157,6 +168,8 @@ onPrecacheGameType()
 
 onStartGameType()
 {
+    level.noPersistence = true;
+
     setDvar( "scr_disable_cac", "1" );
     setDvar( "scr_disable_weapondrop", 1 );
     setDvar( "scr_showperksonspawn", "1" );

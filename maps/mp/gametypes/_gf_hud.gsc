@@ -1,144 +1,167 @@
 // Gunfight HUD
-// Health panels are event-driven: damage, death, spawn, spectator changes,
-// round end, and disconnects notify waiting clients instead of polling.
+// Health HUD uses newTeamHudElem (server-side) — one element pair per team covers
+// the full lobby without consuming per-player client HUD pool slots.
+// Loadout HUD uses newClientHudElem (client-side) — per-player, self thread only.
+//
+// HOW TO REVERT HEALTH HUD TO CLIENT-SIDE
+// ----------------------------------------
+//   - Delete gf_createHealthHUDSet, gf_sv_createTeamAliveRow, gf_sv_createIcon,
+//     gf_sv_createText, gf_sv_createBar, gf_sv_offsetElems, gf_sv_slideHealthHUDIn,
+//     gf_sv_showHealthHUDMenuNumbers, gf_healthHUDCatchupRefresh.
+//   - Restore the old per-player helpers (gf_createHealthPanelBackground,
+//     gf_createTeamAliveRow, gf_createHealthIconAt, gf_createHealthIcon,
+//     gf_createHealthText, gf_createHealthBarAt, gf_registerHealthElem,
+//     gf_offsetHealthHUDElems, gf_slideHealthHUDIn, gf_showHealthHUDMenuNumbers,
+//     gf_hideHealthHUDMenuNumbers).
+//   - In gf_startHealthHUD: restore self notify/endon, self.gf_healthHudElems/Rows,
+//     self gf_createHealthPanelBackground(), etc.
+//   - In gf_updateHealthHUD: restore self.gf_healthHudRows + self.pers["team"] check.
+//   - In gf_destroyHealthHUD: restore self.gf_healthHudElems loop + self.gf_healthHudRows loop.
+//   - In _gf_rounds.gsc: restore per-player calls with bot guard:
+//       if (!isDefined(self.pers["isBot"]) || !self.pers["isBot"]) self thread gf_startHealthHUD();
+//     and restore the gf_startHealthHUD call in gf_onSpawnSpectator.
+// HOW TO REVERT LOADOUT HUD TO SERVER-SIDE
+// -----------------------------------------
+//   - In gf_showWeaponHUD: change self notify/endon to level notify/endon,
+//     self.gf_loadoutHudElems to level.gf_loadoutHudElems, createIcon/
+//     createFontString to createServerIcon/createServerFontString(shader,w,h,team).
+//     Wrap element creation in for(t=0;t<2;t++) teams loop; index as [t*9+i].
+//   - In gf_destroyLoadoutHUD: change self.gf_loadoutHudElems to level.gf_loadoutHudElems.
+//   - In _gf_loadouts.gsc: change self thread to level thread for gf_showWeaponHUD.
 
 #include maps\mp\gametypes\_hud_util;
 
+// ─── Health HUD ──────────────────────────────────────────────────────────────
+
 gf_startHealthHUD()
 {
-    self notify( "gf_restart_health_hud" );
-    self gf_destroyHealthHUD();
-    self endon( "gf_restart_health_hud" );
-    self endon( "disconnect" );
+    level notify( "gf_restart_health_hud" );
+    gf_destroyHealthHUD();
+    level endon( "gf_restart_health_hud" );
     level endon( "game_ended" );
 
-    // Delay creation until the temporary loadout HUD has slid away.
-    wait 0.05;
-
-    if ( isDefined( self.sessionstate ) && self.sessionstate == "playing" )
-        wait 5.85;
-    else
-        wait 0.2;
-
-    self.gf_healthHudElems = [];
-    self.gf_healthHudPanelBg = self gf_createHealthPanelBackground();
-    self.gf_healthHudRows = [];
-    self.gf_healthHudRows[0] = self gf_createTeamAliveRow( -45, 10 );
-    self.gf_healthHudRows[1] = self gf_createTeamAliveRow( -27, 10 );
-    self.gf_healthHudSlideOffset = -230;
-    self gf_offsetHealthHUDElems( self.gf_healthHudSlideOffset, 0 );
-
-    self gf_updateHealthHUD();
-    self gf_slideHealthHUDIn();
     wait 0.75;
-    self gf_showHealthHUDMenuNumbers();
 
-    // gf_health_hud_update notifications fired during the 5.85s wait are missed; catch up once bots have had time to join.
-    wait 5;
-    self gf_updateHealthHUD();
+    level.gf_hudCreatedRound = game["roundsplayed"];
+    level.gf_healthHud = [];
+    level.gf_healthHud["allies"] = gf_createHealthHUDSet( "allies" );
+    level.gf_healthHud["axis"]   = gf_createHealthHUDSet( "axis" );
+
+    gf_sv_slideHealthHUDIn();
+    wait 0.75;
+    gf_updateHealthHUD();
+    level thread gf_healthHUDCatchupRefresh();
+    level thread gf_healthHUDRoundCleanup();
+    level thread gf_periodicHealthHUDUpdate();
 
     while ( true )
     {
         level waittill( "gf_health_hud_update" );
-        self gf_updateHealthHUD();
+        gf_updateHealthHUD();
     }
 }
 
-gf_createHealthPanelBackground()
+gf_healthHUDRoundCleanup()
 {
-    panel = spawnstruct();
-    panel.bg = self gf_createHealthIcon( -70, -39, 180, 42, "hud_frame_faction_fade", ( 1, 1, 1 ), 37 );
-    panel.bg.alpha = 0;
-    panel.bg fadeOverTime( 0.25 );
-    panel.bg.alpha = 0.34;
-
-    panel.lines = self gf_createHealthIcon( -162, -45, 250, 52, "hud_frame_faction_lines", ( 1, 1, 1 ), 38 );
-    panel.lines.alpha = 0;
-    panel.lines fadeOverTime( 0.25 );
-    panel.lines.alpha = 0.30;
-    return panel;
+    level endon( "gf_restart_health_hud" );
+    level waittill( "game_ended" );
+    gf_destroyHealthHUD();
 }
 
-gf_createTeamAliveRow( y, height )
+gf_periodicHealthHUDUpdate()
+{
+    level endon( "gf_restart_health_hud" );
+    level endon( "game_ended" );
+    while ( true )
+    {
+        wait 1.0;
+        gf_updateHealthHUD();
+    }
+}
+
+gf_healthHUDCatchupRefresh()
+{
+    level endon( "gf_restart_health_hud" );
+    level endon( "game_ended" );
+    i = 0;
+    while ( i < 6 )
+    {
+        wait 0.5;
+        level notify( "gf_health_hud_update" );
+        i++;
+    }
+}
+
+gf_createHealthHUDSet( viewerTeam )
+{
+    set = spawnstruct();
+    set.team = viewerTeam;
+    set.elems = [];
+    set.slideOffset = -230;
+
+    bg = gf_sv_createIcon( viewerTeam, set.elems, -70, -39, 180, 42, "hud_frame_faction_fade", ( 1, 1, 1 ), 37 );
+    bg.alpha = 0;
+    bg fadeOverTime( 0.25 );
+    bg.alpha = 0.34;
+
+    lines = gf_sv_createIcon( viewerTeam, set.elems, -162, -45, 250, 52, "hud_frame_faction_lines", ( 1, 1, 1 ), 38 );
+    lines.alpha = 0;
+    lines fadeOverTime( 0.25 );
+    lines.alpha = 0.30;
+
+    set.rows = [];
+    set.rows[0] = gf_sv_createTeamAliveRow( viewerTeam, set.elems, -45, 10 );
+    set.rows[1] = gf_sv_createTeamAliveRow( viewerTeam, set.elems, -27, 10 );
+
+    gf_sv_offsetElems( set.elems, set.slideOffset, 0 );
+    return set;
+}
+
+gf_sv_createTeamAliveRow( team, elems, y, height )
 {
     row = spawnstruct();
     row.x = -12;
     row.y = y;
     row.height = height;
     row.width = 88;
-    row.fill = self gf_createHealthBarAt( "CENTER LEFT", "CENTER LEFT", row.x, y, row.width, height, ( 1, 1, 1 ), 40, "hud_score_progress", 0, 0, 0.80 );
+    row.fill = gf_sv_createBar( team, elems, "CENTER LEFT", "CENTER LEFT", row.x, y, row.width, height, ( 1, 1, 1 ), 40, "hud_score_progress", 0, 0, 0.80 );
 
     row.icons = [];
     for ( i = 0; i < 3; i++ )
     {
-        row.icons[i] = self gf_createHealthIcon( 4 + i * 9, y, 7, 7, "hud_death_suicide", ( 1, 1, 1 ), 42 );
+        row.icons[i] = gf_sv_createIcon( team, elems, 4 + i * 9, y, 7, 7, "hud_death_suicide", ( 1, 1, 1 ), 45 );
         row.icons[i].alpha = 0;
     }
 
+    row.hpText = gf_sv_createText( team, elems, -12, y, 46 );
     return row;
 }
 
-gf_offsetHealthHUDElems( xOffset, moveTime )
+gf_sv_createIcon( team, elems, x, y, w, h, shader, color, sort )
 {
-    if ( !isDefined( self.gf_healthHudElems ) )
-        return;
-
-    for ( i = 0; i < self.gf_healthHudElems.size; i++ )
-        gf_offsetHealthHUDElem( self.gf_healthHudElems[i], xOffset, moveTime );
-}
-
-gf_slideHealthHUDIn()
-{
-    if ( !isDefined( self.gf_healthHudSlideOffset ) )
-        return;
-
-    self gf_offsetHealthHUDElems( 0 - self.gf_healthHudSlideOffset, 0.75 );
-    self.gf_healthHudSlideOffset = 0;
-}
-
-gf_offsetHealthHUDElem( elem, xOffset, moveTime )
-{
-    if ( !isDefined( elem ) )
-        return;
-
-    if ( isDefined( moveTime ) && moveTime > 0 )
-        elem moveOverTime( moveTime );
-    elem.x += xOffset;
-
-    if ( isDefined( elem.elemType ) && elem.elemType == "bar" )
-    {
-        if ( isDefined( elem.bar ) )
-        {
-            if ( isDefined( moveTime ) && moveTime > 0 )
-                elem.bar moveOverTime( moveTime );
-            elem.bar.x += xOffset;
-        }
-
-        if ( isDefined( elem.barFrame ) )
-        {
-            if ( isDefined( moveTime ) && moveTime > 0 )
-                elem.barFrame moveOverTime( moveTime );
-            elem.barFrame.x += xOffset;
-        }
-    }
-}
-
-gf_createHealthIcon( x, y, width, height, shader, color, sort )
-{
-    return self gf_createHealthIconAt( "CENTER LEFT", "CENTER LEFT", x, y, width, height, shader, color, sort );
-}
-
-gf_createHealthIconAt( point, relativePoint, x, y, width, height, shader, color, sort )
-{
-    elem = self maps\mp\gametypes\_hud_util::createIcon( shader, width, height );
-    elem setPoint( point, relativePoint, x, y );
+    elem = createServerIcon( shader, w, h, team );
+    elem setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
     elem.color = color;
     gf_styleHealthElem( elem, sort );
-    self gf_registerHealthElem( elem );
+    elems[elems.size] = elem;
+    if ( !isDefined( level.gf_sv_elem_count ) ) level.gf_sv_elem_count = 0;
+    level.gf_sv_elem_count++;
     return elem;
 }
 
-gf_createHealthBarAt( point, relativePoint, x, y, width, height, color, sort, fillShader, bgAlpha, frameAlpha, fillAlpha )
+gf_sv_createText( team, elems, x, y, sort )
+{
+    elem = createServerFontString( "default", 1.4, team );
+    elem setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
+    gf_styleHealthElem( elem, sort );
+    elem.alpha = 0;
+    elems[elems.size] = elem;
+    if ( !isDefined( level.gf_sv_elem_count ) ) level.gf_sv_elem_count = 0;
+    level.gf_sv_elem_count++;
+    return elem;
+}
+
+gf_sv_createBar( team, elems, point, relPoint, x, y, w, h, color, sort, fillShader, bgAlpha, frameAlpha, fillAlpha )
 {
     if ( !isDefined( fillShader ) )
         fillShader = "progress_bar_fill";
@@ -149,11 +172,11 @@ gf_createHealthBarAt( point, relativePoint, x, y, width, height, color, sort, fi
     if ( !isDefined( fillAlpha ) )
         fillAlpha = 1;
 
-    bar = self maps\mp\gametypes\_hud_util::createBar( color, width, height );
-    bar setPoint( point, relativePoint, x, y );
+    bar = createServerBar( color, w, h, undefined, team );
+    bar setPoint( point, relPoint, x, y );
     bar.bar.shader = fillShader;
-    bar.bar setShader( fillShader, width, height );
-    bar.barFrame setShader( "progress_bar_fg", width, height );
+    bar.bar setShader( fillShader, w, h );
+    bar.barFrame setShader( "progress_bar_fg", w, h );
     bar.gf_bgAlpha = bgAlpha;
     bar.gf_frameAlpha = frameAlpha;
     bar.gf_fillAlpha = fillAlpha;
@@ -161,15 +184,36 @@ gf_createHealthBarAt( point, relativePoint, x, y, width, height, color, sort, fi
     gf_styleHealthElem( bar, sort );
     gf_styleHealthElem( bar.bar, sort + 1 );
     gf_styleHealthElem( bar.barFrame, sort + 2 );
-    self gf_registerHealthElem( bar );
-    self gf_setHealthBarFraction( bar, 0, false );
+    elems[elems.size] = bar;
+    gf_setHealthBarFraction( bar, 0, false );
+    if ( !isDefined( level.gf_sv_elem_count ) ) level.gf_sv_elem_count = 0;
+    level.gf_sv_elem_count += 3;  // bg + fill + frame
     return bar;
 }
 
-gf_registerHealthElem( elem )
+gf_sv_offsetElems( elems, xOffset, moveTime )
 {
-    self.gf_healthHudElems[self.gf_healthHudElems.size] = elem;
-    return elem;
+    for ( i = 0; i < elems.size; i++ )
+        gf_offsetHealthHUDElem( elems[i], xOffset, moveTime );
+}
+
+gf_sv_slideHealthHUDIn()
+{
+    teams = [];
+    teams[0] = "allies";
+    teams[1] = "axis";
+
+    for ( t = 0; t < 2; t++ )
+    {
+        team = teams[t];
+        if ( !isDefined( level.gf_healthHud ) || !isDefined( level.gf_healthHud[team] ) )
+            continue;
+        set = level.gf_healthHud[team];
+        if ( set.slideOffset == 0 )
+            continue;
+        gf_sv_offsetElems( set.elems, 0 - set.slideOffset, 0.75 );
+        set.slideOffset = 0;
+    }
 }
 
 gf_styleHealthElem( elem, sort )
@@ -187,34 +231,40 @@ gf_styleHealthElem( elem, sort )
 
 gf_updateHealthHUD()
 {
-    if ( !isDefined( self.gf_healthHudRows ) )
+    if ( !isDefined( level.gf_healthHud ) )
         return;
 
-    firstTeam = "allies";
-    secondTeam = "axis";
+    alliesStats = gf_getTeamHealthStats( "allies" );
+    axisStats   = gf_getTeamHealthStats( "axis" );
 
-    if ( isDefined( self.pers["team"] ) && self.pers["team"] == "axis" )
+    if ( !isDefined( level.gf_hudDbgCount ) ) level.gf_hudDbgCount = 0;
+    level.gf_hudDbgCount++;
+    if ( level.gf_hudDbgCount <= 12 || level.gf_hudDbgCount % 30 == 0 )
+        logPrint( "GF_HUD update#" + level.gf_hudDbgCount + " allies=" + alliesStats.current + "/" + alliesStats.players.size + " axis=" + axisStats.current + "/" + axisStats.players.size + " totalPlayers=" + level.players.size + "\n" );
+
+    if ( isDefined( level.gf_healthHud["allies"] ) )
     {
-        firstTeam = "axis";
-        secondTeam = "allies";
+        set = level.gf_healthHud["allies"];
+        gf_updateTeamAliveRow( set.rows[0], alliesStats, ( 0.42, 0.68, 0.46 ) );
+        gf_updateTeamAliveRow( set.rows[1], axisStats,   ( 0.73, 0.29, 0.19 ) );
     }
 
-    self gf_updateTeamAliveRow( self.gf_healthHudRows[0], firstTeam, ( 0.42, 0.68, 0.46 ), 0 );
-    self gf_updateTeamAliveRow( self.gf_healthHudRows[1], secondTeam, ( 0.73, 0.29, 0.19 ), 1 );
+    if ( isDefined( level.gf_healthHud["axis"] ) )
+    {
+        set = level.gf_healthHud["axis"];
+        gf_updateTeamAliveRow( set.rows[0], axisStats,   ( 0.42, 0.68, 0.46 ) );
+        gf_updateTeamAliveRow( set.rows[1], alliesStats, ( 0.73, 0.29, 0.19 ) );
+    }
 }
 
-gf_updateTeamAliveRow( row, team, color, rowIndex )
+gf_updateTeamAliveRow( row, stats, color )
 {
     if ( !isDefined( row ) )
         return;
-
-    stats = gf_getTeamHealthStats( team );
     frac = gf_getTeamHealthBarFraction( stats.current, stats.max );
     if ( isDefined( row.fill ) && isDefined( row.fill.bar ) )
         row.fill.bar.color = color;
-    self gf_setHealthBarFraction( row.fill, frac, stats.current > 0 );
-
-    self gf_updateHealthHUDMenuNumber( row, rowIndex, stats, frac );
+    gf_setHealthBarFraction( row.fill, frac, stats.current > 0 );
 
     visibleIcons = stats.players.size;
     if ( visibleIcons > 3 )
@@ -243,32 +293,21 @@ gf_updateTeamAliveRow( row, team, color, rowIndex )
         else
             row.icons[i].color = ( 1, 1, 1 );
     }
-}
 
-gf_updateHealthHUDMenuNumber( row, rowIndex, stats, frac )
-{
-    prefix = "ui_gf_health_hp" + rowIndex;
-    self setClientDvar( prefix, int( stats.current ) + "" );
-    self setClientDvar( prefix + "_x", row.x + int( row.width * frac + 0.5 ) + 4 );
-
-    if ( stats.max > 0 )
-        self setClientDvar( prefix + "_show", "1" );
-    else
-        self setClientDvar( prefix + "_show", "0" );
-}
-
-gf_showHealthHUDMenuNumbers()
-{
-    self setClientDvar( "ui_gf_health_hp_visible", "1" );
-}
-
-gf_hideHealthHUDMenuNumbers()
-{
-    self setClientDvar( "ui_gf_health_hp_visible", "0" );
-    self setClientDvar( "ui_gf_health_hp0_show", "0" );
-    self setClientDvar( "ui_gf_health_hp1_show", "0" );
-    self setClientDvar( "ui_gf_health_hp0", "" );
-    self setClientDvar( "ui_gf_health_hp1", "" );
+    if ( isDefined( row.hpText ) )
+    {
+        if ( stats.current > 0 )
+        {
+            row.hpText setText( int( stats.current ) + "" );
+            row.hpText.x = -12 + int( 88.0 * frac + 0.5 ) + 4;
+            row.hpText.color = color;
+            row.hpText.alpha = 0.9;
+        }
+        else
+        {
+            row.hpText.alpha = 0;
+        }
+    }
 }
 
 gf_getTeamHealthStats( team )
@@ -281,7 +320,7 @@ gf_getTeamHealthStats( team )
     for ( i = 0; i < level.players.size; i++ )
     {
         player = level.players[i];
-        if ( !isDefined( player ) || !isPlayer( player ) )
+        if ( !isDefined( player ) )
             continue;
 
         if ( !isDefined( player.pers["team"] ) || player.pers["team"] != team )
@@ -291,10 +330,8 @@ gf_getTeamHealthStats( team )
         maxHP = player gf_getPlayerMaxHealth();
         stats.max += maxHP;
 
-        if ( player.sessionstate == "playing" && isDefined( player.health ) && player.health > 0 )
-        {
+        if ( isDefined( player.health ) && player.health > 0 )
             stats.current += player.health;
-        }
     }
 
     return stats;
@@ -381,23 +418,76 @@ gf_setHealthBarFraction( bar, frac, visible )
         bar.barFrame.alpha = frameAlpha;
 }
 
-gf_destroyHealthHUD()
+gf_offsetHealthHUDElem( elem, xOffset, moveTime )
 {
-    self gf_hideHealthHUDMenuNumbers();
-
-    if ( !isDefined( self.gf_healthHudElems ) )
+    if ( !isDefined( elem ) )
         return;
 
-    for ( i = 0; i < self.gf_healthHudElems.size; i++ )
+    if ( isDefined( moveTime ) && moveTime > 0 )
+        elem moveOverTime( moveTime );
+    elem.x += xOffset;
+
+    if ( isDefined( elem.elemType ) && elem.elemType == "bar" )
     {
-        if ( isDefined( self.gf_healthHudElems[i] ) )
-            self.gf_healthHudElems[i] destroyElem();
+        if ( isDefined( elem.bar ) )
+        {
+            if ( isDefined( moveTime ) && moveTime > 0 )
+                elem.bar moveOverTime( moveTime );
+            elem.bar.x += xOffset;
+        }
+
+        if ( isDefined( elem.barFrame ) )
+        {
+            if ( isDefined( moveTime ) && moveTime > 0 )
+                elem.barFrame moveOverTime( moveTime );
+            elem.barFrame.x += xOffset;
+        }
+    }
+}
+
+gf_refreshHealthHUD()
+{
+    wait 0.05;
+    if ( !isDefined( level.gf_healthHud ) )
+        return;
+    gf_updateHealthHUD();
+}
+
+gf_destroyHealthHUD()
+{
+    if ( !isDefined( level.gf_healthHud ) )
+        return;
+
+    teams = [];
+    teams[0] = "allies";
+    teams[1] = "axis";
+
+    for ( t = 0; t < 2; t++ )
+    {
+        team = teams[t];
+        if ( !isDefined( level.gf_healthHud[team] ) )
+            continue;
+        set = level.gf_healthHud[team];
+        if ( !isDefined( set.elems ) )
+            continue;
+        for ( i = 0; i < set.elems.size; i++ )
+        {
+            elem = set.elems[i];
+            if ( !isDefined( elem ) )
+                continue;
+            if ( isDefined( elem.elemType ) && elem.elemType == "bar" )
+            {
+                if ( isDefined( elem.bar ) )
+                    elem.bar destroyElem();
+                if ( isDefined( elem.barFrame ) )
+                    elem.barFrame destroyElem();
+            }
+            elem destroyElem();
+        }
     }
 
-    self.gf_healthHudElems = undefined;
-    self.gf_healthHudPanelBg = undefined;
-    self.gf_healthHudRows = undefined;
-    self.gf_healthHudSlideOffset = undefined;
+    level.gf_healthHud = undefined;
+    level.gf_sv_elem_count = 0;
 }
 
 // ─── Loadout HUD ─────────────────────────────────────────────────────────────
@@ -408,9 +498,8 @@ gf_showWeaponHUD( load )
         return;
 
     self notify( "gf_kill_loadout_hud" );
-    self gf_destroyLoadoutHUD();
+    gf_destroyLoadoutHUD();
     self endon( "gf_kill_loadout_hud" );
-    self endon( "disconnect" );
     level endon( "game_ended" );
 
     self.gf_loadoutHudElems = [];
@@ -437,56 +526,76 @@ gf_showWeaponHUD( load )
     names[7] = "Marathon";
     names[8] = "Flak Jacket";
 
-    // Weapon rows: createLoadoutIcon uses setPoint("BOTTOM RIGHT","BOTTOM RIGHT").
-    // Formula with verIndex=4: rendered_y = yPos - 58.
-    // Perk rows: raw user_left/user_bottom elements; same y formula applies.
+    // yPos: row position in user_bottom coords.
+    // Weapon icon rendered_y = yPos - 58; perk text yText = yIcon - 16.
     yPos = [];
-    yPos[0] = -262;   // y=-320  (top weapon)
-    yPos[1] = -222;   // y=-280
-    yPos[2] = -182;   // y=-240  center
-    yPos[3] = -142;   // y=-200
-    yPos[4] = -102;   // y=-160  (bottom weapon)
-    yPos[5] = -242;   // yIcon=-300  (top perk)
-    yPos[6] = -202;   // yIcon=-260
-    yPos[7] = -162;   // yIcon=-220
-    yPos[8] = -122;   // yIcon=-180  (bottom perk)
+    yPos[0] = -262;
+    yPos[1] = -222;
+    yPos[2] = -182;
+    yPos[3] = -142;
+    yPos[4] = -102;
+    yPos[5] = -242;
+    yPos[6] = -202;
+    yPos[7] = -162;
+    yPos[8] = -122;
 
     icons = [];
     texts = [];
 
-    // ── Weapon rows — right side ──────────────────────────────────────
+    // Weapon rows — right side (slots 0-4)
     for ( i = 0; i < 5; i++ )
     {
-        icons[i] = self maps\mp\gametypes\_hud_util::createLoadoutIcon( 4, 0, 200, yPos[i] );
-        texts[i] = self maps\mp\gametypes\_hud_util::createLoadoutText( icons[i], 160 );
-        self maps\mp\gametypes\_hud_util::showLoadoutAttribute( icons[i], shaders[i], 1, texts[i], names[i] );
+        yRendered = yPos[i] - 58;
+
+        icon = createIcon( shaders[i], 32, 32 );
+        icon.horzAlign = "user_right";
+        icon.vertAlign = "user_bottom";
+        icon.alignX    = "right";
+        icon.alignY    = "middle";
+        icon.x         = 400;
+        icon.y         = yRendered;
+        icon.archived  = false;
+        icon.foreground = true;
+        icon.hidewheninmenu = true;
+        icon.hidewheninkillcam = true;
+        icon.hidewhileremotecontrolling = true;
 
         if ( i < 2 )
-            icons[i] setShader( shaders[i], 64, 32 );
+            icon setShader( shaders[i], 64, 32 );
 
-        icons[i] moveOverTime( 0.75 );
-        icons[i].x = -5;
-        icons[i].hidewheninmenu = true;
-        icons[i].hidewheninkillcam = true;
-        icons[i].hidewhileremotecontrolling = true;
+        text = createFontString( "default", 1.4 );
+        text.horzAlign = "user_right";
+        text.vertAlign = "user_bottom";
+        text.alignX    = "right";
+        text.alignY    = "middle";
+        text.x         = 400;
+        text.y         = yRendered;
+        text.archived  = false;
+        text.foreground = true;
+        text.hidewheninmenu = true;
+        text.hidewheninkillcam = true;
+        text.hidewhileremotecontrolling = true;
+        text setText( names[i] );
+        text.alpha = 1;
 
-        texts[i] moveOverTime( 0.75 );
-        texts[i].x = -72;
-        texts[i].hidewheninmenu = true;
-        texts[i].hidewheninkillcam = true;
-        texts[i].hidewhileremotecontrolling = true;
+        icon moveOverTime( 0.75 );
+        icon.x = -5;
+        text moveOverTime( 0.75 );
+        text.x = -72;
 
-        self.gf_loadoutHudElems[self.gf_loadoutHudElems.size] = icons[i];
-        self.gf_loadoutHudElems[self.gf_loadoutHudElems.size] = texts[i];
+        icons[i] = icon;
+        texts[i] = text;
+        self.gf_loadoutHudElems[self.gf_loadoutHudElems.size] = icon;
+        self.gf_loadoutHudElems[self.gf_loadoutHudElems.size] = text;
     }
 
-    // ── Perk rows — left side ─────────────────────────────────────────
+    // Perk rows — left side (slots 5-8)
     for ( i = 5; i < 9; i++ )
     {
-        yIcon = yPos[i] - 58;    // same offset as createLoadoutIcon with verIndex=4
-        yText = yIcon - 16;      // center text on icon (icon 32px tall; -16 from bottom = middle)
+        yIcon = yPos[i] - 58;
+        yText = yIcon - 16;
 
-        icon = createIcon( "white", 32, 32 );
+        icon = createIcon( shaders[i], 32, 32 );
         icon.horzAlign = "user_left";
         icon.vertAlign = "user_bottom";
         icon.alignX    = "left";
@@ -511,19 +620,18 @@ gf_showWeaponHUD( load )
         text.hidewheninmenu = true;
         text.hidewheninkillcam = true;
         text.hidewhileremotecontrolling = true;
-
-        self maps\mp\gametypes\_hud_util::showLoadoutAttribute( icon, shaders[i], 1, text, names[i] );
+        text setText( names[i] );
+        text.alpha = 1;
 
         icon moveOverTime( 0.75 );
         icon.x = 5;
         text moveOverTime( 0.75 );
-        text.x = 42;   // 5px (icon left) + 32px (icon width) + 5px gap
+        text.x = 42;
 
         icons[i] = icon;
         texts[i] = text;
-
-        self.gf_loadoutHudElems[self.gf_loadoutHudElems.size] = icons[i];
-        self.gf_loadoutHudElems[self.gf_loadoutHudElems.size] = texts[i];
+        self.gf_loadoutHudElems[self.gf_loadoutHudElems.size] = icon;
+        self.gf_loadoutHudElems[self.gf_loadoutHudElems.size] = text;
     }
 
     wait 5;
@@ -544,7 +652,7 @@ gf_showWeaponHUD( load )
     }
 
     wait 0.8;
-    self gf_destroyLoadoutHUD();
+    gf_destroyLoadoutHUD();
 }
 
 gf_getPerkShader( specialty )
@@ -566,7 +674,7 @@ gf_destroyLoadoutHUD()
     for ( i = 0; i < self.gf_loadoutHudElems.size; i++ )
     {
         if ( isDefined( self.gf_loadoutHudElems[i] ) )
-            self.gf_loadoutHudElems[i] destroy();
+            self.gf_loadoutHudElems[i] destroyElem();
     }
 
     self.gf_loadoutHudElems = undefined;
