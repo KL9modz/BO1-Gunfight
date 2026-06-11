@@ -140,12 +140,11 @@ onPrecacheGameType()
     precacheShader( "hud_acoustic_sensor"      );
     precacheShader( "hud_deployable_camera"    );
 
-    // Stock ground location markers from common_mp_fx.csv — re-registered every session,
-    // so loadfx() works reliably on every round (unlike mod.ff custom FX).
-    level.gf_ot_baseFx_allies    = loadfx( "env/light/fx_ray_grnd_loc_marker_grn_mp" );
-    level.gf_ot_baseFx_axis      = loadfx( "env/light/fx_ray_grnd_loc_marker_red_mp" );
-    level.gf_ot_baseFx_contested = loadfx( "env/light/fx_ray_grnd_loc_marker_ylw_mp" );
-    logPrint( "GF_OT: apron FX allies=" + int( isDefined( level.gf_ot_baseFx_allies ) ) + " axis=" + int( isDefined( level.gf_ot_baseFx_axis ) ) + " contested=" + int( isDefined( level.gf_ot_baseFx_contested ) ) + "\n" );
+    // OT apron FX — initial registration. NOTE: these handles are wiped by the
+    // map_restart(true) that _globallogic::endGame runs between rounds, and
+    // onPrecacheGameType only runs once per match — so gf_createOvertimeZone calls
+    // gf_loadOvertimeApronFx() again on every OT entry to re-establish them.
+    gf_loadOvertimeApronFx();
 
     precacheModel( "mp_flag_neutral" );
     precacheModel( "mp_flag_allies_1" );

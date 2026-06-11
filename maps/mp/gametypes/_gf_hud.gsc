@@ -1,33 +1,22 @@
 // Gunfight HUD
-// Health HUD uses newTeamHudElem (server-side) — one element pair per team covers
-// the full lobby without consuming per-player client HUD pool slots.
-// Loadout HUD uses newClientHudElem (client-side) — per-player, self thread only.
 //
-// HOW TO REVERT HEALTH HUD TO CLIENT-SIDE
-// ----------------------------------------
-//   - Delete gf_createHealthHUDSet, gf_sv_createTeamAliveRow, gf_sv_createIcon,
-//     gf_sv_createText, gf_sv_createBar, gf_sv_offsetElems, gf_sv_slideHealthHUDIn,
-//     gf_sv_showHealthHUDMenuNumbers, gf_healthHUDCatchupRefresh.
-//   - Restore the old per-player helpers (gf_createHealthPanelBackground,
-//     gf_createTeamAliveRow, gf_createHealthIconAt, gf_createHealthIcon,
-//     gf_createHealthText, gf_createHealthBarAt, gf_registerHealthElem,
-//     gf_offsetHealthHUDElems, gf_slideHealthHUDIn, gf_showHealthHUDMenuNumbers,
-//     gf_hideHealthHUDMenuNumbers).
-//   - In gf_startHealthHUD: restore self notify/endon, self.gf_healthHudElems/Rows,
-//     self gf_createHealthPanelBackground(), etc.
-//   - In gf_updateHealthHUD: restore self.gf_healthHudRows + self.pers["team"] check.
-//   - In gf_destroyHealthHUD: restore self.gf_healthHudElems loop + self.gf_healthHudRows loop.
-//   - In _gf_rounds.gsc: restore per-player calls with bot guard:
-//       if (!isDefined(self.pers["isBot"]) || !self.pers["isBot"]) self thread gf_startHealthHUD();
-//     and restore the gf_startHealthHUD call in gf_onSpawnSpectator.
-// HOW TO REVERT LOADOUT HUD TO SERVER-SIDE
-// -----------------------------------------
-//   - In gf_showWeaponHUD: change self notify/endon to level notify/endon,
-//     self.gf_loadoutHudElems to level.gf_loadoutHudElems, createIcon/
-//     createFontString to createServerIcon/createServerFontString(shader,w,h,team).
-//     Wrap element creation in for(t=0;t<2;t++) teams loop; index as [t*9+i].
-//   - In gf_destroyLoadoutHUD: change self.gf_loadoutHudElems to level.gf_loadoutHudElems.
-//   - In _gf_loadouts.gsc: change self thread to level thread for gf_showWeaponHUD.
+// Both the Health HUD and the Loadout HUD are CLIENT-SIDE (newClientHudElem), built
+// per player in the player's own thread. This is deliberate: T5 server team-HUD
+// elements (newTeamHudElem) do NOT live-update their text/alpha/color mid-round — the
+// change only flushes to clients on a round transition — and client elements created
+// from a level thread never network at all. So per-player + player-thread is the only
+// pattern that updates reliably during a round.
+//
+// Health HUD:
+//   - Level thread gf_startHealthHUD() ONLY computes the team totals (HP / fill
+//     fraction / player count / alive count) and publishes them to level.gf_* vars.
+//   - Each player runs gf_runHealthHUD() (singleton via self notify/endon), which
+//     builds the panel (faction frame + 2 team bars + skull icons + HP numbers), slides
+//     it in, and updates it every 0.1s from the published vars. Row 0 = own team
+//     (green), row 1 = enemy (red). map_restart wipes the panel between rounds; it's
+//     recreated on the next spawn.
+//
+// Loadout HUD: gf_showWeaponHUD(), also per-player / self thread.
 
 #include maps\mp\gametypes\_hud_util;
 
@@ -35,23 +24,14 @@
 
 gf_startHealthHUD()
 {
+    // The health HUD is fully client-side per player (gf_runHealthHUD). This level
+    // thread only computes the team totals and publishes them for the player panels
+    // to read — T5 client HUD elements can't be created or updated from a level thread.
     level notify( "gf_restart_health_hud" );
-    gf_destroyHealthHUD();
     level endon( "gf_restart_health_hud" );
     level endon( "game_ended" );
 
-    wait 0.75;
-
-    level.gf_hudCreatedRound = game["roundsplayed"];
-    level.gf_healthHud = [];
-    level.gf_healthHud["allies"] = gf_createHealthHUDSet( "allies" );
-    level.gf_healthHud["axis"]   = gf_createHealthHUDSet( "axis" );
-
-    gf_sv_slideHealthHUDIn();
-    wait 0.75;
     gf_updateHealthHUD();
-    level thread gf_healthHUDCatchupRefresh();
-    level thread gf_healthHUDRoundCleanup();
     level thread gf_periodicHealthHUDUpdate();
 
     while ( true )
@@ -61,158 +41,14 @@ gf_startHealthHUD()
     }
 }
 
-gf_healthHUDRoundCleanup()
-{
-    level endon( "gf_restart_health_hud" );
-    level waittill( "game_ended" );
-    gf_destroyHealthHUD();
-}
-
 gf_periodicHealthHUDUpdate()
 {
     level endon( "gf_restart_health_hud" );
     level endon( "game_ended" );
     while ( true )
     {
-        wait 1.0;
-        gf_updateHealthHUD();
-    }
-}
-
-gf_healthHUDCatchupRefresh()
-{
-    level endon( "gf_restart_health_hud" );
-    level endon( "game_ended" );
-    i = 0;
-    while ( i < 6 )
-    {
         wait 0.5;
-        level notify( "gf_health_hud_update" );
-        i++;
-    }
-}
-
-gf_createHealthHUDSet( viewerTeam )
-{
-    set = spawnstruct();
-    set.team = viewerTeam;
-    set.elems = [];
-    set.slideOffset = -230;
-
-    bg = gf_sv_createIcon( viewerTeam, set.elems, -70, -39, 180, 42, "hud_frame_faction_fade", ( 1, 1, 1 ), 37 );
-    bg.alpha = 0;
-    bg fadeOverTime( 0.25 );
-    bg.alpha = 0.34;
-
-    lines = gf_sv_createIcon( viewerTeam, set.elems, -162, -45, 250, 52, "hud_frame_faction_lines", ( 1, 1, 1 ), 38 );
-    lines.alpha = 0;
-    lines fadeOverTime( 0.25 );
-    lines.alpha = 0.30;
-
-    set.rows = [];
-    set.rows[0] = gf_sv_createTeamAliveRow( viewerTeam, set.elems, -45, 10 );
-    set.rows[1] = gf_sv_createTeamAliveRow( viewerTeam, set.elems, -27, 10 );
-
-    gf_sv_offsetElems( set.elems, set.slideOffset, 0 );
-    return set;
-}
-
-gf_sv_createTeamAliveRow( team, elems, y, height )
-{
-    row = spawnstruct();
-    row.x = -12;
-    row.y = y;
-    row.height = height;
-    row.width = 88;
-    row.fill = gf_sv_createBar( team, elems, "CENTER LEFT", "CENTER LEFT", row.x, y, row.width, height, ( 1, 1, 1 ), 40, "hud_score_progress", 0, 0, 0.80 );
-
-    row.icons = [];
-    for ( i = 0; i < 3; i++ )
-    {
-        row.icons[i] = gf_sv_createIcon( team, elems, 4 + i * 9, y, 7, 7, "hud_death_suicide", ( 1, 1, 1 ), 45 );
-        row.icons[i].alpha = 0;
-    }
-
-    row.hpText = gf_sv_createText( team, elems, -12, y, 46 );
-    return row;
-}
-
-gf_sv_createIcon( team, elems, x, y, w, h, shader, color, sort )
-{
-    elem = createServerIcon( shader, w, h, team );
-    elem setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
-    elem.color = color;
-    gf_styleHealthElem( elem, sort );
-    elems[elems.size] = elem;
-    if ( !isDefined( level.gf_sv_elem_count ) ) level.gf_sv_elem_count = 0;
-    level.gf_sv_elem_count++;
-    return elem;
-}
-
-gf_sv_createText( team, elems, x, y, sort )
-{
-    elem = createServerFontString( "default", 1.4, team );
-    elem setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
-    gf_styleHealthElem( elem, sort );
-    elem.alpha = 0;
-    elems[elems.size] = elem;
-    if ( !isDefined( level.gf_sv_elem_count ) ) level.gf_sv_elem_count = 0;
-    level.gf_sv_elem_count++;
-    return elem;
-}
-
-gf_sv_createBar( team, elems, point, relPoint, x, y, w, h, color, sort, fillShader, bgAlpha, frameAlpha, fillAlpha )
-{
-    if ( !isDefined( fillShader ) )
-        fillShader = "progress_bar_fill";
-    if ( !isDefined( bgAlpha ) )
-        bgAlpha = 0.45;
-    if ( !isDefined( frameAlpha ) )
-        frameAlpha = 0.85;
-    if ( !isDefined( fillAlpha ) )
-        fillAlpha = 1;
-
-    bar = createServerBar( color, w, h, undefined, team );
-    bar setPoint( point, relPoint, x, y );
-    bar.bar.shader = fillShader;
-    bar.bar setShader( fillShader, w, h );
-    bar.barFrame setShader( "progress_bar_fg", w, h );
-    bar.gf_bgAlpha = bgAlpha;
-    bar.gf_frameAlpha = frameAlpha;
-    bar.gf_fillAlpha = fillAlpha;
-
-    gf_styleHealthElem( bar, sort );
-    gf_styleHealthElem( bar.bar, sort + 1 );
-    gf_styleHealthElem( bar.barFrame, sort + 2 );
-    elems[elems.size] = bar;
-    gf_setHealthBarFraction( bar, 0, false );
-    if ( !isDefined( level.gf_sv_elem_count ) ) level.gf_sv_elem_count = 0;
-    level.gf_sv_elem_count += 3;  // bg + fill + frame
-    return bar;
-}
-
-gf_sv_offsetElems( elems, xOffset, moveTime )
-{
-    for ( i = 0; i < elems.size; i++ )
-        gf_offsetHealthHUDElem( elems[i], xOffset, moveTime );
-}
-
-gf_sv_slideHealthHUDIn()
-{
-    teams = [];
-    teams[0] = "allies";
-    teams[1] = "axis";
-
-    for ( t = 0; t < 2; t++ )
-    {
-        team = teams[t];
-        if ( !isDefined( level.gf_healthHud ) || !isDefined( level.gf_healthHud[team] ) )
-            continue;
-        set = level.gf_healthHud[team];
-        if ( set.slideOffset == 0 )
-            continue;
-        gf_sv_offsetElems( set.elems, 0 - set.slideOffset, 0.75 );
-        set.slideOffset = 0;
+        gf_updateHealthHUD();
     }
 }
 
@@ -231,83 +67,384 @@ gf_styleHealthElem( elem, sort )
 
 gf_updateHealthHUD()
 {
-    if ( !isDefined( level.gf_healthHud ) )
-        return;
-
     alliesStats = gf_getTeamHealthStats( "allies" );
     axisStats   = gf_getTeamHealthStats( "axis" );
 
-    if ( !isDefined( level.gf_hudDbgCount ) ) level.gf_hudDbgCount = 0;
-    level.gf_hudDbgCount++;
-    if ( level.gf_hudDbgCount <= 12 || level.gf_hudDbgCount % 30 == 0 )
-        logPrint( "GF_HUD update#" + level.gf_hudDbgCount + " allies=" + alliesStats.current + "/" + alliesStats.players.size + " axis=" + axisStats.current + "/" + axisStats.players.size + " totalPlayers=" + level.players.size + "\n" );
+    // Published for the per-player client health panels (gf_runHealthHUD) to read.
+    level.gf_hpAllies    = alliesStats.current;
+    level.gf_hpAxis      = axisStats.current;
+    level.gf_fracAllies  = gf_getTeamHealthBarFraction( alliesStats.current, alliesStats.max );
+    level.gf_fracAxis    = gf_getTeamHealthBarFraction( axisStats.current,   axisStats.max );
+    level.gf_cntAllies   = alliesStats.players.size;
+    level.gf_aliveAllies = alliesStats.alive;
+    level.gf_cntAxis     = axisStats.players.size;
+    level.gf_aliveAxis   = axisStats.alive;
 
-    if ( isDefined( level.gf_healthHud["allies"] ) )
-    {
-        set = level.gf_healthHud["allies"];
-        gf_updateTeamAliveRow( set.rows[0], alliesStats, ( 0.42, 0.68, 0.46 ) );
-        gf_updateTeamAliveRow( set.rows[1], axisStats,   ( 0.73, 0.29, 0.19 ) );
-    }
+    // Live diagnostics surfaced on the HUD pool overlay (gf_debug_hud_pool 1).
+    level.gf_dbg_alliesHP = alliesStats.current;
+    level.gf_dbg_alliesN  = alliesStats.players.size;
+    level.gf_dbg_axisHP   = axisStats.current;
+    level.gf_dbg_axisN    = axisStats.players.size;
+}
 
-    if ( isDefined( level.gf_healthHud["axis"] ) )
+// ─── Per-player client health panel ──────────────────────────────────────────
+// The entire health HUD is client-side per viewer (newClientHudElem): faction frame,
+// two team bars, alive-skull icons, and HP numbers. Created / updated / destroyed in
+// the player's own thread (gf_runHealthHUD) — T5 client elements don't network if
+// touched from a level thread. Reads the team totals published by gf_updateHealthHUD.
+// Row 0 = own team (green), row 1 = enemy (red). Everything slides in together.
+
+gf_HP_ROW0_Y()       { return -45; }
+gf_HP_ROW1_Y()       { return -27; }
+gf_HP_SLIDE_OFFSET() { return -230; }
+
+gf_runHealthHUD()
+{
+    self notify( "gf_kill_health_hud" );
+    self gf_destroyHealthPanel();
+    self endon( "gf_kill_health_hud" );
+    self endon( "disconnect" );
+
+    // Wait BEFORE creating the panel — the loadout intro owns ~18 client HUD elements
+    // and the client pool is shared. Hidden elements still occupy slots, so we must not
+    // build the panel until the loadout HUD has been destroyed and freed its slots.
+    self gf_waitLoadoutIntroDone();
+
+    gf_updateHealthHUD();              // seed the published totals
+    self gf_createHealthPanel();       // pool is free now that the loadout intro is gone
+    self gf_updateHealthPanel();       // fill values + target alphas in before revealing
+    self gf_hideHealthPanelForIntro(); // park off-screen + transparent
+    self gf_revealHealthPanel();       // slide + fade in together
+    wait 0.75;                         // let the reveal finish before the loop retargets
+
+    for ( ;; )
     {
-        set = level.gf_healthHud["axis"];
-        gf_updateTeamAliveRow( set.rows[0], axisStats,   ( 0.42, 0.68, 0.46 ) );
-        gf_updateTeamAliveRow( set.rows[1], alliesStats, ( 0.73, 0.29, 0.19 ) );
+        self gf_updateHealthPanel();
+        wait 0.1;
     }
 }
 
-gf_updateTeamAliveRow( row, stats, color )
+gf_createHealthPanel()
+{
+    self.gf_hudElems = [];
+    self.gf_rows = [];
+
+    self.gf_bg    = self gf_clCreateFrame( -70,  -39, 180, 42, "hud_frame_faction_fade",  0.34, 37 );
+    self.gf_lines = self gf_clCreateFrame( -162, -45, 250, 52, "hud_frame_faction_lines", 0.30, 38 );
+
+    self.gf_rows[0] = self gf_clCreateRow( gf_HP_ROW0_Y(), 40 );
+    self.gf_rows[1] = self gf_clCreateRow( gf_HP_ROW1_Y(), 50 );
+}
+
+gf_clCreateRow( y, sortBase )
+{
+    row = spawnstruct();
+    row.y = y;
+    row.x = -12;
+    row.width = 88;
+    row.height = 10;
+
+    row.bar = self gf_clCreateBar( row.x, y, row.width, row.height, sortBase );
+
+    row.icons = [];
+    for ( i = 0; i < 3; i++ )
+        row.icons[i] = self gf_clCreateIcon( 4 + i * 9, y, sortBase + 5 );
+
+    row.number = self gf_clCreateNumber( y, sortBase + 6 );
+    return row;
+}
+
+gf_clCreateFrame( x, y, w, h, shader, alpha, sort )
+{
+    icon = self createIcon( shader, w, h );
+    icon setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
+    icon.color = ( 1, 1, 1 );
+    gf_styleHealthElem( icon, sort );
+    icon.alpha = alpha;
+    self.gf_hudElems[self.gf_hudElems.size] = icon;
+    return icon;
+}
+
+gf_clCreateBar( x, y, w, h, sort )
+{
+    bar = self createBar( ( 1, 1, 1 ), w, h );
+    bar setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
+    bar.bar.shader = "hud_score_progress";
+    bar.bar setShader( "hud_score_progress", w, h );
+    bar.barFrame setShader( "progress_bar_fg", w, h );
+    bar.gf_bgAlpha    = 0;
+    bar.gf_frameAlpha = 0;
+    bar.gf_fillAlpha  = 0.80;
+    gf_styleHealthElem( bar, sort );
+    gf_styleHealthElem( bar.bar, sort + 1 );
+    gf_styleHealthElem( bar.barFrame, sort + 2 );
+    self.gf_hudElems[self.gf_hudElems.size] = bar;
+    gf_setHealthBarFraction( bar, 0, false );
+    return bar;
+}
+
+gf_clCreateIcon( x, y, sort )
+{
+    icon = self createIcon( "hud_death_suicide", 7, 7 );
+    icon setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
+    icon.color = ( 1, 1, 1 );
+    gf_styleHealthElem( icon, sort );
+    icon.alpha = 0;
+    self.gf_hudElems[self.gf_hudElems.size] = icon;
+    return icon;
+}
+
+gf_clCreateNumber( y, sort )
+{
+    num = self createFontString( "default", 1.2 );
+    num setPoint( "CENTER LEFT", "CENTER LEFT", 80, y );   // initial x; retargeted to the fill edge each tick
+    gf_styleHealthElem( num, sort );
+    num.alpha = 0;
+    self.gf_hudElems[self.gf_hudElems.size] = num;
+    return num;
+}
+
+// Park the whole panel off-screen left and stash each element's target alpha so the
+// reveal can both slide it in and fade it up to that alpha.
+gf_hideHealthPanelForIntro()
+{
+    if ( !isDefined( self.gf_hudElems ) )
+        return;
+
+    offset = gf_HP_SLIDE_OFFSET();
+    for ( i = 0; i < self.gf_hudElems.size; i++ )
+    {
+        elem = self.gf_hudElems[i];
+        gf_offsetHealthHUDElem( elem, offset, 0 );
+        gf_stashAndClearAlpha( elem );
+        if ( isDefined( elem.elemType ) && elem.elemType == "bar" )
+        {
+            if ( isDefined( elem.bar ) )      gf_stashAndClearAlpha( elem.bar );
+            if ( isDefined( elem.barFrame ) ) gf_stashAndClearAlpha( elem.barFrame );
+        }
+    }
+}
+
+gf_stashAndClearAlpha( elem )
+{
+    if ( !isDefined( elem ) )
+        return;
+    elem.gf_targetAlpha = elem.alpha;
+    elem.alpha = 0;
+}
+
+// Slide back to home and fade up to the stashed alpha, both over the same 0.75s.
+gf_revealHealthPanel()
+{
+    if ( !isDefined( self.gf_hudElems ) )
+        return;
+
+    offset = gf_HP_SLIDE_OFFSET();
+    for ( i = 0; i < self.gf_hudElems.size; i++ )
+    {
+        elem = self.gf_hudElems[i];
+        gf_offsetHealthHUDElem( elem, 0 - offset, 0.75 );
+        gf_fadeToTarget( elem );
+        if ( isDefined( elem.elemType ) && elem.elemType == "bar" )
+        {
+            if ( isDefined( elem.bar ) )      gf_fadeToTarget( elem.bar );
+            if ( isDefined( elem.barFrame ) ) gf_fadeToTarget( elem.barFrame );
+        }
+    }
+}
+
+gf_fadeToTarget( elem )
+{
+    if ( !isDefined( elem ) )
+        return;
+    target = 0;
+    if ( isDefined( elem.gf_targetAlpha ) )
+        target = elem.gf_targetAlpha;
+    elem fadeOverTime( 0.75 );
+    elem.alpha = target;
+}
+
+// Hold the panel reveal until the per-player loadout intro has finished and slid out
+// (gf_showWeaponHUD notifies "gf_loadout_intro_done" when it destroys). 7s fallback in
+// case the loadout HUD never ran this spawn.
+gf_waitLoadoutIntroDone()
+{
+    self endon( "disconnect" );
+    self endon( "gf_kill_health_hud" );
+
+    self thread gf_loadoutIntroTimeout();
+    self waittill( "gf_loadout_intro_done" );
+}
+
+gf_loadoutIntroTimeout()
+{
+    self endon( "disconnect" );
+    self endon( "gf_kill_health_hud" );
+    self endon( "gf_loadout_intro_done" );
+    wait 7.0;
+    self notify( "gf_loadout_intro_done" );
+}
+
+gf_updateHealthPanel()
+{
+    if ( !isDefined( self.gf_rows ) )
+        return;
+
+    team = undefined;
+    if ( isDefined( self.pers["team"] ) )
+        team = self.pers["team"];
+
+    if ( team != "allies" && team != "axis" )
+    {
+        self gf_hideHealthRow( self.gf_rows[0] );
+        self gf_hideHealthRow( self.gf_rows[1] );
+        return;
+    }
+
+    if ( team == "allies" )
+    {
+        friendlyTeam = "allies";
+        enemyTeam    = "axis";
+    }
+    else
+    {
+        friendlyTeam = "axis";
+        enemyTeam    = "allies";
+    }
+
+    self gf_setHealthRow( self.gf_rows[0], friendlyTeam, ( 0.42, 0.68, 0.46 ) );
+    self gf_setHealthRow( self.gf_rows[1], enemyTeam,    ( 0.73, 0.29, 0.19 ) );
+}
+
+gf_setHealthRow( row, team, color )
 {
     if ( !isDefined( row ) )
         return;
-    frac = gf_getTeamHealthBarFraction( stats.current, stats.max );
-    if ( isDefined( row.fill ) && isDefined( row.fill.bar ) )
-        row.fill.bar.color = color;
-    gf_setHealthBarFraction( row.fill, frac, stats.current > 0 );
 
-    visibleIcons = stats.players.size;
-    if ( visibleIcons > 3 )
-        visibleIcons = 3;
+    hp    = gf_readTeamHP( team );
+    frac  = gf_readTeamFrac( team );
+    count = gf_readTeamCount( team );
+    alive = gf_readTeamAlive( team );
 
-    aliveCount = 0;
-    for ( i = 0; i < visibleIcons; i++ )
-    {
-        player = stats.players[i];
-        if ( isDefined( player.sessionstate ) && player.sessionstate == "playing" && isDefined( player.health ) && player.health > 0 )
-            aliveCount++;
-    }
+    if ( isDefined( row.bar ) && isDefined( row.bar.bar ) )
+        row.bar.bar.color = color;
+    gf_setHealthBarFraction( row.bar, frac, hp > 0 );
 
+    gf_setHealthNumber( row.number, hp, frac, color );
+
+    if ( count > 3 ) count = 3;
+    if ( alive > 3 ) alive = 3;
     for ( i = 0; i < 3; i++ )
     {
-        if ( i >= visibleIcons )
+        icon = row.icons[i];
+        if ( !isDefined( icon ) )
+            continue;
+        if ( i >= count )
         {
-            row.icons[i].alpha = 0;
+            icon.alpha = 0;
             continue;
         }
-
-        row.icons[i].alpha = 0.95;
-
-        if ( i < aliveCount )
-            row.icons[i].color = color;
+        icon.alpha = 0.95;
+        if ( i < alive )
+            icon.color = color;
         else
-            row.icons[i].color = ( 1, 1, 1 );
+            icon.color = ( 1, 1, 1 );
     }
+}
 
-    if ( isDefined( row.hpText ) )
+gf_hideHealthRow( row )
+{
+    if ( !isDefined( row ) )
+        return;
+
+    gf_setHealthBarFraction( row.bar, 0, false );
+    if ( isDefined( row.number ) )
+        row.number.alpha = 0;
+    for ( i = 0; i < 3; i++ )
+        if ( isDefined( row.icons[i] ) )
+            row.icons[i].alpha = 0;
+}
+
+gf_readTeamHP( team )
+{
+    if ( team == "allies" && isDefined( level.gf_hpAllies ) )
+        return level.gf_hpAllies;
+    if ( team == "axis" && isDefined( level.gf_hpAxis ) )
+        return level.gf_hpAxis;
+    return 0;
+}
+
+gf_readTeamFrac( team )
+{
+    if ( team == "allies" && isDefined( level.gf_fracAllies ) )
+        return level.gf_fracAllies;
+    if ( team == "axis" && isDefined( level.gf_fracAxis ) )
+        return level.gf_fracAxis;
+    return 0;
+}
+
+gf_readTeamCount( team )
+{
+    if ( team == "allies" && isDefined( level.gf_cntAllies ) )
+        return level.gf_cntAllies;
+    if ( team == "axis" && isDefined( level.gf_cntAxis ) )
+        return level.gf_cntAxis;
+    return 0;
+}
+
+gf_readTeamAlive( team )
+{
+    if ( team == "allies" && isDefined( level.gf_aliveAllies ) )
+        return level.gf_aliveAllies;
+    if ( team == "axis" && isDefined( level.gf_aliveAxis ) )
+        return level.gf_aliveAxis;
+    return 0;
+}
+
+gf_setHealthNumber( num, hp, frac, color )
+{
+    if ( !isDefined( num ) )
+        return;
+
+    if ( hp > 0 )
     {
-        if ( stats.current > 0 )
-        {
-            row.hpText setText( int( stats.current ) + "" );
-            row.hpText.x = -12 + int( 88.0 * frac + 0.5 ) + 4;
-            row.hpText.color = color;
-            row.hpText.alpha = 0.9;
-        }
-        else
-        {
-            row.hpText.alpha = 0;
-        }
+        // Ride the bar's fill edge: the bar spans x -12..76 (width 88), so the fill tip
+        // is at -12 + 88*frac. +3 leaves a small gap so the number sits just off the edge.
+        // The bar's bg/frame are alpha 0, so past the fill only the faint faction frame
+        // overlaps — the number stays readable.
+        num setText( int( hp ) + "" );
+        num.x = -12 + int( 88.0 * frac + 0.5 ) + 3;
+        num.color = color;
+        num.alpha = 1;
     }
+    else
+    {
+        num.alpha = 0;
+    }
+}
+
+gf_destroyHealthPanel()
+{
+    if ( !isDefined( self.gf_hudElems ) )
+        return;
+
+    for ( i = 0; i < self.gf_hudElems.size; i++ )
+    {
+        elem = self.gf_hudElems[i];
+        if ( !isDefined( elem ) )
+            continue;
+        if ( isDefined( elem.elemType ) && elem.elemType == "bar" )
+        {
+            if ( isDefined( elem.bar ) )
+                elem.bar destroyElem();
+            if ( isDefined( elem.barFrame ) )
+                elem.barFrame destroyElem();
+        }
+        elem destroyElem();
+    }
+
+    self.gf_hudElems = undefined;
+    self.gf_rows = undefined;
 }
 
 gf_getTeamHealthStats( team )
@@ -315,6 +452,7 @@ gf_getTeamHealthStats( team )
     stats = spawnstruct();
     stats.current = 0;
     stats.max = 0;
+    stats.alive = 0;
     stats.players = [];
 
     for ( i = 0; i < level.players.size; i++ )
@@ -331,7 +469,10 @@ gf_getTeamHealthStats( team )
         stats.max += maxHP;
 
         if ( isDefined( player.health ) && player.health > 0 )
+        {
             stats.current += player.health;
+            stats.alive++;
+        }
     }
 
     return stats;
@@ -443,51 +584,6 @@ gf_offsetHealthHUDElem( elem, xOffset, moveTime )
             elem.barFrame.x += xOffset;
         }
     }
-}
-
-gf_refreshHealthHUD()
-{
-    wait 0.05;
-    if ( !isDefined( level.gf_healthHud ) )
-        return;
-    gf_updateHealthHUD();
-}
-
-gf_destroyHealthHUD()
-{
-    if ( !isDefined( level.gf_healthHud ) )
-        return;
-
-    teams = [];
-    teams[0] = "allies";
-    teams[1] = "axis";
-
-    for ( t = 0; t < 2; t++ )
-    {
-        team = teams[t];
-        if ( !isDefined( level.gf_healthHud[team] ) )
-            continue;
-        set = level.gf_healthHud[team];
-        if ( !isDefined( set.elems ) )
-            continue;
-        for ( i = 0; i < set.elems.size; i++ )
-        {
-            elem = set.elems[i];
-            if ( !isDefined( elem ) )
-                continue;
-            if ( isDefined( elem.elemType ) && elem.elemType == "bar" )
-            {
-                if ( isDefined( elem.bar ) )
-                    elem.bar destroyElem();
-                if ( isDefined( elem.barFrame ) )
-                    elem.barFrame destroyElem();
-            }
-            elem destroyElem();
-        }
-    }
-
-    level.gf_healthHud = undefined;
-    level.gf_sv_elem_count = 0;
 }
 
 // ─── Loadout HUD ─────────────────────────────────────────────────────────────
@@ -653,6 +749,9 @@ gf_showWeaponHUD( load )
 
     wait 0.8;
     gf_destroyLoadoutHUD();
+
+    // Cue the health panel to slide/fade in now that the loadout intro has cleared.
+    self notify( "gf_loadout_intro_done" );
 }
 
 gf_getPerkShader( specialty )

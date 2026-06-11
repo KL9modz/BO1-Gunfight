@@ -42,19 +42,22 @@ gf_playerSpawnedCB()
     level notify( "spawned_player" );
     self gf_syncCaptureScore();
     self gf_initDamageScore();
-    if ( !isDefined( level.gf_healthHud ) || !isDefined( level.gf_hudCreatedRound ) || level.gf_hudCreatedRound != game["roundsplayed"] )
+
+    // Level-side stats publisher — start once per round; the player panels read its output.
+    if ( !isDefined( level.gf_healthHudStartRound ) || level.gf_healthHudStartRound != game["roundsplayed"] )
     {
-        if ( !isDefined( level.gf_healthHudStartRound ) || level.gf_healthHudStartRound != game["roundsplayed"] )
-        {
-            level.gf_healthHudStartRound = game["roundsplayed"];
-            level thread gf_startHealthHUD();
-        }
+        level.gf_healthHudStartRound = game["roundsplayed"];
+        level thread gf_startHealthHUD();
     }
-    else
-        level thread gf_refreshHealthHUD();
     gf_queueHealthHUDUpdate();
     self gf_applyVisualTweaks();
     self thread gf_onSpawned();
+
+    // Drive the entire per-player health panel in the PLAYER's own context (create +
+    // update + destroy) — T5 client HUD elements don't network if created from a level
+    // thread. Mirrors the loadout HUD pattern.
+    if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+        self thread gf_runHealthHUD();
 
     if ( getDvarInt( "gf_debug_spawns" ) == 1 )
         self thread gf_startSpawnRecorder();
@@ -525,91 +528,23 @@ gf_cleanupOvertimeTimerState()
     setGameEndTime( 0 );
 }
 
-gf_createOvertimeWorldIcons( origin )
+// Sets the 2D minimap icon and the 3D world icon together, from the SAME native
+// _gameobjects path, so they can never disagree. For a given relative-team slot the
+// 2D uses "compass_waypoint_X" and the 3D uses "waypoint_X" — the same artwork in
+// minimap vs world form, so their colors coincide by construction regardless of the
+// shaders' baked colors. dom.gsc convention: "defend" renders in the friendly/owner
+// color (green), "capture" in the enemy color (red), "captureneutral" white.
+//
+// NOTE (engine constraint): the per-team friendly/enemy coloring works here because
+// these are native team-routed objective/objpoint elements. It CANNOT be done with
+// world-space FX (the apron) — those render identically for every player. So the
+// team-relative green/red lives on these icons; the apron is an absolute cue only.
+gf_setOvertimeZoneIcons( zone, friendlyIcon, enemyIcon )
 {
-    gf_destroyOvertimeWorldIcons();
-
-    wi = newTeamHudElem( "allies" );
-    wi.x = origin[0];
-    wi.y = origin[1];
-    wi.z = origin[2];
-    wi.alpha = 1.0;
-    wi.archived = false;
-    wi.hidewheninmenu = true;
-    wi setShader( "waypoint_captureneutral", 24, 24 );
-    wi setWaypoint( true, "waypoint_captureneutral" );
-    level.gf_ot_wi_allies = wi;
-
-    wi = newTeamHudElem( "axis" );
-    wi.x = origin[0];
-    wi.y = origin[1];
-    wi.z = origin[2];
-    wi.alpha = 1.0;
-    wi.archived = false;
-    wi.hidewheninmenu = true;
-    wi setShader( "waypoint_captureneutral", 24, 24 );
-    wi setWaypoint( true, "waypoint_captureneutral" );
-    level.gf_ot_wi_axis = wi;
-}
-
-gf_destroyOvertimeWorldIcons()
-{
-    if ( isDefined( level.gf_ot_wi_allies ) )
-    {
-        level.gf_ot_wi_allies destroy();
-        level.gf_ot_wi_allies = undefined;
-    }
-    if ( isDefined( level.gf_ot_wi_axis ) )
-    {
-        level.gf_ot_wi_axis destroy();
-        level.gf_ot_wi_axis = undefined;
-    }
-}
-
-// Team-relative icon colors: green = your team capturing, red = enemy capturing.
-// wi_allies and wi_axis are separate newTeamHudElem elements so they can show different
-// colors simultaneously. FX apron is world-space (same for all viewers).
-gf_updateOvertimeWorldIcons( iconState )
-{
-    alliesShader = "waypoint_captureneutral";
-    axisShader   = "waypoint_captureneutral";
-    alliesColor  = ( 1, 1, 1 );
-    axisColor    = ( 1, 1, 1 );
-
-    if ( iconState == "allies" )
-    {
-        alliesShader = "waypoint_capture";
-        axisShader   = "waypoint_capture";
-        alliesColor  = ( 0.2, 0.9, 0.2 );   // allies see green (friendly capturing)
-        axisColor    = ( 1.0, 0.35, 0.35 );  // axis see red (enemy capturing)
-    }
-    else if ( iconState == "axis" )
-    {
-        alliesShader = "waypoint_capture";
-        axisShader   = "waypoint_capture";
-        alliesColor  = ( 1.0, 0.35, 0.35 );  // allies see red (enemy capturing)
-        axisColor    = ( 0.2, 0.9, 0.2 );    // axis see green (friendly capturing)
-    }
-    else if ( iconState == "contested" )
-    {
-        alliesShader = "waypoint_defend";
-        axisShader   = "waypoint_defend";
-        alliesColor  = ( 1.0, 0.6, 0.0 );
-        axisColor    = ( 1.0, 0.6, 0.0 );
-    }
-
-    if ( isDefined( level.gf_ot_wi_allies ) )
-    {
-        level.gf_ot_wi_allies setShader( alliesShader, 24, 24 );
-        level.gf_ot_wi_allies setWaypoint( true, alliesShader );
-        level.gf_ot_wi_allies.color = alliesColor;
-    }
-    if ( isDefined( level.gf_ot_wi_axis ) )
-    {
-        level.gf_ot_wi_axis setShader( axisShader, 24, 24 );
-        level.gf_ot_wi_axis setWaypoint( true, axisShader );
-        level.gf_ot_wi_axis.color = axisColor;
-    }
+    zone maps\mp\gametypes\_gameobjects::set2DIcon( "friendly", "compass_waypoint_" + friendlyIcon );
+    zone maps\mp\gametypes\_gameobjects::set3DIcon( "friendly", "waypoint_"         + friendlyIcon );
+    zone maps\mp\gametypes\_gameobjects::set2DIcon( "enemy",    "compass_waypoint_" + enemyIcon );
+    zone maps\mp\gametypes\_gameobjects::set3DIcon( "enemy",    "waypoint_"         + enemyIcon );
 }
 
 gf_setOvertimeZoneIconColor( zone, team )
@@ -627,7 +562,10 @@ gf_setOvertimeZoneIconColor( zone, team )
             zone.flagModel setModel( "mp_flag_neutral" );
     }
 
-    // Ground apron FX — delete old handle, spawn new one (no apron for neutral).
+    // Ground apron FX — delete old handle, spawn the color for this state.
+    // World-space FX (same for all viewers), so it's an absolute zone-activity cue,
+    // NOT team-relative: white idle, gold while a team captures, red contested.
+    // Team-relative green/red lives on the 3D icon — see CLAUDE.md OT zone color system.
     if ( isDefined( zone.baseFxPos ) )
     {
         if ( isDefined( zone.baseFxHandle ) )
@@ -636,7 +574,7 @@ gf_setOvertimeZoneIconColor( zone, team )
             zone.baseFxHandle = undefined;
         }
 
-        fxAsset = undefined;
+        fxAsset = level.gf_ot_baseFx_neutral;   // white apron when idle
         if ( team == "allies" )
             fxAsset = level.gf_ot_baseFx_allies;
         else if ( team == "axis" )
@@ -651,35 +589,21 @@ gf_setOvertimeZoneIconColor( zone, team )
         }
     }
 
-    // Route "friendly"/"enemy" icon slots to the correct teams.
-    // With ownerTeam = "neutral" all players land in "enemy" (both see the same icon).
-    // With ownerTeam = the capturing team, capturers see "friendly", defenders see "enemy".
-    if ( team == "allies" )
-        zone maps\mp\gametypes\_gameobjects::setOwnerTeam( "allies" );
-    else if ( team == "axis" )
-        zone maps\mp\gametypes\_gameobjects::setOwnerTeam( "axis" );
+    // Icons: the capturing team is set as ownerTeam, so _gameobjects routes that team
+    // into the "friendly" slot and the other team into "enemy". Both the 2D minimap and
+    // 3D world icon are set together (gf_setOvertimeZoneIcons) so they always coincide.
+    // friendly = defend (green), enemy = capture (red), idle/contested = captureneutral.
+    if ( team == "allies" || team == "axis" )
+    {
+        zone maps\mp\gametypes\_gameobjects::setOwnerTeam( team );
+        gf_setOvertimeZoneIcons( zone, "defend", "capture" );   // capturers green, defenders red
+    }
     else
+    {
+        // neutral (nobody capturing) and contested both resolve to a white icon for all.
         zone maps\mp\gametypes\_gameobjects::setOwnerTeam( "neutral" );
-
-    // Minimap icons mirror the 3D world icons: friendly team sees capture (green),
-    // enemy team sees defend (red). Matches dom.gsc convention.
-    if ( team == "contested" )
-    {
-        zone maps\mp\gametypes\_gameobjects::set2DIcon( "friendly", "compass_waypoint_defend" );
-        zone maps\mp\gametypes\_gameobjects::set2DIcon( "enemy",    "compass_waypoint_defend" );
+        gf_setOvertimeZoneIcons( zone, "captureneutral", "captureneutral" );
     }
-    else if ( team == "allies" || team == "axis" )
-    {
-        zone maps\mp\gametypes\_gameobjects::set2DIcon( "friendly", "compass_waypoint_capture" );
-        zone maps\mp\gametypes\_gameobjects::set2DIcon( "enemy",    "compass_waypoint_defend" );
-    }
-    else
-    {
-        zone maps\mp\gametypes\_gameobjects::set2DIcon( "friendly", "compass_waypoint_captureneutral" );
-        zone maps\mp\gametypes\_gameobjects::set2DIcon( "enemy",    "compass_waypoint_captureneutral" );
-    }
-
-    gf_updateOvertimeWorldIcons( team );
 }
 
 // Polls player positions every 0.1 s and drives all OT zone visuals (FX apron,
@@ -769,8 +693,6 @@ gf_cleanupOvertimeZone( zone )
     if ( !isDefined( zone ) )
         return;
 
-    gf_destroyOvertimeWorldIcons();
-
     if ( isDefined( zone.baseFxHandle ) )
         zone.baseFxHandle delete();
     zone.baseFxHandle = undefined;
@@ -810,11 +732,42 @@ gf_cleanupOvertimeZone( zone )
         zone.customTrigger delete();
 }
 
+// Re-registers the OT apron FX handles. MUST run every OT entry, not just at
+// precache: onPrecacheGameType runs once per match (guarded by game["gamestarted"]),
+// but _globallogic::endGame does map_restart(true) between rounds, which wipes all
+// level.* vars — so the handles set at precache are undefined by round 2. loadfx()
+// at runtime re-establishes them. The custom .efx live in mod.ff and stay in the
+// loaded zone for the whole server session, so loadfx finds them every round.
+gf_loadOvertimeApronFx()
+{
+    // The apron is WORLD-SPACE FX — it renders identically for every player, so it
+    // physically cannot be team-relative (T5 has no per-team FX visibility). It is an
+    // absolute "zone activity" cue:  idle = white, capturing (either team) = gold,
+    // contested = red.  The team-relative friendly/enemy color (green/red) lives on
+    // the 3D icon instead (newTeamHudElem, per-team).  White is the custom mod.ff halo;
+    // gold/red are stock common_mp_fx ground markers (always runtime-loadable). loadfx
+    // is re-called every OT entry because map_restart(true) between rounds wipes these
+    // level.* handles.
+    whiteFx = loadfx( "misc/fx_ui_flagbase_gf_white" );            // custom (mod.ff)
+    goldFx  = loadfx( "env/light/fx_ray_grnd_loc_marker_ylw_mp" ); // stock (yellow ~ gold)
+    redFx   = loadfx( "env/light/fx_ray_grnd_loc_marker_red_mp" ); // stock
+
+    level.gf_ot_baseFx_neutral   = whiteFx;   // nobody capturing
+    level.gf_ot_baseFx_allies    = goldFx;    // a team is capturing
+    level.gf_ot_baseFx_axis      = goldFx;    // ...same gold regardless of which team
+    level.gf_ot_baseFx_contested = redFx;     // both teams contesting
+
+    logPrint( "GF_OT: apron FX white=" + int( isDefined( whiteFx ) ) + " gold=" + int( isDefined( goldFx ) ) + " red=" + int( isDefined( redFx ) ) + "\n" );
+}
+
 gf_createOvertimeZone()
 {
     flagTrigger = gf_getOvertimeFlagTrigger();
     if ( !isDefined( flagTrigger ) )
         return undefined;
+
+    // Refresh FX handles wiped by the previous round's map_restart.
+    gf_loadOvertimeApronFx();
 
     traceStart = flagTrigger.origin + ( 0, 0, 32 );
     traceEnd   = flagTrigger.origin + ( 0, 0, -256 );
@@ -845,8 +798,7 @@ gf_createOvertimeZone()
     zone maps\mp\gametypes\_gameobjects::allowUse( "any" );
     zone maps\mp\gametypes\_gameobjects::setUseTime( 2.5 );
     zone maps\mp\gametypes\_gameobjects::setUseText( &"MP_CAPTURING_FLAG" );
-    zone maps\mp\gametypes\_gameobjects::set2DIcon( "friendly", "compass_waypoint_captureneutral" );
-    zone maps\mp\gametypes\_gameobjects::set2DIcon( "enemy",    "compass_waypoint_captureneutral" );
+    gf_setOvertimeZoneIcons( zone, "captureneutral", "captureneutral" );
     zone maps\mp\gametypes\_gameobjects::setVisibleTeam( "any" );
     zone.onUse           = ::gf_onZoneCapture;
     zone.spawnedModel    = spawnedModel;
@@ -861,7 +813,6 @@ gf_createOvertimeZone()
     zone.baseFxRight = fxRight;
     gf_setOvertimeZoneIconColor( zone, "neutral" );
 
-    gf_createOvertimeWorldIcons( flagTrigger.origin + ( 0, 0, 100 ) );
     level thread gf_overtimeZoneVisuals( zone, flagTrigger );
 
     return zone;

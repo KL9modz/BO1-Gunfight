@@ -308,9 +308,17 @@ gf_startHUDPoolOverlay()
 
         clCount = 0;
         if ( isDefined( self.gf_loadoutHudElems ) )
-            clCount = self.gf_loadoutHudElems.size;
+            clCount += self.gf_loadoutHudElems.size;
+        if ( isDefined( self.gf_hudElems ) )
+            clCount += self.gf_hudElems.size;
 
-        overlay setText( "SV: " + svCount + "/" + svMax + "  CL: " + clCount + "/" + clMax );
+        aHP = "-"; aN = "-"; xHP = "-"; xN = "-";
+        if ( isDefined( level.gf_dbg_alliesHP ) ) aHP = level.gf_dbg_alliesHP;
+        if ( isDefined( level.gf_dbg_alliesN ) )  aN  = level.gf_dbg_alliesN;
+        if ( isDefined( level.gf_dbg_axisHP ) )   xHP = level.gf_dbg_axisHP;
+        if ( isDefined( level.gf_dbg_axisN ) )    xN  = level.gf_dbg_axisN;
+
+        overlay setText( "SV: " + svCount + "/" + svMax + "  CL: " + clCount + "/" + clMax + "   A " + aHP + "hp/" + aN + "p  X " + xHP + "hp/" + xN + "p" );
         wait 0.2;
     }
 }

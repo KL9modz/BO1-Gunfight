@@ -10,6 +10,7 @@
 ### TODO 
 - Ingame mod menu for: dVars, pause game, map, mods, etc
 - Plutonium Server
+- Find death sound
 - Improve bot warfare mod so I have easy bot fill add/kick options for Gunfight
 ---
 
@@ -58,34 +59,44 @@
 
 ## Overtime Zone Color System
 
+Two independent visual layers carry different information:
+- **Icons** (2D minimap + 3D above the flag) — **team-relative**: green = *your* team capturing, red = *enemy* capturing.
+- **Apron** (ground FX ring) — **absolute**: a zone-activity cue everyone sees the same.
+
 ### Required behavior
-| State | Apron (FX) — same for all viewers | 3D icon — allies viewer | 3D icon — axis viewer |
+| State | Apron (FX) — same for all viewers | Minimap + 3D icon — capturing-team viewer | Minimap + 3D icon — other-team viewer |
 |---|---|---|---|
 | Nobody capturing | White | White | White |
-| Allies capturing | Blue | Green (friendly) | Red (enemy) |
-| Axis capturing | Red | Red (enemy) | Green (friendly) |
-| Contested | White | Gold | Gold |
+| A team capturing | Gold | Green (friendly) | Red (enemy) |
+| Contested (both in) | Red | White | White |
 
-### Why icons are team-relative but FX is absolute
-**3D icons** (`level.gf_ot_wi_allies` / `level.gf_ot_wi_axis`) are `newTeamHudElem(team)` elements — server-side, each visible only to its own team. They can therefore show different colors simultaneously. **Green = your team is capturing, Red = enemy is capturing** (matching dom.gsc convention).
+### Why icons CAN be team-relative but the apron CANNOT — engine constraint
+This is the key limitation, and it dictates the whole design:
 
-**FX apron** entities are **world-space** in T5 — they render identically for every player. Per-team FX visibility does not exist. The apron therefore uses an absolute palette (blue = allies, red = axis, white = neutral/contested) as a secondary "zone activity" cue. The 3D icon carries the authoritative team-relative information.
+**Icons are team-routed elements.** The 2D minimap icon is an `objective` (per-team `objIDAllies`/`objIDAxis`) and the 3D world icon is an `objpoint` (`newTeamHudElem(team)`). Both are created and shown **per team**, so allies and axis can be shown *different* icons at the same instant. That is how "green to your team / red to the enemy" is possible.
 
-The 2D minimap compass icon uses `setOwnerTeam` + `set2DIcon` (separate, built into `_gameobjects`).
+**The apron is world-space FX.** In T5, an FX entity spawned with `spawnFx` exists in **world space** and is rendered **identically for every connected player**. There is no per-team FX visibility — you cannot show a blue ring to allies and a red ring to axis from one FX entity. Therefore the apron *cannot* encode "friendly/enemy"; it can only show one color to everyone. We use it as an absolute activity cue: **white idle, gold while a team is capturing, red contested.**
+
+### Why the icons coincide (2D minimap == 3D flag icon)
+Both icons are driven from the **same native `_gameobjects` path** in `gf_setOvertimeZoneIcons( zone, friendlyIcon, enemyIcon )`, which sets `set2DIcon`/`set3DIcon` with a **matched shader family**: `compass_waypoint_X` for the minimap and `waypoint_X` for the world icon, same `X` per relative-team slot. Because they are the same artwork in 2D vs 3D form, their colors coincide *by construction* — no manual RGB to keep in sync. Mapping (dom.gsc convention): **friendly → `defend` (green), enemy → `capture` (red), idle/contested → `captureneutral` (white).**
+`setOwnerTeam( capturingTeam )` routes the capturing team into the "friendly" slot and the other team into "enemy".
+
+> Pitfall that caused the earlier "my team shows red" bug: the friendly/enemy → shader mapping was reversed (`friendly→capture`). `defend` is the friendly/owner color, `capture` is the enemy color. Keep friendly→defend, enemy→capture.
 
 ### Implementation
-- **FX** (`gf_setOvertimeZoneIconColor`): spawns `gf_ot_baseFx_neutral/allies/axis/contested` (contested reuses neutral/white — no gold .efx exists). World-space, same for all viewers.
-- **3D icons** (`gf_updateOvertimeWorldIcons`): sets `level.gf_ot_wi_allies` and `level.gf_ot_wi_axis` to **different** colors based on `iconState` — green for the capturing team's element, red for the other.
-- **Visual driver**: `gf_overtimeZoneVisuals` polling thread (100 ms tick) — uses `isTouching` to count players per team, drives all visual state transitions. Replaced the old `_gameobjects` `onBeginUse/onEndUse/onUseUpdate` callbacks which had a race condition (`setClaimTeam` fires before `triggerTouchThink` increments `numTouching`, causing spurious neutral resets on ~50 % of zone entries).
+- **Icons** (`gf_setOvertimeZoneIcons` + `gf_setOvertimeZoneIconColor`): native `set2DIcon`/`set3DIcon` matched pairs + `setOwnerTeam`. No custom HUD elements (the old `level.gf_ot_wi_*` / `gf_updateOvertimeWorldIcons` were removed — a parallel custom 3D element that drifted out of sync with the native 2D icon).
+- **Apron FX** (`gf_setOvertimeZoneIconColor`): deletes the old handle and `spawnFx` the color for the state — `gf_ot_baseFx_neutral`(white) / `_allies`+`_axis`(gold) / `_contested`(red).
+- **Visual driver**: `gf_overtimeZoneVisuals` polling thread (100 ms tick) — counts players per team via `isTouching`, drives all state transitions. Replaced the old `_gameobjects` `onBeginUse/onEndUse/onUseUpdate` callbacks which had a `numTouching` race.
 
-### FX rebuild requirement
-The apron FX assets must be compiled into mod.ff for `loadfx()` to return non-zero. Three `.efx` files live in `raw/fx/misc/` — they must be staged to the linker `raw/` before building:
-```
-raw/fx/misc/fx_ui_flagbase_gf_white.efx   (neutral + contested)
-raw/fx/misc/fx_ui_flagbase_gf_blue.efx    (allies capturing)
-raw/fx/misc/fx_ui_flagbase_gf_red.efx     (axis capturing)
-```
-`mod.csv` lists these three; the gold entry was removed (no source file). Rebuild mod.ff whenever these change.
+### Apron FX handle lifecycle — must reload every OT (map_restart pitfall)
+`loadfx()` handles are stored in `level.*` (`level.gf_ot_baseFx_*`). `onPrecacheGameType` runs **once per match**, but `_globallogic::endGame` does `map_restart(true)` between rounds, which **wipes all `level.*`**. So a handle loaded only at precache is `undefined` by round 2 → no apron. Fix: `gf_loadOvertimeApronFx()` is called **every OT entry** from `gf_createOvertimeZone` (as well as at precache) to re-establish the handles. See memory `onprecache-once-per-match-loadfx-wiped`.
+
+### FX assets (no rebuild needed for current colors)
+- **white idle** → custom `misc/fx_ui_flagbase_gf_white` (in mod.ff). The only color sourced from the custom `.efx`.
+- **gold capturing** → stock `env/light/fx_ray_grnd_loc_marker_ylw_mp` (yellow ≈ gold).
+- **red contested** → stock `env/light/fx_ray_grnd_loc_marker_red_mp`.
+
+Stock `fx_ray_grnd_loc_marker_*` markers only exist in **grn / red / ylw** (no white, no blue) — that's why gold/red are stock but white stays custom. The old `fx_ui_flagbase_gf_blue.efx` (allies/blue) is now **unused**; `blue.efx` was earlier edited to green content anyway. Only rebuild mod.ff if you change the custom white `.efx`.
 
 ---
 
