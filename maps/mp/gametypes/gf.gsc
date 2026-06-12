@@ -140,6 +140,21 @@ onPrecacheGameType()
     precacheShader( "hud_acoustic_sensor"      );
     precacheShader( "hud_deployable_camera"    );
 
+    // Special weapons (minigun = Death Machine, m202 = Grim Reaper) are NOT in the
+    // normal MP weapon table, so the class system never auto-precaches them like it
+    // does famas/galil/etc. Without an explicit PrecacheItem here, GiveWeapon()
+    // silently no-ops at runtime — the loadout icon still shows (separate shader,
+    // above) but the player receives nothing. PrecacheItem is only valid in the
+    // precache phase (this function), never at gameplay time.
+    //
+    // Use the _wager variants (NOT the killstreak minigun_mp/m202_flash_mp): the
+    // killstreak names are registered in the killstreak system, which fires the
+    // "killstreak called in" announcer on give AND prevents re-selecting the weapon
+    // after you holster it. The _wager builds are identical guns without that hook,
+    // so they behave as normal swappable primaries. Stock shrp.gsc uses these too.
+    PrecacheItem( "m202_flash_wager_mp" );
+    PrecacheItem( "minigun_wager_mp"    );
+
     // OT apron FX — initial registration. NOTE: these handles are wiped by the
     // map_restart(true) that _globallogic::endGame runs between rounds, and
     // onPrecacheGameType only runs once per match — so gf_createOvertimeZone calls

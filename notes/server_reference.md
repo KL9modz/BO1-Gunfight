@@ -28,6 +28,9 @@ These are specific to the `gf` gametype. Set them in `gamesettings/gf.cfg` or th
 // Fill the server to 4 total players (e.g. 1 real + 3 bots):
 set bots_manage_fill 4
 
+// Kick 
+set bots_manage_fill_kick 1
+
 // Add 2 bots right now (one-shot, doesn't maintain count):
 set bots_manage_add 2
 

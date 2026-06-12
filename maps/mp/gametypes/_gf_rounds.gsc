@@ -73,6 +73,14 @@ gf_playerSpawnedCB()
         if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
             self thread gf_startHUDPoolOverlay();
     }
+
+    // One-shot pool headroom measurement — prints "free client HUD elems: N" ~9s after
+    // spawn (when the loadout intro is gone and the health panel is fully built).
+    if ( getDvarInt( "gf_debug_elem_probe" ) == 1 )
+    {
+        if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+            self thread gf_debugElemProbe();
+    }
 }
 
 gf_applyVisualTweaks()
@@ -416,13 +424,17 @@ gf_showOvertimeMessage()
     if ( isDefined( game["strings"] ) && isDefined( game["strings"]["overtime"] ) )
         titleText = game["strings"]["overtime"];
 
+    // 6th arg = duration (seconds). Without it the message uses
+    // level.startMessageDefaultDuration (2.0s), which vanishes too fast.
+    overtimeMsgDuration = 5.0;
+
     for ( i = 0; i < level.players.size; i++ )
     {
         player = level.players[i];
         if ( !isDefined( player ) || !isPlayer( player ) )
             continue;
 
-        player thread maps\mp\gametypes\_hud_message::oldNotifyMessage( titleText, undefined, undefined, ( 1, 0, 0 ), undefined );
+        player thread maps\mp\gametypes\_hud_message::oldNotifyMessage( titleText, undefined, undefined, ( 1, 0, 0 ), undefined, overtimeMsgDuration );
     }
 }
 
@@ -637,6 +649,21 @@ gf_setOvertimeZoneIconColor( zone, team )
         // neutral (nobody capturing) and contested both resolve to a white icon for all.
         zone maps\mp\gametypes\_gameobjects::setOwnerTeam( "neutral" );
         gf_setOvertimeZoneIcons( zone, "captureneutral", "captureneutral" );
+    }
+
+    // Diagnostic for the missing-flag-icon report: server-side state of both objpoints
+    // after every icon update. If this logs shown/alpha>0 while a player sees no icon,
+    // the element is healthy on the server and the failure is client-side rendering.
+    if ( isDefined( zone.objPoints ) && isDefined( zone.objPoints["allies"] ) && isDefined( zone.objPoints["axis"] ) )
+    {
+        logPrint( "GF_OT: iconstate state=" + team
+            + " alliesAlpha=" + zone.objPoints["allies"].alpha + " alliesShown=" + int( zone.objPoints["allies"].isShown )
+            + " axisAlpha=" + zone.objPoints["axis"].alpha + " axisShown=" + int( zone.objPoints["axis"].isShown )
+            + " x=" + int( zone.objPoints["allies"].x ) + " y=" + int( zone.objPoints["allies"].y ) + " z=" + int( zone.objPoints["allies"].z ) + "\n" );
+    }
+    else
+    {
+        logPrint( "GF_OT: iconstate state=" + team + " OBJPOINTS MISSING\n" );
     }
 }
 

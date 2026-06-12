@@ -7,7 +7,6 @@
 - Minigun & M202 not working
 - Many classes missing a lethal
 - Need more iron sights
-- Confirm native functionality works: calling card on kill, first blood, double kill medals, etc
 
 #### Mod Menu (In-Game GSC)
 - [ ] Menu scaffold — port EnCoReV8 engine (`addMenu`/`addOpt`/`initMenu`/nav loop) into `_gf_menu.gsc`; replace `spawnStruct` with associative arrays

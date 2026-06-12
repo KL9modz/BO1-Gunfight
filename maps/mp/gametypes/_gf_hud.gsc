@@ -106,7 +106,8 @@ gf_HP_PANEL_Y_OFF()  { return -50; }
 
 // Skull icon size (square). blockWidth derives from this + the pitch.
 gf_HP_ICON_SIZE()    { return 8; }
-gf_HP_SLIDE_OFFSET() { return -230; }
+gf_HP_SLIDE_OFFSET() { return -420; }   // past the ultrawide left edge — parked elements
+                                        // stay invisible at full alpha (pure-slide reveal)
 
 // skipIntroWait: spectators get no loadout intro, so their panel shows immediately.
 // Team players wait until the loadout intro has cleared before the panel is CREATED:
@@ -126,8 +127,8 @@ gf_runHealthHUD( skipIntroWait )
     gf_updateHealthHUD();              // seed the published totals
     self gf_createHealthPanel();       // pool is free now that the loadout intro is gone
     self gf_updateHealthPanel();       // fill values + target alphas in before revealing
-    self gf_hideHealthPanelForIntro(); // park off-screen + transparent
-    self gf_revealHealthPanel();       // slide + fade in
+    self gf_hideHealthPanelForIntro(); // park off-screen (full opacity)
+    self gf_revealHealthPanel();       // pure slide in — all elements move together
     wait 0.75;                         // let the reveal finish before the loop retargets
 
     for ( ;; )
@@ -170,6 +171,16 @@ gf_createHealthPanel()
 
     self.gf_rows[0] = self gf_clCreateRow( gf_HP_ROW0_Y() + off, 40 );
     self.gf_rows[1] = self gf_clCreateRow( gf_HP_ROW1_Y() + off, 50 );
+
+    // Self bar is menu-rendered (hud_gf_health.menu) — just seed its name dvar; the
+    // hp/show dvars are pushed on change from gf_updateSelfBar.
+    self setClientDvar( "ui_gf_self_name", self.name );
+    self.gf_sbHp = undefined;
+    self.gf_sbShow = undefined;
+
+    // Completion checkpoint: if this line is missing from the log after a spawn, the
+    // creation thread died partway (e.g., a setText configstring overflow error).
+    logPrint( "GF_HUD: panel built for " + self.name + " elems=" + self.gf_hudElems.size + "\n" );
 }
 
 // Row layout (reference-image style): up to 4 skull icons (4v4 support) on the left,
@@ -200,6 +211,60 @@ gf_HP_BAR_H() { return 3; }
 // inside the ring. This shifts them right a fraction to re-center visually.
 gf_HP_BAR_INNER_NUDGE() { return 0.3; }
 
+// ─── Self health bar (bottom-center) ─────────────────────────────────────────
+// FULLY CLIENT-RENDERED via ui_mp/hud_gf_health.menu (in mod.ff): the bar, name, and
+// HP number are menu itemDefs driven by client dvars. The server only pushes
+// ui_gf_self_hp / ui_gf_self_show (here, on change) and ui_gf_self_name (once per
+// panel build). No HUD elements, no string table, no per-tick networking — immune to
+// every failure mode the script-HUD path has hit.
+gf_updateSelfBar()
+{
+    hp = 0;
+    if ( isDefined( self.health ) && self.health > 0 )
+        hp = self.health;
+
+    show = 0;
+    if ( hp > 0 && self.sessionstate == "playing" )
+        show = 1;
+
+    if ( !isDefined( self.gf_sbHp ) || self.gf_sbHp != hp )
+    {
+        self.gf_sbHp = hp;
+        self setClientDvar( "ui_gf_self_hp", hp );
+    }
+
+    if ( !isDefined( self.gf_sbShow ) || self.gf_sbShow != show )
+    {
+        self.gf_sbShow = show;
+        if ( show )
+            self thread gf_slideSelfBarIn();   // reveals via animated ui_gf_self_off
+        else
+            self setClientDvar( "ui_gf_self_show", 0 );
+    }
+}
+
+// Slide-from-bottom reveal: the menu items add dvarFloat("ui_gf_self_off") to their Y,
+// so animating the dvar 40→0 slides the whole bar up from below the screen edge.
+// Runs once per reveal (~10 setClientDvar pushes over 0.5s) — negligible traffic.
+gf_slideSelfBarIn()
+{
+    self notify( "gf_sb_slide" );
+    self endon( "gf_sb_slide" );
+    self endon( "disconnect" );
+
+    self setClientDvar( "ui_gf_self_off", 40 );
+    self setClientDvar( "ui_gf_self_show", 1 );
+
+    for ( off = 35; off > 0; off -= 5 )
+    {
+        wait 0.05;
+        self setClientDvar( "ui_gf_self_off", off );
+    }
+
+    wait 0.05;
+    self setClientDvar( "ui_gf_self_off", 0 );
+}
+
 gf_clCreateRow( y, sortBase )
 {
     row = spawnstruct();
@@ -227,9 +292,92 @@ gf_clCreateRow( y, sortBase )
     return row;
 }
 
+// ─── Guarded client element construction ────────────────────────────────────
+// newClientHudElem returns undefined when the per-client pool is exhausted, and
+// _hud_util's createIcon/createFontString then crash setting fields on undefined —
+// killing the whole panel-creation thread partway (symptom: partial chrome, no
+// updates). These guarded builders log the exhaustion and let the panel degrade
+// gracefully instead.
+
+gf_clNewElem()
+{
+    elem = newClientHudElem( self );
+    if ( !isDefined( elem ) )
+        logPrint( "GF_HUD: CLIENT ELEM POOL EXHAUSTED for " + self.name + "\n" );
+    return elem;
+}
+
+gf_clIcon( shader, w, h )
+{
+    icon = self gf_clNewElem();
+    if ( !isDefined( icon ) )
+        return undefined;
+
+    icon.elemType = "icon";
+    icon.x = 0;
+    icon.y = 0;
+    icon.width = w;
+    icon.height = h;
+    icon.xOffset = 0;
+    icon.yOffset = 0;
+    icon.children = [];
+    icon setParent( level.uiParent );
+    icon.hidden = false;
+    icon setShader( shader, w, h );
+    return icon;
+}
+
+gf_clText( font, scale )
+{
+    t = self gf_clNewElem();
+    if ( !isDefined( t ) )
+        return undefined;
+
+    t.elemType = "font";
+    t.font = font;
+    t.fontscale = scale;
+    t.x = 0;
+    t.y = 0;
+    t.width = 0;
+    t.height = int( level.fontHeight * scale );
+    t.xOffset = 0;
+    t.yOffset = 0;
+    t.children = [];
+    t setParent( level.uiParent );
+    t.hidden = false;
+    return t;
+}
+
+// Debug probe (set gf_debug_elem_probe 1): counts how many client HUD elements are
+// still free once the panel is up, by allocating until failure and freeing them.
+gf_debugElemProbe()
+{
+    self endon( "disconnect" );
+    level endon( "game_ended" );
+
+    wait 9;   // after the loadout intro AND the health panel have both built
+
+    probe = [];
+    for ( i = 0; i < 40; i++ )
+    {
+        e = newClientHudElem( self );
+        if ( !isDefined( e ) )
+            break;
+        probe[probe.size] = e;
+    }
+
+    for ( i = 0; i < probe.size; i++ )
+        probe[i] destroy();
+
+    self iPrintLnBold( "^3free client HUD elems: " + probe.size );
+    logPrint( "GF_HUD: free client elems for " + self.name + " = " + probe.size + "\n" );
+}
+
 gf_clCreateFrame( x, y, w, h, shader, alpha, sort )
 {
-    icon = self createIcon( shader, w, h );
+    icon = self gf_clIcon( shader, w, h );
+    if ( !isDefined( icon ) )
+        return undefined;
     icon setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
     icon.color = ( 1, 1, 1 );
     gf_styleHealthElem( icon, sort );
@@ -242,7 +390,9 @@ gf_clCreateFrame( x, y, w, h, shader, alpha, sort )
 // background, and the fill (which is resized each tick via setShader).
 gf_clCreateRect( x, y, w, h, color, alpha, sort )
 {
-    rect = self createIcon( "white", w, h );
+    rect = self gf_clIcon( "white", w, h );
+    if ( !isDefined( rect ) )
+        return undefined;
     rect setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
     rect.color = color;
     gf_styleHealthElem( rect, sort );
@@ -253,7 +403,9 @@ gf_clCreateRect( x, y, w, h, color, alpha, sort )
 
 gf_clCreateIcon( x, y, sort )
 {
-    icon = self createIcon( "hud_death_suicide", gf_HP_ICON_SIZE(), gf_HP_ICON_SIZE() );
+    icon = self gf_clIcon( "hud_death_suicide", gf_HP_ICON_SIZE(), gf_HP_ICON_SIZE() );
+    if ( !isDefined( icon ) )
+        return undefined;
     icon setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
     icon.color = ( 1, 1, 1 );
     gf_styleHealthElem( icon, sort );
@@ -264,7 +416,9 @@ gf_clCreateIcon( x, y, sort )
 
 gf_clCreateNumber( y, sort )
 {
-    num = self createFontString( "default", 1.0 );
+    num = self gf_clText( "default", 1.0 );
+    if ( !isDefined( num ) )
+        return undefined;
     num setPoint( "CENTER LEFT", "CENTER LEFT", 80, y );   // initial x; retargeted just past the skull block each tick
     gf_styleHealthElem( num, sort );
     num.alpha = 0;
@@ -272,8 +426,11 @@ gf_clCreateNumber( y, sort )
     return num;
 }
 
-// Park the whole panel off-screen left and stash each element's target alpha so the
-// reveal can both slide it in and fade it up to that alpha.
+// Park the whole panel off-screen left at FULL opacity. The old version also faded
+// alphas 0→target during the slide, which made small elements (numbers, skulls, thin
+// bars) read as "fading in at their spot" instead of sliding with the frames. Pure
+// slide like the loadout HUD — the park offset is past the widescreen edge so parked
+// elements can't be seen.
 gf_hideHealthPanelForIntro()
 {
     if ( !isDefined( self.gf_hudElems ) )
@@ -281,27 +438,11 @@ gf_hideHealthPanelForIntro()
 
     offset = gf_HP_SLIDE_OFFSET();
     for ( i = 0; i < self.gf_hudElems.size; i++ )
-    {
-        elem = self.gf_hudElems[i];
-        gf_offsetHealthHUDElem( elem, offset, 0 );
-        gf_stashAndClearAlpha( elem );
-        if ( isDefined( elem.elemType ) && elem.elemType == "bar" )
-        {
-            if ( isDefined( elem.bar ) )      gf_stashAndClearAlpha( elem.bar );
-            if ( isDefined( elem.barFrame ) ) gf_stashAndClearAlpha( elem.barFrame );
-        }
-    }
+        gf_offsetHealthHUDElem( self.gf_hudElems[i], offset, 0 );
 }
 
-gf_stashAndClearAlpha( elem )
-{
-    if ( !isDefined( elem ) )
-        return;
-    elem.gf_targetAlpha = elem.alpha;
-    elem.alpha = 0;
-}
-
-// Slide back to home and fade up to the stashed alpha, both over the same 0.75s.
+// Slide everything back to home together over 0.75s — no fade, visible motion on
+// every element.
 gf_revealHealthPanel()
 {
     if ( !isDefined( self.gf_hudElems ) )
@@ -309,33 +450,16 @@ gf_revealHealthPanel()
 
     offset = gf_HP_SLIDE_OFFSET();
     for ( i = 0; i < self.gf_hudElems.size; i++ )
-    {
-        elem = self.gf_hudElems[i];
-        gf_offsetHealthHUDElem( elem, 0 - offset, 0.75 );
-        gf_fadeToTarget( elem );
-        if ( isDefined( elem.elemType ) && elem.elemType == "bar" )
-        {
-            if ( isDefined( elem.bar ) )      gf_fadeToTarget( elem.bar );
-            if ( isDefined( elem.barFrame ) ) gf_fadeToTarget( elem.barFrame );
-        }
-    }
-}
-
-gf_fadeToTarget( elem )
-{
-    if ( !isDefined( elem ) )
-        return;
-    target = 0;
-    if ( isDefined( elem.gf_targetAlpha ) )
-        target = elem.gf_targetAlpha;
-    elem fadeOverTime( 0.75 );
-    elem.alpha = target;
+        gf_offsetHealthHUDElem( self.gf_hudElems[i], 0 - offset, 0.75 );
 }
 
 gf_updateHealthPanel()
 {
     if ( !isDefined( self.gf_rows ) )
         return;
+
+    // Runs for everyone — hides itself while dead/spectating.
+    self gf_updateSelfBar();
 
     team = undefined;
     if ( isDefined( self.pers["team"] ) )
@@ -461,7 +585,10 @@ gf_setHealthNumber( num, hp )
     {
         // White, left-aligned with the bar below it (reference-image layout). The bar
         // fill color carries the team identity; the number stays neutral.
-        num setText( int( hp ) + "" );
+        // setValue, NOT setText: setText burns engine configstring slots and the table
+        // survives map_restart — repeated per-tick setText overflows it over a session,
+        // after which every setText throws and kills the calling thread.
+        num setValue( int( hp ) );
         num.x = gf_HP_BAR_X();
         num.color = ( 1, 1, 1 );
         num.alpha = 1;
