@@ -47,4 +47,10 @@ LANG_ENGLISH        "Sticks and Stones. Crossbow and ballistic knife only. Melee
 REFERENCE           OIC_DESC
 LANG_ENGLISH        "One in the Chamber. One bullet, one life. Kill to earn another bullet. Last player standing wins the round."
 
+REFERENCE           POPUP_ELIMINATION
+LANG_ENGLISH        "Elimination"
+
+REFERENCE           POPUP_ASSIST
+LANG_ENGLISH        "Assist"
+
 ENDMARKER

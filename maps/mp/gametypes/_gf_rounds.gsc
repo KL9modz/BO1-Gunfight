@@ -1008,8 +1008,18 @@ gf_onPlayerKilled( eInflictor, attacker, iDamage, sMeansOfDeath, sWeapon, vDir, 
 
             logPrint( "GF_POPUP: " + self.name + " died, " + damager.name + " share " + popup + "\n" );
 
+            // Text popups instead of damage numbers: killer sees "Elimination"
+            // (priority 2), every other damager sees "Assist" (priority 1).
+            // Localized istrings from gf.str (mod.ff) — raw string literals here would
+            // allocate from the dynamic string table, which can be exhausted (the raw
+            // "Elimination" literal silently failed to render for exactly that reason).
             if ( !isDefined( damager.pers["isBot"] ) || !damager.pers["isBot"] )
-                damager thread gf_showDamagePopup( popup );
+            {
+                if ( isDefined( attacker ) && damager == attacker )
+                    damager thread gf_showScorePopup( &"GF_POPUP_ELIMINATION", 2 );
+                else
+                    damager thread gf_showScorePopup( &"GF_POPUP_ASSIST", 1 );
+            }
         }
 
         for ( i = 0; i < self.gf_assisters.size; i++ )

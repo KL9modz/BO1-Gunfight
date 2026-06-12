@@ -7,6 +7,7 @@
 - Minigun & M202 not working
 - Many classes missing a lethal
 - Need more iron sights
+- **mp_radiation center blast doors still open** — they shouldn't on wager spaces. Stock gate is `level.wagerMatch` (checked in `mp_radiation.gsc` at the start auto-open `:86`, the `door_switch_func` mover loop `:160`, and the switch panel `:287/:298`). Can't set `level.wagerMatch=1` globally — it's read in ~14 files incl. the spawn path (`_globallogic_spawn::WaitForPlayers :48`), so it alters Gunfight spawning. **Tried & FAILED:** map-local `gf_disableRadiationDoors()` in `_gf_wager_zones.gsc` that fired `level._door_switch_trig2 notify("trigger")` to `endon`-kill the `door_switch_func` mover (via `waittill_any_ents`), then `trigger_off` both switches — doors still opened. Next attempts to consider: (a) override map script by dropping a patched `maps/mp/mp_radiation.gsc` in the mod (heavy); (b) scoped `level.wagerMatch=1` only across the map's init-frame door reads then restore 0 (race-prone); (c) physically hold `level._door1`/`_door2` clips closed / re-`RotateRoll` them shut each open; (d) investigate why the endon-kill missed (timing — mover may not have been parked at `waittill_any_ents` when we notified, or the open is driven elsewhere).
 
 #### Mod Menu (In-Game GSC)
 - [ ] Menu scaffold — port EnCoReV8 engine (`addMenu`/`addOpt`/`initMenu`/nav loop) into `_gf_menu.gsc`; replace `spawnStruct` with associative arrays

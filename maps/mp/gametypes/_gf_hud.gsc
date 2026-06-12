@@ -255,7 +255,7 @@ gf_slideSelfBarIn()
     self setClientDvar( "ui_gf_self_off", 40 );
     self setClientDvar( "ui_gf_self_show", 1 );
 
-    for ( off = 35; off > 0; off -= 5 )
+    for ( off = 32; off > 0; off -= 8 )
     {
         wait 0.05;
         self setClientDvar( "ui_gf_self_off", off );
@@ -901,18 +901,20 @@ gf_destroyLoadoutHUD()
     self.gf_loadoutHudElems = undefined;
 }
 
-// ─── Damage popup ────────────────────────────────────────────────────────────
-// Mod-owned replacement for _rank::updateRankScoreHUD. The stock popup batches
-// into self.rankUpdateTotal, which only resets when a popup finishes its full 1s
-// display — any interrupted popup (next kill, killcam transition) leaves a stale
-// total that inflates the next number, and its shared hud element can silently
-// fail. This one owns its element and shows exactly what it is given; amounts
-// arriving within the display window stack, and the total expires by timestamp
-// so it can never go stale.
+// ─── Score popup ─────────────────────────────────────────────────────────────
+// Mod-owned center-screen popup (replaces _rank::updateRankScoreHUD): shows
+// "Elimination" / "Assist" text instead of score numbers. text MUST be a
+// precached localized istring (&"GF_POPUP_*" from gf.str in mod.ff) — raw
+// literals allocate from the exhaustible dynamic string table and silently
+// fail when it's full. pri keeps a higher-priority popup (Elimination) from
+// being stomped by a lower one (Assist) arriving in the same window.
 
-gf_showDamagePopup( amount )
+gf_showScorePopup( text, pri )
 {
     self endon( "disconnect" );
+
+    if ( !isDefined( pri ) )
+        pri = 1;
 
     if ( !isDefined( self.gf_dmgPopup ) )
     {
@@ -924,7 +926,7 @@ gf_showDamagePopup( amount )
         elem.x         = 0;
         elem.y         = -60;
         elem.font      = "default";
-        elem.fontscale = 2.0;
+        elem.fontscale = 1.6;
         elem.archived  = false;
         elem.sort      = 50;
         elem.color     = ( 1, 1, 0.5 );
@@ -935,16 +937,18 @@ gf_showDamagePopup( amount )
     }
 
     now = getTime();
-    if ( !isDefined( self.gf_dmgPopupExpire ) || now > self.gf_dmgPopupExpire )
-        self.gf_dmgPopupTotal = 0;
-    self.gf_dmgPopupTotal += amount;
-    self.gf_dmgPopupExpire = now + 1000;
+    if ( isDefined( self.gf_popupExpire ) && now < self.gf_popupExpire
+        && isDefined( self.gf_popupPri ) && self.gf_popupPri > pri )
+        return;   // higher-priority popup still on screen — don't stomp it
+
+    self.gf_popupPri    = pri;
+    self.gf_popupExpire = now + 1000;
 
     self notify( "gf_dmg_popup" );
     self endon( "gf_dmg_popup" );
 
-    self.gf_dmgPopup.label = &"MP_PLUS";
-    self.gf_dmgPopup setValue( self.gf_dmgPopupTotal );
+    self.gf_dmgPopup.label = &"";
+    self.gf_dmgPopup setText( text );
     self.gf_dmgPopup.alpha = 0.85;
     self.gf_dmgPopup thread maps\mp\gametypes\_hud::fontPulse( self );
 

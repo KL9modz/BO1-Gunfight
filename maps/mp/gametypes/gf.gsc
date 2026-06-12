@@ -176,6 +176,8 @@ onPrecacheGameType()
     precacheShader( "waypoint_capture_b" );
     precacheString( &"MP_CAPTURING_FLAG" );
     precacheString( &"MP_OVERTIME_CAPS" );
+    precacheString( &"GF_POPUP_ELIMINATION" );   // mod.ff localized strings (gf.str) —
+    precacheString( &"GF_POPUP_ASSIST" );        // zone assets, no dynamic string table
 
     gf_precacheWagerZoneAssets();
 }
@@ -207,6 +209,8 @@ onStartGameType()
     level.gf_overtimeActive  = false;
     level.inOvertime         = false;
     level.timeLimitOverride  = false;
+
+    gf_rocketOncePerMatch();   // Cosmodrome: stop the launch re-firing every round
 
     if ( !isDefined( game["switchedsides"] ) )
         game["switchedsides"] = false;
@@ -272,6 +276,41 @@ onStartGameType()
     gf_applyWagerZoneAssets();
 
     thread maps\mp\gametypes\_bot::init();
+}
+
+// ─── Cosmodrome rocket: once per match, not once per round ───────────────────
+// The stock Cosmodrome rocket is armed in mp_cosmodrome::main() (rocket_think →
+// rocket_timer_init). SD round cycling map_restarts between rounds, which
+// re-runs main() and re-arms the launch — so it fires every round instead of
+// once per match. We gate it with the native scr_rocket_event_off abort lever,
+// tracked through game[] (the only state that survives map_restart). The gate
+// keys off whether the rocket ACTUALLY launched (not "round 1"), so the single
+// launch still happens even if early rounds end by elimination before the clock
+// reaches the launch trigger.
+gf_rocketOncePerMatch()
+{
+    if ( GetDvar( #"mapname" ) != "mp_cosmodrome" )
+        return;
+
+    if ( isDefined( game["gf_rocketLaunched"] ) && game["gf_rocketLaunched"] )
+    {
+        // Already fired this match — force a deterministic abort. 101 is
+        // intentionally past the stock assert bound so RandomInt(101) < 101 is
+        // always true; the assert is a no-op on Plutonium release.
+        setDvar( "scr_rocket_event_off", "101" );
+        return;
+    }
+
+    setDvar( "scr_rocket_event_off", "0" );   // allow this round's launch
+    level thread gf_watchRocketLaunch();
+}
+
+gf_watchRocketLaunch()
+{
+    // mp_cosmodrome fires level notify("rocket_launch") when the rocket goes.
+    // Latch it in game[] so every later round suppresses.
+    level waittill( "rocket_launch" );
+    game["gf_rocketLaunched"] = true;
 }
 
 // ─── Spawn Pipeline ────────────────────────────────────────────────────────
