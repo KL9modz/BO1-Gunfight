@@ -73,8 +73,8 @@ gf_updateHealthHUD()
     // Published for the per-player client health panels (gf_runHealthHUD) to read.
     level.gf_hpAllies    = alliesStats.current;
     level.gf_hpAxis      = axisStats.current;
-    level.gf_fracAllies  = gf_getTeamHealthBarFraction( alliesStats.current, alliesStats.max );
-    level.gf_fracAxis    = gf_getTeamHealthBarFraction( axisStats.current,   axisStats.max );
+    level.gf_fracAllies  = gf_getHealthFraction( alliesStats.current, alliesStats.max );
+    level.gf_fracAxis    = gf_getHealthFraction( axisStats.current,   axisStats.max );
     level.gf_cntAllies   = alliesStats.players.size;
     level.gf_aliveAllies = alliesStats.alive;
     level.gf_cntAxis     = axisStats.players.size;
@@ -94,27 +94,40 @@ gf_updateHealthHUD()
 // touched from a level thread. Reads the team totals published by gf_updateHealthHUD.
 // Row 0 = own team (green), row 1 = enemy (red). Everything slides in together.
 
-gf_HP_ROW0_Y()       { return -45; }
-gf_HP_ROW1_Y()       { return -27; }
+// Row y is the SKULL center; the strip hangs 6 below, so the combined block's visual
+// center is ~y+2. These are pre-shifted up 2 so the block centers on the background
+// band art (which was tuned around -45/-27).
+gf_HP_ROW0_Y()       { return -47; }
+gf_HP_ROW1_Y()       { return -29; }
+
+// Whole-panel vertical offset (applied to frames + rows at creation). Negative = up.
+// -50 parks the panel just below the minimap instead of at mid-screen-left.
+gf_HP_PANEL_Y_OFF()  { return -50; }
+
+// Skull icon size (square). blockWidth derives from this + the pitch.
+gf_HP_ICON_SIZE()    { return 8; }
 gf_HP_SLIDE_OFFSET() { return -230; }
 
-gf_runHealthHUD()
+// skipIntroWait: spectators get no loadout intro, so their panel shows immediately.
+// Team players wait until the loadout intro has cleared before the panel is CREATED:
+// the intro owns ~18 client HUD elements and the pool is shared — when the two
+// coexisted, the loadout intro visibly lost elements. A 7.5s timeout fallback fires
+// the wait even if the intro-done signal is dropped, so the panel can't be stranded.
+gf_runHealthHUD( skipIntroWait )
 {
     self notify( "gf_kill_health_hud" );
     self gf_destroyHealthPanel();
     self endon( "gf_kill_health_hud" );
     self endon( "disconnect" );
 
-    // Wait BEFORE creating the panel — the loadout intro owns ~18 client HUD elements
-    // and the client pool is shared. Hidden elements still occupy slots, so we must not
-    // build the panel until the loadout HUD has been destroyed and freed its slots.
-    self gf_waitLoadoutIntroDone();
+    if ( !isDefined( skipIntroWait ) || !skipIntroWait )
+        self gf_waitLoadoutIntroDone();
 
     gf_updateHealthHUD();              // seed the published totals
     self gf_createHealthPanel();       // pool is free now that the loadout intro is gone
     self gf_updateHealthPanel();       // fill values + target alphas in before revealing
     self gf_hideHealthPanelForIntro(); // park off-screen + transparent
-    self gf_revealHealthPanel();       // slide + fade in together
+    self gf_revealHealthPanel();       // slide + fade in
     wait 0.75;                         // let the reveal finish before the loop retargets
 
     for ( ;; )
@@ -124,33 +137,93 @@ gf_runHealthHUD()
     }
 }
 
+// Hold until the per-player loadout intro has finished and slid out (gf_showWeaponHUD
+// notifies "gf_loadout_intro_done" when it tears down). The timeout makes a dropped
+// signal cost at most 7.5s instead of stranding the panel.
+gf_waitLoadoutIntroDone()
+{
+    self endon( "disconnect" );
+    self endon( "gf_kill_health_hud" );
+
+    self thread gf_loadoutIntroTimeout();
+    self waittill( "gf_loadout_intro_done" );
+}
+
+gf_loadoutIntroTimeout()
+{
+    self endon( "disconnect" );
+    self endon( "gf_kill_health_hud" );
+    self endon( "gf_loadout_intro_done" );
+    wait 7.5;
+    self notify( "gf_loadout_intro_done" );
+}
+
 gf_createHealthPanel()
 {
     self.gf_hudElems = [];
     self.gf_rows = [];
 
-    self.gf_bg    = self gf_clCreateFrame( -70,  -39, 180, 42, "hud_frame_faction_fade",  0.34, 37 );
-    self.gf_lines = self gf_clCreateFrame( -162, -45, 250, 52, "hud_frame_faction_lines", 0.30, 38 );
+    off = gf_HP_PANEL_Y_OFF();
 
-    self.gf_rows[0] = self gf_clCreateRow( gf_HP_ROW0_Y(), 40 );
-    self.gf_rows[1] = self gf_clCreateRow( gf_HP_ROW1_Y(), 50 );
+    self.gf_bg    = self gf_clCreateFrame( -70,  -39 + off, 180, 42, "hud_frame_faction_fade",  0.34, 37 );
+    self.gf_lines = self gf_clCreateFrame( -162, -45 + off, 250, 52, "hud_frame_faction_lines", 0.30, 38 );
+
+    self.gf_rows[0] = self gf_clCreateRow( gf_HP_ROW0_Y() + off, 40 );
+    self.gf_rows[1] = self gf_clCreateRow( gf_HP_ROW1_Y() + off, 50 );
 }
+
+// Row layout (reference-image style): up to 4 skull icons (4v4 support) on the left,
+// then a fixed column with the white HP number on top and the health bar underneath.
+// Skulls fill in left-to-right as the team populates; the number/bar column is fixed at
+// gf_HP_BAR_X so both rows stay aligned regardless of team size. The bar = hairline
+// border + semi-transparent black background + team-colored fill (green/red).
+gf_HP_MAX_SKULLS()   { return 4; }
+gf_HP_ICON_STEP()    { return 11; }   // integer pitch — fractional steps round to uneven pixel gaps
+gf_HP_ROW_CENTER_X() { return 32; }   // visual center of the frame/lines art (right-biased in its
+                                      // quad — the old tuned layout centered content here, not at
+                                      // the quad midpoint)
+
+// True span of N skull quads: (N-1) steps + one icon width.
+gf_HP_blockWidth( count ) { return ( count - 1 ) * gf_HP_ICON_STEP() + gf_HP_ICON_SIZE(); }
+gf_HP_blockLeft( count )  { return gf_HP_ROW_CENTER_X() - int( gf_HP_blockWidth( count ) / 2 ); }
+
+// Bar geometry (reference-image layout): a fixed-length bar sits UNDER the HP number,
+// to the right of the skull block. Both rows' bars are column-aligned at the same x
+// regardless of team size; the bar is ~3x the number's width. The bar has its own
+// semi-transparent black background and a hairline border behind it.
+gf_HP_BAR_X() { return gf_HP_blockLeft( gf_HP_MAX_SKULLS() ) + gf_HP_blockWidth( gf_HP_MAX_SKULLS() ) + 6; }
+gf_HP_BAR_W() { return 45; }
+gf_HP_BAR_H() { return 3; }
+
+// Inner-assembly x nudge: the border sits at a half-unit offset, and sub-unit
+// positions round asymmetrically at some resolutions, biasing the bg+fill LEFT
+// inside the ring. This shifts them right a fraction to re-center visually.
+gf_HP_BAR_INNER_NUDGE() { return 0.3; }
 
 gf_clCreateRow( y, sortBase )
 {
     row = spawnstruct();
     row.y = y;
-    row.x = -12;
-    row.width = 88;
-    row.height = 10;
 
-    row.bar = self gf_clCreateBar( row.x, y, row.width, row.height, sortBase );
+    left = gf_HP_blockLeft( gf_HP_MAX_SKULLS() );
 
     row.icons = [];
-    for ( i = 0; i < 3; i++ )
-        row.icons[i] = self gf_clCreateIcon( 4 + i * 9, y, sortBase + 5 );
+    for ( i = 0; i < gf_HP_MAX_SKULLS(); i++ )
+        row.icons[i] = self gf_clCreateIcon( left + i * gf_HP_ICON_STEP(), y, sortBase + 5 );
 
-    row.number = self gf_clCreateNumber( y, sortBase + 6 );
+    // Bar block (reference layout): number above, bar below, both left-aligned at
+    // gf_HP_BAR_X. Layering bottom-up: hairline border (1px larger all around),
+    // semi-transparent black background, then the team-colored fill.
+    barX = gf_HP_BAR_X();
+    barY = y + 4;
+    // 0.5-unit ring ≈ 1px at 1080p — about the practical floor; sub-unit sizes can
+    // round unevenly per side at some resolutions, so check it looks symmetric.
+    inX = barX + gf_HP_BAR_INNER_NUDGE();   // bg + fill nudged right to center in the ring
+    row.barBorder = self gf_clCreateRect( barX - 0.5, barY, gf_HP_BAR_W() + 1, gf_HP_BAR_H() + 1, ( 0.7, 0.7, 0.7 ), 0.5, sortBase );
+    row.barBg     = self gf_clCreateRect( inX,        barY, gf_HP_BAR_W(),     gf_HP_BAR_H(),     ( 0, 0, 0 ),       0.45, sortBase + 1 );
+    row.fill      = self gf_clCreateRect( inX,        barY, 1,                 gf_HP_BAR_H(),     ( 1, 1, 1 ),       0,    sortBase + 2 );
+
+    row.number = self gf_clCreateNumber( y - 4, sortBase + 6 );
     return row;
 }
 
@@ -165,27 +238,22 @@ gf_clCreateFrame( x, y, w, h, shader, alpha, sort )
     return icon;
 }
 
-gf_clCreateBar( x, y, w, h, sort )
+// Generic solid rectangle (tinted "white" shader). Used for the bar's border, its
+// background, and the fill (which is resized each tick via setShader).
+gf_clCreateRect( x, y, w, h, color, alpha, sort )
 {
-    bar = self createBar( ( 1, 1, 1 ), w, h );
-    bar setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
-    bar.bar.shader = "hud_score_progress";
-    bar.bar setShader( "hud_score_progress", w, h );
-    bar.barFrame setShader( "progress_bar_fg", w, h );
-    bar.gf_bgAlpha    = 0;
-    bar.gf_frameAlpha = 0;
-    bar.gf_fillAlpha  = 0.80;
-    gf_styleHealthElem( bar, sort );
-    gf_styleHealthElem( bar.bar, sort + 1 );
-    gf_styleHealthElem( bar.barFrame, sort + 2 );
-    self.gf_hudElems[self.gf_hudElems.size] = bar;
-    gf_setHealthBarFraction( bar, 0, false );
-    return bar;
+    rect = self createIcon( "white", w, h );
+    rect setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
+    rect.color = color;
+    gf_styleHealthElem( rect, sort );
+    rect.alpha = alpha;
+    self.gf_hudElems[self.gf_hudElems.size] = rect;
+    return rect;
 }
 
 gf_clCreateIcon( x, y, sort )
 {
-    icon = self createIcon( "hud_death_suicide", 7, 7 );
+    icon = self createIcon( "hud_death_suicide", gf_HP_ICON_SIZE(), gf_HP_ICON_SIZE() );
     icon setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
     icon.color = ( 1, 1, 1 );
     gf_styleHealthElem( icon, sort );
@@ -196,8 +264,8 @@ gf_clCreateIcon( x, y, sort )
 
 gf_clCreateNumber( y, sort )
 {
-    num = self createFontString( "default", 1.2 );
-    num setPoint( "CENTER LEFT", "CENTER LEFT", 80, y );   // initial x; retargeted to the fill edge each tick
+    num = self createFontString( "default", 1.0 );
+    num setPoint( "CENTER LEFT", "CENTER LEFT", 80, y );   // initial x; retargeted just past the skull block each tick
     gf_styleHealthElem( num, sort );
     num.alpha = 0;
     self.gf_hudElems[self.gf_hudElems.size] = num;
@@ -264,27 +332,6 @@ gf_fadeToTarget( elem )
     elem.alpha = target;
 }
 
-// Hold the panel reveal until the per-player loadout intro has finished and slid out
-// (gf_showWeaponHUD notifies "gf_loadout_intro_done" when it destroys). 7s fallback in
-// case the loadout HUD never ran this spawn.
-gf_waitLoadoutIntroDone()
-{
-    self endon( "disconnect" );
-    self endon( "gf_kill_health_hud" );
-
-    self thread gf_loadoutIntroTimeout();
-    self waittill( "gf_loadout_intro_done" );
-}
-
-gf_loadoutIntroTimeout()
-{
-    self endon( "disconnect" );
-    self endon( "gf_kill_health_hud" );
-    self endon( "gf_loadout_intro_done" );
-    wait 7.0;
-    self notify( "gf_loadout_intro_done" );
-}
-
 gf_updateHealthPanel()
 {
     if ( !isDefined( self.gf_rows ) )
@@ -294,22 +341,17 @@ gf_updateHealthPanel()
     if ( isDefined( self.pers["team"] ) )
         team = self.pers["team"];
 
-    if ( team != "allies" && team != "axis" )
-    {
-        self gf_hideHealthRow( self.gf_rows[0] );
-        self gf_hideHealthRow( self.gf_rows[1] );
-        return;
-    }
-
-    if ( team == "allies" )
-    {
-        friendlyTeam = "allies";
-        enemyTeam    = "axis";
-    }
-    else
+    if ( team == "axis" )
     {
         friendlyTeam = "axis";
         enemyTeam    = "allies";
+    }
+    else
+    {
+        // Allies viewer — and also spectators/unassigned, who always see the whole HUD
+        // with a fixed mapping: allies in the green row, axis in the red row.
+        friendlyTeam = "allies";
+        enemyTeam    = "axis";
     }
 
     self gf_setHealthRow( self.gf_rows[0], friendlyTeam, ( 0.42, 0.68, 0.46 ) );
@@ -326,15 +368,36 @@ gf_setHealthRow( row, team, color )
     count = gf_readTeamCount( team );
     alive = gf_readTeamAlive( team );
 
-    if ( isDefined( row.bar ) && isDefined( row.bar.bar ) )
-        row.bar.bar.color = color;
-    gf_setHealthBarFraction( row.bar, frac, hp > 0 );
+    if ( count > gf_HP_MAX_SKULLS() ) count = gf_HP_MAX_SKULLS();
+    if ( alive > gf_HP_MAX_SKULLS() ) alive = gf_HP_MAX_SKULLS();
 
-    gf_setHealthNumber( row.number, hp, frac, color );
+    // Fixed left anchor: the block always starts where the leftmost skull of a full
+    // team would sit, so skulls fill in left-to-right as the team populates instead of
+    // re-centering for each count.
+    blockLeft = gf_HP_blockLeft( gf_HP_MAX_SKULLS() );
 
-    if ( count > 3 ) count = 3;
-    if ( alive > 3 ) alive = 3;
-    for ( i = 0; i < 3; i++ )
+    // Fill: fixed-length bar, fraction of gf_HP_BAR_W. The bg/border stay visible even
+    // when the team is dead — an empty bar reads as "wiped".
+    if ( isDefined( row.fill ) )
+    {
+        if ( hp > 0 )
+        {
+            w = int( gf_HP_BAR_W() * frac + 0.5 );
+            if ( w < 1 )
+                w = 1;
+            row.fill setShader( "white", w, gf_HP_BAR_H() );
+            row.fill.color = color;
+            row.fill.alpha = 0.9;
+        }
+        else
+        {
+            row.fill.alpha = 0;
+        }
+    }
+
+    gf_setHealthNumber( row.number, hp );
+
+    for ( i = 0; i < gf_HP_MAX_SKULLS(); i++ )
     {
         icon = row.icons[i];
         if ( !isDefined( icon ) )
@@ -344,25 +407,13 @@ gf_setHealthRow( row, team, color )
             icon.alpha = 0;
             continue;
         }
+        icon.x = blockLeft + i * gf_HP_ICON_STEP();
         icon.alpha = 0.95;
         if ( i < alive )
             icon.color = color;
         else
             icon.color = ( 1, 1, 1 );
     }
-}
-
-gf_hideHealthRow( row )
-{
-    if ( !isDefined( row ) )
-        return;
-
-    gf_setHealthBarFraction( row.bar, 0, false );
-    if ( isDefined( row.number ) )
-        row.number.alpha = 0;
-    for ( i = 0; i < 3; i++ )
-        if ( isDefined( row.icons[i] ) )
-            row.icons[i].alpha = 0;
 }
 
 gf_readTeamHP( team )
@@ -401,20 +452,18 @@ gf_readTeamAlive( team )
     return 0;
 }
 
-gf_setHealthNumber( num, hp, frac, color )
+gf_setHealthNumber( num, hp )
 {
     if ( !isDefined( num ) )
         return;
 
     if ( hp > 0 )
     {
-        // Ride the bar's fill edge: the bar spans x -12..76 (width 88), so the fill tip
-        // is at -12 + 88*frac. +3 leaves a small gap so the number sits just off the edge.
-        // The bar's bg/frame are alpha 0, so past the fill only the faint faction frame
-        // overlaps — the number stays readable.
+        // White, left-aligned with the bar below it (reference-image layout). The bar
+        // fill color carries the team identity; the number stays neutral.
         num setText( int( hp ) + "" );
-        num.x = -12 + int( 88.0 * frac + 0.5 ) + 3;
-        num.color = color;
+        num.x = gf_HP_BAR_X();
+        num.color = ( 1, 1, 1 );
         num.alpha = 1;
     }
     else
@@ -464,6 +513,11 @@ gf_getTeamHealthStats( team )
         if ( !isDefined( player.pers["team"] ) || player.pers["team"] != team )
             continue;
 
+        // Only players who spawned into THIS round count. Excludes mid-round joiners who
+        // are team-assigned but spectating — they'd inflate stats.max and halve the bar.
+        if ( !isDefined( player.pers["gf_spawnedRound"] ) || player.pers["gf_spawnedRound"] != game["roundsplayed"] )
+            continue;
+
         stats.players[stats.players.size] = player;
         maxHP = player gf_getPlayerMaxHealth();
         stats.max += maxHP;
@@ -498,65 +552,6 @@ gf_getHealthFraction( current, maxHealth )
         return 1;
 
     return frac;
-}
-
-gf_getTeamHealthBarFraction( current, maxHealth )
-{
-    frac = gf_getHealthFraction( current, maxHealth );
-    if ( frac <= 0 || frac >= 1 )
-        return frac;
-
-    frac = frac + ( ( 1 - frac ) * frac * 0.45 );
-    if ( current > 0 && frac < 0.10 )
-        return 0.10;
-
-    return frac;
-}
-
-gf_setHealthBarFraction( bar, frac, visible )
-{
-    if ( !isDefined( bar ) )
-        return;
-
-    if ( frac < 0 )
-        frac = 0;
-    if ( frac > 1 )
-        frac = 1;
-
-    bar maps\mp\gametypes\_hud_util::updateBar( frac );
-
-    if ( !visible )
-    {
-        bar maps\mp\gametypes\_hud_util::hideElem();
-        return;
-    }
-
-    bar maps\mp\gametypes\_hud_util::showElem();
-
-    bgAlpha = 0.45;
-    if ( isDefined( bar.gf_bgAlpha ) )
-        bgAlpha = bar.gf_bgAlpha;
-
-    frameAlpha = 0.85;
-    if ( isDefined( bar.gf_frameAlpha ) )
-        frameAlpha = bar.gf_frameAlpha;
-
-    fillAlpha = 1;
-    if ( isDefined( bar.gf_fillAlpha ) )
-        fillAlpha = bar.gf_fillAlpha;
-
-    bar.alpha = bgAlpha;
-
-    if ( isDefined( bar.bar ) )
-    {
-        if ( frac <= 0 )
-            bar.bar.alpha = 0;
-        else
-            bar.bar.alpha = fillAlpha;
-    }
-
-    if ( isDefined( bar.barFrame ) )
-        bar.barFrame.alpha = frameAlpha;
 }
 
 gf_offsetHealthHUDElem( elem, xOffset, moveTime )
@@ -750,7 +745,7 @@ gf_showWeaponHUD( load )
     wait 0.8;
     gf_destroyLoadoutHUD();
 
-    // Cue the health panel to slide/fade in now that the loadout intro has cleared.
+    // Cue the health panel to build + slide in now that the intro freed its pool slots.
     self notify( "gf_loadout_intro_done" );
 }
 
@@ -777,4 +772,56 @@ gf_destroyLoadoutHUD()
     }
 
     self.gf_loadoutHudElems = undefined;
+}
+
+// ─── Damage popup ────────────────────────────────────────────────────────────
+// Mod-owned replacement for _rank::updateRankScoreHUD. The stock popup batches
+// into self.rankUpdateTotal, which only resets when a popup finishes its full 1s
+// display — any interrupted popup (next kill, killcam transition) leaves a stale
+// total that inflates the next number, and its shared hud element can silently
+// fail. This one owns its element and shows exactly what it is given; amounts
+// arriving within the display window stack, and the total expires by timestamp
+// so it can never go stale.
+
+gf_showDamagePopup( amount )
+{
+    self endon( "disconnect" );
+
+    if ( !isDefined( self.gf_dmgPopup ) )
+    {
+        elem = newClientHudElem( self );
+        elem.horzAlign = "center";
+        elem.vertAlign = "middle";
+        elem.alignX    = "center";
+        elem.alignY    = "middle";
+        elem.x         = 0;
+        elem.y         = -60;
+        elem.font      = "default";
+        elem.fontscale = 2.0;
+        elem.archived  = false;
+        elem.sort      = 50;
+        elem.color     = ( 1, 1, 0.5 );
+        elem.alpha     = 0;
+        elem.overrridewhenindemo = true;   // keep visible during the round-end killcam
+        elem maps\mp\gametypes\_hud::fontPulseInit();
+        self.gf_dmgPopup = elem;
+    }
+
+    now = getTime();
+    if ( !isDefined( self.gf_dmgPopupExpire ) || now > self.gf_dmgPopupExpire )
+        self.gf_dmgPopupTotal = 0;
+    self.gf_dmgPopupTotal += amount;
+    self.gf_dmgPopupExpire = now + 1000;
+
+    self notify( "gf_dmg_popup" );
+    self endon( "gf_dmg_popup" );
+
+    self.gf_dmgPopup.label = &"MP_PLUS";
+    self.gf_dmgPopup setValue( self.gf_dmgPopupTotal );
+    self.gf_dmgPopup.alpha = 0.85;
+    self.gf_dmgPopup thread maps\mp\gametypes\_hud::fontPulse( self );
+
+    wait 1;
+    self.gf_dmgPopup fadeOverTime( 0.75 );
+    self.gf_dmgPopup.alpha = 0;
 }

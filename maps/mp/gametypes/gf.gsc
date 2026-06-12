@@ -301,21 +301,17 @@ onSpawnPlayer( teamOverride )
         return;
     }
 
-    if ( level.inGracePeriod )
-    {
-        spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_" + spawnTeam + "_start" );
+    // Always use team-specific start spawns. Gunfight has fixed sides per round
+    // and never respawns mid-round, so getSpawnpoint_NearTeam on a shared pool
+    // (both teams use the same wager/TDM points) could place a late-spawning bot
+    // on the wrong side when inGracePeriod is false.
+    spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_" + spawnTeam + "_start" );
 
-        if ( !spawnPoints.size )
-            spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sab_spawn_" + spawnTeam + "_start" );
+    if ( !spawnPoints.size )
+        spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sab_spawn_" + spawnTeam + "_start" );
 
-        if ( spawnPoints.size )
-            spawnPoint = maps\mp\gametypes\_spawnlogic::getSpawnpoint_Random( spawnPoints );
-        else
-        {
-            spawnPoints = maps\mp\gametypes\_spawnlogic::getTeamSpawnPoints( spawnTeam );
-            spawnPoint  = maps\mp\gametypes\_spawnlogic::getSpawnpoint_NearTeam( spawnPoints );
-        }
-    }
+    if ( spawnPoints.size )
+        spawnPoint = maps\mp\gametypes\_spawnlogic::getSpawnpoint_Random( spawnPoints );
     else
     {
         spawnPoints = maps\mp\gametypes\_spawnlogic::getTeamSpawnPoints( spawnTeam );

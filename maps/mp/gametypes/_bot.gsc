@@ -359,6 +359,13 @@ teamBots()
 	for(;;)
 	{
 		wait 1.5;
+
+		// Never move bots between teams while a round is live — a mid-round team
+		// change triggers [[level.allies/axis]]() which respawns the bot, which
+		// is what causes bots to appear on the wrong side during round 1.
+		if ( isDefined( level.gf_roundActive ) && level.gf_roundActive )
+			continue;
+
 		teamAmount = getDvarInt("bots_team_amount");
 		toTeam = getDvar("bots_team");
 		

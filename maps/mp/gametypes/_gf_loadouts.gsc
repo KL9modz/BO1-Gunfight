@@ -447,8 +447,12 @@ gf_giveCustomLoadout()
     self SwitchToOffhand( load["lethal"] );
     self GiveWeapon( load["tactical"] );
     self giveMaxAmmo( load["tactical"] );
-    self GiveWeapon( load["equip"] );
-    self SetActionSlot( 1, "weapon", load["equip"] );
+    isBot = isDefined( self.pers["isBot"] ) && self.pers["isBot"];
+    if ( !isBot )
+    {
+        self GiveWeapon( load["equip"] );
+        self SetActionSlot( 1, "weapon", load["equip"] );
+    }
     self EnableWeaponCycling();
 
     self SetPerk( "specialty_movefaster"        );   // Lightweight

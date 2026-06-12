@@ -43,6 +43,12 @@ gf_playerSpawnedCB()
     self gf_syncCaptureScore();
     self gf_initDamageScore();
 
+    // Mark that this player actually spawned into the current round, so the team-health
+    // stats only count real participants. A mid-round joiner is team-assigned but never
+    // spawns this round (they spectate) — without this they'd inflate the team's max
+    // health and shrink the bar even though they contribute no current health.
+    self.pers["gf_spawnedRound"] = game["roundsplayed"];
+
     // Level-side stats publisher — start once per round; the player panels read its output.
     if ( !isDefined( level.gf_healthHudStartRound ) || level.gf_healthHudStartRound != game["roundsplayed"] )
     {
@@ -95,6 +101,13 @@ gf_onSpawnSpectator( origin, angles )
 {
     maps\mp\gametypes\_globallogic_defaults::default_onSpawnSpectator( origin, angles );
     gf_queueHealthHUDUpdate();
+
+    // Spectators always see the whole health HUD. Only create the panel if this player
+    // doesn't already have one (a dead team player free-looking keeps their existing
+    // panel — restarting it here would replay the slide-in every death). Spectators get
+    // no loadout intro, so skip the intro wait and show immediately.
+    if ( ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] ) && !isDefined( self.gf_hudElems ) )
+        self thread gf_runHealthHUD( true );
 }
 
 gf_onSpawned()
@@ -193,15 +206,19 @@ gf_roundStartCountdown()
     num.hidewheninmenu = true;
     num maps\mp\gametypes\_hud::fontPulseInit();
 
+    tickObj = spawn( "script_origin", ( 0, 0, 0 ) );
+
     count = 7;
     while ( count > 0 )
     {
         num setValue( count );
         num thread maps\mp\gametypes\_hud::fontPulse( level );
+        tickObj playSound( "mpl_ui_timer_countdown" );
         count--;
         wait 1.0;
     }
 
+    tickObj delete();
     num destroyElem();
     label destroyElem();
 }
@@ -363,6 +380,16 @@ gf_overtime()
 
     zone = gf_createOvertimeZone();
 
+    // Safety net: if the round ends mid-OT via a path that fires game_ended WITHOUT
+    // going through gf_resolveOvertime (forfeit, host migration), the endon above kills
+    // this thread before the cleanup below runs — leaking the zone's 2 objpoint HUD
+    // elements + 2 objective IDs. Engine-side hudelem/objective state SURVIVES
+    // map_restart(true) (observed: objective IDs accumulate), so leaks persist for the
+    // whole map session and can exhaust the server HUD pool → later OT rounds get no
+    // flag icon. This watcher cleans up on game_ended; the gf_ot_done endon makes the
+    // two cleanup paths mutually exclusive.
+    level thread gf_overtimeZoneGameEndCleanup( zone );
+
     level thread gf_overtimeClock();
     level waittill( "gf_ot_done", winner );
 
@@ -374,9 +401,16 @@ gf_overtime()
     gf_endRound( winner );
 }
 
+gf_overtimeZoneGameEndCleanup( zone )
+{
+    level endon( "gf_ot_done" );
+    level waittill( "game_ended" );
+    gf_cleanupOvertimeZone( zone );
+}
+
 gf_showOvertimeMessage()
 {
-    maps\mp\gametypes\_globallogic_audio::leaderDialog( "gf_overtime_cue", undefined, "introboost" );
+    maps\mp\_utility::playSoundOnPlayers( "mpl_hq_cap_us" );
 
     titleText = &"MP_OVERTIME_CAPS";
     if ( isDefined( game["strings"] ) && isDefined( game["strings"]["overtime"] ) )
@@ -795,6 +829,13 @@ gf_createOvertimeZone()
     visuals[0] = flagModel;
 
     zone = maps\mp\gametypes\_gameobjects::createUseObject( "neutral", flagTrigger, visuals, ( 0, 0, 100 ) );
+
+    // Diagnostic for the rare "no icon above the flag" report: if either objpoint is 0
+    // here, the server HUD element pool was exhausted at creation time.
+    haveAllies = isDefined( zone.objPoints ) && isDefined( zone.objPoints["allies"] );
+    haveAxis   = isDefined( zone.objPoints ) && isDefined( zone.objPoints["axis"] );
+    logPrint( "GF_OT: zone created entNum=" + zone.entNum + " objpointAllies=" + int( haveAllies ) + " objpointAxis=" + int( haveAxis ) + "\n" );
+
     zone maps\mp\gametypes\_gameobjects::allowUse( "any" );
     zone maps\mp\gametypes\_gameobjects::setUseTime( 2.5 );
     zone maps\mp\gametypes\_gameobjects::setUseText( &"MP_CAPTURING_FLAG" );
@@ -913,30 +954,62 @@ gf_onRoundEndGame()
 
 gf_onPlayerKilled( eInflictor, attacker, iDamage, sMeansOfDeath, sWeapon, vDir, sHitLoc, psOffsetTime, deathAnimDuration )
 {
-    if ( isDefined( attacker ) && isPlayer( attacker ) )
-    {
-        attacker gf_syncDamageScore();
-        victimKey = "v" + int( self.entnum );
-        if ( isDefined( attacker.gf_dmgOnTarget ) && isDefined( attacker.gf_dmgOnTarget[victimKey] ) )
-        {
-            attacker thread maps\mp\gametypes\_rank::updateRankScoreHUD( attacker.gf_dmgOnTarget[victimKey] );
-            attacker.gf_dmgOnTarget[victimKey] = undefined;
-        }
-    }
+    // On death, every player who damaged the victim (killer and assisters alike)
+    // sees a popup with their own exact damage share — no floor.
+    victimKey = "v" + int( self.entnum );
+
+    // Cap: recorded damage can overshoot applied damage (recorded pre-mitigation),
+    // so never show more than one player's worth of health for a single death.
+    cap = 100;
+    if ( isDefined( self.maxhealth ) && self.maxhealth > 0 )
+        cap = self.maxhealth;
 
     if ( isDefined( self.gf_assisters ) )
     {
+        // Popups first in their own pass — a hiccup in the score/assist bookkeeping
+        // below must never block a later damager's popup.
         for ( i = 0; i < self.gf_assisters.size; i++ )
         {
-            assister = self.gf_assisters[i];
-            if ( !isDefined( assister ) || !isPlayer( assister ) ) continue;
-            if ( isDefined( attacker ) && assister == attacker ) continue;
-            maps\mp\gametypes\_globallogic_score::givePlayerScore( "assist", assister );
+            damager = self.gf_assisters[i];
+            if ( !isDefined( damager ) || !isPlayer( damager ) ) continue;
+            if ( !isDefined( damager.gf_dmgOnTarget ) || !isDefined( damager.gf_dmgOnTarget[victimKey] ) ) continue;
+
+            popup = damager.gf_dmgOnTarget[victimKey];
+            damager.gf_dmgOnTarget[victimKey] = undefined;
+            if ( popup > cap )
+                popup = cap;
+
+            logPrint( "GF_POPUP: " + self.name + " died, " + damager.name + " share " + popup + "\n" );
+
+            if ( !isDefined( damager.pers["isBot"] ) || !damager.pers["isBot"] )
+                damager thread gf_showDamagePopup( popup );
+        }
+
+        for ( i = 0; i < self.gf_assisters.size; i++ )
+        {
+            damager = self.gf_assisters[i];
+            if ( !isDefined( damager ) || !isPlayer( damager ) ) continue;
+
+            damager gf_syncDamageScore();
+
+            if ( !isDefined( attacker ) || damager != attacker )
+                maps\mp\gametypes\_globallogic_score::givePlayerScore( "assist", damager );
         }
         self.gf_assisters = [];
     }
 
     gf_forceHealthHUDUpdate();
+
+    if ( isDefined( level.gf_roundActive ) && level.gf_roundActive )
+    {
+        victimTeam = self.pers["team"];
+        if ( victimTeam == "allies" || victimTeam == "axis" )
+        {
+            otherTeam = maps\mp\_utility::getOtherTeam( victimTeam );
+            maps\mp\_utility::playSoundOnPlayers( "mpl_flagdrop_sting_friend", victimTeam );
+            maps\mp\_utility::playSoundOnPlayers( "mpl_flagget_sting_friend",  otherTeam );
+        }
+    }
 }
 
 gf_onPlayerDisconnect()

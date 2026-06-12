@@ -1,17 +1,33 @@
 ﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 ---
-## BUGS
+### TODO
+
+#### Bugs
 - Gametype shows "gf" not Gunfight on other players screens
 - Minigun & M202 not working
 - Many classes missing a lethal
 - Need more iron sights
-- confirm native functionaly works like showing who u killed's calling card, first blood, double kill medals, etc
+- Confirm native functionality works: calling card on kill, first blood, double kill medals, etc
 
-### TODO 
-- Ingame mod menu for: dVars, pause game, map, mods, etc
-- Plutonium Server
-- Find death sound
-- Improve bot warfare mod so I have easy bot fill add/kick options for Gunfight
+#### Mod Menu (In-Game GSC)
+- [ ] Menu scaffold — port EnCoReV8 engine (`addMenu`/`addOpt`/`initMenu`/nav loop) into `_gf_menu.gsc`; replace `spawnStruct` with associative arrays
+- [ ] Gameplay settings submenu — player health, lives/round, capture time, OT duration, friendly fire, max team size (read at round/OT start, no `map_restart`)
+- [ ] Map & mode submenu — force map now, queue next map, switch gametype; applies on next round end
+- [ ] Pause toggle — `pauseTimer()` + `freezeControls(1)` all players + PAUSED HUD banner
+- [ ] Bot submenu — add/kick bot, fill count, fill mode, difficulty (`easy`/`normal`/`hard`/`fu`); wraps `bots_manage_*` dvars + `bot_set_difficulty()`
+- [ ] Fun mode: Modern COD — sprint unlimited, faster move speed, shorter ADS delay, reduced fall damage (dvar bundle toggle)
+- [ ] Fun mode: Silly — low gravity, high jump, infinite ammo, timescale tweak (dvar bundle toggle)
+- [ ] Debug submenu — toggle `gf_debug`, print round state, show alive counts + dvar values on screen
+
+#### Bot System
+- [ ] Bot OT zone navigation — `gf_botOvertimeAI()` thread: `SetBotGoal(zone.origin, 64)` on OT start, `ClearBotGoal()` on OT end (mirrors KOTH bot pattern)
+
+#### External Tool
+- [ ] RCON web tool — Node.js or browser page sending `setDvar`/`map`/`kick` over RCON UDP; mirrors in-game menu options
+
+#### Server
+- [ ] Plutonium dedicated server setup
+- [ ] Find death sound (dropped CTF flag)
 ---
 
 ## Dedicated Server Setup
@@ -203,7 +219,7 @@ Removed failed research paths from the project:
   https://github.com/iAmThatMichael/gunfight
   https://github.com/iAmThatMichael/gunfight/blob/master/scripts/mp/gametypes/gf.gsc
 - **GunMd0wn custom_gunfight.gsc** â€” community Gunfight mod (runs on HQ/TDM); source of class-select suppression patterns and weapon dvar approach. No GitHub â€” search Plutonium BO1 forum or megathread.
-- **mp_EMv2_Recreation, mp_iMCSx, mp_EnCoReV8** â€” Community BO1 mods; source of HUD element patterns (`newHudElem`, `newClientHudElem`, `NewScoreHudElem`, `hud.archived`, `fontPulse`)
+- **mp_EMv2_Recreation, mp_iMCSx, mp_EnCoReV8** C:\Users\klaze\iCloudDrive\Documents\iCloud Drive (Archive)\mods\Games\Black Ops\Inject ready GSC
 - **Resxt/Plutonium-T5-Scripts** â€” Collection of community T5 GSC scripts
   https://github.com/Resxt/Plutonium-T5-Scripts
 - **CabConModding BO1 weapons GSC tutorial**
