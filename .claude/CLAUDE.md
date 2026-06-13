@@ -1,13 +1,12 @@
 ﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 ---
 ### TODO
+- Support normal map sizes for >3 per team
 
 #### Bugs
 - Gametype shows "gf" not Gunfight on other players screens
 - Minigun & M202 not working
-- Many classes missing a lethal
-- Need more iron sights
-- **mp_radiation center blast doors still open** — they shouldn't on wager spaces. Stock gate is `level.wagerMatch` (checked in `mp_radiation.gsc` at the start auto-open `:86`, the `door_switch_func` mover loop `:160`, and the switch panel `:287/:298`). Can't set `level.wagerMatch=1` globally — it's read in ~14 files incl. the spawn path (`_globallogic_spawn::WaitForPlayers :48`), so it alters Gunfight spawning. **Tried & FAILED:** map-local `gf_disableRadiationDoors()` in `_gf_wager_zones.gsc` that fired `level._door_switch_trig2 notify("trigger")` to `endon`-kill the `door_switch_func` mover (via `waittill_any_ents`), then `trigger_off` both switches — doors still opened. Next attempts to consider: (a) override map script by dropping a patched `maps/mp/mp_radiation.gsc` in the mod (heavy); (b) scoped `level.wagerMatch=1` only across the map's init-frame door reads then restore 0 (race-prone); (c) physically hold `level._door1`/`_door2` clips closed / re-`RotateRoll` them shut each open; (d) investigate why the endon-kill missed (timing — mover may not have been parked at `waittill_any_ents` when we notified, or the open is driven elsewhere).
+- **mp_radiation center blast doors — FIXED, needs in-game test.** Root cause of the old failure: the start auto-open (`double_doors_open_at_start :478`) fires a **direct script notify** `level._door_switch_trig1 notify("trigger")` at prematch_over + 0.3s, and `trigger_off()` only moves a trigger out of player reach (`utility.gsc::trigger_off_proc` — origin −10000) — script notifies pass through it. The old `notify("trigger")` "kill" was also backwards: waking the parked `waittill_any_ents` in `door_switch_func :160` *is* the door-open signal. Fix (`_gf_wager_zones.gsc::gf_disableRadiationDoors`, hooked from `gf_applyWagerZoneAssets`): `trigger_off` both switches (blocks player/bot use), then at prematch_over + 0.2s repoint `level._door_switch_trig1/2` at a dummy `script_origin` so the +0.3s auto-open notify lands on the dummy; the driver stays parked on the real (silent) triggers forever. The +0.2s swap deliberately sits between the lights threads' +0.1s re-read (they idle green on the real triggers, like stock wager) and the +0.3s notify. The scoped `level.wagerMatch=1` idea was investigated and rejected: `teamchangeGracePeriod` (`_globallogic :1890`) and, when prematch is 0, `_wager::prematchPeriod` read the flag synchronously inside the same frame-0 window.
 
 #### Mod Menu (In-Game GSC)
 - [ ] Menu scaffold — port EnCoReV8 engine (`addMenu`/`addOpt`/`initMenu`/nav loop) into `_gf_menu.gsc`; replace `spawnStruct` with associative arrays

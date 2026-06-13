@@ -93,6 +93,144 @@ gf_getCustomSpawnLocations()
         return result;
     }
 
+    if ( mapname == "mp_silo" )
+    {
+        // set 0
+        set = gf_spawnSet();
+        a = set["allies"];
+        a[ a.size ] = gf_sp( (2146, -218, -38), 135 );
+        a[ a.size ] = gf_sp( (2355, -60, -39), 126 );
+        a[ a.size ] = gf_sp( (2273, -187, -38), 135 );
+        a[ a.size ] = gf_sp( (2448, 102, 8), 161 );
+        a[ a.size ] = gf_sp( (2168, 18, -45), 154 );
+        set["allies"] = a;
+        x = set["axis"];
+        x[ x.size ] = gf_sp( (-1058, 1587, 178), 38 );
+        x[ x.size ] = gf_sp( (-1022, 1974, 124), -1 );
+        x[ x.size ] = gf_sp( (-972, 2160, 125), -25 );
+        x[ x.size ] = gf_sp( (-1050, 1742, 158), 13 );
+        x[ x.size ] = gf_sp( (-825, 2280, 129), -26 );
+        set["axis"] = x;
+        result["sets"][ result["sets"].size ] = set;
+
+        return result;
+    }
+
+    if ( mapname == "mp_nuked" )
+    {
+        // set 0
+        set = gf_spawnSet();
+        a = set["allies"];
+        a[ a.size ] = gf_sp( (-1641, 471, -63), -14 );
+        a[ a.size ] = gf_sp( (-1542, 730, -63), -16 );
+        a[ a.size ] = gf_sp( (-1740, 837, -63), -9 );
+        a[ a.size ] = gf_sp( (-1827, 554, -66), -19 );
+        a[ a.size ] = gf_sp( (-1752, 206, -63), 16 );
+        set["allies"] = a;
+        x = set["axis"];
+        x[ x.size ] = gf_sp( (1663, 452, -63), -163 );
+        x[ x.size ] = gf_sp( (1581, 727, -63), -162 );
+        x[ x.size ] = gf_sp( (1808, 597, -63), -158 );
+        x[ x.size ] = gf_sp( (1725, 801, -63), -159 );
+        x[ x.size ] = gf_sp( (1885, 179, -63), 169 );
+        set["axis"] = x;
+        result["sets"][ result["sets"].size ] = set;
+
+        return result;
+    }
+
+    if ( mapname == "mp_array" )
+    {
+        // set 0
+        set = gf_spawnSet();
+        a = set["allies"];
+        a[ a.size ] = gf_sp( (2094, 1436, 415), -108 );
+        a[ a.size ] = gf_sp( (2323, 1315, 439), -130 );
+        a[ a.size ] = gf_sp( (2156, 1284, 385), -127 );
+        a[ a.size ] = gf_sp( (2052, 1238, 364), -127 );
+        a[ a.size ] = gf_sp( (2330, 1023, 428), -130 );
+        set["allies"] = a;
+        x = set["axis"];
+        x[ x.size ] = gf_sp( (332, -2749, 230), 85 );
+        x[ x.size ] = gf_sp( (774, -2711, 241), 100 );
+        x[ x.size ] = gf_sp( (570, -2757, 241), 92 );
+        x[ x.size ] = gf_sp( (983, -2635, 256), 134 );
+        x[ x.size ] = gf_sp( (235, -2586, 248), 69 );
+        set["axis"] = x;
+        result["sets"][ result["sets"].size ] = set;
+
+        return result;
+    }
+
+    if ( mapname == "mp_mountain" )
+    {
+        // set 0
+        set = gf_spawnSet();
+        a = set["allies"];
+        a[ a.size ] = gf_sp( (2885, 1117, 320), -93 );
+        a[ a.size ] = gf_sp( (3197, 1129, 320), -87 );
+        a[ a.size ] = gf_sp( (3047, 1317, 320), -90 );
+        a[ a.size ] = gf_sp( (3328, 1327, 320), -96 );
+        a[ a.size ] = gf_sp( (2791, 1256, 324), -83 );
+        set["allies"] = a;
+        x = set["axis"];
+        x[ x.size ] = gf_sp( (3295, -2981, 401), 107 );
+        x[ x.size ] = gf_sp( (3050, -2946, 376), 94 );
+        x[ x.size ] = gf_sp( (3157, -2712, 456), 98 );
+        x[ x.size ] = gf_sp( (2966, -2681, 456), 100 );
+        x[ x.size ] = gf_sp( (3470, -3048, 371), 126 );
+        set["axis"] = x;
+        result["sets"][ result["sets"].size ] = set;
+
+        return result;
+    }
+
+    if ( mapname == "mp_radiation" )
+    {
+        // set 0
+        set = gf_spawnSet();
+        a = set["allies"];
+        a[ a.size ] = gf_sp( (1333, -772, 136), -157 );
+        a[ a.size ] = gf_sp( (1342, -878, 136), 170 );
+        a[ a.size ] = gf_sp( (1179, -1076, 128), 135 );
+        a[ a.size ] = gf_sp( (1159, -871, 128), -177 );
+        a[ a.size ] = gf_sp( (1071, -1080, 126), 120 );
+        set["allies"] = a;
+        x = set["axis"];
+        x[ x.size ] = gf_sp( (1257, 1461, 128), -157 );
+        x[ x.size ] = gf_sp( (1247, 1331, 133), 172 );
+        x[ x.size ] = gf_sp( (1136, 1468, 128), -144 );
+        x[ x.size ] = gf_sp( (939, 1468, 128), -101 );
+        x[ x.size ] = gf_sp( (777, 1398, 128), -50 );
+        set["axis"] = x;
+        result["sets"][ result["sets"].size ] = set;
+
+        return result;
+    }
+
+    if ( mapname == "mp_hanoi" )
+    {
+        // set 0
+        set = gf_spawnSet();
+        a = set["allies"];
+        a[ a.size ] = gf_sp( (1802, -237, -73), -116 );
+        a[ a.size ] = gf_sp( (1646, -117, -78), -107 );
+        a[ a.size ] = gf_sp( (1787, -129, -80), -130 );
+        a[ a.size ] = gf_sp( (1849, -408, -60), -138 );
+        a[ a.size ] = gf_sp( (1414, -135, -74), -63 );
+        set["allies"] = a;
+        x = set["axis"];
+        x[ x.size ] = gf_sp( (-540, -2848, -63), 39 );
+        x[ x.size ] = gf_sp( (-663, -2688, -63), 35 );
+        x[ x.size ] = gf_sp( (-667, -2817, -63), 43 );
+        x[ x.size ] = gf_sp( (-664, -2564, -64), 29 );
+        x[ x.size ] = gf_sp( (-357, -2850, -63), 51 );
+        set["axis"] = x;
+        result["sets"][ result["sets"].size ] = set;
+
+        return result;
+    }
+
     if ( mapname == "mp_crisis" )
     {
         // set 0
@@ -174,6 +312,24 @@ gf_getCustomOvertimeLocation()
 
     if ( mapname == "mp_cosmodrome" )
         return gf_ot( (700, 386, -7), 0 );
+
+    if ( mapname == "mp_silo" )
+        return gf_ot( (543, 919, -25), -46 );
+
+    if ( mapname == "mp_nuked" )
+        return gf_ot( (23, 96, -67), -70 );
+
+    if ( mapname == "mp_array" )
+        return gf_ot( (985, -612, 318), 40 );
+
+    if ( mapname == "mp_mountain" )
+        return gf_ot( (2579, -746, 320), -34 );
+
+    if ( mapname == "mp_radiation" )
+        return gf_ot( (2, 25, 137), -48 );
+
+    if ( mapname == "mp_hanoi" )
+        return gf_ot( (332, -1040, -63), 45 );
 
     if ( mapname == "mp_cairo" )
         return gf_ot( (569, -42, -13), 174 );
