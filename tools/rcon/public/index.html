@@ -275,6 +275,7 @@ input.num{width:72px}
   <button class="tab" onclick="tab('maps')">MAPS</button>
   <button class="tab" onclick="tab('mods')">MODS</button>
   <button class="tab" onclick="tab('dev')">DEV</button>
+  <button class="tab" onclick="tab('srv')">SERVER</button>
   <button class="tab" onclick="tab('con')">CONSOLE</button>
 </div>
 
@@ -727,6 +728,11 @@ input.num{width:72px}
       <button class="b-gh ctrl" onclick="cmd('status')">Print Status</button>
     </div>
   </div>
+</div>
+
+<!-- ═══ SERVER CFG ═══ -->
+<div id="p-srv" class="panel">
+  <div id="srv-body"></div>
 </div>
 
 <!-- ═══ CONSOLE ═══ -->
@@ -1212,6 +1218,154 @@ setCtrl(false);
 clogAdd('GF RCON Tool ready. Enter server details and click Connect.','ls');
 renderAct();
 renderQueue();
+
+// ─── Server CFG panel ────────────────────────────────────────────────────────
+const SRV_SECTIONS = [
+  { title: 'GENERAL', vars: [
+    { n:'g_password',               lbl:'Join Password',          type:'text',   def:'',    tip:'g_password\nServer join password. Blank = open to all.' },
+    { n:'g_allowvote',              lbl:'Allow Voting',           type:'tog',    def:'0',   tip:'g_allowvote\nLet players call /callvote in console. Default: 0' },
+    { n:'g_inactivity',             lbl:'AFK Kick Timer (s)',     type:'num',    def:'190', tip:'g_inactivity\nSeconds of inactivity before auto-kick. 0 = disabled.' },
+    { n:'party_minplayers',         lbl:'Min Players to Start',   type:'num',    def:'1',   tip:'party_minplayers\nMinimum connected players before the match begins. Set 1 for solo testing.' },
+    { n:'sv_maxclients',            lbl:'Max Players',            type:'num',    def:'24',  tip:'sv_maxclients\nMaximum simultaneous connections the server accepts.' },
+    { n:'sv_floodProtect',          lbl:'Chat Flood Protection',  type:'num',    def:'4',   tip:'sv_floodProtect\nThrottle rapid chat messages. Set to 20 when using an RCON tool.' },
+    { n:'sv_kickBanTime',           lbl:'Kick Ban Duration (s)',  type:'num',    def:'300', tip:'sv_kickBanTime\nHow long a kicked player must wait before reconnecting.' },
+    { n:'sv_maxPing',               lbl:'Max Ping (0=any)',       type:'num',    def:'0',   tip:'sv_maxPing\nKick players whose ping exceeds this. 0 = no limit.' },
+    { n:'sv_pure',                  lbl:'Pure Server',            type:'tog',    def:'0',   tip:'sv_pure\nVerify client files match server files. Blocks modded clients.' },
+    { n:'sv_disableClientConsole',  lbl:'Block Player Console',   type:'tog',    def:'0',   tip:'sv_disableClientConsole\nPrevent players from using the in-game console.' },
+    { n:'sv_doubleCoDPoints',       lbl:'Double CoD Points',      type:'tog',    def:'1',   tip:'sv_doubleCoDPoints\nAward double CoD Points for completed matches.' },
+    { n:'sv_voice',                 lbl:'Voice Chat',             type:'tog',    def:'1',   tip:'sv_voice\nEnable in-game voice chat.' },
+    { n:'sv_voicequality',          lbl:'Voice Quality (1–9)',    type:'num',    def:'5',   tip:'sv_voicequality\n1 = lowest (least bandwidth), 9 = highest quality.' },
+    { n:'sv_sayName',               lbl:'Console Chat Name',      type:'text',   def:'Console', tip:'sv_sayName\nName shown in chat when the server sends a message.' },
+    { n:'scr_xpscale',              lbl:'XP Multiplier',          type:'num',    def:'1',   tip:'scr_xpscale\nRound-end XP = score × scr_xpscale.' },
+    { n:'scr_wagerbet',             lbl:'Wager Bet Amount',       type:'num',    def:'100', tip:'scr_wagerbet\nCoD Points cost to enter a wager match.' },
+  ]},
+  { title: 'GAMEPLAY', vars: [
+    { n:'g_playerCollision',           lbl:'Player Collision',         type:'sel', def:'0', opts:[['0','Everyone'],['1','Enemies only'],['2','Nobody']], tip:'g_playerCollision\nWho players physically collide with.' },
+    { n:'g_playerEjection',            lbl:'Player Ejection Source',   type:'sel', def:'0', opts:[['0','Everyone'],['1','Enemies only'],['2','Nobody']], tip:'g_playerEjection\nWho pushes players apart when overlapping.' },
+    { n:'g_playerCollisionEjectSpeed', lbl:'Ejection Speed',           type:'num', def:'25',  tip:'g_playerCollisionEjectSpeed\nHow fast players are pushed apart. Range: 0–32000.' },
+    { n:'sv_allowFriendlyThrowback',   lbl:'Friendly Grenade Throwback',type:'tog',def:'1',  tip:'sv_allowFriendlyThrowback\nAllow players to throw back friendly grenades.' },
+    { n:'g_patchRocketJumps',          lbl:'Rocket Jump Knockback',    type:'tog', def:'1',   tip:'g_patchRocketJumps\nEnable upward knockback from rocket self-damage.' },
+    { n:'bullet_penetration_affected_by_team', lbl:'Team Counts for Penetration', type:'tog', def:'1', tip:'bullet_penetration_affected_by_team\nTeammates reduce bullet penetration damage output.' },
+    { n:'g_fix_viewkick_dupe',         lbl:'Fix Viewkick Duplicate',   type:'tog', def:'0',   tip:'g_fix_viewkick_dupe\nFix a bug where viewkick is applied twice.' },
+    { n:'g_fixBulletDamageDupe',       lbl:'Fix Bullet Damage Dupe',   type:'tog', def:'0',   tip:'g_fixBulletDamageDupe\nFix double damage when two players intersect.' },
+    { n:'g_fix_entity_leaks',          lbl:'Fix Entity Leaks',         type:'tog', def:'0',   tip:'g_fix_entity_leaks\nFix engine entity leak issues across rounds.' },
+  ]},
+  { title: 'GAME RULES', vars: [
+    { n:'scr_game_bulletdamage',    lbl:'Bullet Damage Scale',    type:'flt',  def:'1.0', tip:'scr_game_bulletdamage\nGlobal bullet damage multiplier. 1.0 = normal, 0.5 = half, 2.0 = double.' },
+    { n:'scr_game_onlyheadshots',   lbl:'Headshots Only',         type:'tog',  def:'0',   tip:'scr_game_onlyheadshots\nOnly headshots deal damage.' },
+    { n:'scr_game_killstreaks',     lbl:'Killstreaks',            type:'tog',  def:'1',   tip:'scr_game_killstreaks\nEnable killstreak rewards.' },
+    { n:'scr_game_hardpoints',      lbl:'Scorestreaks',           type:'tog',  def:'1',   tip:'scr_game_hardpoints\nEnable scorestreak (hardpoint) system.' },
+    { n:'scr_game_perks',           lbl:'Perks',                  type:'tog',  def:'1',   tip:'scr_game_perks\nAllow players to use perks.' },
+    { n:'scr_game_graceperiod',     lbl:'Grace Period (s)',       type:'num',  def:'15',  tip:'scr_game_graceperiod\nInvincibility window at the start of each round.' },
+    { n:'scr_game_prematchperiod',  lbl:'Prematch Period (s)',    type:'num',  def:'15',  tip:'scr_game_prematchperiod\nFreeze time before the round goes live.' },
+    { n:'scr_game_allowkillcam',    lbl:'Killcam',                type:'tog',  def:'1',   tip:'scr_game_allowkillcam\nShow killcam replay after death.' },
+    { n:'scr_game_forceradar',      lbl:'Force UAV',              type:'tog',  def:'0',   tip:'scr_game_forceradar\nForce UAV (minimap visibility) always on for all players.' },
+    { n:'scr_game_spectatetype',    lbl:'Spectate Mode',          type:'sel',  def:'1',   opts:[['0','Disabled'],['1','Own team'],['2','All players'],['3','All + freecam']], tip:'scr_game_spectatetype\nWho dead players can spectate.' },
+    { n:'scr_game_deathpointloss',  lbl:'Points Lost on Death',  type:'num',  def:'0',   tip:'scr_game_deathpointloss\nScore penalty applied on each death.' },
+    { n:'scr_game_suicidepointloss',lbl:'Points Lost on Suicide', type:'num', def:'0',   tip:'scr_game_suicidepointloss\nScore penalty applied on suicide.' },
+    { n:'scr_intermission_time',    lbl:'Post-Game Screen (s)',   type:'num',  def:'15',  tip:'scr_intermission_time\nTime spent on the end-of-match scoreboard.' },
+    { n:'scr_killstreak_stacking',  lbl:'Killstreak Rollover',    type:'tog',  def:'0',   tip:'scr_killstreak_stacking\nAllow killstreak kills to count toward the next streak.' },
+  ]},
+  { title: 'PLAYER', vars: [
+    { n:'scr_player_maxhealth',       lbl:'Max Health',              type:'num', def:'100', tip:'scr_player_maxhealth\nPlayer HP cap. Default: 100.' },
+    { n:'scr_player_healthregentime', lbl:'Health Regen Delay (s)',  type:'num', def:'5',   tip:'scr_player_healthregentime\nSeconds without damage before regen begins. 0 = instant.' },
+    { n:'scr_player_numlives',        lbl:'Lives per Player',        type:'num', def:'0',   tip:'scr_player_numlives\nLives per player per game. 0 = unlimited.' },
+    { n:'scr_player_forcerespawn',    lbl:'Force Instant Respawn',   type:'tog', def:'1',   tip:'scr_player_forcerespawn\nSkip the respawn hold timer — players respawn immediately.' },
+    { n:'scr_player_respawndelay',    lbl:'Respawn Delay (s)',       type:'num', def:'0',   tip:'scr_player_respawndelay\nSeconds a player must wait before respawning.' },
+    { n:'scr_player_sprinttime',      lbl:'Sprint Time (s)',         type:'num', def:'4',   tip:'scr_player_sprinttime\nBase sprint duration without Marathon perk.' },
+    { n:'scr_player_allowrevive',     lbl:'Allow Revive',            type:'tog', def:'1',   tip:'scr_player_allowrevive\nAllow teammates to revive downed players.' },
+    { n:'scr_player_suicidespawndelay',lbl:'Suicide Penalty (s)',    type:'num', def:'0',   tip:'scr_player_suicidespawndelay\nExtra respawn delay after suiciding.' },
+  ]},
+  { title: 'TEAMS', vars: [
+    { n:'scr_teamchange',             lbl:'Allow Team Change',       type:'tog', def:'1',   tip:'scr_teamchange\n1 = players can switch teams freely.' },
+    { n:'scr_teambalance',            lbl:'Block Joining Larger Team',type:'tog',def:'1',   tip:'scr_teambalance\nPrevent players from joining the already-larger team.' },
+    { n:'scr_autobalanceteams',       lbl:'Auto-Balance at Round End',type:'tog',def:'0',   tip:'scr_autobalanceteams\nMove one player to even teams at the end of each round.' },
+    { n:'scr_team_fftype',            lbl:'Friendly Fire',           type:'sel', def:'0',   opts:[['0','Off'],['1','On'],['2','Reflect'],['3','Shared']], tip:'scr_team_fftype\n0=off, 1=on, 2=damage reflected to shooter, 3=damage shared with team.' },
+    { n:'scr_team_kickteamkillers',   lbl:'Kick Team Killers',       type:'tog', def:'0',   tip:'scr_team_kickteamkillers\nAuto-kick players who team kill.' },
+    { n:'scr_team_teamkillspawndelay',lbl:'TK Spawn Penalty (s)',    type:'num', def:'20',  tip:'scr_team_teamkillspawndelay\nExtra respawn delay imposed on team killers.' },
+    { n:'scr_team_teamkillpointloss', lbl:'TK Point Loss',          type:'tog', def:'1',   tip:'scr_team_teamkillpointloss\nDeduct points for team kills.' },
+    { n:'scr_teamKillPunishCount',    lbl:'TK Kick Threshold',       type:'num', def:'4',   tip:'scr_teamKillPunishCount\nNumber of team kills before automatic punishment.' },
+  ]},
+  { title: 'GUNFIGHT', vars: [
+    { n:'scr_gf_timelimit', lbl:'Round Time Limit (min)', type:'num', def:'10', tip:'scr_gf_timelimit\nGunfight round timer in minutes.' },
+  ]},
+  { title: 'TEAM DEATHMATCH', vars: [
+    { n:'scr_tdm_scorelimit', lbl:'Score Limit', type:'num', def:'17500', tip:'scr_tdm_scorelimit\nTeam score needed to win.' },
+    { n:'scr_tdm_timelimit',  lbl:'Time Limit (min)', type:'num', def:'10', tip:'scr_tdm_timelimit\nMatch duration if score limit not reached.' },
+    { n:'scr_tdm_numlives',   lbl:'Lives (0=∞)',  type:'num', def:'0',  tip:'scr_tdm_numlives\nLives per player. 0 = unlimited.' },
+  ]},
+  { title: 'FREE FOR ALL', vars: [
+    { n:'scr_dm_scorelimit', lbl:'Score Limit', type:'num', def:'1500', tip:'scr_dm_scorelimit\nFirst player to reach this score wins.' },
+    { n:'scr_dm_timelimit',  lbl:'Time Limit (min)', type:'num', def:'10', tip:'scr_dm_timelimit\nMatch duration if score limit not reached.' },
+    { n:'scr_dm_numlives',   lbl:'Lives (0=∞)',  type:'num', def:'0',  tip:'scr_dm_numlives\nLives per player. 0 = unlimited.' },
+  ]},
+  { title: 'DOMINATION', vars: [
+    { n:'scr_dom_scorelimit',     lbl:'Score Limit',          type:'num', def:'200', tip:'scr_dom_scorelimit\nTeam score needed to win.' },
+    { n:'scr_dom_timelimit',      lbl:'Time Limit (min)',     type:'num', def:'0',   tip:'scr_dom_timelimit\nMatch duration. 0 = score-limit only.' },
+    { n:'scr_dom_flagcapturetime',lbl:'Flag Capture Time (s)',type:'num', def:'10',  tip:'scr_dom_flagcapturetime\nSeconds to capture a flag.' },
+  ]},
+  { title: 'SEARCH & DESTROY', vars: [
+    { n:'scr_sd_scorelimit', lbl:'Round Win Limit', type:'num', def:'4',   tip:'scr_sd_scorelimit\nRound wins needed to win the match.' },
+    { n:'scr_sd_timelimit',  lbl:'Round Time (min)',type:'num', def:'2.5', tip:'scr_sd_timelimit\nTime per round.' },
+    { n:'scr_sd_bombtimer',  lbl:'Bomb Timer (s)',  type:'num', def:'45',  tip:'scr_sd_bombtimer\nSeconds until planted bomb detonates.' },
+    { n:'scr_sd_defusetime', lbl:'Defuse Time (s)', type:'num', def:'5',   tip:'scr_sd_defusetime\nSeconds to defuse the bomb.' },
+    { n:'scr_sd_planttime',  lbl:'Plant Time (s)',  type:'num', def:'5',   tip:'scr_sd_planttime\nSeconds to plant the bomb.' },
+    { n:'scr_sd_roundswitch',lbl:'Sides Switch Every (rounds)', type:'num', def:'1', tip:'scr_sd_roundswitch\nRounds before teams switch attacker/defender roles.' },
+  ]},
+  { title: 'DEMOLITION', vars: [
+    { n:'scr_dem_scorelimit', lbl:'Round Win Limit', type:'num', def:'2',   tip:'scr_dem_scorelimit\nRound wins needed to win the match.' },
+    { n:'scr_dem_timelimit',  lbl:'Round Time (min)',type:'num', def:'2.5', tip:'scr_dem_timelimit\nTime per round.' },
+    { n:'scr_dem_bombtimer',  lbl:'Bomb Timer (s)',  type:'num', def:'45',  tip:'scr_dem_bombtimer\nSeconds until planted bomb detonates.' },
+    { n:'scr_dem_defusetime', lbl:'Defuse Time (s)', type:'num', def:'5',   tip:'scr_dem_defusetime\nSeconds to defuse.' },
+    { n:'scr_dem_planttime',  lbl:'Plant Time (s)',  type:'num', def:'5',   tip:'scr_dem_planttime\nSeconds to plant.' },
+  ]},
+  { title: 'SABOTAGE', vars: [
+    { n:'scr_sab_timelimit',         lbl:'Time Limit (min)',    type:'num', def:'10',  tip:'scr_sab_timelimit\nMatch duration.' },
+    { n:'scr_sab_bombtimer',         lbl:'Bomb Timer (s)',      type:'num', def:'45',  tip:'scr_sab_bombtimer\nSeconds until bomb detonates.' },
+    { n:'scr_sab_defusetime',        lbl:'Defuse Time (s)',     type:'num', def:'5',   tip:'scr_sab_defusetime\nSeconds to defuse.' },
+    { n:'scr_sab_planttime',         lbl:'Plant Time (s)',      type:'num', def:'2.5', tip:'scr_sab_planttime\nSeconds to plant.' },
+    { n:'scr_sab_playerrespawndelay',lbl:'Respawn Delay (s)',   type:'num', def:'7.5', tip:'scr_sab_playerrespawndelay\nTime before respawn.' },
+  ]},
+  { title: 'CAPTURE THE FLAG', vars: [
+    { n:'scr_ctf_scorelimit',        lbl:'Score Limit',             type:'num', def:'3',  tip:'scr_ctf_scorelimit\nCaptures needed to win.' },
+    { n:'scr_ctf_timelimit',         lbl:'Time Limit (min)',        type:'num', def:'5',  tip:'scr_ctf_timelimit\nRound duration.' },
+    { n:'scr_ctf_flagrespawntime',   lbl:'Flag Respawn Time (s)',   type:'num', def:'0',  tip:'scr_ctf_flagrespawntime\nTime before a captured flag respawns. 0 = immediate.' },
+    { n:'scr_ctf_idleflagreturntime',lbl:'Idle Flag Return (s)',    type:'num', def:'30', tip:'scr_ctf_idleflagreturntime\nSeconds before a dropped flag auto-returns to base.' },
+    { n:'scr_ctf_touchreturn',       lbl:'Touch to Return Flag',    type:'tog', def:'1',  tip:'scr_ctf_touchreturn\nAllow players to return their own flag by touching it.' },
+  ]},
+  { title: 'HEADQUARTERS', vars: [
+    { n:'scr_koth_scorelimit', lbl:'Score Limit',      type:'num', def:'250', tip:'scr_koth_scorelimit\nPoints needed to win.' },
+    { n:'scr_koth_timelimit',  lbl:'Time Limit (min)', type:'num', def:'15',  tip:'scr_koth_timelimit\nMatch duration if score limit not reached.' },
+    { n:'scr_koth_winlimit',   lbl:'Round Win Limit',  type:'num', def:'1',   tip:'scr_koth_winlimit\nRounds needed to win the match.' },
+  ]},
+];
+
+function buildServerPanel() {
+  const el = g('srv-body');
+  el.innerHTML = SRV_SECTIONS.map(sec => {
+    const rows = sec.vars.map(v => {
+      const tip = `data-tip="${v.tip.replace(/"/g,'&quot;').replace(/\n/g,'&#10;')}"`;
+      const id  = 'srv_' + v.n.replace(/[^a-zA-Z0-9]/g,'_');
+      let ctrl;
+      if (v.type === 'tog') {
+        const chk = v.def === '1' ? 'checked' : '';
+        ctrl = `<label class="tog ctrl"><input type="checkbox" id="${id}" ${chk} onchange="sdvv('${v.n}',${id}.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>`;
+      } else if (v.type === 'sel') {
+        const opts = v.opts.map(o => `<option value="${o[0]}"${o[0]===v.def?' selected':''}>${o[1]}</option>`).join('');
+        ctrl = `<select id="${id}" class="ctrl" onchange="sdvv('${v.n}',this.value)">${opts}</select>`;
+      } else if (v.type === 'text') {
+        ctrl = `<input id="${id}" type="text" class="ctrl" value="${v.def}" style="flex:1;min-width:80px"><button class="b-gh b-sm ctrl" onclick="sdvv('${v.n}',g('${id}').value)">Set</button>`;
+      } else {
+        const step = v.type === 'flt' ? '0.1' : '1';
+        ctrl = `<input id="${id}" type="number" class="num ctrl" value="${v.def}" step="${step}"><button class="b-gh b-sm ctrl" onclick="sdvv('${v.n}',g('${id}').value)">Set</button>`;
+      }
+      const sp = v.type === 'tog' ? '<span style="flex:1"></span>' : '';
+      return `<div class="srow" ${tip}><span class="slbl">${v.lbl}</span>${sp}${ctrl}</div>`;
+    }).join('');
+    return `<div class="block"><div class="btitle">${sec.title}</div>${rows}</div>`;
+  }).join('');
+}
+buildServerPanel();
 
 // ─── Gametype custom dropdown ─────────────────────────────────────────────────
 const GT_OPTS = [
