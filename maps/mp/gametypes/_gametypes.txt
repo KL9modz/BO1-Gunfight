@@ -15,5 +15,4 @@ hlnd
 gun
 shrp
 
-duel
 gf

@@ -1,0 +1,1288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GF RCON Tool</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f17;--sf:#141720;--sf2:#1c2030;--bd:#252840;
+  --ac:#00b4ff;--ok:#2ec653;--ng:#e63946;--wn:#ffd60a;
+  --tx:#dce4ff;--dm:#7880a0;--r:6px;
+  --fn:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+html,body{height:100%;background:var(--bg);color:var(--tx);font-family:var(--fn);font-size:13px;overflow:hidden}
+.root{display:flex;flex-direction:column;height:100vh}
+
+/* Header */
+header{display:flex;align-items:center;gap:10px;padding:7px 14px;background:var(--sf);border-bottom:1px solid var(--bd);flex-shrink:0;z-index:10}
+.logo{font-size:15px;font-weight:800;letter-spacing:.1em;color:var(--ac);padding-right:12px;border-right:1px solid var(--bd);white-space:nowrap}
+.conn-row{display:flex;gap:6px;flex:1;align-items:center}
+input,select{background:var(--bg);border:1px solid var(--bd);color:var(--tx);border-radius:var(--r);padding:5px 8px;font:13px var(--fn);outline:none}
+input:focus,select:focus{border-color:var(--ac)}
+#iHost{width:110px}#iPort{width:70px}#iPass{width:135px}
+.bdg{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid;white-space:nowrap}
+.bdg.off{color:var(--dm);border-color:var(--bd)}.bdg.on{color:var(--ok);border-color:var(--ok)}.bdg.err{color:var(--ng);border-color:var(--ng)}
+
+/* Body */
+.body{display:flex;flex:1;overflow:hidden}
+
+/* Sidebar */
+.sidebar{width:270px;flex-shrink:0;display:flex;flex-direction:column;background:var(--sf);border-right:1px solid var(--bd);overflow:hidden}
+.card{padding:10px 12px;border-bottom:1px solid var(--bd)}
+.ctitle{font-size:10px;font-weight:700;letter-spacing:.12em;color:var(--dm);margin-bottom:8px}
+.irow{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid var(--bd);font-size:12px}
+.irow:last-child{border-bottom:none}
+.dm{color:var(--dm)}
+
+/* Scoreboard */
+.scoreboard{display:flex;gap:4px;align-items:stretch}
+.score-team{flex:1;background:var(--bg);border:1px solid var(--bd);border-radius:var(--r);padding:6px 8px;text-align:center}
+.score-team.allies{border-color:rgba(46,198,83,.35)}
+.score-team.axis{border-color:rgba(230,57,70,.35)}
+.score-label{font-size:9px;font-weight:700;letter-spacing:.1em;color:var(--dm);margin-bottom:2px}
+.score-val{font-size:22px;font-weight:800;line-height:1}
+.score-team.allies .score-val{color:var(--ok)}
+.score-team.axis .score-val{color:var(--ng)}
+.score-mid{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 4px;color:var(--dm);font-size:11px}
+.score-round{font-size:10px;color:var(--dm);text-align:center;margin-top:6px}
+.score-alive{display:flex;gap:4px;justify-content:center;margin-top:4px;font-size:11px;color:var(--dm)}
+
+/* Players */
+.player-card{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0}
+.ptable-wrap{flex:1;overflow-y:auto}
+table{width:100%;border-collapse:collapse}
+th{font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--dm);padding:4px;text-align:left;border-bottom:1px solid var(--bd)}
+td{padding:3px 4px;font-size:12px;border-bottom:1px solid var(--bd)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--sf2)}
+.bot-t{font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:#1a2d4a;color:#7ab4ff;border:1px solid #2a4a7a;margin-right:3px}
+.you-t{font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:rgba(255,214,10,.1);color:var(--wn);border:1px solid rgba(255,214,10,.3);margin-right:3px}
+.empty td{color:var(--dm);text-align:center;padding:14px;font-style:italic}
+.p-ok{color:var(--ok)}.p-mid{color:var(--wn)}.p-bad{color:var(--ng)}
+
+/* Activity log */
+.actlog{height:120px;flex-shrink:0;border-top:1px solid var(--bd);padding:8px 10px;overflow-y:auto;font-size:11px}
+.al-entry{display:flex;gap:6px;padding:2px 0;border-bottom:1px solid rgba(37,40,64,.5)}
+.al-entry:last-child{border-bottom:none}
+.al-time{color:var(--dm);flex-shrink:0;font-family:monospace}
+.al-msg{flex:1}
+.al-ok{color:var(--ok)}.al-ng{color:var(--ng)}.al-wn{color:var(--wn)}.al-in{color:var(--tx)}
+
+/* Context menu */
+#ctx-menu{position:fixed;background:var(--sf2);border:1px solid var(--bd);border-radius:var(--r);padding:4px;z-index:9999;min-width:160px;display:none;box-shadow:0 4px 16px rgba(0,0,0,.5)}
+.ctx-header{font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--dm);padding:4px 8px 6px;border-bottom:1px solid var(--bd);margin-bottom:4px}
+.ctx-item{padding:6px 10px;border-radius:4px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px}
+.ctx-item:hover{background:var(--bd)}
+.ctx-item.red{color:var(--ng)}.ctx-item.green{color:var(--ok)}.ctx-item.yellow{color:var(--wn)}
+.ctx-sep{border-top:1px solid var(--bd);margin:3px 0}
+
+/* Main */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.tab-bar{display:flex;background:var(--sf);border-bottom:1px solid var(--bd);flex-shrink:0;overflow-x:auto}
+.tab-bar::-webkit-scrollbar{height:0}
+.tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--dm);padding:9px 15px;font:700 11px var(--fn);letter-spacing:.06em;cursor:pointer;white-space:nowrap;transition:color .15s,border-color .15s}
+.tab:hover{color:var(--tx)}.tab.active{color:var(--ac);border-bottom-color:var(--ac)}
+.panel{display:none;flex:1;overflow-y:auto;padding:14px;flex-direction:column;gap:12px}
+.panel.active{display:flex}
+
+/* Buttons */
+button{font:600 13px var(--fn);cursor:pointer;border-radius:var(--r);border:1px solid transparent;padding:6px 13px;transition:opacity .15s,background .15s}
+button:disabled{opacity:.35;cursor:not-allowed}
+.b-ac{background:var(--ac);color:#0d0f17;border-color:var(--ac)}.b-ac:hover:not(:disabled){opacity:.8}
+.b-ok{background:var(--ok);color:#0d0f17;border-color:var(--ok)}.b-ok:hover:not(:disabled){opacity:.8}
+.b-ng{background:var(--ng);color:#fff;border-color:var(--ng)}.b-ng:hover:not(:disabled){opacity:.8}
+.b-wn{background:var(--wn);color:#0d0f17;border-color:var(--wn)}.b-wn:hover:not(:disabled){opacity:.8}
+.b-gh{background:transparent;color:var(--tx);border-color:var(--bd)}.b-gh:hover:not(:disabled){background:var(--sf2);border-color:var(--ac)}
+.b-sm{padding:3px 8px;font-size:11px}.b-lg{width:100%;padding:11px;font-size:14px;letter-spacing:.05em}
+#cBtn{background:var(--ac);color:#0d0f17;border-color:var(--ac);font-weight:700;padding:5px 14px}
+#cBtn:hover{opacity:.85}#cBtn.disc{background:transparent;color:var(--ng);border-color:var(--ng)}
+
+/* Layout helpers */
+.block{background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:10px 12px}
+.btitle{font-size:10px;font-weight:700;letter-spacing:.12em;color:var(--dm);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--bd)}
+.srow{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd)}
+.srow:last-child{border-bottom:none;padding-bottom:0}.srow:first-child{padding-top:0}
+.slbl{flex:1;font-size:13px}.shint{color:var(--dm);font-size:11px;min-width:110px;text-align:right}
+input.num{width:72px}
+.row{display:flex;gap:8px;align-items:center}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+
+/* Toggle */
+.tog{position:relative;width:40px;height:21px;flex-shrink:0;cursor:pointer}
+.tog input{display:none}
+.tog-t{position:absolute;inset:0;background:var(--bd);border-radius:10px;transition:background .2s}
+.tog input:checked+.tog-t{background:var(--ac)}
+.tog-th{position:absolute;left:2px;top:2px;width:17px;height:17px;background:#fff;border-radius:50%;transition:transform .2s;pointer-events:none}
+.tog input:checked~.tog-th{transform:translateX(19px)}
+.tlbl{font-size:11px;color:var(--dm);min-width:26px}
+
+/* Diff buttons */
+.drow{display:flex;gap:6px}
+.db{flex:1;padding:8px 4px;font-size:12px;font-weight:700;background:var(--sf2);border:1px solid var(--bd);color:var(--dm);border-radius:var(--r)}
+.db:hover:not(:disabled){border-color:var(--ac);color:var(--tx)}
+.db.sel{border-color:var(--ac);color:var(--ac);background:rgba(0,180,255,.1)}
+.db.fu:hover:not(:disabled),.db.fu.sel{border-color:var(--ng);color:var(--ng);background:rgba(230,57,70,.1)}
+
+/* Sliders */
+.slider-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd)}
+.slider-row:last-child{border-bottom:none}
+.slider-row input[type=range]{flex:1;accent-color:var(--ac);height:4px}
+.sv{min-width:44px;text-align:right;font-size:12px;font-weight:600;color:var(--ac)}
+
+/* Map grid */
+.mfilter{display:flex;gap:6px;align-items:center}
+.mfilter button{padding:3px 11px;font-size:11px;background:var(--sf2);border:1px solid var(--bd);color:var(--dm)}
+.mfilter button.active{border-color:var(--ac);color:var(--ac);background:rgba(0,180,255,.1)}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:5px}
+.mt{background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:7px 8px;cursor:pointer;transition:border-color .15s,background .15s}
+.mt:hover{border-color:var(--ac);background:var(--sf2)}.mt.hidden{display:none}
+.mn{font-size:12px;font-weight:700}.mi{font-size:10px;color:var(--dm);margin:1px 0}
+.mbs{display:flex;gap:3px;flex-wrap:wrap;margin-top:3px}
+.mb{font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px}
+.gfb{background:rgba(46,198,83,.15);color:var(--ok);border:1px solid rgba(46,198,83,.3)}
+.dlcb{background:rgba(255,214,10,.1);color:var(--wn);border:1px solid rgba(255,214,10,.25)}
+.mact{display:flex;gap:8px;align-items:center;background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:10px 12px;flex-wrap:wrap}
+.mact label{color:var(--dm);font-size:12px;white-space:nowrap}
+/* Custom gametype dropdown */
+.csel-wrap{position:relative;flex:1;min-width:160px}
+.csel-btn{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;background:var(--bg);border:1px solid var(--bd);color:var(--tx);border-radius:var(--r);padding:5px 8px;font:13px var(--fn);cursor:pointer;user-select:none}
+.csel-btn:hover,.csel-btn.open{border-color:var(--ac)}
+.csel-arr{color:var(--dm);font-size:9px;flex-shrink:0;transition:transform .15s}
+.csel-btn.open .csel-arr{transform:rotate(180deg)}
+.csel-list{display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:100%;width:max-content;max-width:340px;background:var(--sf2);border:1px solid var(--bd);border-radius:var(--r);z-index:2000;box-shadow:0 6px 20px rgba(0,0,0,.6);overflow:hidden}
+.csel-list.open{display:block}
+.csel-grp{font-size:9px;font-weight:700;letter-spacing:.12em;color:var(--dm);padding:7px 10px 3px;border-top:1px solid var(--bd)}
+.csel-grp:first-child{border-top:none}
+.csel-item{padding:6px 12px;cursor:pointer;font-size:12px;color:var(--tx);white-space:nowrap}
+.csel-item:hover{background:var(--bd);color:var(--ac)}
+.csel-item.active{color:var(--ac)}
+
+/* Queue */
+.queue-list{display:flex;flex-direction:column;gap:4px;min-height:32px}
+.qi{display:flex;align-items:center;gap:8px;background:var(--sf2);border:1px solid var(--bd);border-radius:4px;padding:5px 8px;font-size:12px}
+.qi-map{flex:1;font-weight:600}
+.qi-gt{color:var(--dm);font-size:11px}
+.qi-rm{background:none;border:none;color:var(--ng);font-size:14px;padding:0 2px;cursor:pointer}
+.qi-rm:hover{color:#ff6666}
+.queue-empty{color:var(--dm);font-style:italic;font-size:12px;padding:4px}
+
+/* Mods tab */
+.mod-section{margin-bottom:4px}
+.mod-section+.mod-section{margin-top:4px}
+
+/* Dev tab */
+.dvar-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px}
+.dv-card{background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px}
+.dv-name{font-size:11px;color:var(--dm);margin-bottom:4px;font-family:monospace}
+.dv-ctrl{display:flex;gap:6px;align-items:center}
+.dv-ctrl input{flex:1;min-width:0}
+.dv-ctrl button{flex-shrink:0}
+
+/* Console */
+.clog{background:#070810;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;overflow-y:auto;font:12px/1.5 'Cascadia Code','Consolas',monospace;height:260px}
+.ll{padding:1px 0}
+.lo{color:var(--dm)}.lo::before{content:'▶ ';color:var(--ac)}
+.li{color:var(--tx)}.li::before{content:'← ';color:var(--ok)}
+.le{color:var(--ng)}.le::before{content:'✕ '}
+.ls{color:var(--wn);font-style:italic}
+.cin-row{display:flex;gap:6px;margin-top:8px}
+.cin-row input{flex:1;font-family:monospace}
+.qcmds{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.qcmds button{font-family:monospace;font-size:11px;padding:2px 7px;background:var(--sf2);border:1px solid var(--bd);color:var(--dm)}
+.qcmds button:hover:not(:disabled){border-color:var(--ac);color:var(--ac)}
+
+/* Toasts */
+#toasts{position:fixed;bottom:12px;right:12px;display:flex;flex-direction:column;gap:5px;z-index:9998}
+.toast{padding:8px 12px;border-radius:var(--r);font-size:13px;font-weight:500;background:var(--sf2);border:1px solid var(--bd);animation:tin .2s ease;max-width:260px}
+.toast.info{border-color:var(--ac)}.toast.ok{border-color:var(--ok);color:var(--ok)}
+.toast.err{border-color:var(--ng);color:var(--ng)}.toast.wn{border-color:var(--wn);color:var(--wn)}
+@keyframes tin{from{transform:translateX(14px);opacity:0}to{transform:translateX(0);opacity:1}}
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--bd);border-radius:3px}
+</style>
+</head>
+<body>
+<div class="root">
+
+<header>
+  <div class="logo">GF RCON</div>
+  <div class="conn-row">
+    <input id="iHost" type="text" placeholder="Host" value="127.0.0.1">
+    <input id="iPort" type="number" placeholder="Port" value="28960">
+    <input id="iPass" type="password" placeholder="rcon_password">
+    <button id="cBtn" onclick="doConn()">Connect</button>
+  </div>
+  <span id="badge" class="bdg off">● Disconnected</span>
+</header>
+
+<div class="body">
+
+<!-- ── Sidebar ── -->
+<aside class="sidebar">
+  <div class="card">
+    <div class="ctitle">SERVER</div>
+    <div class="irow"><span class="dm">Map</span><span id="sMap">—</span></div>
+    <div class="irow"><span class="dm">Gametype</span><span id="sGt">—</span></div>
+    <div class="irow"><span class="dm">Players</span><span id="sPl">—</span></div>
+  </div>
+
+  <div class="card">
+    <div class="ctitle">SCOREBOARD</div>
+    <div class="scoreboard">
+      <div class="score-team allies">
+        <div class="score-label">ALLIES</div>
+        <div class="score-val" id="scA">—</div>
+      </div>
+      <div class="score-mid">
+        <span style="font-size:16px;color:var(--bd)">:</span>
+        <span id="scRound" style="font-size:9px;margin-top:4px">R —</span>
+      </div>
+      <div class="score-team axis">
+        <div class="score-label">AXIS</div>
+        <div class="score-val" id="scX">—</div>
+      </div>
+    </div>
+    <div class="score-alive">
+      <span>Alive: <b id="scAA" style="color:var(--ok)">—</b></span>
+      <span style="color:var(--bd)">|</span>
+      <span><b id="scAX" style="color:var(--ng)">—</b></span>
+    </div>
+  </div>
+
+  <div class="card player-card">
+    <div class="ctitle">PLAYERS <span class="dm" style="font-weight:400;font-size:10px">(right-click for actions)</span></div>
+    <div class="ptable-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Name</th><th>Sc</th><th>Ping</th><th>IP</th><th>GUID</th></tr></thead>
+        <tbody id="ptbody"><tr class="empty"><td colspan="6">Not connected</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="actlog" id="actlog">
+    <div class="ctitle" style="margin-bottom:4px">ACTIVITY</div>
+    <div id="actEntries"></div>
+  </div>
+</aside>
+
+<!-- ── Main ── -->
+<div class="main">
+<div class="tab-bar">
+  <button class="tab active" onclick="tab('gf')">GUNFIGHT</button>
+  <button class="tab" onclick="tab('bots')">BOTS</button>
+  <button class="tab" onclick="tab('maps')">MAPS</button>
+  <button class="tab" onclick="tab('mods')">MODS</button>
+  <button class="tab" onclick="tab('dev')">DEV</button>
+  <button class="tab" onclick="tab('con')">CONSOLE</button>
+</div>
+
+<!-- ═══ GUNFIGHT ═══ -->
+<div id="p-gf" class="panel active">
+  <div class="block">
+    <div class="btitle">ROUND SETTINGS</div>
+    <div class="srow" data-tip="gf_player_health&#10;Read at each spawn. Default: 100"><span class="slbl">Player Health</span>
+      <input id="vHp" class="num ctrl" type="number" value="100" min="1" max="999">
+      <button class="b-gh b-sm ctrl" onclick="sdv('gf_player_health','vHp')">Apply</button>
+      <span class="shint">next spawn</span></div>
+    <div class="srow" data-tip="scr_gf_numlives&#10;Lives per player per round. Default: 1"><span class="slbl">Lives / Round</span>
+      <input id="vLv" class="num ctrl" type="number" value="1" min="1" max="10">
+      <button class="b-gh b-sm ctrl" onclick="sdv('scr_gf_numlives','vLv')">Apply</button>
+      <span class="shint">next round</span></div>
+    <div class="srow" data-tip="scr_team_maxsize&#10;Players per team max; overflow goes to spectator. 0 = unlimited"><span class="slbl">Max Team Size</span>
+      <input id="vTs" class="num ctrl" type="number" value="2" min="1" max="12">
+      <button class="b-gh b-sm ctrl" onclick="sdv('scr_team_maxsize','vTs')">Apply</button>
+      <span class="shint">next round</span></div>
+    <div class="srow" data-tip="scr_gf_timelimit&#10;Round time limit in minutes. 0 = no limit. Default: 1"><span class="slbl">Round Time Limit (min)</span>
+      <input id="vTl" class="num ctrl" type="number" value="1" min="0" max="60">
+      <button class="b-gh b-sm ctrl" onclick="sdv('scr_gf_timelimit','vTl')">Apply</button>
+      <span class="shint">next round</span></div>
+    <div class="srow" data-tip="scr_gf_scorelimit&#10;Round wins needed to win the match. Default: 6"><span class="slbl">Rounds to Win</span>
+      <input id="vSl" class="num ctrl" type="number" value="6" min="1" max="10">
+      <button class="b-gh b-sm ctrl" onclick="sdv('scr_gf_scorelimit','vSl')">Apply</button>
+      <span class="shint">next round</span></div>
+    <div class="srow" data-tip="scr_gf_roundlimit&#10;Hard round cap regardless of score. 0 = use scorelimit only. Default: 0"><span class="slbl">Max Rounds (0=off)</span>
+      <input id="vRl" class="num ctrl" type="number" value="0" min="0" max="15">
+      <button class="b-gh b-sm ctrl" onclick="sdv('scr_gf_roundlimit','vRl')">Apply</button>
+      <span class="shint">next round</span></div>
+    <div class="srow" data-tip="scr_gf_roundswitch&#10;Swap attacker/defender sides every N rounds. 0 = never. Default: 2"><span class="slbl">Side Switch Every N Rounds</span>
+      <input id="vRsw" class="num ctrl" type="number" value="2" min="0" max="9">
+      <button class="b-gh b-sm ctrl" onclick="sdv('scr_gf_roundswitch','vRsw')">Apply</button>
+      <span class="shint">next round</span></div>
+    <div class="srow" data-tip="scr_team_fftype&#10;0 = off, 1 = on, 2 = reflect, 3 = shared&#10;Toggle sets 0 or 1"><span class="slbl">Friendly Fire</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbFF" onchange="applyFF()"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span id="ffLbl" class="tlbl">OFF</span>
+      <span class="shint">immediate</span></div>
+    <div class="srow" data-tip="level.killstreaksenabled&#10;Runtime level var — bridge: killstreaks_on / killstreaks_off&#10;Disabling also hides killstreak UI"><span class="slbl">Killstreaks</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbKS" onchange="bridge(cbKS.checked?'killstreaks_on':'killstreaks_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">level var</span></div>
+    <div class="srow" data-tip="level.healthRegenDisabled + scr_player_healthregentime&#10;Bridge sets both. On = 5s delay. Off = disabled (GF default)"><span class="slbl">Health Regen</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbRegen" onchange="bridge(cbRegen.checked?'regen_on':'regen_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">level var</span></div>
+  </div>
+  <div class="block">
+    <div class="btitle">OVERTIME</div>
+    <div class="srow" data-tip="gf_capture_time&#10;Seconds a player must stand in the zone to win OT. Default: 3"><span class="slbl">Capture Time (s)</span>
+      <input id="vCt" class="num ctrl" type="number" value="3" min="1" max="30">
+      <button class="b-gh b-sm ctrl" onclick="sdv('gf_capture_time','vCt')">Apply</button>
+      <span class="shint">next OT</span></div>
+    <div class="srow" data-tip="scr_gf_overtimelimit&#10;OT countdown in seconds. Pauses while zone is contested. Default: 15"><span class="slbl">OT Duration (s)</span>
+      <input id="vOt" class="num ctrl" type="number" value="15" min="5" max="120">
+      <button class="b-gh b-sm ctrl" onclick="sdv('scr_gf_overtimelimit','vOt')">Apply</button>
+      <span class="shint">next OT</span></div>
+  </div>
+  <div class="block">
+    <div class="btitle">MATCH CONTROL</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button id="pauseBtn" class="b-wn b-lg ctrl" onclick="doPause()">⏸  PAUSE MATCH</button>
+      <div class="two">
+        <button class="b-ok ctrl" onclick="endRound('allies')">END ROUND → ALLIES</button>
+        <button class="b-ng ctrl" onclick="endRound('axis')">END ROUND → AXIS</button>
+      </div>
+      <div class="two">
+        <button class="b-gh ctrl" onclick="cmd('fast_restart')">Fast Restart</button>
+        <button class="b-gh ctrl" onclick="cmd('map_restart')">Map Restart</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ BOTS ═══ -->
+<div id="p-bots" class="panel">
+  <div class="block">
+    <div class="btitle">BOT MANAGEMENT</div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="b-ac ctrl" onclick="addBot()">+ Add Bot</button>
+      <button class="b-ng ctrl" onclick="kickBots()">Kick All Bots</button>
+    </div>
+    <div class="srow" data-tip="bots_manage_fill&#10;Target total number of bots on the server. Engine adds/removes bots to hit this count"><span class="slbl">Auto-fill count</span>
+      <input id="vFl" class="num ctrl" type="number" value="0" min="0" max="12">
+      <button class="b-gh b-sm ctrl" onclick="applyFill()">Apply</button>
+      <span class="shint">total bots</span></div>
+    <div class="srow" data-tip="bots_team&#10;Which team bots are assigned to. Default: autoassign (engine balances)"><span class="slbl">Bots team</span>
+      <span style="flex:1"></span>
+      <select id="vBT" class="ctrl" onchange="sdvv('bots_team',this.value)">
+        <option value="autoassign">Auto-assign</option>
+        <option value="allies">Allies</option><option value="axis">Axis</option>
+      </select></div>
+  </div>
+  <div class="block">
+    <div class="btitle">DIFFICULTY <span style="font-weight:400;font-size:10px">(GSC bridge)</span></div>
+    <div class="drow" data-tip="Bridge: botdiff_easy / botdiff_normal / botdiff_hard / botdiff_fu&#10;Sets bot reaction speed and accuracy via _bot::bot_set_difficulty()">
+      <button class="db ctrl" id="d-easy"   onclick="botDiff('easy')">EASY</button>
+      <button class="db ctrl" id="d-normal" onclick="botDiff('normal')">NORMAL</button>
+      <button class="db ctrl" id="d-hard"   onclick="botDiff('hard')">HARD</button>
+      <button class="db fu ctrl" id="d-fu"  onclick="botDiff('fu')">FU</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MAPS ═══ -->
+<div id="p-maps" class="panel">
+  <div class="mact">
+    <label>Gametype</label>
+    <div class="csel-wrap" id="vGtWrap">
+      <div class="csel-btn" id="vGtBtn" onclick="gtToggle()">
+        <span id="vGtLabel">gf — Gunfight</span>
+        <span class="csel-arr">▾</span>
+      </div>
+      <div class="csel-list" id="vGtList"></div>
+    </div>
+    <button class="b-gh ctrl" onclick="setGt()">Set GT</button>
+    <button class="b-ac ctrl" onclick="cmd('map_restart')">Restart</button>
+  </div>
+
+  <div class="block">
+    <div class="btitle">QUEUE <span id="qAutoLbl" style="font-weight:400;font-size:10px"></span></div>
+    <div id="qList" class="queue-list"><div class="queue-empty">Queue is empty — click a map below to add</div></div>
+    <div class="row" style="margin-top:8px">
+      <button class="b-ac ctrl" onclick="qSendNext()">▶ Send Next</button>
+      <button class="b-gh ctrl" onclick="qClear()">Clear Queue</button>
+      <label class="tog" style="margin-left:auto" title="Auto-send on map change">
+        <input type="checkbox" id="cbAuto" onchange="toggleAutoQ()">
+        <span class="tog-t"></span><span class="tog-th"></span>
+      </label>
+      <span class="tlbl" style="margin-left:4px;font-size:11px">Auto-advance</span>
+    </div>
+  </div>
+
+  <div class="mfilter">
+    <span class="dm">Show:</span>
+    <button class="active" id="fall" onclick="mf('all')">All Maps</button>
+    <button id="fgf" onclick="mf('gf')">GF Compatible ★</button>
+  </div>
+  <div id="mgrid" class="mgrid"></div>
+</div>
+
+<!-- ═══ MODS ═══ -->
+<div id="p-mods" class="panel">
+  <div class="block">
+    <div class="btitle">MOVEMENT  <span style="font-weight:400;font-size:10px;color:var(--dm)">affects all players</span></div>
+    <div class="slider-row">
+      <span class="slbl" style="min-width:120px">Move Speed</span>
+      <input type="range" id="sSpeed" min="50" max="500" value="190" oninput="sv('sSpeed','vSpeed')" class="ctrl">
+      <input type="number" id="vSpeed" class="num ctrl" value="190" oninput="su('vSpeed','sSpeed',50,500)">
+      <button class="b-gh b-sm ctrl" onclick="sdv('g_speed','vSpeed')">Set</button>
+      <button class="b-gh b-sm ctrl" onclick="resetDv('g_speed',190,'vSpeed','sSpeed')">↺</button>
+    </div>
+    <div class="slider-row" data-tip="jump_height&#10;Jump impulse height in units. Default: 39">
+      <span class="slbl" style="min-width:120px">Jump Height</span>
+      <input type="range" id="sJump" min="1" max="400" value="39" oninput="sv('sJump','vJump')" class="ctrl">
+      <input type="number" id="vJump" class="num ctrl" value="39" oninput="su('vJump','sJump',1,400)">
+      <button class="b-gh b-sm ctrl" onclick="sdv('jump_height','vJump')">Set</button>
+      <button class="b-gh b-sm ctrl" onclick="resetDv('jump_height',39,'vJump','sJump')">↺</button>
+    </div>
+    <div class="slider-row" data-tip="bg_gravity&#10;Downward acceleration (units/s²). Default: 800. Lower = floatier">
+      <span class="slbl" style="min-width:120px">Gravity</span>
+      <input type="range" id="sGrav" min="10" max="2000" value="800" oninput="sv('sGrav','vGrav')" class="ctrl">
+      <input type="number" id="vGrav" class="num ctrl" value="800" oninput="su('vGrav','sGrav',10,2000)">
+      <button class="b-gh b-sm ctrl" onclick="sdv('bg_gravity','vGrav')">Set</button>
+      <button class="b-gh b-sm ctrl" onclick="resetDv('bg_gravity',800,'vGrav','sGrav')">↺</button>
+    </div>
+    <div class="srow" data-tip="timescale&#10;Game simulation speed multiplier. Requires sv_cheats 1. Default: 1">
+      <span class="slbl">Timescale</span>
+      <div class="row" style="gap:4px">
+        <button class="b-gh b-sm ctrl" onclick="sdvv('timescale','0.5')">0.5×</button>
+        <button class="b-gh b-sm ctrl" onclick="sdvv('timescale','0.75')">0.75×</button>
+        <button class="b-gh b-sm ctrl" onclick="sdvv('timescale','1')">1×</button>
+        <button class="b-gh b-sm ctrl" onclick="sdvv('timescale','1.5')">1.5×</button>
+        <button class="b-gh b-sm ctrl" onclick="sdvv('timescale','2')">2×</button>
+      </div>
+    </div>
+    <div class="srow" data-tip="player_sprintUnlimited&#10;1 = sprint never times out. Default: 0">
+      <span class="slbl">Unlimited Sprint</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbSpr" onchange="sdvv('player_sprintUnlimited',cbSpr.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">immediate</span>
+    </div>
+    <div class="srow" data-tip="bg_fallDamageMinHeight / bg_fallDamageMaxHeight&#10;Off = sets both to 9999 (no fall damage). Default: 128 / 512">
+      <span class="slbl">Fall Damage</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbFall" checked onchange="toggleFallDmg()"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">immediate</span>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="btitle">VIEW  <span style="font-weight:400;font-size:10px;color:var(--dm)">affects all players</span></div>
+    <div class="slider-row" data-tip="bg_viewBobAmplitudeBase&#10;Head-bob amplitude while moving. 0 = no bob. Default: 1">
+      <span class="slbl" style="min-width:120px">View Bob</span>
+      <input type="range" id="sBob" min="0" max="1" step="0.05" value="1" oninput="sv('sBob','vBob')" class="ctrl">
+      <input type="number" id="vBob" class="num ctrl" value="1" step="0.05" oninput="su('vBob','sBob',0,1)">
+      <button class="b-gh b-sm ctrl" onclick="sdv('bg_viewBobAmplitudeBase','vBob')">Set</button>
+      <button class="b-gh b-sm ctrl" onclick="resetDv('bg_viewBobAmplitudeBase',1,'vBob','sBob')">↺</button>
+    </div>
+    <div class="slider-row" data-tip="cg_fov&#10;Field of view in degrees. Default: 65. Range: 40–120">
+      <span class="slbl" style="min-width:120px">FOV</span>
+      <input type="range" id="sFov" min="40" max="120" value="65" oninput="sv('sFov','vFov')" class="ctrl">
+      <input type="number" id="vFov" class="num ctrl" value="65" oninput="su('vFov','sFov',40,120)">
+      <button class="b-gh b-sm ctrl" onclick="sdv('cg_fov','vFov')">Set</button>
+      <button class="b-gh b-sm ctrl" onclick="resetDv('cg_fov',65,'vFov','sFov')">↺</button>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="btitle">PLAYER STATE  <span style="font-weight:400;font-size:10px;color:var(--dm)">all players via GSC bridge</span></div>
+    <div class="srow" data-tip="enableInvulnerability() / disableInvulnerability()&#10;Bridge: god_on / god_off — applies to all currently connected players">
+      <span class="slbl">God Mode (all)</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbGod" onchange="bridge(cbGod.checked?'god_on':'god_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">immediate</span>
+    </div>
+    <div class="srow" data-tip="Refills all primary weapon clips every 0.5s via GSC loop&#10;Bridge: infammo_on / infammo_off">
+      <span class="slbl">Infinite Ammo (all)</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbAmmo" onchange="bridge(cbAmmo.checked?'infammo_on':'infammo_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">0.5s loop</span>
+    </div>
+    <div class="srow" data-tip="Gives: Marathon, Lightweight, Ghost, Sleight of Hand, Steady Aim, Ninja&#10;Bridge: allperks_on / allperks_off">
+      <span class="slbl">Perks (all)</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbPerks" onchange="bridge(cbPerks.checked?'allperks_on':'allperks_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">Marathon·Ghost·SoH</span>
+    </div>
+    <div class="srow" data-tip="setMatchFlag('radar_allies/axis', 1) — same as a permanent team UAV&#10;Both teams see each other on minimap. Bridge: radar_on / radar_off">
+      <span class="slbl">Radar Always On</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbRadar" onchange="bridge(cbRadar.checked?'radar_on':'radar_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">team-wide</span>
+    </div>
+    <div class="srow" data-tip="level.gf_headshotsOnly — checked in damage callback&#10;Non-head/helmet hits return 0 damage. Bridge: headshots_on / headshots_off">
+      <span class="slbl">Headshots Only</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbHS" onchange="bridge(cbHS.checked?'headshots_on':'headshots_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">non-hs dmg = 0</span>
+    </div>
+    <div class="srow" data-tip="RCON console command: noclip&#10;Toggles noclip for the host player. Requires sv_cheats 1">
+      <span class="slbl">Noclip (host only)</span>
+      <span style="flex:1"></span>
+      <button class="b-gh b-sm ctrl" onclick="cmd('noclip')">Toggle</button>
+      <span class="shint">console cmd</span>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="btitle">VISUAL TWEAKS  <span style="font-weight:400;font-size:10px;color:var(--dm)">setClientDvar -- all players via bridge</span></div>
+    <div class="slider-row" data-tip="r_gamma&#10;Screen brightness multiplier. Default: 1.1 | setClientDvar all players">
+      <span class="slbl" style="min-width:130px">Gamma</span>
+      <input type="range" id="sGamma" min="0.5" max="3" step="0.05" value="1.1" oninput="sv('sGamma','vGamma')" class="ctrl">
+      <input type="number" id="vGamma" class="num ctrl" value="1.1" step="0.05" oninput="su('vGamma','sGamma',0.5,3)">
+      <button class="b-gh b-sm ctrl" onclick="visBridge('visgamma_','vGamma')">Set</button>
+      <button class="b-gh b-sm ctrl" onclick="visReset('visgamma_',1.1,'vGamma','sGamma')">&#x21BA;</button>
+    </div>
+    <div class="slider-row" data-tip="r_lightTweakAmbient&#10;Minimum scene fill light. 0 = dark shadows, 2 = fully lit. Default: 0.1">
+      <span class="slbl" style="min-width:130px">Ambient Light</span>
+      <input type="range" id="sAmb" min="0" max="2" step="0.05" value="0.1" oninput="sv('sAmb','vAmb')" class="ctrl">
+      <input type="number" id="vAmb" class="num ctrl" value="0.1" step="0.05" oninput="su('vAmb','sAmb',0,2)">
+      <button class="b-gh b-sm ctrl" onclick="visBridge('visambient_','vAmb')">Set</button>
+      <button class="b-gh b-sm ctrl" onclick="visReset('visambient_',0.1,'vAmb','sAmb')">&#x21BA;</button>
+    </div>
+    <div class="slider-row" data-tip="r_lightGridIntensity&#10;Light probe / irradiance intensity multiplier. Default: 1.1">
+      <span class="slbl" style="min-width:130px">Grid Intensity</span>
+      <input type="range" id="sGridI" min="0" max="3" step="0.05" value="1.1" oninput="sv('sGridI','vGridI')" class="ctrl">
+      <input type="number" id="vGridI" class="num ctrl" value="1.1" step="0.05" oninput="su('vGridI','sGridI',0,3)">
+      <button class="b-gh b-sm ctrl" onclick="visBridge('visgridint_','vGridI')">Set</button>
+      <button class="b-gh b-sm ctrl" onclick="visReset('visgridint_',1.1,'vGridI','sGridI')">&#x21BA;</button>
+    </div>
+    <div class="slider-row" data-tip="r_lightGridContrast&#10;Light grid contrast. Default: 1.1">
+      <span class="slbl" style="min-width:130px">Grid Contrast</span>
+      <input type="range" id="sGridC" min="0" max="3" step="0.05" value="1.1" oninput="sv('sGridC','vGridC')" class="ctrl">
+      <input type="number" id="vGridC" class="num ctrl" value="1.1" step="0.05" oninput="su('vGridC','sGridC',0,3)">
+      <button class="b-gh b-sm ctrl" onclick="visBridge('visgridcon_','vGridC')">Set</button>
+      <button class="b-gh b-sm ctrl" onclick="visReset('visgridcon_',1.1,'vGridC','sGridC')">&#x21BA;</button>
+    </div>
+    <div class="srow" data-tip="r_fog&#10;Enable/disable distance fog. setClientDvar all players">
+      <span class="slbl">Fog</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbFog" checked onchange="bridge('visfog_'+(cbFog.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="r_fullHDRrendering&#10;High dynamic range tonemapping. Default: 1 (on). setClientDvar all players">
+      <span class="slbl">Full HDR Rendering</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbHDR" checked onchange="bridge('vishdr_'+(cbHDR.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button class="b-gh ctrl" onclick="visResetAll()">&#x21BA; Reset All Visuals</button>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="btitle">HUD ELEMENTS  <span style="font-weight:400;font-size:10px;color:var(--dm)">all players via bridge</span></div>
+    <div class="srow" data-tip="ui_gf_self_show (mod dvar)&#10;Shows/hides the bottom self-health bar. Bridge: selfbar_on / selfbar_off">
+      <span class="slbl">Self Health Bar</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbSelfBar" checked onchange="bridge(cbSelfBar.checked?'selfbar_on':'selfbar_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="cg_drawCrosshair&#10;Show/hide the weapon crosshair. setClientDvar all players via bridge">
+      <span class="slbl">Crosshair</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbCH" checked onchange="bridge('viscrosshair_'+(cbCH.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="cg_drawCrosshairNames&#10;Show/hide player name tags above crosshair. setClientDvar all players via bridge">
+      <span class="slbl">Crosshair Names</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbCHN" checked onchange="bridge('visnames_'+(cbCHN.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="ammoCounterHide&#10;1 = hide, 0 = show. Sent directly as a server dvar (not bridge). Default: 0">
+      <span class="slbl">Ammo Counter</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbAmmoHud" checked onchange="sdvv('ammoCounterHide',cbAmmoHud.checked?'0':'1')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="btitle">PRESETS</div>
+    <div class="three">
+      <button class="b-gh ctrl" onclick="applyPreset('stock')">↺ Stock</button>
+      <button class="b-gh ctrl" onclick="applyPreset('modern')">⚡ Modern COD</button>
+      <button class="b-gh ctrl" onclick="applyPreset('silly')">🎪 Silly</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ DEV ═══ -->
+<div id="p-dev" class="panel">
+  <div class="block">
+    <div class="btitle">GUNFIGHT DEBUG</div>
+    <div class="srow" data-tip="gf_debug&#10;0 = off, 1 = basic iPrintLn logging, 2 = verbose (spawns, rounds, HUD). Default: 0">
+      <span class="slbl">Debug Level</span>
+      <span style="flex:1"></span>
+      <div class="row">
+        <button class="b-gh b-sm ctrl" onclick="sdvv('gf_debug','0')">0 — off</button>
+        <button class="b-gh b-sm ctrl" onclick="sdvv('gf_debug','1')">1 — basic</button>
+        <button class="b-gh b-sm ctrl" onclick="sdvv('gf_debug','2')">2 — verbose</button>
+      </div>
+    </div>
+    <div class="srow" data-tip="gf_debug_spawns&#10;Draws spawn point entities and team assignments on screen each round">
+      <span class="slbl">Spawn Debug</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbDbSpawn" onchange="sdvv('gf_debug_spawns',cbDbSpawn.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="gf_debug_hud_pool&#10;Logs HUD element pool allocation counts each round — useful for diagnosing elem exhaustion">
+      <span class="slbl">HUD Pool Debug</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbDbHud" onchange="sdvv('gf_debug_hud_pool',cbDbHud.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="gf_debug_elem_probe&#10;Probes available client HUD element slots and prints count to dev console">
+      <span class="slbl">Elem Probe</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbDbElem" onchange="sdvv('gf_debug_elem_probe',cbDbElem.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="scr_game_prematchperiod&#10;Seconds of pre-match (freeze) before the round goes live. Default: 15">
+      <span class="slbl">Prematch Duration (s)</span>
+      <input id="vPm" class="num ctrl" type="number" value="15" min="0" max="60">
+      <button class="b-gh b-sm ctrl" onclick="sdv('scr_game_prematchperiod','vPm')">Apply</button>
+      <span class="shint">next round</span>
+    </div>
+    <div class="srow" data-tip="scr_game_allowkillcam&#10;1 = show killcam after death, 0 = skip. Default: 1">
+      <span class="slbl">Killcam</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbKC" checked onchange="sdvv('scr_game_allowkillcam',cbKC.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="compass&#10;1 = show minimap, 0 = hide. Default: 1">
+      <span class="slbl">Minimap</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbMap" checked onchange="sdvv('compass',cbMap.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="sv_cheats&#10;Allows cheat-protected console commands (noclip, god, etc.). Default: 1">
+      <span class="slbl">Allow Cheat Commands</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbCh" checked onchange="sdvv('sv_cheats',cbCh.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="scr_disable_cac&#10;Disables Create-a-Class menu. Players auto-spawn with defaultClass instead of picking. Default: 1">
+      <span class="slbl">Disable Class Select</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbCac" checked onchange="sdvv('scr_disable_cac',cbCac.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="scr_disable_weapondrop&#10;1 = weapons don't drop on death, 0 = they do. Default: 1">
+      <span class="slbl">Disable Weapon Drop</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbWd" checked onchange="sdvv('scr_disable_weapondrop',cbWd.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="scr_showperksonspawn&#10;1 = display perk icons in HUD after spawning. Default: 1">
+      <span class="slbl">Show Perks on Spawn</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbSps" checked onchange="sdvv('scr_showperksonspawn',cbSps.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="btitle">SERVER SETTINGS</div>
+    <div class="srow" data-tip="scr_teamchange&#10;1 = players can switch teams freely, 0 = locked. Default: 1">
+      <span class="slbl">Team Change</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbTC" checked onchange="sdvv('scr_teamchange',cbTC.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="scr_teambalance&#10;Prevents players from joining the larger team. Default: 0">
+      <span class="slbl">Keep Balanced Teams</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbBal" onchange="sdvv('scr_teambalance',cbBal.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="scr_teamup&#10;Seconds players have to team-up before the match starts. 0 = no delay">
+      <span class="slbl">Team-Up Period (s)</span>
+      <span style="flex:1"></span>
+      <input id="vTup" class="num ctrl" type="number" value="0" min="0" max="120">
+      <button class="b-gh b-sm ctrl" onclick="sdv('scr_teamup','vTup')">Apply</button>
+    </div>
+    <div class="srow" data-tip="scr_autobalanceteams&#10;Auto-moves a player to even teams if imbalanced at round end. Default: 0">
+      <span class="slbl">Auto-Balance Teams</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbAB" onchange="sdvv('scr_autobalanceteams',cbAB.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="g_allowvote&#10;1 = players can call /callvote in console, 0 = disabled. Default: 1">
+      <span class="slbl">Allow Voting</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbVote" checked onchange="sdvv('g_allowvote',cbVote.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="scr_game_prematchperiod&#10;Toggle: sets to 15s (on) or 0 (off). Affects how long the ready-up freeze lasts">
+      <span class="slbl">Pre-Match</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbPM" onchange="togglePrematch()"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="party_minplayers&#10;Minimum players before the match starts. Set to 1 for solo testing. Default: 2">
+      <span class="slbl">Pre-Match Min Players</span>
+      <span style="flex:1"></span>
+      <input id="vPMP" class="num ctrl" type="number" value="2" min="1" max="24">
+      <button class="b-gh b-sm ctrl" onclick="sdv('party_minplayers','vPMP')">Apply</button>
+    </div>
+    <div class="srow" data-tip="sv_maxclients&#10;Maximum simultaneous player connections the server accepts. Requires server restart to take effect">
+      <span class="slbl">Maximum Players</span>
+      <span style="flex:1"></span>
+      <input id="vMax" class="num ctrl" type="number" value="24" min="1" max="24">
+      <button class="b-gh b-sm ctrl" onclick="sdv('sv_maxclients','vMax')">Apply</button>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="btitle">CUSTOM DVAR</div>
+    <div class="row">
+      <input id="dvName" type="text" placeholder="dvar name" style="width:160px" class="ctrl">
+      <input id="dvVal"  type="text" placeholder="value" style="flex:1" class="ctrl">
+      <button class="b-ac ctrl" onclick="customDv()">Set</button>
+      <button class="b-gh ctrl" onclick="readDv()">Read</button>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="btitle">QUICK ACTIONS</div>
+    <div class="three">
+      <button class="b-gh ctrl" onclick="cmd('fast_restart')">Fast Restart</button>
+      <button class="b-gh ctrl" onclick="cmd('map_restart')">Map Restart</button>
+      <button class="b-gh ctrl" onclick="cmd('killserver')">Kill Server</button>
+      <button class="b-gh ctrl" onclick="endRound('allies')">Force Allies Win</button>
+      <button class="b-gh ctrl" onclick="endRound('axis')">Force Axis Win</button>
+      <button class="b-gh ctrl" onclick="cmd('status')">Print Status</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CONSOLE ═══ -->
+<div id="p-con" class="panel">
+  <div id="clog" class="clog"></div>
+  <div class="cin-row">
+    <input id="cin" type="text" placeholder="rcon command…" onkeydown="cKey(event)">
+    <button class="b-ac ctrl" onclick="cSend()">Send</button>
+    <button class="b-gh" onclick="cClear()">Clear</button>
+  </div>
+  <div class="qcmds">
+    <span class="dm" style="align-self:center;font-size:11px">Quick:</span>
+    <button onclick="qc('status')">status</button>
+    <button onclick="qc('map_restart')">map_restart</button>
+    <button onclick="qc('fast_restart')">fast_restart</button>
+    <button onclick="qc('dvarlist')">dvarlist</button>
+    <button onclick="qc('cmdlist')">cmdlist</button>
+    <button onclick="qc('sv_cheats')">sv_cheats?</button>
+    <button onclick="qc('gf_state')">gf_state?</button>
+    <button onclick="qc('g_gametype')">g_gametype?</button>
+    <button onclick="qc('set gf_debug 1')">gf_debug 1</button>
+    <button onclick="qc('set gf_debug 0')">gf_debug 0</button>
+  </div>
+</div>
+
+</div><!-- /main -->
+</div><!-- /body -->
+</div><!-- /root -->
+
+<!-- Context menu -->
+<div id="ctx-menu"></div>
+
+<!-- Toasts -->
+<div id="toasts"></div>
+
+<script>
+'use strict';
+const API='http://127.0.0.1:3000/api';
+
+// ─── Maps data ────────────────────────────────────────────────────────────────
+const MAPS=[
+  {id:'mp_array',n:'Array',gf:1},{id:'mp_cairo',n:'Cairo',gf:1},
+  {id:'mp_cosmodrome',n:'Cosmodrome',gf:1},{id:'mp_cracked',n:'Cracked',gf:1},
+  {id:'mp_crisis',n:'Crisis',gf:1},{id:'mp_duga',n:'Duga',gf:1},
+  {id:'mp_firingrange',n:'Firing Range',gf:0},{id:'mp_hanoi',n:'Hanoi',gf:1},
+  {id:'mp_havoc',n:'Havoc',gf:1},{id:'mp_mountain',n:'Mountain',gf:1},
+  {id:'mp_nuked',n:'Nuketown',gf:0},{id:'mp_radiation',n:'Radiation',gf:1},
+  {id:'mp_russianbase',n:'Russian Base',gf:1},{id:'mp_silo',n:'Silo',gf:0},
+  {id:'mp_summit',n:'Summit',gf:0},{id:'mp_villa',n:'Villa',gf:1},
+  {id:'mp_wmd',n:'WMD',gf:0},{id:'mp_zoo',n:'Zoo',gf:0},
+  {id:'mp_berlinwall2',n:'Berlin Wall',gf:0,dlc:1},{id:'mp_discovery',n:'Discovery',gf:0,dlc:1},
+  {id:'mp_kowloon',n:'Kowloon',gf:0,dlc:1},{id:'mp_stadium',n:'Stadium',gf:0,dlc:1},
+  {id:'mp_gridlock',n:'Convoy',gf:0,dlc:1},{id:'mp_hotel',n:'Hotel',gf:0,dlc:1},
+  {id:'mp_drivein',n:'Drive-In',gf:0,dlc:1},{id:'mp_area51',n:'Hangar 18',gf:0,dlc:1},
+  {id:'mp_golfcourse',n:'Hazard',gf:0,dlc:1},
+];
+
+// ─── Presets ─────────────────────────────────────────────────────────────────
+const PRESETS={
+  stock:   ['set g_speed 190','set jump_height 39','set bg_gravity 800','set timescale 1',
+            'set player_sprintUnlimited 0','set player_adsExitDelay 0.4',
+            'set bg_fallDamageMinHeight 256','set bg_fallDamageMaxHeight 512',
+            'set bg_viewBobAmplitudeBase 1'],
+  modern:  ['set g_speed 220','set jump_height 39','set bg_gravity 800','set timescale 1',
+            'set player_sprintUnlimited 1','set player_adsExitDelay 0',
+            'set bg_fallDamageMinHeight 9999','set bg_fallDamageMaxHeight 9999'],
+  silly:   ['set g_speed 190','set jump_height 180','set bg_gravity 300','set timescale 0.85',
+            'set player_sprintUnlimited 1','set bg_fallDamageMinHeight 9999','set bg_fallDamageMaxHeight 9999'],
+};
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let live=false, paused=false, mapQueue=[], autoQ=false, hist=[], histI=-1, lastMap=null;
+
+// ─── Persistence ────────────────────────────────────────────────────────────
+function loadCfg(){
+  try{const s=JSON.parse(localStorage.getItem('gf_rcon')||'{}');
+    if(s.host)g('iHost').value=s.host;
+    if(s.port)g('iPort').value=s.port;
+    if(s.pass)g('iPass').value=s.pass;
+  }catch(_){}}
+function saveCfg(){
+  localStorage.setItem('gf_rcon',JSON.stringify({
+    host:g('iHost').value.trim(),port:g('iPort').value.trim(),pass:g('iPass').value
+  }));}
+function conn(){return{host:g('iHost').value.trim()||'127.0.0.1',port:parseInt(g('iPort').value)||28960,password:g('iPass').value}}
+
+// ─── API ────────────────────────────────────────────────────────────────────
+async function rcon(command){
+  const c=conn();
+  return (await fetch(API+'/rcon',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...c,command})})).json();
+}
+async function batchCmds(commands,delay=80){
+  const c=conn();
+  return (await fetch(API+'/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...c,commands,delayMs:delay})})).json();
+}
+async function fetchStatus(){
+  const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
+  return (await fetch(API+'/status?'+p)).json();
+}
+async function fetchGfState(){
+  const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
+  return (await fetch(API+'/gfstate?'+p)).json();
+}
+
+// ─── Connect ────────────────────────────────────────────────────────────────
+async function doConn(){
+  if(live){disconnect();return;}
+  saveCfg();
+  const btn=g('cBtn');btn.disabled=true;btn.textContent='…';
+  try{
+    const d=await fetchStatus();
+    if(d.ok){setLive(true);tick(d);actLog('Connected to '+conn().host,'ok');}
+    else{toast('Failed: '+d.error,'err');setLive(false);}
+  }catch(e){toast('Error: '+e.message,'err');setLive(false);}
+  btn.disabled=false;
+}
+function setLive(v){
+  live=v;
+  const btn=g('cBtn'),bdg=g('badge');
+  if(v){
+    btn.textContent='Disconnect';btn.className='disc';
+    bdg.textContent='● Connected';bdg.className='bdg on';
+    setCtrl(true);
+    clearInterval(window._rt);window._rt=setInterval(autoTick,3000);
+    clearInterval(window._st);window._st=setInterval(scoreTick,2500);
+  }else{
+    btn.textContent='Connect';btn.className='';
+    bdg.textContent='● Disconnected';bdg.className='bdg off';
+    setCtrl(false);clearInterval(window._rt);clearInterval(window._st);
+  }
+}
+function disconnect(){
+  setLive(false);
+  g('ptbody').innerHTML='<tr class="empty"><td colspan="6">Not connected</td></tr>';
+  g('sMap').textContent=g('sGt').textContent=g('sPl').textContent='—';
+  g('scA').textContent=g('scX').textContent=g('scRound').textContent='—';
+  g('scAA').textContent=g('scAX').textContent='—';
+}
+async function autoTick(){
+  if(!live)return;
+  try{
+    const d=await fetchStatus();
+    if(d.ok){
+      // Auto-advance map queue
+      if(autoQ && lastMap && lastMap!==d.map && mapQueue.length>0) qSendNext();
+      lastMap=d.map;
+      tick(d);
+    }else{g('badge').className='bdg err';}
+  }catch(_){}
+}
+async function scoreTick(){
+  if(!live)return;
+  try{
+    const d=await fetchGfState();
+    if(d.ok && d.state){
+      const s=d.state;
+      g('scA').textContent=s.winsAllies;
+      g('scX').textContent=s.winsAxis;
+      g('scRound').textContent='R '+s.round;
+      g('scAA').textContent=s.aliveAllies;
+      g('scAX').textContent=s.aliveAxis;
+    }
+  }catch(_){}
+}
+function tick(d){
+  g('sMap').textContent=d.map||'—';g('sGt').textContent=d.gametype||'—';
+  g('sPl').textContent=d.players.length+' online';
+  buildPlayers(d.players);
+}
+function setCtrl(en){
+  document.querySelectorAll('.ctrl').forEach(el=>el.disabled=!en);
+}
+
+// ─── Players + right-click ────────────────────────────────────────────────────
+let ctxPlayer=null;
+function buildPlayers(ps){
+  const tb=g('ptbody');
+  if(!ps||!ps.length){tb.innerHTML='<tr class="empty"><td colspan="6">No players</td></tr>';return;}
+  tb.innerHTML=ps.map(p=>{
+    const tag=p.bot?'<span class="bot-t">BOT</span>':p.local?'<span class="you-t">YOU</span>':'';
+    const pg=p.bot?'<span class="bot-t">BOT</span>':`<span class="${p.ping<80?'p-ok':p.ping<150?'p-mid':'p-bad'}">${p.ping}ms</span>`;
+    const ipCell=p.ip?`<span class="dm" style="font-size:10px">${x(p.ip)}</span>`:`<span class="dm">-</span>`;
+    const guidCell=p.bot?'<span class="dm">-</span>':`<span class="dm" style="font-size:10px;user-select:all">${p.guid||'-'}</span>`;
+    return`<tr data-num="${p.num}" data-name="${x(p.name)}" data-bot="${p.bot}" oncontextmenu="showCtx(event,${p.num},'${x(p.name)}',${p.bot})">
+      <td>${p.num}</td><td>${tag}${x(p.name)}</td><td>${p.score}</td><td>${pg}</td><td>${ipCell}</td><td>${guidCell}</td></tr>`;
+  }).join('');
+}
+function x(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;')}
+
+function showCtx(e,num,name,isBot){
+  e.preventDefault();
+  ctxPlayer={num,name,isBot};
+  const m=g('ctx-menu');
+  m.innerHTML=`<div class="ctx-header">${x(name)}</div>
+    <div class="ctx-item" onclick="ctxAction('kick')">✕ Kick</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item green" onclick="ctxAction('pgod')">⚡ God Mode</div>
+    <div class="ctx-item yellow" onclick="ctxAction('pfreeze')">❄ Freeze</div>
+    <div class="ctx-item yellow" onclick="ctxAction('punfreeze')">▶ Unfreeze</div>
+    <div class="ctx-item" onclick="ctxAction('pperks')">★ Give Perks</div>
+    <div class="ctx-item" onclick="ctxAction('pnoclip')">👻 Noclip</div>`;
+  m.style.display='block';
+  // Position near cursor, keep in viewport
+  const vw=window.innerWidth,vh=window.innerHeight;
+  let lft=e.clientX+4,top=e.clientY+4;
+  if(lft+170>vw) lft=e.clientX-174;
+  if(top+200>vh) top=e.clientY-200;
+  m.style.left=lft+'px';m.style.top=top+'px';
+}
+async function ctxAction(act){
+  hideCtx();
+  if(!ctxPlayer)return;
+  const{num,name}=ctxPlayer;
+  if(act==='kick'){
+    const r=await rcon(`clientkick ${num}`);
+    r.ok?actLog('Kicked '+name,'wn'):toast('Kick failed','err');
+  }else if(act==='pgod'){
+    await bridge(`pgod_${num}`);actLog('God → '+name,'ok');
+  }else if(act==='pfreeze'){
+    await bridge(`pfreeze_${num}`);actLog('Frozen: '+name,'wn');
+  }else if(act==='punfreeze'){
+    await bridge(`punfreeze_${num}`);actLog('Unfrozen: '+name,'ok');
+  }else if(act==='pperks'){
+    await bridge(`pperks_${num}`);actLog('Perks → '+name,'ok');
+  }else if(act==='pnoclip'){
+    // noclip is a server console command, not GSC — send directly via RCON
+    await rcon(`noclip ${num}`);actLog('Noclip toggled: '+name,'ok');
+  }
+}
+function hideCtx(){g('ctx-menu').style.display='none';}
+document.addEventListener('click',hideCtx);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')hideCtx();});
+
+// ─── Tabs ───────────────────────────────────────────────────────────────────
+const TABS=['gf','bots','maps','mods','dev','con'];
+function tab(n){
+  document.querySelectorAll('.panel').forEach(e=>e.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(e=>e.classList.remove('active'));
+  g('p-'+n).classList.add('active');
+  const i=TABS.indexOf(n);
+  document.querySelectorAll('.tab')[i].classList.add('active');
+}
+
+// ─── Gunfight ────────────────────────────────────────────────────────────────
+async function sdv(dv,id){
+  const v=g(id).value;
+  const r=await rcon(`set ${dv} ${v}`);
+  r.ok?(toast(dv+'='+v,'ok'),actLog(dv+' → '+v,'ok')):toast(r.error,'err');
+}
+async function sdvv(dv,v){
+  const r=await rcon(`set ${dv} ${v}`);
+  r.ok?(toast(dv+'='+v,'ok'),actLog(dv+' → '+v,'ok')):toast(r.error,'err');
+}
+async function applyFF(){
+  const on=g('cbFF').checked;
+  g('ffLbl').textContent=on?'ON':'OFF';
+  g('ffLbl').style.color=on?'var(--wn)':'var(--dm)';
+  await batchCmds([`set scr_gf_ff ${on?1:0}`,`set scr_team_ff ${on?1:0}`],50);
+  actLog('Friendly fire '+(on?'ON':'OFF'),on?'wn':'in');
+  toast('Friendly fire '+(on?'ON':'OFF'),on?'wn':'info');
+}
+async function doPause(){
+  const btn=g('pauseBtn');
+  const r=await rcon(`set gf_cmd ${paused?'resume':'pause'}`);
+  if(r.ok){
+    paused=!paused;
+    btn.textContent=paused?'▶  RESUME MATCH':'⏸  PAUSE MATCH';
+    btn.className=paused?'b-ok b-lg ctrl':'b-wn b-lg ctrl';
+    actLog(paused?'Match paused':'Match resumed',paused?'wn':'ok');
+    toast(paused?'Paused':'Resumed',paused?'wn':'ok');
+  }else toast('Bridge error: '+r.error,'err');
+}
+async function endRound(team){
+  const r=await rcon(`set gf_cmd endround_${team}`);
+  r.ok?(actLog('End round → '+team,'wn'),toast('Ending round — '+team,'info')):toast(r.error,'err');
+}
+async function cmd(c){
+  const r=await rcon(c);
+  r.ok?(actLog(c,'in'),clogAdd(r.response||'(ok)','li')):toast(r.error,'err');
+}
+
+// ─── Bridge helper ────────────────────────────────────────────────────────────
+async function bridge(bcmd){
+  const r=await rcon(`set gf_cmd ${bcmd}`);
+  if(!r.ok) toast('Bridge error: '+r.error,'err');
+  return r.ok;
+}
+
+// ─── Bots ────────────────────────────────────────────────────────────────────
+async function addBot(){const r=await rcon('set bots_manage_add 1');r.ok?(actLog('Bot added','ok'),toast('Bot added','ok')):toast(r.error,'err');}
+async function kickBots(){
+  const sr=await fetchStatus();
+  if(!sr||!sr.ok){toast('Could not read status','err');return;}
+  const bots=sr.players.filter(p=>p.bot);
+  if(!bots.length){toast('No bots to kick','info');return;}
+  for(const b of bots) await rcon(`clientkick ${b.num}`);
+  actLog(`Kicked ${bots.length} bot(s)`,'wn');toast(`Kicked ${bots.length} bot(s)`,'ok');
+}
+async function applyFill(){
+  const n=g('vFl').value;
+  const r=await batchCmds([`set bots_manage_fill ${n}`,'set bots_manage_fill_mode 0','set bots_manage_fill_kick true'],50);
+  r.ok?(actLog('Bot fill → '+n,'ok'),toast('Fill → '+n,'ok')):toast('Failed','err');
+}
+async function botDiff(d){
+  const ok=await bridge(`botdiff_${d}`);
+  if(ok){
+    ['easy','normal','hard','fu'].forEach(k=>g('d-'+k).classList.toggle('sel',k===d));
+    actLog('Bot diff: '+d.toUpperCase(),'ok');toast('Bot diff: '+d.toUpperCase(),'info');
+  }
+}
+
+// ─── Maps ────────────────────────────────────────────────────────────────────
+function buildMapGrid(){
+  g('mgrid').innerHTML=MAPS.map(m=>{
+    const bs=(m.gf?'<span class="mb gfb">GF ★</span>':'')+(m.dlc?'<span class="mb dlcb">DLC</span>':'');
+    return`<div class="mt${m.gf?' mgf':''}" data-gf="${m.gf}" onclick="mapClick('${m.id}','${m.n}')">
+      <div class="mn">${m.n}</div><div class="mi">${m.id}</div><div class="mbs">${bs}</div></div>`;
+  }).join('');
+}
+function mf(f){
+  g('fall').classList.toggle('active',f==='all');g('fgf').classList.toggle('active',f==='gf');
+  document.querySelectorAll('.mt').forEach(t=>t.classList.toggle('hidden',f==='gf'&&t.dataset.gf!=='1'));
+}
+function mapClick(id,name){
+  const gt=_gtVal;
+  // Add to queue (shift+click) or go directly?
+  mapQueue.push({id,name,gt});
+  renderQueue();
+  actLog('Queued: '+name+' ('+gt+')','in');
+  toast('Added '+name+' to queue','info');
+}
+async function setGt(){await sdvv('g_gametype',_gtVal);}
+async function qSendNext(){
+  if(!mapQueue.length){toast('Queue empty','info');return;}
+  const{id,name,gt}=mapQueue.shift();
+  renderQueue();
+  const r=await batchCmds([`set g_gametype ${gt}`,`map ${id}`],200);
+  r.ok?(actLog('Map → '+name+' ('+gt+')','ok'),toast('Loading '+name+'…','info')):toast('Failed','err');
+}
+function qClear(){mapQueue=[];renderQueue();toast('Queue cleared','info');}
+function toggleAutoQ(){autoQ=g('cbAuto').checked;g('qAutoLbl').textContent=autoQ?'(auto-advance on)':'';}
+function renderQueue(){
+  const el=g('qList');
+  if(!mapQueue.length){el.innerHTML='<div class="queue-empty">Queue is empty — click a map below to add</div>';return;}
+  el.innerHTML=mapQueue.map((q,i)=>
+    `<div class="qi"><span class="qi-map">${i+1}. ${q.name}</span><span class="qi-gt">${q.gt}</span>
+    <button class="qi-rm" onclick="qRemove(${i})">✕</button></div>`
+  ).join('');
+}
+function qRemove(i){mapQueue.splice(i,1);renderQueue();}
+
+// ─── Mods ────────────────────────────────────────────────────────────────────
+function sv(sid,vid){g(vid).value=g(sid).value;}
+function su(vid,sid,mn,mx){
+  let v=parseFloat(g(vid).value);
+  v=Math.max(mn,Math.min(mx,v||0));
+  g(sid).value=v;
+}
+async function resetDv(dv,def,vid,sid){
+  g(vid).value=def;g(sid).value=def;
+  await sdvv(dv,def);
+}
+async function visBridge(prefix,vid){
+  const v=g(vid).value;
+  const ok=await bridge(prefix+v);
+  if(ok) actLog(prefix.replace('_','')+'='+v,'ok');
+}
+async function visReset(prefix,def,vid,sid){
+  g(vid).value=def;if(sid)g(sid).value=def;
+  await bridge(prefix+def);
+  actLog(prefix.replace('_','')+'='+def,'ok');
+}
+async function visResetAll(){
+  const cmds=[
+    'set gf_cmd visfog_1',
+    'set gf_cmd visambient_0.1',
+    'set gf_cmd visgridint_1.1',
+    'set gf_cmd visgridcon_1.1',
+    'set gf_cmd visgamma_1.1',
+    'set gf_cmd vishdr_1',
+  ];
+  for(const c of cmds){await rcon(c);await new Promise(r=>setTimeout(r,120));}
+  g('sGamma').value=g('vGamma').value=1.1;
+  g('sAmb').value=g('vAmb').value=0.1;
+  g('sGridI').value=g('vGridI').value=1.1;
+  g('sGridC').value=g('vGridC').value=1.1;
+  g('cbFog').checked=true;g('cbHDR').checked=true;
+  actLog('Visuals reset to defaults','ok');toast('Visuals reset','ok');
+}
+async function togglePrematch(){
+  const on=g('cbPM').checked;
+  const dur=on?parseInt(g('vPm').value)||15:0;
+  await sdvv('scr_game_prematchperiod',dur);
+  actLog('Pre-match '+(on?'ON ('+dur+'s)':'OFF'),on?'ok':'wn');
+}
+async function toggleFallDmg(){
+  const on=g('cbFall').checked;
+  await batchCmds([`set bg_fallDamageMinHeight ${on?256:9999}`,`set bg_fallDamageMaxHeight ${on?512:9999}`],50);
+  actLog('Fall damage '+(on?'ON':'OFF'),on?'ok':'wn');
+}
+async function applyPreset(key){
+  const cmds=PRESETS[key];if(!cmds)return;
+  const r=await batchCmds(cmds,50);
+  if(r.ok){
+    actLog('Preset: '+key,'ok');toast('Preset: '+key,'ok');
+    // Sync UI sliders after preset
+    const vals={stock:{g_speed:190,jump_height:39,bg_gravity:800},
+                modern:{g_speed:220,jump_height:39,bg_gravity:800},
+                silly:{g_speed:190,jump_height:180,bg_gravity:300}};
+    const v=vals[key];if(v){
+      g('vSpeed').value=g('sSpeed').value=v.g_speed;
+      g('vJump').value=g('sJump').value=v.jump_height;
+      g('vGrav').value=g('sGrav').value=v.bg_gravity;
+    }
+  }else toast('Preset failed','err');
+}
+
+// ─── Dev ─────────────────────────────────────────────────────────────────────
+async function customDv(){
+  const n=g('dvName').value.trim(),v=g('dvVal').value.trim();
+  if(!n)return;
+  await sdvv(n,v);
+}
+async function readDv(){
+  const n=g('dvName').value.trim();if(!n)return;
+  const r=await rcon(n);
+  if(r.ok){clogAdd(r.response,'li');tab('con');}
+  else toast(r.error,'err');
+}
+
+// ─── Console ─────────────────────────────────────────────────────────────────
+function clogAdd(t,cls){
+  const el=g('clog'),d=document.createElement('div');
+  d.className='ll '+cls;d.textContent=t||'(empty)';el.appendChild(d);el.scrollTop=el.scrollHeight;
+}
+function cClear(){g('clog').innerHTML='';}
+async function cSend(){
+  const inp=g('cin'),c=inp.value.trim();if(!c)return;
+  hist.unshift(c);if(hist.length>100)hist.length=100;histI=-1;inp.value='';
+  clogAdd(c,'lo');
+  try{const r=await rcon(c);r.ok?clogAdd(r.response||'(ok)','li'):clogAdd(r.error,'le');}
+  catch(e){clogAdd(e.message,'le');}
+}
+function qc(c){g('cin').value=c;tab('con');cSend();}
+function cKey(e){
+  const inp=g('cin');
+  if(e.key==='Enter'){cSend();return;}
+  if(e.key==='ArrowUp'){e.preventDefault();histI=Math.min(histI+1,hist.length-1);if(hist[histI]!=null)inp.value=hist[histI];}
+  if(e.key==='ArrowDown'){e.preventDefault();histI=Math.max(histI-1,-1);inp.value=histI===-1?'':hist[histI];}
+}
+
+// ─── Activity log ─────────────────────────────────────────────────────────────
+const MAX_ACT=30;const actEntries=[];
+function actLog(msg,cls='in'){
+  const now=new Date();
+  const ts=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0')+':'+String(now.getSeconds()).padStart(2,'0');
+  actEntries.unshift({ts,msg,cls});
+  if(actEntries.length>MAX_ACT)actEntries.length=MAX_ACT;
+  renderAct();
+}
+function renderAct(){
+  g('actEntries').innerHTML=actEntries.map(a=>
+    `<div class="al-entry"><span class="al-time">${a.ts}</span><span class="al-msg al-${a.cls}">${x(a.msg)}</span></div>`
+  ).join('');
+}
+
+// ─── Toasts ──────────────────────────────────────────────────────────────────
+function toast(msg,type='info'){
+  const c=g('toasts'),d=document.createElement('div');
+  d.className='toast '+(type==='ok'?'ok':type==='err'?'err':type==='wn'?'wn':'info');
+  d.textContent=msg;c.appendChild(d);
+  setTimeout(()=>{d.style.opacity='0';d.style.transition='opacity .3s';},2600);
+  setTimeout(()=>d.remove(),2900);
+}
+
+// ─── Helper ──────────────────────────────────────────────────────────────────
+function g(id){return document.getElementById(id);}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+loadCfg();
+buildMapGrid();
+setCtrl(false);
+clogAdd('GF RCON Tool ready. Enter server details and click Connect.','ls');
+renderAct();
+renderQueue();
+
+// ─── Gametype custom dropdown ─────────────────────────────────────────────────
+const GT_OPTS = [
+  { grp: '— Custom —' },
+  { val:'gf',   lbl:'gf — Gunfight',                 desc:'Eliminate enemies to win the round. 6 rounds to win the match. Random loadouts. No respawns. No health regen.' },
+  { grp: '— Standard —' },
+  { val:'tdm',  lbl:'tdm — Team Deathmatch',          desc:'Straight up Team Deathmatch on all maps. Use teamwork to kill enemy players and reach the score limit.' },
+  { val:'dm',   lbl:'dm — Free For All',              desc:'Straight up Deathmatch. Every man for himself. Kill everyone.' },
+  { val:'sd',   lbl:'sd — Search & Destroy',          desc:'Defend and destroy the objective. No respawning.' },
+  { val:'dom',  lbl:'dom — Domination',               desc:'3 flags in the level must be captured. Your team gets points for having control of a flag. The more flags your team holds, the more points you gain.' },
+  { val:'koth', lbl:'koth — Headquarters',            desc:'A neutral base to capture is marked in the level. Capture and hold it to gain points. The team that holds the HQ doesn\'t respawn.' },
+  { val:'ctf',  lbl:'ctf — Capture the Flag',         desc:'Get the enemy flag and return it to yours to capture it.' },
+  { val:'sab',  lbl:'sab — Sabotage',                 desc:'A neutral bomb is in the center of the level and teams fight to destroy the enemy team\'s objective. First team to successfully bomb the enemy objective wins.' },
+  { val:'dem',  lbl:'dem — Demolition',               desc:'Teams alternate in attacking and defending two bomb sites, both of which must be destroyed by the attacking team equipped with bombs.' },
+  { grp: '— Wager —' },
+  { val:'gun',  lbl:'gun — Gun Game',                 desc:'Gun Game. Get a kill with each weapon to advance. First player to finish the full weapon sequence wins.' },
+  { val:'oic',  lbl:'oic — One in the Chamber',       desc:'One in the Chamber. One bullet, one life. Kill to earn another bullet. Last player standing wins the round.' },
+  { val:'shrp', lbl:'shrp — Sharpshooter',            desc:'Sharpshooter. Everyone shares the same randomly rotating weapon. Most kills when time runs out wins.' },
+  { val:'hlnd', lbl:'hlnd — Sticks and Stones',       desc:'Sticks and Stones. Crossbow and ballistic knife only. Melee kills bankrupt an enemy\'s score. First to the score limit wins.' },
+];
+
+let _gtVal = 'gf';
+
+function _buildGtList() {
+  const list = g('vGtList');
+  list.innerHTML = GT_OPTS.map(o => {
+    if (o.grp) return `<div class="csel-grp">${o.grp}</div>`;
+    return `<div class="csel-item${o.val===_gtVal?' active':''}" data-val="${o.val}" data-tip="${o.val}&#10;${o.desc}" onclick="gtSelect('${o.val}',this.textContent.split('\\n')[0])">${o.lbl}</div>`;
+  }).join('');
+}
+function gtToggle() {
+  const btn = g('vGtBtn'), list = g('vGtList');
+  const open = list.classList.toggle('open');
+  btn.classList.toggle('open', open);
+  if (open) _buildGtList();
+}
+function gtSelect(val, _) {
+  _gtVal = val;
+  const opt = GT_OPTS.find(o => o.val === val);
+  g('vGtLabel').textContent = opt ? opt.lbl : val;
+  g('vGtList').classList.remove('open');
+  g('vGtBtn').classList.remove('open');
+  _tip.style.display = 'none';
+}
+document.addEventListener('click', e => {
+  if (!g('vGtWrap').contains(e.target)) {
+    g('vGtList').classList.remove('open');
+    g('vGtBtn').classList.remove('open');
+  }
+});
+_buildGtList();
+
+// ─── Tooltip ─────────────────────────────────────────────────────────────────
+const _tip=document.createElement('div');
+_tip.style.cssText='position:fixed;background:#0a0c14;border:1px solid #252840;color:#9aa0c0;padding:5px 9px;border-radius:5px;font-size:11px;pointer-events:none;z-index:99999;max-width:320px;display:none;line-height:1.5;white-space:pre-wrap;box-shadow:0 3px 12px rgba(0,0,0,.6)';
+document.body.appendChild(_tip);
+document.addEventListener('mousemove',e=>{
+  if(_tip.style.display==='none')return;
+  let lx=e.clientX+14,ly=e.clientY+14;
+  if(lx+_tip.offsetWidth>window.innerWidth) lx=e.clientX-_tip.offsetWidth-10;
+  if(ly+_tip.offsetHeight>window.innerHeight) ly=e.clientY-_tip.offsetHeight-10;
+  _tip.style.left=lx+'px';_tip.style.top=ly+'px';
+});
+document.addEventListener('mouseover',e=>{
+  const el=e.target.closest('[data-tip]');
+  if(el){_tip.textContent=el.dataset.tip;_tip.style.display='block';}
+});
+document.addEventListener('mouseout',e=>{
+  const el=e.target.closest('[data-tip]');
+  if(el&&!el.contains(e.relatedTarget))_tip.style.display='none';
+});
+</script>
+</body>
+</html>

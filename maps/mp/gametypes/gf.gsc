@@ -7,6 +7,7 @@
 #include maps\mp\gametypes\_gf_rounds;
 #include maps\mp\gametypes\_gf_loadouts;
 #include maps\mp\gametypes\_gf_wager_zones;
+#include maps\mp\gametypes\_gf_bridge;
 
 main()
 {
@@ -275,6 +276,7 @@ onStartGameType()
 
     gf_applyWagerZoneAssets();
 
+    thread gf_bridgeInit();
     thread maps\mp\gametypes\_bot::init();
 }
 

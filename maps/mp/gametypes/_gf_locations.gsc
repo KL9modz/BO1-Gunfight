@@ -93,6 +93,29 @@ gf_getCustomSpawnLocations()
         return result;
     }
 
+    if ( mapname == "mp_cracked" )
+    {
+        // set 0
+        set = gf_spawnSet();
+        a = set["allies"];
+        a[ a.size ] = gf_sp( (-569, 1374, -199), -50 );
+        a[ a.size ] = gf_sp( (-741, 1252, -192), -49 );
+        a[ a.size ] = gf_sp( (-720, 1369, -191), -58 );
+        a[ a.size ] = gf_sp( (-734, 1130, -192), -51 );
+        a[ a.size ] = gf_sp( (-939, 1018, -198), -27 );
+        set["allies"] = a;
+        x = set["axis"];
+        x[ x.size ] = gf_sp( (1694, -1174, -127), -166 );
+        x[ x.size ] = gf_sp( (1688, -1483, -127), 150 );
+        x[ x.size ] = gf_sp( (1703, -1357, -127), 170 );
+        x[ x.size ] = gf_sp( (1593, -1429, -127), 175 );
+        x[ x.size ] = gf_sp( (1575, -1255, -127), -179 );
+        set["axis"] = x;
+        result["sets"][ result["sets"].size ] = set;
+
+        return result;
+    }
+
     if ( mapname == "mp_silo" )
     {
         // set 0
@@ -312,6 +335,9 @@ gf_getCustomOvertimeLocation()
 
     if ( mapname == "mp_cosmodrome" )
         return gf_ot( (700, 386, -7), 0 );
+
+    if ( mapname == "mp_cracked" )
+        return gf_ot( (370, -187, -127), 174 );
 
     if ( mapname == "mp_silo" )
         return gf_ot( (543, 919, -25), -46 );

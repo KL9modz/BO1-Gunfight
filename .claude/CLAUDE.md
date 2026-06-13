@@ -1,29 +1,9 @@
 ﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 ---
 ### TODO
-- Support normal map sizes for >3 per team
-
-#### Bugs
-- Gametype shows "gf" not Gunfight on other players screens
-- Minigun & M202 not working
-- **mp_radiation center blast doors — FIXED, needs in-game test.** Root cause of the old failure: the start auto-open (`double_doors_open_at_start :478`) fires a **direct script notify** `level._door_switch_trig1 notify("trigger")` at prematch_over + 0.3s, and `trigger_off()` only moves a trigger out of player reach (`utility.gsc::trigger_off_proc` — origin −10000) — script notifies pass through it. The old `notify("trigger")` "kill" was also backwards: waking the parked `waittill_any_ents` in `door_switch_func :160` *is* the door-open signal. Fix (`_gf_wager_zones.gsc::gf_disableRadiationDoors`, hooked from `gf_applyWagerZoneAssets`): `trigger_off` both switches (blocks player/bot use), then at prematch_over + 0.2s repoint `level._door_switch_trig1/2` at a dummy `script_origin` so the +0.3s auto-open notify lands on the dummy; the driver stays parked on the real (silent) triggers forever. The +0.2s swap deliberately sits between the lights threads' +0.1s re-read (they idle green on the real triggers, like stock wager) and the +0.3s notify. The scoped `level.wagerMatch=1` idea was investigated and rejected: `teamchangeGracePeriod` (`_globallogic :1890`) and, when prematch is 0, `_wager::prematchPeriod` read the flag synchronously inside the same frame-0 window.
-
-#### Mod Menu (In-Game GSC)
-- [ ] Menu scaffold — port EnCoReV8 engine (`addMenu`/`addOpt`/`initMenu`/nav loop) into `_gf_menu.gsc`; replace `spawnStruct` with associative arrays
-- [ ] Gameplay settings submenu — player health, lives/round, capture time, OT duration, friendly fire, max team size (read at round/OT start, no `map_restart`)
-- [ ] Map & mode submenu — force map now, queue next map, switch gametype; applies on next round end
-- [ ] Pause toggle — `pauseTimer()` + `freezeControls(1)` all players + PAUSED HUD banner
-- [ ] Bot submenu — add/kick bot, fill count, fill mode, difficulty (`easy`/`normal`/`hard`/`fu`); wraps `bots_manage_*` dvars + `bot_set_difficulty()`
-- [ ] Fun mode: Modern COD — sprint unlimited, faster move speed, shorter ADS delay, reduced fall damage (dvar bundle toggle)
-- [ ] Fun mode: Silly — low gravity, high jump, infinite ammo, timescale tweak (dvar bundle toggle)
-- [ ] Debug submenu — toggle `gf_debug`, print round state, show alive counts + dvar values on screen
-
-#### Bot System
-- [ ] Bot OT zone navigation — `gf_botOvertimeAI()` thread: `SetBotGoal(zone.origin, 64)` on OT start, `ClearBotGoal()` on OT end (mirrors KOTH bot pattern)
-
-#### External Tool
-- [ ] RCON web tool — Node.js or browser page sending `setDvar`/`map`/`kick` over RCON UDP; mirrors in-game menu options
-
+- Support normal map sizes for >3p per team
+- Prints: Enemy team had more health. Your team captured the flag.
+- Proper "Gunfight" type text intro? 
 #### Server
 - [ ] Plutonium dedicated server setup
 - [ ] Find death sound (dropped CTF flag)

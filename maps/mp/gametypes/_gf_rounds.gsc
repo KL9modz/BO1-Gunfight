@@ -40,6 +40,31 @@ gf_getOvertimeLimit()
 gf_playerSpawnedCB()
 {
     level notify( "spawned_player" );
+
+    // If scr_team_maxsize > 0, redirect to spectator when the team is already full.
+    // The notify above still fires so SD and round logic don't stall.
+    maxTeam = getDvarInt( "scr_team_maxsize" );
+    if ( maxTeam > 0 )
+    {
+        team = self.pers["team"];
+        if ( team == "allies" || team == "axis" )
+        {
+            count = 0;
+            players = level.players;
+            for ( i = 0; i < players.size; i++ )
+            {
+                if ( players[i] == self ) continue;
+                if ( players[i].pers["team"] == team ) count++;
+            }
+            if ( count >= maxTeam )
+            {
+                self.pers["team"] = "spectator";
+                self [[level.spawnSpectator]]( self.origin, self.angles );
+                return;
+            }
+        }
+    }
+
     self gf_syncCaptureScore();
     self gf_initDamageScore();
 
@@ -56,7 +81,11 @@ gf_playerSpawnedCB()
         level thread gf_startHealthHUD();
     }
     gf_queueHealthHUDUpdate();
-    self gf_applyVisualTweaks();
+    self setClientDvar( "r_lightTweakAmbient",  "0.1" );
+    self setClientDvar( "r_lightGridIntensity", "1.1" );
+    self setClientDvar( "r_lightGridContrast",  "1.1" );
+    self setClientDvar( "r_gamma",              "1.1" );
+    self setClientDvar( "r_fullHDRrendering",   "1"   );
     self thread gf_onSpawned();
 
     // Drive the entire per-player health panel in the PLAYER's own context (create +
@@ -83,27 +112,6 @@ gf_playerSpawnedCB()
     }
 }
 
-gf_applyVisualTweaks()
-{
-    dvar = "scr_" + level.gameType + "_visualtweaks";
-    if ( GetDvarInt( dvar ) != 1 )
-    {
-        self setClientDvar( "r_fog",                "1" );
-        self setClientDvar( "r_lightTweakAmbient",  "0"   );
-        self setClientDvar( "r_lightGridIntensity", "1"   );
-        self setClientDvar( "r_lightGridContrast",  "1"   );
-        self setClientDvar( "r_gamma",              "1"   );
-        self setClientDvar( "r_fullHDRrendering",   "0"   );
-        return;
-    }
-
-    self setClientDvar( "r_fog",                "0"   );
-    self setClientDvar( "r_lightTweakAmbient",  "0.1" );
-    self setClientDvar( "r_lightGridIntensity", "1.1" );
-    self setClientDvar( "r_lightGridContrast",  "1.1" );
-    self setClientDvar( "r_gamma",              "1.1" );
-    self setClientDvar( "r_fullHDRrendering",   "1"   );
-}
 
 gf_onSpawnSpectator( origin, angles )
 {
@@ -128,6 +136,8 @@ gf_onSpawned()
 
     if ( !level.gf_roundActive )
         level thread gf_tryActivateRound();
+    else if ( isDefined( level.gf_roundStartFreezeActive ) && level.gf_roundStartFreezeActive )
+        self thread gf_freezeLateJoinerForRoundStart();
 }
 
 // ─── Round Activation ──────────────────────────────────────────────────────
@@ -157,18 +167,16 @@ gf_tryActivateRound()
 
     if ( game["roundsplayed"] > 0 )
     {
+        // Flag the freeze window so anyone who spawns DURING the countdown
+        // (late-connecting bots, mid-countdown joiners) freezes themselves on
+        // spawn instead of slipping past this one-time snapshot loop.
+        level.gf_roundStartFreezeActive = true;
+
         for ( i = 0; i < level.players.size; i++ )
         {
             p = level.players[i];
             if ( p.sessionstate == "playing" )
-            {
-                p freezeControls( 1 );
-                if ( isDefined( p.pers["isBot"] ) && p.pers["isBot"] )
-                {
-                    p.bot_lock_goal = true;
-                    p SetScriptGoal( p.origin, 8 );
-                }
-            }
+                p gf_applyRoundStartFreeze();
         }
 
         maps\mp\gametypes\_globallogic_utils::pauseTimer();
@@ -179,20 +187,56 @@ gf_tryActivateRound()
         gf_restoreRoundTimerAfterCountdown();
         gf_playRoundStartDialog();
 
+        // Closing the window releases the snapshot players (below) and signals
+        // any late-joiner freeze threads to self-release.
+        level.gf_roundStartFreezeActive = false;
+
         for ( i = 0; i < level.players.size; i++ )
         {
             p = level.players[i];
             if ( p.sessionstate == "playing" )
-            {
-                p freezeControls( 0 );
-                if ( isDefined( p.pers["isBot"] ) && p.pers["isBot"] )
-                {
-                    p.bot_lock_goal = false;
-                    p ClearScriptGoal();
-                }
-            }
+                p gf_clearRoundStartFreeze();
         }
     }
+}
+
+gf_applyRoundStartFreeze()
+{
+    self freezeControls( 1 );
+    if ( isDefined( self.pers["isBot"] ) && self.pers["isBot"] )
+    {
+        self.bot_lock_goal = true;
+        self SetScriptGoal( self.origin, 8 );
+    }
+}
+
+gf_clearRoundStartFreeze()
+{
+    self freezeControls( 0 );
+    if ( isDefined( self.pers["isBot"] ) && self.pers["isBot"] )
+    {
+        self.bot_lock_goal = false;
+        self ClearScriptGoal();
+    }
+}
+
+// A player that spawns mid-countdown missed the snapshot freeze loop. Lock it on
+// the spot and self-release when the window closes. We re-assert each tick because
+// a freshly spawned bot's bot_on_spawn sets bot_lock_goal=false right after spawn —
+// it can race our lock off, so one set isn't enough (the snapshot loop dodges this
+// via gf_tryActivateRound's 0.2s pre-wait; a late joiner has no such buffer).
+gf_freezeLateJoinerForRoundStart()
+{
+    self endon( "death" );
+    self endon( "disconnect" );
+
+    while ( isDefined( level.gf_roundStartFreezeActive ) && level.gf_roundStartFreezeActive )
+    {
+        self gf_applyRoundStartFreeze();
+        wait 0.5;
+    }
+
+    self gf_clearRoundStartFreeze();
 }
 
 gf_roundStartCountdown()
@@ -397,6 +441,10 @@ gf_overtime()
     // flag icon. This watcher cleans up on game_ended; the gf_ot_done endon makes the
     // two cleanup paths mutually exclusive.
     level thread gf_overtimeZoneGameEndCleanup( zone );
+
+    // Steer any bots onto the flag so they can win OT by capture, not just HP.
+    if ( isDefined( zone ) )
+        level thread gf_botOvertimeAI( zone );
 
     level thread gf_overtimeClock();
     level waittill( "gf_ot_done", winner );
@@ -876,6 +924,7 @@ gf_createOvertimeZone()
         zone.customTrigger = flagTrigger;
 
     zone.flagModel   = flagModel;
+    zone.gf_flagTrigger = flagTrigger;   // capture point for the bot OT AI
     zone.baseFxPos   = fxPos;
     zone.baseFxFwd   = fxFwd;
     zone.baseFxRight = fxRight;
@@ -963,6 +1012,82 @@ gf_onZoneCapture( player )
 
     player gf_awardOvertimeCapture();
     gf_resolveOvertime( player.pers["team"] );
+}
+
+// ─── Bot Overtime Capture AI ───────────────────────────────────────────────
+// Bots have no built-in concept of our overtime flag, so during OT we steer
+// them onto it the same way stock bots cap a DOM flag (_bot_script::bot_cap_get_flag):
+// lock the goal and SetScriptGoal onto the flag. The OT flag is a _gameobjects
+// PROXIMITY object (its trigger is a trigger_radius, so createUseObject runs
+// useObjectProxThink, NOT the hold-USE useObjectUseThink) — so simply STANDING
+// in the trigger accrues curProgress and fires zone.onUse ( = gf_onZoneCapture ).
+// No button press, no custom capture logic — just navigation, like a human walking on.
+// Threads die on gf_ot_done / game_ended; the leftover goal+lock are reset by
+// the round's map_restart, and the killcam hides any brief leftover camp.
+gf_botOvertimeAI( zone )
+{
+    level endon( "game_ended" );
+    level endon( "gf_ot_done" );
+
+    if ( !isDefined( zone ) || !isDefined( zone.gf_flagTrigger ) )
+        return;
+
+    flagTrigger = zone.gf_flagTrigger;
+
+    for ( i = 0; i < level.players.size; i++ )
+    {
+        p = level.players[i];
+        if ( !isDefined( p ) ) continue;
+        if ( !isDefined( p.pers["isBot"] ) || !p.pers["isBot"] ) continue;
+        if ( p.pers["team"] != "allies" && p.pers["team"] != "axis" ) continue;
+        if ( !isAlive( p ) ) continue;
+
+        p thread gf_botPursueOvertimeZone( flagTrigger );
+    }
+}
+
+gf_botPursueOvertimeZone( flagTrigger )
+{
+    self endon( "death" );
+    self endon( "disconnect" );
+    level endon( "game_ended" );
+    level endon( "gf_ot_done" );
+
+    if ( !isDefined( flagTrigger ) )
+        return;
+
+    // Small radius so the bot stops standing ON the flag (well inside the
+    // trigger), matching the stock DOM cap goal. Standing is all it takes —
+    // useObjectProxThink accrues the capture while the bot touches.
+    radius = 32;
+
+    // Lock BEFORE setting the goal; the "new_goal" notify makes any think thread
+    // already parked on its own goal release it to us without clearing it.
+    self.bot_lock_goal = true;
+    self gf_botSetGoal( flagTrigger.origin, radius );
+
+    // Keep the bot camped on the flag for the whole OT; re-assert the goal if it
+    // gets knocked off so it walks back. The proximity think does the capturing.
+    for ( ;; )
+    {
+        wait 1;
+
+        if ( !isDefined( flagTrigger ) )
+            break;
+
+        if ( !self isTouching( flagTrigger ) )
+            self gf_botSetGoal( flagTrigger.origin, radius );
+    }
+}
+
+// Local copy of the stock _bot_utility::SetBotGoal wrapper so this file carries
+// no bot-script dependency. The waittillframeend + "new_goal" notify is what
+// lets us take a goal away from a bot's own AI without it being cleared back.
+gf_botSetGoal( origin, radius )
+{
+    self SetScriptGoal( origin, radius );
+    waittillframeend;
+    self notify( "new_goal" );
 }
 
 
@@ -1077,6 +1202,12 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
     hp = self.health;
     if ( hp <= 0 )
         return iDamage;
+
+    if ( isDefined( level.gf_headshotsOnly ) && level.gf_headshotsOnly )
+    {
+        if ( sHitLoc != "head" && sHitLoc != "helmet" )
+            return 0;
+    }
 
     damage = iDamage;
     if ( damage > hp )
