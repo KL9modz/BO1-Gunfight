@@ -98,14 +98,14 @@ gf_updateHealthHUD()
 // center is ~y+2. These are pre-shifted up 2 so the block centers on the background
 // band art (which was tuned around -45/-27).
 gf_HP_ROW0_Y()       { return -47; }
-gf_HP_ROW1_Y()       { return -29; }
+gf_HP_ROW1_Y()       { return -27; }
 
 // Whole-panel vertical offset (applied to frames + rows at creation). Negative = up.
-// -50 parks the panel just below the minimap instead of at mid-screen-left.
-gf_HP_PANEL_Y_OFF()  { return -50; }
+// -40 parks the panel just below the minimap instead of at mid-screen-left.
+gf_HP_PANEL_Y_OFF()  { return -40; }
 
 // Skull icon size (square). blockWidth derives from this + the pitch.
-gf_HP_ICON_SIZE()    { return 8; }
+gf_HP_ICON_SIZE()    { return 10; }
 gf_HP_SLIDE_OFFSET() { return -420; }   // past the ultrawide left edge — parked elements
                                         // stay invisible at full alpha (pure-slide reveal)
 
@@ -129,7 +129,10 @@ gf_runHealthHUD( skipIntroWait )
     self gf_updateHealthPanel();       // fill values + target alphas in before revealing
     self gf_hideHealthPanelForIntro(); // park off-screen (full opacity)
     self gf_revealHealthPanel();       // pure slide in — all elements move together
+    self thread gf_hidePanelChromeOnRoundEnd();   // hide menu border in sync with the round-end wipe
     wait 0.75;                         // let the reveal finish before the loop retargets
+
+    self thread gf_dbgRows();          // TEMP: enemy-row diagnostic (gf_dbg_rows 1)
 
     for ( ;; )
     {
@@ -166,8 +169,16 @@ gf_createHealthPanel()
 
     off = gf_HP_PANEL_Y_OFF();
 
-    self.gf_bg    = self gf_clCreateFrame( -70,  -39 + off, 180, 42, "hud_frame_faction_fade",  0.34, 37 );
-    self.gf_lines = self gf_clCreateFrame( -162, -45 + off, 250, 52, "hud_frame_faction_lines", 0.30, 38 );
+    // Background fade stays a client hudelem (1), drawn BEHIND the rows (low sort) — correct layering.
+    self.gf_bg = self gf_clCreateFrame( -150, -39 + off, 320, 48, "hud_frame_faction_fade", ( 0, 0, 0 ), 0.55, 37 );
+
+    // Border lines are MENU-rendered (hud_gf_health.menu) instead of client hudelems. T5 only DRAWS
+    // ~17 client hudelems per player (a cap invisible to allocation probes — alloc + alpha look fine
+    // but the engine silently doesn't render the overflow). The 4 border lines pushed the panel to 21
+    // and dropped the last row's bar+number. Menu items cost 0 client hudelems and draw on top of
+    // hudelems (correct for an outline). This leaves the panel at 17 (bg + 16 rows). See
+    // gf_pushPanelChrome; menu reads ui_gf_panel_x/y + ui_gf_panel_show.
+    self gf_pushPanelChrome();
 
     self.gf_rows[0] = self gf_clCreateRow( gf_HP_ROW0_Y() + off, 40 );
     self.gf_rows[1] = self gf_clCreateRow( gf_HP_ROW1_Y() + off, 50 );
@@ -183,13 +194,37 @@ gf_createHealthPanel()
     logPrint( "GF_HUD: panel built for " + self.name + " elems=" + self.gf_hudElems.size + "\n" );
 }
 
+// Seeds the menu-rendered panel chrome position (hud_gf_health.menu reads these). bg fade + border
+// lines are drawn by the menu at ZERO client-hudelem cost. ui_gf_panel_x/y = border-box top-left in
+// menu/screen space; the menu lays the bg fade and the 4 lines out relative to that point. Tunable
+// here with a map_restart only (no mod.ff rebuild — only the menu STRUCTURE needs the linker).
+// ui_gf_panel_show (set in reveal/destroy) gates visibility.
+gf_pushPanelChrome()
+{
+    self setClientDvar( "ui_gf_panel_x", -22 );   // border-box left
+    self setClientDvar( "ui_gf_panel_y", 142 );   // border-box top
+}
+
+// The bg fade + rows are client hudelems wiped instantly by map_restart at round end, but the
+// menu-rendered border (gated by ui_gf_panel_show) would otherwise linger until the NEXT spawn's
+// gf_destroyHealthPanel. gf_endRound fires "gf_round_over" just before that wipe, so hide the
+// border there to keep it in sync. gf_revealHealthPanel re-shows it with the rows next round.
+gf_hidePanelChromeOnRoundEnd()
+{
+    self endon( "disconnect" );
+    self endon( "gf_kill_health_hud" );
+
+    level waittill( "gf_round_over" );
+    self setClientDvar( "ui_gf_panel_show", 0 );
+}
+
 // Row layout (reference-image style): up to 4 skull icons (4v4 support) on the left,
 // then a fixed column with the white HP number on top and the health bar underneath.
 // Skulls fill in left-to-right as the team populates; the number/bar column is fixed at
 // gf_HP_BAR_X so both rows stay aligned regardless of team size. The bar = hairline
 // border + semi-transparent black background + team-colored fill (green/red).
 gf_HP_MAX_SKULLS()   { return 4; }
-gf_HP_ICON_STEP()    { return 11; }   // integer pitch — fractional steps round to uneven pixel gaps
+gf_HP_ICON_STEP()    { return 13; }   // integer pitch — fractional steps round to uneven pixel gaps
 gf_HP_ROW_CENTER_X() { return 32; }   // visual center of the frame/lines art (right-biased in its
                                       // quad — the old tuned layout centered content here, not at
                                       // the quad midpoint)
@@ -357,33 +392,120 @@ gf_debugElemProbe()
 
     wait 9;   // after the loadout intro AND the health panel have both built
 
+    panelUsed = 0;
+    if ( isDefined( self.gf_hudElems ) )
+        panelUsed = self.gf_hudElems.size;
+
+    // Allocate client HUD elems until the pool runs out, rendering EACH as its own number in a
+    // grid (1, 2, 3, ...). The last visible number = how many free slots there were beyond what
+    // the HUD already uses. The grid stays up a few seconds, then everything is freed.
     probe = [];
-    for ( i = 0; i < 40; i++ )
+    for ( i = 0; i < 1024; i++ )   // cap high enough that we hit the real engine wall, not the loop
     {
         e = newClientHudElem( self );
         if ( !isDefined( e ) )
             break;
+
+        e.elemType  = "font";
+        e.font      = "default";
+        e.fontscale = 0.85;
+        e.x         = 0;
+        e.y         = 0;
+        e.width     = 0;
+        e.height    = int( level.fontHeight * 0.85 );
+        e.xOffset   = 0;
+        e.yOffset   = 0;
+        e.children  = [];
+        e setParent( level.uiParent );
+        e.hidden     = false;
+        e.archived   = false;
+        e.foreground = true;
+        e.sort       = 99;
+        e.color      = ( 1, 1, 0.3 );
+        e.alpha      = 1;
+        e setPoint( "TOP LEFT", "TOP LEFT", 8 + ( i % 24 ) * 22, 60 + int( i / 24 ) * 15 );
+        e setValue( i + 1 );
+
         probe[probe.size] = e;
     }
 
+    free = probe.size;
+    capNote = "";
+    if ( free >= 1024 )
+        capNote = " (hit probe cap 1024)";
+
+    self iPrintLnBold( "^3HUD POOL: panel ^5" + panelUsed + " ^3+ free ^2" + free
+                       + " ^3= ceiling ^6" + ( panelUsed + free ) + capNote );
+    logPrint( "GF_HUD: pool probe for " + self.name + " - panelUsed=" + panelUsed
+              + " free=" + free + " ceiling>=" + ( panelUsed + free ) + "\n" );
+
+    wait 6;   // leave the grid of numbers up so the limit is visible on screen
+
     for ( i = 0; i < probe.size; i++ )
         probe[i] destroy();
-
-    self iPrintLnBold( "^3free client HUD elems: " + probe.size );
-    logPrint( "GF_HUD: free client elems for " + self.name + " = " + probe.size + "\n" );
 }
 
-gf_clCreateFrame( x, y, w, h, shader, alpha, sort )
+// TEMP diagnostic (set gf_dbg_rows 1): prints the ENEMY row's resolved stats + the actual
+// fill/number element states once a second, so we can see whether HP is really 0 or the
+// elements are mis-rendered. Remove once the enemy-bar issue is understood.
+gf_dbgRows()
+{
+    self endon( "gf_kill_health_hud" );
+    self endon( "disconnect" );
+
+    for ( ;; )
+    {
+        wait 1;
+        if ( getDvarInt( "gf_dbg_rows" ) != 1 )
+            continue;
+        if ( !isDefined( self.gf_rows ) || !isDefined( self.gf_rows[1] ) )
+            continue;
+
+        eTeam = "axis";
+        if ( isDefined( self.pers["team"] ) && self.pers["team"] == "axis" )
+            eTeam = "allies";
+
+        r = self.gf_rows[1];
+        msg = "EN(" + eTeam + ") hp=" + gf_readTeamHP( eTeam ) + " frac=" + gf_readTeamFrac( eTeam )
+            + " cnt=" + gf_readTeamCount( eTeam ) + " alv=" + gf_readTeamAlive( eTeam );
+        if ( isDefined( r.fill ) )
+            msg += " | fill a=" + r.fill.alpha + " x=" + r.fill.x;
+        else
+            msg += " | fill UNDEF";
+        if ( isDefined( r.number ) )
+            msg += " | num a=" + r.number.alpha + " x=" + r.number.x;
+        else
+            msg += " | num UNDEF";
+
+        self iPrintLn( msg );
+    }
+}
+
+gf_clCreateFrame( x, y, w, h, shader, color, alpha, sort )
 {
     icon = self gf_clIcon( shader, w, h );
     if ( !isDefined( icon ) )
         return undefined;
     icon setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
-    icon.color = ( 1, 1, 1 );
+    icon.color = color;
     gf_styleHealthElem( icon, sort );
     icon.alpha = alpha;
     self.gf_hudElems[self.gf_hudElems.size] = icon;
     return icon;
+}
+
+// Panel framing lines drawn from thin "white" rects, replacing the stock hud_frame_faction_lines so
+// we control alignment exactly. Layout: a LEFT vertical cap + three horizontal rules (top, middle,
+// bottom) and NO right line, so the panel reads as open/anchored on the left. The middle rule runs
+// between the two team rows (at cy). Rects are added to self.gf_hudElems by gf_clCreateRect, so they
+// slide in and tear down with the rest of the panel. Same element count as the old 4-side box.
+gf_clCreatePanelLines( cx, cy, w, h, thick, color, alpha, sort )
+{
+    left = cx - w / 2;
+    self gf_clCreateRect( left, cy - h / 2,     w,     thick, color, alpha, sort );   // top
+    self gf_clCreateRect( left, cy,             w,     thick, color, alpha, sort );   // middle divider (between rows)
+    self gf_clCreateRect( left, cy + h / 2 - 1, w,     thick, color, alpha, sort );   // bottom (1px up to sit flush)
+    self gf_clCreateRect( left, cy,             thick, h,     color, alpha, sort );   // left vertical cap (no right)
 }
 
 // Generic solid rectangle (tinted "white" shader). Used for the bar's border, its
@@ -447,6 +569,8 @@ gf_revealHealthPanel()
 {
     if ( !isDefined( self.gf_hudElems ) )
         return;
+
+    self setClientDvar( "ui_gf_panel_show", 1 );   // menu-rendered chrome appears with the rows
 
     offset = gf_HP_SLIDE_OFFSET();
     for ( i = 0; i < self.gf_hudElems.size; i++ )
@@ -595,12 +719,19 @@ gf_setHealthNumber( num, hp )
     }
     else
     {
-        num.alpha = 0;
+        // Team wiped — show a literal 0 instead of hiding the number, so the panel
+        // reads "0" next to the empty bar rather than going blank.
+        num setValue( 0 );
+        num.x = gf_HP_BAR_X();
+        num.color = ( 1, 1, 1 );
+        num.alpha = 1;
     }
 }
 
 gf_destroyHealthPanel()
 {
+    self setClientDvar( "ui_gf_panel_show", 0 );   // hide menu-rendered chrome with the panel
+
     if ( !isDefined( self.gf_hudElems ) )
         return;
 
@@ -728,10 +859,9 @@ gf_showWeaponHUD( load )
     shaders[2] = load["lethalShader"];
     shaders[3] = load["tacticalShader"];
     shaders[4] = load["equipShader"];
-    shaders[5] = gf_getPerkShader( "specialty_movefaster" );
-    shaders[6] = gf_getPerkShader( "specialty_bulletpenetration" );
-    shaders[7] = gf_getPerkShader( "specialty_longersprint" );
-    shaders[8] = gf_getPerkShader( "specialty_flakjacket" );
+    shaders[5] = gf_getPerkShader( "specialty_flakjacket" );
+    shaders[6] = gf_getPerkShader( "specialty_movefaster" );    // Lightweight
+    shaders[7] = gf_getPerkShader( "specialty_longersprint" );  // Marathon
 
     names = [];
     names[0] = load["primaryName"];
@@ -739,10 +869,9 @@ gf_showWeaponHUD( load )
     names[2] = load["lethalName"];
     names[3] = load["tacticalName"];
     names[4] = load["equipName"];
-    names[5] = "Lightweight";
-    names[6] = "Hardened";
+    names[5] = "Flak Jacket";
+    names[6] = "Lightweight";
     names[7] = "Marathon";
-    names[8] = "Flak Jacket";
 
     // yPos: row position in user_bottom coords.
     // Weapon icon rendered_y = yPos - 58; perk text yText = yIcon - 16.
@@ -755,7 +884,6 @@ gf_showWeaponHUD( load )
     yPos[5] = -242;
     yPos[6] = -202;
     yPos[7] = -162;
-    yPos[8] = -122;
 
     icons = [];
     texts = [];
@@ -808,7 +936,7 @@ gf_showWeaponHUD( load )
     }
 
     // Perk rows — left side (slots 5-8)
-    for ( i = 5; i < 9; i++ )
+    for ( i = 5; i < 8; i++ )
     {
         yIcon = yPos[i] - 58;
         yText = yIcon - 16;
@@ -861,7 +989,7 @@ gf_showWeaponHUD( load )
         texts[i] moveOverTime( 0.75 );
         texts[i].x = 400;
     }
-    for ( i = 5; i < 9; i++ )
+    for ( i = 5; i < 8; i++ )
     {
         icons[i] moveOverTime( 0.75 );
         icons[i].x = -400;

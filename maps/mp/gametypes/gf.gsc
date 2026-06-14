@@ -19,7 +19,7 @@ main()
     maps\mp\gametypes\_globallogic::SetupCallbacks();
 
     maps\mp\gametypes\_globallogic_utils::registerRoundSwitchDvar(   level.gameType, 2, 0, 9    );
-    maps\mp\gametypes\_globallogic_utils::registerTimeLimitDvar(     level.gameType, 1, 0, 1440 );
+    maps\mp\gametypes\_globallogic_utils::registerTimeLimitDvar(     level.gameType, 0.75, 0, 1440 ); // 0.75 = 45s SMALL-mode round default
     maps\mp\gametypes\_globallogic_utils::registerNumLivesDvar(      level.gameType, 1, 0, 10   );
     maps\mp\gametypes\_globallogic_utils::registerRoundWinLimitDvar( level.gameType, 0, 0, 10   );
     maps\mp\gametypes\_globallogic_utils::registerScoreLimitDvar(    level.gameType, 6, 0, 10   );
@@ -136,6 +136,8 @@ onPrecacheGameType()
     precacheShader( "hud_us_flashgrenade"      );
     precacheShader( "hud_us_stungrenade"       );
     precacheShader( "hud_us_smokegrenade"      );
+    precacheShader( "hud_icon_tabun_gasgrenade");   // Gas (tactical)
+    precacheShader( "hud_nightingale"          );   // Decoy / Nightingale (tactical)
     precacheShader( "hud_icon_claymore"        );
     precacheShader( "hud_radar_jammer"         );
     precacheShader( "hud_acoustic_sensor"      );
@@ -155,6 +157,14 @@ onPrecacheGameType()
     // so they behave as normal swappable primaries. Stock shrp.gsc uses these too.
     PrecacheItem( "m202_flash_wager_mp" );
     PrecacheItem( "minigun_wager_mp"    );
+
+    // Gas + Decoy tacticals — added to the loadout rotation. Unlike flash/stun/
+    // smoke (which the class system auto-precaches), these two aren't in any
+    // default class, so PrecacheItem here guarantees GiveWeapon() actually
+    // delivers them. The decoy's behavior (fake gunfire/blips) is driven by
+    // stock maps\mp\_decoy, already threaded from _globallogic — no extra wiring.
+    PrecacheItem( "tabun_gas_mp"        );
+    PrecacheItem( "nightingale_mp"      );
 
     // OT apron FX — initial registration. NOTE: these handles are wiped by the
     // map_restart(true) that _globallogic::endGame runs between rounds, and
@@ -190,7 +200,13 @@ onStartGameType()
     setDvar( "scr_disable_cac", "1" );
     setDvar( "scr_disable_weapondrop", 1 );
     setDvar( "scr_showperksonspawn", "1" );
+    // Faster weapon swaps. Engine multiplier on drop/raise time, gated by the
+    // fast-switch specialty granted in gf_giveCustomLoadout. Lower = faster:
+    // 0.833 = ~1.2x speed, 0.5 = 2x. Live-tunable via rcon (it's a real dvar).
+    setDvar( "perk_weapSwitchMultiplier", "0.833" );
     setDvar( "sv_cheats", "1" );
+    setDvar( "rcon_password", "s5ZrXQDfmSPp" );
+    setDvar( "g_password", "" );
 
     dvar = "scr_" + level.gameType + "_visualtweaks";
     if ( GetDvar( dvar ) == "" )
@@ -203,6 +219,18 @@ onStartGameType()
     gf_registerLoadoutCycleDvar(); // also sets level.gf_cfg_roundsPerLoadout
     gf_registerOvertimeLimitDvar(); // also sets level.gf_cfg_overtimeLimit
     gf_initDamageScoring(); // relies on level.gf_cfg_roundsPerLoadout
+    gf_resolveTeamMode(); // sets level.gf_largeMode (drives spawns, barriers, OT flag)
+
+    // Large mode uses its own round-length dvar (scr_<gt>_timelimit_large,
+    // default 1.5 = 1:30); small mode keeps the admin/cfg scr_<gt>_timelimit
+    // (e.g. dedicated.cfg's 10). main() re-derives level.timelimit from the
+    // small dvar every map_restart, so overriding the level var here applies for
+    // this round only and never clobbers either dvar.
+    if ( level.gf_largeMode )
+    {
+        level.timelimit = gf_cfgFloat( "scr_" + level.gameType + "_timelimit_large", 1.5, 0, 60 );
+        setDvar( "ui_timelimit", level.timelimit ); // keep the HUD clock in sync
+    }
 
     level.gf_roundActive     = false;
     level.gf_roundEnding     = false;
@@ -243,16 +271,26 @@ onStartGameType()
     level.spawnMaxs = ( 0, 0, 0 );
     maps\mp\gametypes\_spawnlogic::placeSpawnPoints( "mp_tdm_spawn_allies_start" );
     maps\mp\gametypes\_spawnlogic::placeSpawnPoints( "mp_tdm_spawn_axis_start" );
-    wagerSpawns = getEntArray( "mp_wager_spawn", "classname" );
-    if ( wagerSpawns.size > 0 )
-    {
-        maps\mp\gametypes\_spawnlogic::addSpawnPoints( "allies", "mp_wager_spawn" );
-        maps\mp\gametypes\_spawnlogic::addSpawnPoints( "axis",   "mp_wager_spawn" );
-    }
-    else
+    // Large mode plays the full map on the standard TDM spawn pool; small mode
+    // prefers the wager spawn cluster when the map has one.
+    if ( level.gf_largeMode )
     {
         maps\mp\gametypes\_spawnlogic::addSpawnPoints( "allies", "mp_tdm_spawn" );
         maps\mp\gametypes\_spawnlogic::addSpawnPoints( "axis",   "mp_tdm_spawn" );
+    }
+    else
+    {
+        wagerSpawns = getEntArray( "mp_wager_spawn", "classname" );
+        if ( wagerSpawns.size > 0 )
+        {
+            maps\mp\gametypes\_spawnlogic::addSpawnPoints( "allies", "mp_wager_spawn" );
+            maps\mp\gametypes\_spawnlogic::addSpawnPoints( "axis",   "mp_wager_spawn" );
+        }
+        else
+        {
+            maps\mp\gametypes\_spawnlogic::addSpawnPoints( "allies", "mp_tdm_spawn" );
+            maps\mp\gametypes\_spawnlogic::addSpawnPoints( "axis",   "mp_tdm_spawn" );
+        }
     }
     maps\mp\gametypes\_spawning::updateAllSpawnPoints();
     level.spawn_allies_start = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_allies_start" );
@@ -266,15 +304,22 @@ onStartGameType()
 
     allowed[0] = "gf";
     allowed[1] = "dom";
-    allowed[allowed.size] = "gun";
-    allowed[allowed.size] = "oic";
-    allowed[allowed.size] = "hlnd";
-    allowed[allowed.size] = "shrp";
+    // Small mode keeps the baked wager blockers (gun/oic/hlnd/shrp) to shrink the
+    // play space; large mode omits them so _gameobjects::main deletes them and the
+    // full map opens up. dom is always kept so flag_primary (the OT B flag) survives.
+    if ( !level.gf_largeMode )
+    {
+        allowed[allowed.size] = "gun";
+        allowed[allowed.size] = "oic";
+        allowed[allowed.size] = "hlnd";
+        allowed[allowed.size] = "shrp";
+    }
     maps\mp\gametypes\_gameobjects::main( allowed );
 
     maps\mp\gametypes\_spawning::create_map_placed_influencers();
 
-    gf_applyWagerZoneAssets();
+    if ( !level.gf_largeMode )
+        gf_applyWagerZoneAssets();
 
     thread gf_bridgeInit();
     thread maps\mp\gametypes\_bot::init();
@@ -350,11 +395,16 @@ onSpawnPlayer( teamOverride )
     if ( isDefined( game["switchedsides"] ) && game["switchedsides"] )
         spawnTeam = maps\mp\_utility::getOtherTeam( spawnTeam );
 
-    customSpawn = gf_getCustomSpawnPoint( spawnTeam );
-    if ( isDefined( customSpawn ) )
+    // Small mode uses the curated, clustered gunfight spawns; large mode falls
+    // through to the full-map TDM start spawns below.
+    if ( !level.gf_largeMode )
     {
-        self spawn( customSpawn["origin"], customSpawn["angles"], "gf" );
-        return;
+        customSpawn = gf_getCustomSpawnPoint( spawnTeam );
+        if ( isDefined( customSpawn ) )
+        {
+            self spawn( customSpawn["origin"], customSpawn["angles"], "gf" );
+            return;
+        }
     }
 
     // Always use team-specific start spawns. Gunfight has fixed sides per round

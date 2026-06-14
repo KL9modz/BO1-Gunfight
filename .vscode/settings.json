@@ -297,6 +297,7 @@
         "maps\\so_narrative2_frontend_anim",
         "maps\\createfx\\effectsEd_box_fx",
         "maps\\mp\\gametypes\\_gf_debug",
-        "maps\\mp\\gametypes\\_gf_wager_zones"
+        "maps\\mp\\gametypes\\_gf_wager_zones",
+        "maps"
     ]
 }

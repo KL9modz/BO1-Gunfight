@@ -16,23 +16,129 @@ gf_getOvertimeLimit()
     if ( !isDefined( level.gf_overtimeLimitDvar ) )
         level.gf_overtimeLimitDvar = "scr_" + level.gameType + "_overtimelimit";
 
-    if ( GetDvar( level.gf_overtimeLimitDvar ) == "" )
-        setDvar( level.gf_overtimeLimitDvar, 15 );
-
-    value = GetDvarInt( level.gf_overtimeLimitDvar );
-    if ( value < 0 )
-    {
-        value = 0;
-        setDvar( level.gf_overtimeLimitDvar, value );
-    }
-    else if ( value > 120 )
-    {
-        value = 120;
-        setDvar( level.gf_overtimeLimitDvar, value );
-    }
+    // Each mode reads its own dvar so both are independently tunable (cfg/RCON)
+    // and the small-mode value is never clobbered when the mode flips.
+    if ( isDefined( level.gf_largeMode ) && level.gf_largeMode )
+        value = gf_cfgFloat( level.gf_overtimeLimitDvar + "_large", 30, 0, 120 );
+    else
+        value = gf_cfgFloat( level.gf_overtimeLimitDvar, 15, 0, 120 );
 
     level.gf_cfg_overtimeLimit = value;
     return value;
+}
+
+// OT zone capture time (seconds), per mode. Reads gf_capture_time /
+// gf_capture_time_large so both are tunable; defaults preserve prior behavior.
+gf_getCaptureTime()
+{
+    if ( isDefined( level.gf_largeMode ) && level.gf_largeMode )
+        return gf_cfgFloat( "gf_capture_time_large", 5, 0.5, 60 );
+    return gf_cfgFloat( "gf_capture_time", 3, 0.5, 60 );
+}
+
+// Reads a float dvar, registering the default if unset and clamping to [lo,hi].
+// Mirrors the register*Dvar pattern (default-if-empty, clamp, persist).
+gf_cfgFloat( dvar, def, lo, hi )
+{
+    if ( GetDvar( dvar ) == "" )
+        setDvar( dvar, def );
+
+    v = GetDvarFloat( dvar );
+    if ( v < lo )
+    {
+        v = lo;
+        setDvar( dvar, v );
+    }
+    else if ( v > hi )
+    {
+        v = hi;
+        setDvar( dvar, v );
+    }
+    return v;
+}
+
+// ─── Team-Size Spawn/Barrier Mode ──────────────────────────────────────────
+// Resolves "large" (full-map TDM spawns, wager barriers deleted, OT flag at the
+// Domination B flag) vs "small" (curated gunfight spawns + wager barriers).
+// Re-evaluated every round from onStartGameType, which map_restart re-fires, so
+// the result lives in level.* (wiped per round). The spawn/allow-list/wager
+// branches in onStartGameType and onSpawnPlayer/gf_getOvertimeFlagTrigger all
+// read level.gf_largeMode.
+//
+// scr_<gametype>_teamspawnmode: auto (default) | large | small. "auto" goes
+// large only when BOTH teams have 4+ players; a forced value pins the mode for
+// admins/RCON/testing.
+//
+// onStartGameType (where this runs) snapshots the roster BEFORE bots/late
+// joiners connect — _bot::init() is threaded at the end of onStartGameType — so
+// a live count here is unreliable. auto therefore prefers game["gf_autoLargeMode"],
+// captured at round activation by gf_updateAutoTeamMode() once everyone has
+// spawned, and persisted through map_restart in game[]. The live count is only a
+// first-setup fallback (e.g. a populated server where players are already
+// connected at map load).
+gf_resolveTeamMode()
+{
+    dvar = "scr_" + level.gameType + "_teamspawnmode";
+    mode = GetDvar( dvar );
+    if ( mode != "auto" && mode != "large" && mode != "small" )
+    {
+        mode = "auto";
+        setDvar( dvar, mode );
+    }
+
+    if ( mode == "large" )
+    {
+        level.gf_largeMode = true;
+        return;
+    }
+    if ( mode == "small" )
+    {
+        level.gf_largeMode = false;
+        return;
+    }
+
+    if ( isDefined( game["gf_autoLargeMode"] ) )
+    {
+        level.gf_largeMode = game["gf_autoLargeMode"];
+        return;
+    }
+
+    counts = gf_countTeams();
+    level.gf_largeMode = ( counts["allies"] >= 4 && counts["axis"] >= 4 );
+}
+
+// Captures the live team sizes once the round is active and everyone (incl.
+// late-added bots) has spawned, persisting the auto decision in game[] for the
+// next round's onStartGameType setup. No-op when the mode is force-pinned.
+gf_updateAutoTeamMode()
+{
+    if ( GetDvar( "scr_" + level.gameType + "_teamspawnmode" ) != "auto" )
+        return;
+
+    counts = gf_countTeams();
+    game["gf_autoLargeMode"] = ( counts["allies"] >= 4 && counts["axis"] >= 4 );
+}
+
+gf_countTeams()
+{
+    counts = [];
+    counts["allies"] = 0;
+    counts["axis"]   = 0;
+
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        if ( !isDefined( players[i].pers["team"] ) )
+            continue;
+
+        team = players[i].pers["team"];
+        if ( team == "allies" )
+            counts["allies"]++;
+        else if ( team == "axis" )
+            counts["axis"]++;
+    }
+
+    return counts;
 }
 
 // ─── Player Lifecycle ──────────────────────────────────────────────────────
@@ -165,6 +271,10 @@ gf_tryActivateRound()
     level.gf_warnedLastPlayer = [];
     gf_forceHealthHUDUpdate();
 
+    // Roster is now settled (post 0.2s wait, all spawned) — capture the auto
+    // team-size decision for the next round's setup.
+    gf_updateAutoTeamMode();
+
     if ( game["roundsplayed"] > 0 )
     {
         // Flag the freeze window so anyone who spawns DURING the countdown
@@ -186,6 +296,7 @@ gf_tryActivateRound()
         maps\mp\gametypes\_globallogic_utils::resumeTimer();
         gf_restoreRoundTimerAfterCountdown();
         gf_playRoundStartDialog();
+        gf_showRoundObjective();
 
         // Closing the window releases the snapshot players (below) and signals
         // any late-joiner freeze threads to self-release.
@@ -315,6 +426,28 @@ gf_playRoundStartDialog()
     maps\mp\gametypes\_globallogic_audio::leaderDialog( "defense_obj", game["defenders"], "introboost" );
 }
 
+// Re-show the gametype objective splash each round — the same stock objective hint
+// (_hud_message::hintMessage) that _globallogic shows once at match start
+// (prematchPeriod, _globallogic.gsc). This is the visual half; gf_playRoundStartDialog
+// above is the VO half. Mirrors _globallogic's per-player hasSpawned guard.
+gf_showRoundObjective()
+{
+    for ( i = 0; i < level.players.size; i++ )
+    {
+        player = level.players[i];
+        if ( !isDefined( player ) || !isPlayer( player ) )
+            continue;
+        if ( !isDefined( player.hasSpawned ) || !player.hasSpawned )
+            continue;
+
+        hintText = maps\mp\gametypes\_globallogic_ui::getObjectiveHintText( player.pers["team"] );
+        if ( !isDefined( hintText ) )
+            continue;
+
+        player thread maps\mp\gametypes\_hud_message::hintMessage( hintText );
+    }
+}
+
 // ─── Round End ─────────────────────────────────────────────────────────────
 
 // Central round-end helper — mirrors sd_endGame().
@@ -334,8 +467,15 @@ gf_endRound( winner )
     if ( isDefined( winner ) && winner != "tie" )
         [[level._setTeamScore]]( winner, [[level._getTeamScore]]( winner ) + 1 );
 
+    // Native WIN/LOSS banner subtitle — reason set at the decision site (carried
+    // via level var so it survives the OT gf_ot_done re-entry into gf_endRound).
+    reasonText = "";
+    if ( isDefined( level.gf_endReasonText ) )
+        reasonText = level.gf_endReasonText;
+    level.gf_endReasonText = undefined;
+
     level thread maps\mp\gametypes\_killcam::startLastKillcam();
-    level thread maps\mp\gametypes\_globallogic::endGame( winner, "" );
+    level thread maps\mp\gametypes\_globallogic::endGame( winner, reasonText );
 }
 
 gf_onDeadEvent( team )
@@ -349,6 +489,7 @@ gf_onDeadEvent( team )
         winner = maps\mp\_utility::getOtherTeam( team );
 
     gf_forceHealthHUDUpdate();
+    level.gf_endReasonText = gf_reasonText( "elim", winner );
     gf_endRound( winner );
 }
 
@@ -358,7 +499,9 @@ gf_onTimeLimit()
 
     if ( isDefined( level.gf_overtimeActive ) && level.gf_overtimeActive )
     {
-        gf_resolveOvertime( gf_getHPWinner() );
+        hpWinner = gf_getHPWinner();
+        level.gf_endReasonText = gf_reasonText( "health", hpWinner );
+        gf_resolveOvertime( hpWinner );
         return;
     }
 
@@ -371,7 +514,9 @@ gf_onTimeLimit()
         overtimeLimit = gf_getOvertimeLimit();
         if ( overtimeLimit <= 0 )
         {
-            gf_endRound( gf_getHPWinner() );
+            hpWinner = gf_getHPWinner();
+            level.gf_endReasonText = gf_reasonText( "health", hpWinner );
+            gf_endRound( hpWinner );
             return;
         }
 
@@ -379,7 +524,9 @@ gf_onTimeLimit()
         return;
     }
 
-    gf_endRound( gf_getHPWinner() );
+    hpWinner = gf_getHPWinner();
+    level.gf_endReasonText = gf_reasonText( "health", hpWinner );
+    gf_endRound( hpWinner );
 }
 
 gf_resolveOvertime( winner )
@@ -498,7 +645,9 @@ gf_overtimeClock()
         gf_syncOvertimeRemaining();
         if ( level.gf_overtimeRemaining <= 0 )
         {
-            gf_resolveOvertime( gf_getHPWinner() );
+            hpWinner = gf_getHPWinner();
+            level.gf_endReasonText = gf_reasonText( "health", hpWinner );
+            gf_resolveOvertime( hpWinner );
             return;
         }
 
@@ -912,7 +1061,7 @@ gf_createOvertimeZone()
     logPrint( "GF_OT: zone created entNum=" + zone.entNum + " objpointAllies=" + int( haveAllies ) + " objpointAxis=" + int( haveAxis ) + "\n" );
 
     zone maps\mp\gametypes\_gameobjects::allowUse( "any" );
-    zone maps\mp\gametypes\_gameobjects::setUseTime( 2.5 );
+    zone maps\mp\gametypes\_gameobjects::setUseTime( gf_getCaptureTime() );
     zone maps\mp\gametypes\_gameobjects::setUseText( &"MP_CAPTURING_FLAG" );
     gf_setOvertimeZoneIcons( zone, "captureneutral", "captureneutral" );
     zone maps\mp\gametypes\_gameobjects::setVisibleTeam( "any" );
@@ -939,7 +1088,10 @@ gf_getOvertimeFlagTrigger()
 {
     flag = gf_findDominationBFlag();
 
-    if ( isDefined( level.gf_customOvertimeLocation ) )
+    // Large mode plays the full map, so the OT objective sits at the native
+    // Domination B (neutral/center) flag. Only small mode moves it to the
+    // curated, shrunk-zone overtime spot.
+    if ( !level.gf_largeMode && isDefined( level.gf_customOvertimeLocation ) )
     {
         if ( isDefined( flag ) )
         {
@@ -1011,6 +1163,7 @@ gf_onZoneCapture( player )
     if ( isDefined( level.gf_overtimeResolving ) && level.gf_overtimeResolving ) return;
 
     player gf_awardOvertimeCapture();
+    level.gf_endReasonText = gf_reasonText( "capture", player.pers["team"] );
     gf_resolveOvertime( player.pers["team"] );
 }
 
@@ -1419,4 +1572,30 @@ gf_getHPWinner()
         return "axis";
 
     return "tie";
+}
+
+// Neutral round-end reason string for the native WIN/LOSS banner subtitle
+// (outcomeText in _hud_message::teamOutcomeNotify, fed via endGame's 2nd arg).
+// The banner header is already team-relative (ROUND WIN / ROUND LOSS / ROUND DRAW),
+// so the subtitle states the absolute reason — matching stock SD ("BOMB DEFUSED").
+// reason: "capture" (OT flag taken) | "health" (timer/OT decided by total HP) |
+//         "elim" (a team fully wiped out). winner == "tie" => draw wording.
+gf_reasonText( reason, winner )
+{
+    isTie = ( !isDefined( winner ) || winner == "tie" );
+
+    if ( reason == "capture" )
+        return "Objective captured";
+
+    if ( reason == "elim" )
+    {
+        if ( isTie )
+            return "Both teams eliminated";
+        return "Team eliminated";
+    }
+
+    // health
+    if ( isTie )
+        return "Time expired - equal health";
+    return "Time expired - health advantage";
 }

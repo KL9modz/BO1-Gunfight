@@ -62,7 +62,7 @@ bot_on_death()
 		self waittill("death");
 
 		// gunfight: no respawns mid-round; only re-queue between rounds
-		if ( !level.gf_roundActive )
+		if ( !isDefined( level.gf_roundActive ) || !level.gf_roundActive )
 			self.wantSafeSpawn = true;
 	}
 }

@@ -1,12 +1,17 @@
 ﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 ---
 ### TODO
-- Support normal map sizes for >3p per team
-- Prints: Enemy team had more health. Your team captured the flag.
-- Proper "Gunfight" type text intro? 
-#### Server
-- [ ] Plutonium dedicated server setup
-- [ ] Find death sound (dropped CTF flag)
+- Refine loadouts
+- Finish/Adjust spawns
+- Setup a modded T5 Plutonium server on a VPS
+
+- Organize repo:
+README
+Screenshots 
+More details (every function)
+Server info 
+Leverage “releases” or “bugs”
+Bare bones branch
 ---
 
 ## Dedicated Server Setup
@@ -241,13 +246,17 @@ ui_mp/hud_gf_health.menu               â†’ raw/ui_mp/hud_gf_health.menu
 raw/fx/misc/*.efx                       â†’ raw/fx/misc/*.efx   (FX assets — must be staged or they are silently dropped from the zone)
 mod.csv                                 â†’ zone_source/mods/mp_gunfight.csv
 mod.csv                                 â†’ zone_source/english/assetinfo/mods/mp_gunfight.csv
+mod.csv                                 â†’ zone_source/english/assetlist/mods/mp_gunfight.csv
 ```
+
+> **assetlist is the one the linker actually reads.** The linker loads its rawfile/asset list from `zone_source/english/assetlist/mods/mp_gunfight.csv` (NOT `assetinfo`). If you only refresh `assetinfo` after changing `mod.csv`, the build silently uses the stale `assetlist` copy. Stage `mod.csv` to **all three** paths above. (`assetinfo` also holds generated `*_dep.txt` / `*_xmodel.csv` from prior builds — leave those; they're not source.)
 
 **Step 2 â€” run linker from `bin/`:**
 ```
 cd “S:\SteamLibrary\steamapps\common\Call of Duty Black Ops 42740\bin”
 linker_pc.exe -language english mods/mp_gunfight
 ```
+**Must run with cwd = `bin/`.** The linker resolves the source CSV via the relative path `../zone_source/...`, so running it from anywhere else fails with `could not open '../zone_source/english/assetlist/mods/mp_gunfight.csv'` even though the file exists. (PowerShell tool: `Set-Location "<game>\bin"` then `& ".\linker_pc.exe" ...`.)
 GSC rawfile errors are expected â€” Plutonium loads those directly, they don’t need to be in the zone.
 FX image-missing errors for stock T5 materials (e.g. `fxt_ui_tickring`) are harmless â€” those images live in the base game fastfiles and are available at runtime.
 
@@ -942,15 +951,18 @@ self GiveWeapon( "galil_extclip_mp", 0, camoOpts );
 **Reticle color indices** (0â€“6): red, green, blue, purple, cyan, yellow, orange.
 
 **Weapons where pattern camos (5â€“14) won't show** â€” they use `weapon_camo_neutral` as their base and are unaffected by patterns. Solid colors (1â€“4) and Gold (15) behavior may vary:
-`python`, `knife`, `m1911`, `cz75`, `makarov`, `asp`, `crossbow_explosive`, `rpg`, `strela`, `m72_law`, `china_lake`
+`python`, `knife`, `knife_ballistic`, `m1911`, `cz75`, `makarov`, `asp`, `rpg`, `strela`, `m72_law`, `china_lake` (plus the dual-pistol variants pythondw/cz75dw/m1911dw/makarovdw/aspdw).
+
+**Exception - `crossbow_explosive`** uses pattern base `cammo_gunmetal` plus a gold material, so patterns (5-14) and Gold (15) DO show; only the solid colors (1-4) don't (its solid base is neutral). It is the one secondary in our pool that can actually be camo'd (verified in `mp/weaponOptions.csv`).
 
 **Why `custom_class["camo_num"]` does NOT work for this mod:**
 `camo_num` is only read in `_weapons.gsc::stow_on_back()` â€” it affects only the weapon model rendered on the player's *back* (not in-hand). It also requires `isSubStr(self.curclass, "CUSTOM")`, which is false for `CLASS_ASSAULT` (our class when `scr_disable_cac=1`). Dead end.
 
 **Current mod implementation** (`_gf_loadouts.gsc`):
-- Each loadout gets `load["camo"] = randomInt(16)` at pool-build time (match start)
-- `gf_giveCustomLoadout` calls `CalcWeaponOptions(load["camo"], 0, 0, 0)` and passes the result to both primary and secondary `GiveWeapon` calls
-- When adding curated loadouts later, pass camo as a 5th arg to `gf_buildLoadout` and assign it directly instead of using `randomInt(16)`
+- Each loadout rolls two independent camos at pool-build time (match start): `load["camo"]` (primary) and `load["camoSecondary"]` (secondary), both `randomInt(16)`
+- `gf_giveCustomLoadout` builds a packed `CalcWeaponOptions(idx, 0, 0, 0)` for each and passes them to the primary and secondary `GiveWeapon` calls respectively
+- Secondary camo only displays on real-base weapons (crossbow); it's a harmless no-op on neutral-base pistols/launchers, so no per-weapon guard is needed
+- Minigun & M202 force `["camo"] = 0` (special primaries reject real camo); their secondaries are neutral-base, so the secondary roll is moot there
 
 ---
 

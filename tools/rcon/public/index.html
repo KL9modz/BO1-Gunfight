@@ -45,6 +45,7 @@ input:focus,select:focus{border-color:var(--ac)}
 .score-val{font-size:22px;font-weight:800;line-height:1}
 .score-team.allies .score-val{color:var(--ok)}
 .score-team.axis .score-val{color:var(--ng)}
+.listen-muted .scoreboard,.listen-muted .score-alive{opacity:.35;pointer-events:none}
 .score-mid{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 4px;color:var(--dm);font-size:11px}
 .score-round{font-size:10px;color:var(--dm);text-align:center;margin-top:6px}
 .score-alive{display:flex;gap:4px;justify-content:center;margin-top:4px;font-size:11px;color:var(--dm)}
@@ -98,6 +99,10 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .b-sm{padding:3px 8px;font-size:11px}.b-lg{width:100%;padding:11px;font-size:14px;letter-spacing:.05em}
 #cBtn{background:var(--ac);color:#0d0f17;border-color:var(--ac);font-weight:700;padding:5px 14px}
 #cBtn:hover{opacity:.85}#cBtn.disc{background:transparent;color:var(--ng);border-color:var(--ng)}
+#applyBtn{background:transparent;color:var(--dm);border-color:var(--bd);font-weight:700;padding:5px 14px}
+#applyBtn:hover:not(:disabled){background:var(--sf2)}
+#applyBtn.has-pending{color:var(--wn);border-color:var(--wn)}
+#applyBtn.has-pending:hover{background:var(--wn);color:#0d0f17}
 
 /* Layout helpers */
 .block{background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:10px 12px}
@@ -106,6 +111,8 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .srow:last-child{border-bottom:none;padding-bottom:0}.srow:first-child{padding-top:0}
 .slbl{flex:1;font-size:13px}.shint{color:var(--dm);font-size:11px;min-width:110px;text-align:right}
 input.num{width:72px}
+input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:none;padding:0}
+.sldval{min-width:42px;text-align:right;color:var(--ac);font-size:12px;font-variant-numeric:tabular-nums}
 .row{display:flex;gap:8px;align-items:center}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
@@ -211,8 +218,9 @@ input.num{width:72px}
   <div class="conn-row">
     <input id="iHost" type="text" placeholder="Host" value="127.0.0.1">
     <input id="iPort" type="number" placeholder="Port" value="28960">
-    <input id="iPass" type="password" placeholder="rcon_password">
+    <input id="iPass" type="password" placeholder="rcon_password" value="s5ZrXQDfmSPp">
     <button id="cBtn" onclick="doConn()">Connect</button>
+    <button id="applyBtn" class="ctrl" onclick="applyAll()">Apply All (0)</button>
   </div>
   <span id="badge" class="bdg off">● Disconnected</span>
 </header>
@@ -228,8 +236,8 @@ input.num{width:72px}
     <div class="irow"><span class="dm">Players</span><span id="sPl">—</span></div>
   </div>
 
-  <div class="card">
-    <div class="ctitle">SCOREBOARD</div>
+  <div class="card" id="scoreCard">
+    <div class="ctitle">SCOREBOARD <span id="scoreListenNote" style="display:none;font-weight:400;font-size:9px;color:var(--dm)">— listen server (no live data)</span></div>
     <div class="scoreboard">
       <div class="score-team allies">
         <div class="score-label">ALLIES</div>
@@ -285,31 +293,43 @@ input.num{width:72px}
     <div class="btitle">ROUND SETTINGS</div>
     <div class="srow" data-tip="gf_player_health&#10;Read at each spawn. Default: 100"><span class="slbl">Player Health</span>
       <input id="vHp" class="num ctrl" type="number" value="100" min="1" max="999">
-      <button class="b-gh b-sm ctrl" onclick="sdv('gf_player_health','vHp')">Apply</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('gf_player_health','vHp')">Queue</button>
       <span class="shint">next spawn</span></div>
     <div class="srow" data-tip="scr_gf_numlives&#10;Lives per player per round. Default: 1"><span class="slbl">Lives / Round</span>
       <input id="vLv" class="num ctrl" type="number" value="1" min="1" max="10">
-      <button class="b-gh b-sm ctrl" onclick="sdv('scr_gf_numlives','vLv')">Apply</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_numlives','vLv')">Queue</button>
       <span class="shint">next round</span></div>
     <div class="srow" data-tip="scr_team_maxsize&#10;Players per team max; overflow goes to spectator. 0 = unlimited"><span class="slbl">Max Team Size</span>
       <input id="vTs" class="num ctrl" type="number" value="2" min="1" max="12">
-      <button class="b-gh b-sm ctrl" onclick="sdv('scr_team_maxsize','vTs')">Apply</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('scr_team_maxsize','vTs')">Queue</button>
       <span class="shint">next round</span></div>
-    <div class="srow" data-tip="scr_gf_timelimit&#10;Round time limit in minutes. 0 = no limit. Default: 1"><span class="slbl">Round Time Limit (min)</span>
-      <input id="vTl" class="num ctrl" type="number" value="1" min="0" max="60">
-      <button class="b-gh b-sm ctrl" onclick="sdv('scr_gf_timelimit','vTl')">Apply</button>
+    <div class="srow" data-tip="scr_gf_teamspawnmode&#10;auto = switch by team size (BOTH teams 4+ &#8594; large)&#10;large / small = force the mode&#10;Large: full-map TDM spawns, no wager barriers, OT flag at Dom B, 1:30 round / 5s cap / 30s OT"><span class="slbl">Team Spawn Mode</span>
+      <span style="flex:1"></span>
+      <select id="vTsm" class="ctrl" onchange="queueDvar('scr_gf_teamspawnmode',this.value)">
+        <option value="auto">Auto (4+ &#8594; large)</option>
+        <option value="large">Force Large</option>
+        <option value="small">Force Small</option>
+      </select>
+      <span class="shint">next round</span></div>
+    <div class="srow" data-tip="scr_gf_timelimit&#10;Round time (min) for SMALL mode (&#8804;3p teams). 0 = no limit. Default: 0.75 (45s)"><span class="slbl">Round Time &#8212; Small (min)</span>
+      <input id="vTl" class="num ctrl" type="number" value="0.75" min="0" max="60" step="0.25">
+      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_timelimit','vTl')">Queue</button>
+      <span class="shint">next round</span></div>
+    <div class="srow" data-tip="scr_gf_timelimit_large&#10;Round time limit (min) for LARGE mode (4p+ teams). Default: 1.5 (1:30)"><span class="slbl">Round Time &#8212; Large (min)</span>
+      <input id="vTlL" class="num ctrl" type="number" value="1.5" min="0" max="60" step="0.5">
+      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_timelimit_large','vTlL')">Queue</button>
       <span class="shint">next round</span></div>
     <div class="srow" data-tip="scr_gf_scorelimit&#10;Round wins needed to win the match. Default: 6"><span class="slbl">Rounds to Win</span>
       <input id="vSl" class="num ctrl" type="number" value="6" min="1" max="10">
-      <button class="b-gh b-sm ctrl" onclick="sdv('scr_gf_scorelimit','vSl')">Apply</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_scorelimit','vSl')">Queue</button>
       <span class="shint">next round</span></div>
     <div class="srow" data-tip="scr_gf_roundlimit&#10;Hard round cap regardless of score. 0 = use scorelimit only. Default: 0"><span class="slbl">Max Rounds (0=off)</span>
       <input id="vRl" class="num ctrl" type="number" value="0" min="0" max="15">
-      <button class="b-gh b-sm ctrl" onclick="sdv('scr_gf_roundlimit','vRl')">Apply</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_roundlimit','vRl')">Queue</button>
       <span class="shint">next round</span></div>
     <div class="srow" data-tip="scr_gf_roundswitch&#10;Swap attacker/defender sides every N rounds. 0 = never. Default: 2"><span class="slbl">Side Switch Every N Rounds</span>
       <input id="vRsw" class="num ctrl" type="number" value="2" min="0" max="9">
-      <button class="b-gh b-sm ctrl" onclick="sdv('scr_gf_roundswitch','vRsw')">Apply</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_roundswitch','vRsw')">Queue</button>
       <span class="shint">next round</span></div>
     <div class="srow" data-tip="scr_team_fftype&#10;0 = off, 1 = on, 2 = reflect, 3 = shared&#10;Toggle sets 0 or 1"><span class="slbl">Friendly Fire</span>
       <span style="flex:1"></span>
@@ -327,26 +347,34 @@ input.num{width:72px}
   </div>
   <div class="block">
     <div class="btitle">OVERTIME</div>
-    <div class="srow" data-tip="gf_capture_time&#10;Seconds a player must stand in the zone to win OT. Default: 3"><span class="slbl">Capture Time (s)</span>
-      <input id="vCt" class="num ctrl" type="number" value="3" min="1" max="30">
-      <button class="b-gh b-sm ctrl" onclick="sdv('gf_capture_time','vCt')">Apply</button>
+    <div class="srow" data-tip="gf_capture_time&#10;Seconds to capture the OT zone in SMALL mode (&#8804;3p). Default: 3"><span class="slbl">Capture Time &#8212; Small (s)</span>
+      <input id="vCt" class="num ctrl" type="number" value="3" min="0.5" max="30" step="0.5">
+      <button class="b-gh b-sm ctrl" onclick="qdv('gf_capture_time','vCt')">Queue</button>
       <span class="shint">next OT</span></div>
-    <div class="srow" data-tip="scr_gf_overtimelimit&#10;OT countdown in seconds. Pauses while zone is contested. Default: 15"><span class="slbl">OT Duration (s)</span>
+    <div class="srow" data-tip="gf_capture_time_large&#10;Seconds to capture the OT zone in LARGE mode (4p+). Default: 5"><span class="slbl">Capture Time &#8212; Large (s)</span>
+      <input id="vCtL" class="num ctrl" type="number" value="5" min="0.5" max="30" step="0.5">
+      <button class="b-gh b-sm ctrl" onclick="qdv('gf_capture_time_large','vCtL')">Queue</button>
+      <span class="shint">next OT</span></div>
+    <div class="srow" data-tip="scr_gf_overtimelimit&#10;OT countdown (s) in SMALL mode (&#8804;3p). Pauses while contested. Default: 15"><span class="slbl">OT Duration &#8212; Small (s)</span>
       <input id="vOt" class="num ctrl" type="number" value="15" min="5" max="120">
-      <button class="b-gh b-sm ctrl" onclick="sdv('scr_gf_overtimelimit','vOt')">Apply</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_overtimelimit','vOt')">Queue</button>
+      <span class="shint">next OT</span></div>
+    <div class="srow" data-tip="scr_gf_overtimelimit_large&#10;OT countdown (s) in LARGE mode (4p+). Pauses while contested. Default: 30"><span class="slbl">OT Duration &#8212; Large (s)</span>
+      <input id="vOtL" class="num ctrl" type="number" value="30" min="5" max="120">
+      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_overtimelimit_large','vOtL')">Queue</button>
       <span class="shint">next OT</span></div>
   </div>
   <div class="block">
     <div class="btitle">MATCH CONTROL</div>
     <div style="display:flex;flex-direction:column;gap:8px">
-      <button id="pauseBtn" class="b-wn b-lg ctrl" onclick="doPause()">⏸  PAUSE MATCH</button>
+      <button id="pauseBtn" class="b-wn b-lg ctrl" data-tip="gf_cmd pause / gf_cmd resume (GSC bridge)&#10;Toggles pauseTimer() / resumeTimer() — freezes the round clock&#10;Button label and color flip on state change" onclick="doPause()">⏸  PAUSE MATCH</button>
       <div class="two">
-        <button class="b-ok ctrl" onclick="endRound('allies')">END ROUND → ALLIES</button>
-        <button class="b-ng ctrl" onclick="endRound('axis')">END ROUND → AXIS</button>
+        <button class="b-ok ctrl" data-tip="gf_cmd endround_allies (GSC bridge)&#10;Calls sd_endGame('allies','') — awards round win to Allies immediately" onclick="endRound('allies')">END ROUND → ALLIES</button>
+        <button class="b-ng ctrl" data-tip="gf_cmd endround_axis (GSC bridge)&#10;Calls sd_endGame('axis','') — awards round win to Axis immediately" onclick="endRound('axis')">END ROUND → AXIS</button>
       </div>
       <div class="two">
-        <button class="b-gh ctrl" onclick="cmd('fast_restart')">Fast Restart</button>
-        <button class="b-gh ctrl" onclick="cmd('map_restart')">Map Restart</button>
+        <button class="b-gh ctrl" data-tip="fast_restart (RCON console command)&#10;Restarts current round instantly — round state resets, scores carry over" onclick="cmd('fast_restart')">Fast Restart</button>
+        <button class="b-gh ctrl" data-tip="map_restart (RCON console command)&#10;Full map reload — resets all scores, round state, and game entities" onclick="cmd('map_restart')">Map Restart</button>
       </div>
     </div>
   </div>
@@ -357,8 +385,8 @@ input.num{width:72px}
   <div class="block">
     <div class="btitle">BOT MANAGEMENT</div>
     <div class="row" style="margin-bottom:10px">
-      <button class="b-ac ctrl" onclick="addBot()">+ Add Bot</button>
-      <button class="b-ng ctrl" onclick="kickBots()">Kick All Bots</button>
+      <button class="b-ac ctrl" data-tip="set bots_manage_add 1 (RCON dvar)&#10;Triggers the engine to spawn one bot immediately&#10;Engine assigns team and class automatically" onclick="addBot()">+ Add Bot</button>
+      <button class="b-ng ctrl" data-tip="clientkick <num> per bot (RCON command)&#10;Reads status, finds players with guid=0 and addr=unknown, kicks each one" onclick="kickBots()">Kick All Bots</button>
     </div>
     <div class="srow" data-tip="bots_manage_fill&#10;Target total number of bots on the server. Engine adds/removes bots to hit this count"><span class="slbl">Auto-fill count</span>
       <input id="vFl" class="num ctrl" type="number" value="0" min="0" max="12">
@@ -393,16 +421,16 @@ input.num{width:72px}
       </div>
       <div class="csel-list" id="vGtList"></div>
     </div>
-    <button class="b-gh ctrl" onclick="setGt()">Set GT</button>
-    <button class="b-ac ctrl" onclick="cmd('map_restart')">Restart</button>
+    <button class="b-gh ctrl" data-tip="set g_gametype <value> (RCON dvar)&#10;Sets gametype for the next map load — takes effect on next map restart" onclick="setGt()">Set GT</button>
+    <button class="b-ac ctrl" data-tip="map_restart (RCON console command)&#10;Reloads current map with the selected gametype — resets all scores" onclick="cmd('map_restart')">Restart</button>
   </div>
 
   <div class="block">
     <div class="btitle">QUEUE <span id="qAutoLbl" style="font-weight:400;font-size:10px"></span></div>
     <div id="qList" class="queue-list"><div class="queue-empty">Queue is empty — click a map below to add</div></div>
     <div class="row" style="margin-top:8px">
-      <button class="b-ac ctrl" onclick="qSendNext()">▶ Send Next</button>
-      <button class="b-gh ctrl" onclick="qClear()">Clear Queue</button>
+      <button class="b-ac ctrl" data-tip="set g_gametype + map <id> (RCON commands)&#10;Sends gametype then map load for the first entry in the queue" onclick="qSendNext()">▶ Send Next</button>
+      <button class="b-gh ctrl" data-tip="Clears the local map queue (no server command sent)&#10;Removes all pending maps from the queue list" onclick="qClear()">Clear Queue</button>
       <label class="tog" style="margin-left:auto" title="Auto-send on map change">
         <input type="checkbox" id="cbAuto" onchange="toggleAutoQ()">
         <span class="tog-t"></span><span class="tog-th"></span>
@@ -427,21 +455,21 @@ input.num{width:72px}
       <span class="slbl" style="min-width:120px">Move Speed</span>
       <input type="range" id="sSpeed" min="50" max="500" value="190" oninput="sv('sSpeed','vSpeed')" class="ctrl">
       <input type="number" id="vSpeed" class="num ctrl" value="190" oninput="su('vSpeed','sSpeed',50,500)">
-      <button class="b-gh b-sm ctrl" onclick="sdv('g_speed','vSpeed')">Set</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('g_speed','vSpeed')">Queue</button>
       <button class="b-gh b-sm ctrl" onclick="resetDv('g_speed',190,'vSpeed','sSpeed')">↺</button>
     </div>
     <div class="slider-row" data-tip="jump_height&#10;Jump impulse height in units. Default: 39">
       <span class="slbl" style="min-width:120px">Jump Height</span>
       <input type="range" id="sJump" min="1" max="400" value="39" oninput="sv('sJump','vJump')" class="ctrl">
       <input type="number" id="vJump" class="num ctrl" value="39" oninput="su('vJump','sJump',1,400)">
-      <button class="b-gh b-sm ctrl" onclick="sdv('jump_height','vJump')">Set</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('jump_height','vJump')">Queue</button>
       <button class="b-gh b-sm ctrl" onclick="resetDv('jump_height',39,'vJump','sJump')">↺</button>
     </div>
     <div class="slider-row" data-tip="bg_gravity&#10;Downward acceleration (units/s²). Default: 800. Lower = floatier">
       <span class="slbl" style="min-width:120px">Gravity</span>
       <input type="range" id="sGrav" min="10" max="2000" value="800" oninput="sv('sGrav','vGrav')" class="ctrl">
       <input type="number" id="vGrav" class="num ctrl" value="800" oninput="su('vGrav','sGrav',10,2000)">
-      <button class="b-gh b-sm ctrl" onclick="sdv('bg_gravity','vGrav')">Set</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('bg_gravity','vGrav')">Queue</button>
       <button class="b-gh b-sm ctrl" onclick="resetDv('bg_gravity',800,'vGrav','sGrav')">↺</button>
     </div>
     <div class="srow" data-tip="timescale&#10;Game simulation speed multiplier. Requires sv_cheats 1. Default: 1">
@@ -474,14 +502,14 @@ input.num{width:72px}
       <span class="slbl" style="min-width:120px">View Bob</span>
       <input type="range" id="sBob" min="0" max="1" step="0.05" value="1" oninput="sv('sBob','vBob')" class="ctrl">
       <input type="number" id="vBob" class="num ctrl" value="1" step="0.05" oninput="su('vBob','sBob',0,1)">
-      <button class="b-gh b-sm ctrl" onclick="sdv('bg_viewBobAmplitudeBase','vBob')">Set</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('bg_viewBobAmplitudeBase','vBob')">Queue</button>
       <button class="b-gh b-sm ctrl" onclick="resetDv('bg_viewBobAmplitudeBase',1,'vBob','sBob')">↺</button>
     </div>
     <div class="slider-row" data-tip="cg_fov&#10;Field of view in degrees. Default: 65. Range: 40–120">
       <span class="slbl" style="min-width:120px">FOV</span>
       <input type="range" id="sFov" min="40" max="120" value="65" oninput="sv('sFov','vFov')" class="ctrl">
       <input type="number" id="vFov" class="num ctrl" value="65" oninput="su('vFov','sFov',40,120)">
-      <button class="b-gh b-sm ctrl" onclick="sdv('cg_fov','vFov')">Set</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('cg_fov','vFov')">Queue</button>
       <button class="b-gh b-sm ctrl" onclick="resetDv('cg_fov',65,'vFov','sFov')">↺</button>
     </div>
   </div>
@@ -565,7 +593,7 @@ input.num{width:72px}
       <label class="tog ctrl"><input type="checkbox" id="cbHDR" checked onchange="bridge('vishdr_'+(cbHDR.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
     </div>
     <div class="row" style="margin-top:6px">
-      <button class="b-gh ctrl" onclick="visResetAll()">&#x21BA; Reset All Visuals</button>
+      <button class="b-gh ctrl" data-tip="Resets all visual dvars to defaults via bridge&#10;r_gamma 1.1 · r_lightTweakAmbient 0.1 · r_lightGridIntensity 1.1&#10;r_lightGridContrast 1.1 · r_fog 1 · r_fullHDRrendering 1" onclick="visResetAll()">&#x21BA; Reset All Visuals</button>
     </div>
   </div>
 
@@ -592,9 +620,9 @@ input.num{width:72px}
   <div class="block">
     <div class="btitle">PRESETS</div>
     <div class="three">
-      <button class="b-gh ctrl" onclick="applyPreset('stock')">↺ Stock</button>
-      <button class="b-gh ctrl" onclick="applyPreset('modern')">⚡ Modern COD</button>
-      <button class="b-gh ctrl" onclick="applyPreset('silly')">🎪 Silly</button>
+      <button class="b-gh ctrl" data-tip="Restores default T5 movement values&#10;g_speed 190 · jump_height 39 · bg_gravity 800 · timescale 1&#10;sprint_unlimited 0 · fall damage on · view bob on" onclick="applyPreset('stock')">↺ Stock</button>
+      <button class="b-gh ctrl" data-tip="Fast / modern-feeling movement preset&#10;g_speed 220 · sprint_unlimited 1 · no fall damage&#10;player_adsExitDelay 0 (instant ADS cancel)" onclick="applyPreset('modern')">⚡ Modern COD</button>
+      <button class="b-gh ctrl" data-tip="Low gravity fun preset&#10;jump_height 180 · bg_gravity 300 · timescale 0.85&#10;sprint_unlimited 1 · no fall damage" onclick="applyPreset('silly')">🎪 Silly</button>
     </div>
   </div>
 </div>
@@ -630,7 +658,7 @@ input.num{width:72px}
     <div class="srow" data-tip="scr_game_prematchperiod&#10;Seconds of pre-match (freeze) before the round goes live. Default: 15">
       <span class="slbl">Prematch Duration (s)</span>
       <input id="vPm" class="num ctrl" type="number" value="15" min="0" max="60">
-      <button class="b-gh b-sm ctrl" onclick="sdv('scr_game_prematchperiod','vPm')">Apply</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('scr_game_prematchperiod','vPm')">Queue</button>
       <span class="shint">next round</span>
     </div>
     <div class="srow" data-tip="scr_game_allowkillcam&#10;1 = show killcam after death, 0 = skip. Default: 1">
@@ -679,7 +707,7 @@ input.num{width:72px}
       <span class="slbl">Team-Up Period (s)</span>
       <span style="flex:1"></span>
       <input id="vTup" class="num ctrl" type="number" value="0" min="0" max="120">
-      <button class="b-gh b-sm ctrl" onclick="sdv('scr_teamup','vTup')">Apply</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('scr_teamup','vTup')">Queue</button>
     </div>
     <div class="srow" data-tip="scr_autobalanceteams&#10;Auto-moves a player to even teams if imbalanced at round end. Default: 0">
       <span class="slbl">Auto-Balance Teams</span><span style="flex:1"></span>
@@ -697,19 +725,19 @@ input.num{width:72px}
       <span class="slbl">Pre-Match Min Players</span>
       <span style="flex:1"></span>
       <input id="vPMP" class="num ctrl" type="number" value="2" min="1" max="24">
-      <button class="b-gh b-sm ctrl" onclick="sdv('party_minplayers','vPMP')">Apply</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('party_minplayers','vPMP')">Queue</button>
     </div>
     <div class="srow" data-tip="sv_maxclients&#10;Maximum simultaneous player connections the server accepts. Requires server restart to take effect">
       <span class="slbl">Maximum Players</span>
       <span style="flex:1"></span>
       <input id="vMax" class="num ctrl" type="number" value="24" min="1" max="24">
-      <button class="b-gh b-sm ctrl" onclick="sdv('sv_maxclients','vMax')">Apply</button>
+      <button class="b-gh b-sm ctrl" onclick="qdv('sv_maxclients','vMax')">Queue</button>
     </div>
   </div>
 
   <div class="block">
     <div class="btitle">CUSTOM DVAR</div>
-    <div class="row">
+    <div class="row" data-tip="Set: sends 'set &lt;dvar&gt; &lt;value&gt;' directly via RCON&#10;Read: sends the dvar name as a command — server echoes current value to console log">
       <input id="dvName" type="text" placeholder="dvar name" style="width:160px" class="ctrl">
       <input id="dvVal"  type="text" placeholder="value" style="flex:1" class="ctrl">
       <button class="b-ac ctrl" onclick="customDv()">Set</button>
@@ -720,12 +748,12 @@ input.num{width:72px}
   <div class="block">
     <div class="btitle">QUICK ACTIONS</div>
     <div class="three">
-      <button class="b-gh ctrl" onclick="cmd('fast_restart')">Fast Restart</button>
-      <button class="b-gh ctrl" onclick="cmd('map_restart')">Map Restart</button>
-      <button class="b-gh ctrl" onclick="cmd('killserver')">Kill Server</button>
-      <button class="b-gh ctrl" onclick="endRound('allies')">Force Allies Win</button>
-      <button class="b-gh ctrl" onclick="endRound('axis')">Force Axis Win</button>
-      <button class="b-gh ctrl" onclick="cmd('status')">Print Status</button>
+      <button class="b-gh ctrl" data-tip="fast_restart (RCON console command)&#10;Restarts current round — round state resets, scores carry over" onclick="cmd('fast_restart')">Fast Restart</button>
+      <button class="b-gh ctrl" data-tip="map_restart (RCON console command)&#10;Full map reload — resets all scores, round state, and entities" onclick="cmd('map_restart')">Map Restart</button>
+      <button class="b-gh ctrl" data-tip="killserver (RCON console command)&#10;Shuts down the dedicated server process immediately" onclick="cmd('killserver')">Kill Server</button>
+      <button class="b-gh ctrl" data-tip="gf_cmd endround_allies (GSC bridge)&#10;Calls sd_endGame('allies','') — awards round win to Allies" onclick="endRound('allies')">Force Allies Win</button>
+      <button class="b-gh ctrl" data-tip="gf_cmd endround_axis (GSC bridge)&#10;Calls sd_endGame('axis','') — awards round win to Axis" onclick="endRound('axis')">Force Axis Win</button>
+      <button class="b-gh ctrl" data-tip="status (RCON console command)&#10;Prints connected players, scores, pings, GUIDs, and map to the console tab" onclick="cmd('status')">Print Status</button>
     </div>
   </div>
 </div>
@@ -803,6 +831,27 @@ const PRESETS={
             'set player_sprintUnlimited 1','set bg_fallDamageMinHeight 9999','set bg_fallDamageMaxHeight 9999'],
 };
 
+// ─── Pending queue (SERVER tab batch apply) ────────────────────────────────────
+let _pending={};
+function queueDvar(dvar,val){
+  _pending[dvar]=String(val);
+  const n=Object.keys(_pending).length;
+  const btn=g('applyBtn');
+  btn.textContent='Apply All ('+n+')';
+  btn.classList.add('has-pending');
+}
+async function applyAll(){
+  const entries=Object.entries(_pending);
+  if(!entries.length)return;
+  const cmds=entries.map(([d,v])=>`set ${d} ${v}`);
+  const r=await batchCmds(cmds,50);
+  _pending={};
+  const btn=g('applyBtn');btn.textContent='Apply All (0)';btn.classList.remove('has-pending');
+  const ok=r.results?r.results.filter(x=>x.ok).length:0;
+  actLog(`Applied ${ok}/${entries.length} vars`,'ok');toast(`Applied ${entries.length} vars`,'ok');
+}
+function qdv(dv,id){queueDvar(dv,g(id).value);}
+
 // ─── State ───────────────────────────────────────────────────────────────────
 let live=false, paused=false, mapQueue=[], autoQ=false, hist=[], histI=-1, lastMap=null;
 
@@ -856,6 +905,8 @@ function setLive(v){
     btn.textContent='Disconnect';btn.className='disc';
     bdg.textContent='● Connected';bdg.className='bdg on';
     setCtrl(true);
+    // Default bot difficulty is normal — highlight until user changes it
+    ['easy','normal','hard','fu'].forEach(k=>g('d-'+k).classList.toggle('sel',k==='normal'));
     clearInterval(window._rt);window._rt=setInterval(autoTick,3000);
     clearInterval(window._st);window._st=setInterval(scoreTick,2500);
   }else{
@@ -884,7 +935,7 @@ async function autoTick(){
   }catch(_){}
 }
 async function scoreTick(){
-  if(!live)return;
+  if(!live||_listenServer)return;
   try{
     const d=await fetchGfState();
     if(d.ok && d.state){
@@ -894,13 +945,19 @@ async function scoreTick(){
       g('scRound').textContent='R '+s.round;
       g('scAA').textContent=s.aliveAllies;
       g('scAX').textContent=s.aliveAxis;
+      if(s.gametype) g('sGt').textContent=s.gametype;
     }
   }catch(_){}
 }
+let _listenServer=false;
 function tick(d){
-  g('sMap').textContent=d.map||'—';g('sGt').textContent=d.gametype||'—';
+  _listenServer=!!d.listenServer;
+  g('sMap').textContent=d.map||'—';
+  g('sGt').textContent=d.gametype||(d.listenServer?'Listen Server':'—');
   g('sPl').textContent=d.players.length+' online';
   buildPlayers(d.players);
+  g('scoreCard').classList.toggle('listen-muted',_listenServer);
+  g('scoreListenNote').style.display=_listenServer?'':'none';
 }
 function setCtrl(en){
   document.querySelectorAll('.ctrl').forEach(el=>el.disabled=!en);
@@ -933,7 +990,9 @@ function showCtx(e,num,name,isBot){
     <div class="ctx-item yellow" onclick="ctxAction('pfreeze')">❄ Freeze</div>
     <div class="ctx-item yellow" onclick="ctxAction('punfreeze')">▶ Unfreeze</div>
     <div class="ctx-item" onclick="ctxAction('pperks')">★ Give Perks</div>
-    <div class="ctx-item" onclick="ctxAction('pnoclip')">👻 Noclip</div>`;
+    <div class="ctx-item" onclick="ctxAction('pnoclip')">👻 Noclip</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item" onclick="ctxAction('pnobob')">〰 No View Bob</div>`;
   m.style.display='block';
   // Position near cursor, keep in viewport
   const vw=window.innerWidth,vh=window.innerHeight;
@@ -960,6 +1019,8 @@ async function ctxAction(act){
   }else if(act==='pnoclip'){
     // noclip is a server console command, not GSC — send directly via RCON
     await rcon(`noclip ${num}`);actLog('Noclip toggled: '+name,'ok');
+  }else if(act==='pnobob'){
+    await rcon(`setclientdvar ${num} bg_viewBobMax 0`);actLog('No view bob → '+name,'ok');
   }
 }
 function hideCtx(){g('ctx-menu').style.display='none';}
@@ -1019,6 +1080,31 @@ async function bridge(bcmd){
   const r=await rcon(`set gf_cmd ${bcmd}`);
   if(!r.ok) toast('Bridge error: '+r.error,'err');
   return r.ok;
+}
+
+// ─── Perks ─────────────────────────────────────────────────────────────────
+// Perks the GF loadout already grants every spawn. Toggling one of these OFF
+// goes in the force-OFF list; toggling a non-base perk ON goes in force-ON.
+// The loadout applies base perks, then ON list, then OFF list (OFF wins).
+const BASE_PERKS=['specialty_movefaster','specialty_fallheight','specialty_longersprint','specialty_armorvest','specialty_flakjacket','specialty_fastweaponswitch'];
+async function perkTog(){
+  const on=[],off=[];
+  document.querySelectorAll('[data-perk]').forEach(cb=>{
+    const p=cb.getAttribute('data-perk'),base=BASE_PERKS.includes(p);
+    if(cb.checked&&!base)on.push(p);
+    else if(!cb.checked&&base)off.push(p);
+  });
+  const r=await batchCmds([
+    `set gf_perk_on ${on.length?on.join(','):'""'}`,
+    `set gf_perk_off ${off.length?off.join(','):'""'}`,
+    `set gf_cmd perksync`
+  ],60);
+  if(r&&r.ok){toast('Perks updated','ok');actLog(`Perks +${on.length} / -${off.length}`,'ok');}
+  else toast('Perk update failed','err');
+}
+function perkReset(){
+  document.querySelectorAll('[data-perk]').forEach(cb=>{cb.checked=BASE_PERKS.includes(cb.getAttribute('data-perk'));});
+  perkTog();actLog('Perks reset to GF default','in');
 }
 
 // ─── Bots ────────────────────────────────────────────────────────────────────
@@ -1266,6 +1352,41 @@ const SRV_SECTIONS = [
     { n:'scr_intermission_time',    lbl:'Post-Game Screen (s)',   type:'num',  def:'15',  tip:'scr_intermission_time\nTime spent on the end-of-match scoreboard.' },
     { n:'scr_killstreak_stacking',  lbl:'Killstreak Rollover',    type:'tog',  def:'0',   tip:'scr_killstreak_stacking\nAllow killstreak kills to count toward the next streak.' },
   ]},
+  { title: 'PERK MULTIPLIERS', vars: [
+    { n:'perk_weapSwitchMultiplier',     lbl:'Weapon Switch Speed',  type:'sld', def:'0.833', min:'0.25', max:'1.5', step:'0.001', tip:'perk_weapSwitchMultiplier\nWeapon-swap time multiplier. LOWER = FASTER: 0.833 ≈ 1.2x, 0.5 = 2x, 0.25 = 4x, 1.0 = stock.\nGated by Fast Weapon Switch (granted to all players) — so this is LIVE right now.' },
+    { n:'perk_weapReloadMultiplier',     lbl:'Reload Speed',         type:'sld', def:'1.0',   min:'0.25', max:'1.5', step:'0.01',  tip:'perk_weapReloadMultiplier\nReload time multiplier. LOWER = FASTER.\nNeeds Sleight of Hand enabled in the PERKS section below.' },
+    { n:'perk_weapAdsMultiplier',        lbl:'ADS Speed',            type:'sld', def:'1.0',   min:'0.25', max:'1.5', step:'0.01',  tip:'perk_weapAdsMultiplier\nAim-down-sight time multiplier. LOWER = FASTER.\nNeeds Sleight of Hand Pro enabled in the PERKS section below.' },
+    { n:'perk_sprintMultiplier',         lbl:'Sprint Speed',         type:'sld', def:'1.0',   min:'0.5',  max:'2.0', step:'0.01',  tip:'perk_sprintMultiplier\nSprint speed multiplier. 1.0 = stock. Direction is engine-defined — adjust and test.\nGated by Lightweight (granted to all players).' },
+    { n:'perk_sprintRecoveryMultiplier', lbl:'Sprint Recovery',      type:'sld', def:'1.0',   min:'0.25', max:'2.0', step:'0.01',  tip:'perk_sprintRecoveryMultiplier\nTime before you can sprint again. LOWER = FASTER recovery.\nNeeds Extreme Conditioning enabled in the PERKS section.' },
+    { n:'perk_weapRateMultiplier',       lbl:'Fire Rate',            type:'sld', def:'1.0',   min:'0.5',  max:'2.0', step:'0.01',  tip:'perk_weapRateMultiplier\nRate-of-fire multiplier. 1.0 = stock. Adjust and test.\nGated by the Rapid Fire effect (specialty_rof).' },
+    { n:'perk_weapSpreadMultiplier',     lbl:'Hip-fire Spread',      type:'sld', def:'1.0',   min:'0.25', max:'1.5', step:'0.01',  tip:'perk_weapSpreadMultiplier\nHip-fire spread multiplier. LOWER = TIGHTER.\nNeeds Steady Aim enabled in the PERKS section.' },
+    { n:'perk_weapMeleeMultiplier',      lbl:'Melee Reach',          type:'sld', def:'1.0',   min:'0.5',  max:'2.0', step:'0.01',  tip:'perk_weapMeleeMultiplier\nMelee charge/reach multiplier. 1.0 = stock. Adjust and test.' },
+  ]},
+  { title: 'PERKS — give / remove for all players', vars: [
+    { n:'specialty_movefaster',        lbl:'Lightweight',              type:'perk', def:'1', tip:'specialty_movefaster\nFaster movement. BASE perk (on by default).' },
+    { n:'specialty_fallheight',        lbl:'No Fall Damage',           type:'perk', def:'1', tip:'specialty_fallheight\nRemoves fall damage (Lightweight Pro). BASE perk.' },
+    { n:'specialty_longersprint',      lbl:'Marathon',                 type:'perk', def:'1', tip:'specialty_longersprint\nLonger sprint duration. BASE perk.' },
+    { n:'specialty_armorvest',         lbl:'Flak Jacket',              type:'perk', def:'1', tip:'specialty_armorvest\nReduced explosive damage. BASE perk.' },
+    { n:'specialty_flakjacket',        lbl:'Flak Jacket Pro',          type:'perk', def:'1', tip:'specialty_flakjacket\nThrow back live grenades. BASE perk.' },
+    { n:'specialty_fastweaponswitch',  lbl:'Fast Weapon Switch',       type:'perk', def:'1', tip:'specialty_fastweaponswitch\nGates the Weapon Switch Speed slider above. BASE perk.' },
+    { n:'specialty_fastreload',        lbl:'Sleight of Hand',          type:'perk', def:'0', tip:'specialty_fastreload\nFaster reloads. Enable to make the Reload Speed slider work.' },
+    { n:'specialty_fastads',           lbl:'Sleight of Hand Pro',      type:'perk', def:'0', tip:'specialty_fastads\nFaster ADS. Enable to make the ADS Speed slider work.' },
+    { n:'specialty_gpsjammer',         lbl:'Ghost',                    type:'perk', def:'0', tip:'specialty_gpsjammer\nInvisible to UAV / radar.' },
+    { n:'specialty_holdbreath',        lbl:'Scout',                    type:'perk', def:'0', tip:'specialty_holdbreath\nHold breath longer when scoped.' },
+    { n:'specialty_bulletpenetration', lbl:'Hardened (Deep Impact)',   type:'perk', def:'0', tip:'specialty_bulletpenetration\nShoot through surfaces. Removed from the base loadout.' },
+    { n:'specialty_bulletaccuracy',    lbl:'Steady Aim',               type:'perk', def:'0', tip:'specialty_bulletaccuracy\nTighter hip-fire. Pairs with the Hip-fire Spread slider.' },
+    { n:'specialty_quieter',           lbl:'Ninja',                    type:'perk', def:'0', tip:'specialty_quieter\nQuieter footsteps.' },
+    { n:'specialty_scavenger',         lbl:'Scavenger',                type:'perk', def:'0', tip:'specialty_scavenger\nReplenish ammo from dead bodies.' },
+    { n:'specialty_twoattach',         lbl:'Warlord',                  type:'perk', def:'0', tip:'specialty_twoattach\nTwo attachments per weapon.' },
+    { n:'specialty_detectexplosive',   lbl:'Hacker',                   type:'perk', def:'0', tip:'specialty_detectexplosive\nDetect enemy equipment.' },
+    { n:'specialty_gas_mask',          lbl:'Tactical Mask',            type:'perk', def:'0', tip:'specialty_gas_mask\nReduced gas / flash / concussion effect.' },
+    { n:'specialty_pistoldeath',       lbl:'Second Chance',            type:'perk', def:'0', tip:'specialty_pistoldeath\nDrop into last-stand with a pistol on death.' },
+    { n:'specialty_blindeye',          lbl:'Cold Blooded',             type:'perk', def:'0', tip:'specialty_blindeye\nUndetectable by AI killstreaks; no red name.' },
+    { n:'specialty_sprintrecovery',    lbl:'Extreme Conditioning',     type:'perk', def:'0', tip:'specialty_sprintrecovery\nFaster sprint recovery. Pairs with the Sprint Recovery slider.' },
+    { n:'specialty_extraammo',         lbl:'Extra Ammo',               type:'perk', def:'0', tip:'specialty_extraammo\nExtra starting magazines.' },
+    { n:'specialty_killstreak',        lbl:'Hardline',                 type:'perk', def:'0', tip:'specialty_killstreak\nKillstreaks need one fewer kill. (Killstreaks are off in GF by default.)' },
+    { n:'__perkreset',                 lbl:'Reset perks to GF default', type:'btn', act:'perkReset()', btxt:'Reset', tip:'Clears all perk overrides and restores the base Gunfight loadout perks.' },
+  ]},
   { title: 'PLAYER', vars: [
     { n:'scr_player_maxhealth',       lbl:'Max Health',              type:'num', def:'100', tip:'scr_player_maxhealth\nPlayer HP cap. Default: 100.' },
     { n:'scr_player_healthregentime', lbl:'Health Regen Delay (s)',  type:'num', def:'5',   tip:'scr_player_healthregentime\nSeconds without damage before regen begins. 0 = instant.' },
@@ -1348,18 +1469,30 @@ function buildServerPanel() {
       const id  = 'srv_' + v.n.replace(/[^a-zA-Z0-9]/g,'_');
       let ctrl;
       if (v.type === 'tog') {
+        // Toggles apply immediately — no queuing
         const chk = v.def === '1' ? 'checked' : '';
         ctrl = `<label class="tog ctrl"><input type="checkbox" id="${id}" ${chk} onchange="sdvv('${v.n}',${id}.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>`;
+      } else if (v.type === 'perk') {
+        // Perk give/remove for all players — recomputes override lists + live-syncs
+        const chk = v.def === '1' ? 'checked' : '';
+        ctrl = `<label class="tog ctrl"><input type="checkbox" id="${id}" data-perk="${v.n}" ${chk} onchange="perkTog()"><span class="tog-t"></span><span class="tog-th"></span></label>`;
+      } else if (v.type === 'sld') {
+        // Range slider — applies the dvar live on release, value readout updates on drag
+        const mn = v.min || '0.1', mx = v.max || '2', st = v.step || '0.05';
+        const dv = parseFloat(v.def).toFixed(3).replace(/0+$/,'').replace(/\.$/,'');
+        ctrl = `<input type="range" id="${id}" class="ctrl sld" min="${mn}" max="${mx}" step="${st}" value="${v.def}" oninput="g('${id}_v').textContent=parseFloat(this.value).toFixed(3).replace(/0+$/,'').replace(/\.$/,'')" onchange="sdvv('${v.n}',this.value)"><span class="sldval" id="${id}_v">${dv}</span>`;
+      } else if (v.type === 'btn') {
+        ctrl = `<button class="b-gh b-sm ctrl" onclick="${v.act}">${v.btxt || 'Run'}</button>`;
       } else if (v.type === 'sel') {
         const opts = v.opts.map(o => `<option value="${o[0]}"${o[0]===v.def?' selected':''}>${o[1]}</option>`).join('');
-        ctrl = `<select id="${id}" class="ctrl" onchange="sdvv('${v.n}',this.value)">${opts}</select>`;
+        ctrl = `<select id="${id}" class="ctrl" onchange="queueDvar('${v.n}',this.value)">${opts}</select>`;
       } else if (v.type === 'text') {
-        ctrl = `<input id="${id}" type="text" class="ctrl" value="${v.def}" style="flex:1;min-width:80px"><button class="b-gh b-sm ctrl" onclick="sdvv('${v.n}',g('${id}').value)">Set</button>`;
+        ctrl = `<input id="${id}" type="text" class="ctrl" value="${v.def}" style="flex:1;min-width:80px"><button class="b-gh b-sm ctrl" onclick="queueDvar('${v.n}',g('${id}').value)">Queue</button>`;
       } else {
         const step = v.type === 'flt' ? '0.1' : '1';
-        ctrl = `<input id="${id}" type="number" class="num ctrl" value="${v.def}" step="${step}"><button class="b-gh b-sm ctrl" onclick="sdvv('${v.n}',g('${id}').value)">Set</button>`;
+        ctrl = `<input id="${id}" type="number" class="num ctrl" value="${v.def}" step="${step}"><button class="b-gh b-sm ctrl" onclick="queueDvar('${v.n}',g('${id}').value)">Queue</button>`;
       }
-      const sp = v.type === 'tog' ? '<span style="flex:1"></span>' : '';
+      const sp = (v.type === 'tog' || v.type === 'perk' || v.type === 'btn') ? '<span style="flex:1"></span>' : '';
       return `<div class="srow" ${tip}><span class="slbl">${v.lbl}</span>${sp}${ctrl}</div>`;
     }).join('');
     return `<div class="block"><div class="btitle">${sec.title}</div>${rows}</div>`;

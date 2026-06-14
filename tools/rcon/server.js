@@ -68,12 +68,14 @@ function stripColors(s) { return String(s).replace(/\^[0-9a-zA-Z]/g, '').trim();
 
 function parseStatusText(text) {
   const lines  = text.split('\n');
-  const result = { map: 'unknown', gametype: '', players: [] };
+  const result = { map: 'unknown', gametype: '', listenServer: false, players: [] };
 
   for (const raw of lines) {
     const line = raw.trim();
     const mMap = line.match(/^map:\s*(.+)/i);
     if (mMap) { result.map = mMap[1].trim(); continue; }
+    const mGt = line.match(/^gametype:\s*(.+)/i);
+    if (mGt) { result.gametype = mGt[1].trim(); continue; }
   }
 
   const sepIdx = lines.findIndex(l => /^---/.test(l.trim()));
@@ -87,6 +89,7 @@ function parseStatusText(text) {
       if (p.length < 7 || !/^\d+$/.test(p[0])) continue;
       const isBot   = p[3] === '0' && p[6] === 'unknown';
       const isLocal = p[6] === 'loopback';
+      if (isLocal) result.listenServer = true;
       const ip      = isBot ? null : isLocal ? 'local' : p[6].split(':')[0];
       result.players.push({
         num:   parseInt(p[0]),
@@ -111,7 +114,7 @@ function parseDvarValue(text, dvarName) {
 }
 
 function parseGfState(stateStr) {
-  // format: "wA:wX:round:aliveA:aliveX"
+  // format: "wA:wX:round:aliveA:aliveX:gametype"
   const parts = String(stateStr).split(':');
   if (parts.length < 5) return null;
   return {
@@ -120,6 +123,7 @@ function parseGfState(stateStr) {
     round:      parseInt(parts[2]) || 1,
     aliveAllies:parseInt(parts[3]) || 0,
     aliveAxis:  parseInt(parts[4]) || 0,
+    gametype:   parts[5] || '',
   };
 }
 
@@ -178,24 +182,16 @@ const server = http.createServer(async (req, res) => {
     const { host = '127.0.0.1', port = '28960', password = '' } = query;
     const p = parseInt(port);
     try {
-      // Fetch status and gametype in parallel
-      const [statusBuf, gtBuf] = await Promise.all([
-        sendRcon(host, p, password, 'status'),
-        sendRcon(host, p, password, 'g_gametype').catch(() => null),
-      ]);
+      const statusBuf = await sendRcon(host, p, password, 'status');
       const text = parseRconResponse(statusBuf);
       const data = parseStatusText(text);
-      if (gtBuf) {
-        const gtVal = parseDvarValue(parseRconResponse(gtBuf), 'g_gametype');
-        if (gtVal) data.gametype = gtVal;
-      }
       return sendJson(res, { ok: true, ...data, raw: text });
     } catch (err) {
       return sendJson(res, { ok: false, error: err.message });
     }
   }
 
-  // ── GET /api/gfstate ── reads gf_state telemetry dvar
+  // ── GET /api/gfstate ── reads gf_state telemetry dvar (works on dedicated; times out on listen)
   if (req.method === 'GET' && pathname === '/api/gfstate') {
     const { host = '127.0.0.1', port = '28960', password = '' } = query;
     try {

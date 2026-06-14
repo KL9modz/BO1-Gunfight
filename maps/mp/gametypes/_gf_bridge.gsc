@@ -11,6 +11,8 @@
 //   god_on / god_off   - toggle invulnerability for all players
 //   allperks_on        - give all players a useful dev perk set
 //   allperks_off       - remove those perks
+//   perksync           - re-apply gf_perk_on / gf_perk_off lists to live players
+//                        (rcon Perks tab; loadout re-applies them each spawn)
 //   infammo_on         - start infinite ammo loop
 //   infammo_off        - stop infinite ammo loop
 //   radar_on / radar_off       - all players visible on minimap
@@ -35,7 +37,7 @@ gf_bridgeInit()
     if ( getDvar( "gf_cmd" ) == "" )
         setDvar( "gf_cmd", "" );
 
-    setDvar( "gf_state", "0:0:1:0:0" );
+    setDvar( "gf_state", "0:0:1:0:0:" + level.gameType );
 
     level.gf_paused        = false;
     level.gf_infAmmo       = false;
@@ -78,7 +80,7 @@ gf_bridgeTelemetry()
         if ( isDefined( level.aliveCount["allies"] ) ) aA = level.aliveCount["allies"];
         if ( isDefined( level.aliveCount["axis"] ) )   aX = level.aliveCount["axis"];
 
-        setDvar( "gf_state", wA + ":" + wX + ":" + rn + ":" + aA + ":" + aX );
+        setDvar( "gf_state", wA + ":" + wX + ":" + rn + ":" + aA + ":" + aX + ":" + level.gameType );
     }
 }
 
@@ -120,6 +122,7 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "god_off"         ) { gf_bridgeGod( false );         return; }
     if ( cmd == "allperks_on"     ) { gf_bridgePerks( true );        return; }
     if ( cmd == "allperks_off"    ) { gf_bridgePerks( false );       return; }
+    if ( cmd == "perksync"        ) { gf_bridgePerkSync();           return; }
     if ( cmd == "infammo_on"      ) { gf_bridgeInfAmmo( true );      return; }
     if ( cmd == "infammo_off"     ) { gf_bridgeInfAmmo( false );     return; }
     if ( cmd == "radar_on"        ) { gf_bridgeRadar( true );        return; }
@@ -204,6 +207,27 @@ gf_bridgePerks( enable )
         iPrintLnBold( "^2All Perks ON" );
     else
         iPrintLnBold( "^7Perks cleared" );
+}
+
+// --- Perk override sync (rcon Perks tab) -------------------------------------
+// Re-applies the gf_perk_on / gf_perk_off lists to all LIVE players so a toggle
+// takes effect without waiting for respawn. The loadout re-applies the same
+// lists on every spawn (gf_applyPerkList), so this is just the live-update half.
+// One-shot per toggle — no polling thread, no per-frame work.
+
+gf_bridgePerkSync()
+{
+    onList  = getDvar( "gf_perk_on"  );
+    offList = getDvar( "gf_perk_off" );
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        if ( players[i].health <= 0 )
+            continue;
+        players[i] maps\mp\gametypes\_gf_loadouts::gf_applyPerkList( onList,  true  );
+        players[i] maps\mp\gametypes\_gf_loadouts::gf_applyPerkList( offList, false );
+    }
+    iPrintLnBold( "^2Perks synced" );
 }
 
 // --- Infinite ammo -----------------------------------------------------------

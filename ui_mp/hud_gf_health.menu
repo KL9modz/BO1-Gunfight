@@ -43,10 +43,66 @@
 			decoration
 		}
 
+		// ── Team panel border lines (menu-rendered, 0 client-hudelem cost) ───
+		// The team health panel's bg fade + rows are client hudelems, but T5 caps how many client
+		// hudelems it actually DRAWS per player (~17). These 4 border lines live here instead so they
+		// cost no hudelem slots. Layout = LEFT vertical cap + top/middle/bottom horizontal rules (no
+		// right line). Positioned at the border-box top-left (ui_gf_panel_x / ui_gf_panel_y, pushed
+		// from gf_pushPanelChrome — retunable with a map_restart, no rebuild). Box ~142 wide; top rule
+		// at -1, middle at +20, bottom at +39. Gated by ui_gf_panel_show.
+
+		// top rule
+		itemDef
+		{
+			rect			0 0 142 0.5 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) - 1 )
+			style			WINDOW_STYLE_FILLED
+			backcolor		0 0 0 0.5
+			visible			when( dvarInt( "ui_gf_panel_show" ) )
+			decoration
+		}
+
+		// middle rule (divider between the two team rows)
+		itemDef
+		{
+			rect			0 0 142 0.5 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 20 )
+			style			WINDOW_STYLE_FILLED
+			backcolor		0 0 0 0.5
+			visible			when( dvarInt( "ui_gf_panel_show" ) )
+			decoration
+		}
+
+		// bottom rule
+		itemDef
+		{
+			rect			0 0 142 0.5 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 39 )
+			style			WINDOW_STYLE_FILLED
+			backcolor		0 0 0 0.5
+			visible			when( dvarInt( "ui_gf_panel_show" ) )
+			decoration
+		}
+
+		// left vertical cap
+		itemDef
+		{
+			rect			0 0 0.5 40 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) )
+			style			WINDOW_STYLE_FILLED
+			backcolor		0 0 0 0.5
+			visible			when( dvarInt( "ui_gf_panel_show" ) )
+			decoration
+		}
+
 		// ── Self health bar (bottom-center) ──────────────────────────────────
 		// Fully client-rendered: the server pushes ui_gf_self_hp / ui_gf_self_show /
 		// ui_gf_self_name via setClientDvar only when they change; the UI does the rest.
-		// Bar: 120x4 white fill over a translucent black bg with a 0.5-unit gray ring.
+		// Bar: 120x2 white fill over a translucent black bg with a 0.5-unit gray ring.
 
 		// All items add dvarFloat("ui_gf_self_off") to Y — the server animates it 40→0
 		// on reveal, sliding the whole bar up from below the screen edge.
@@ -54,10 +110,10 @@
 		// border ring
 		itemDef
 		{
-			rect			-60.5 -22.5 121 5 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
-			exp				rect Y( -22.5 + dvarFloat( "ui_gf_self_off" ) )
+			rect			-60.5 -16.5 121 3 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
+			exp				rect Y( -16.5 + dvarFloat( "ui_gf_self_off" ) )
 			style			WINDOW_STYLE_FILLED
-			backcolor		0.7 0.7 0.7 0.5
+			backcolor		0.7 0.7 0.7 0.3
 			visible			when( dvarInt( "ui_gf_self_show" ) )
 			decoration
 		}
@@ -65,22 +121,41 @@
 		// bar background
 		itemDef
 		{
-			rect			-60 -22 120 4 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
-			exp				rect Y( -22 + dvarFloat( "ui_gf_self_off" ) )
+			rect			-60 -16 120 2 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
+			exp				rect Y( -16 + dvarFloat( "ui_gf_self_off" ) )
 			style			WINDOW_STYLE_FILLED
-			backcolor		0 0 0 0.45
+			backcolor		0 0 0 0.3
 			visible			when( dvarInt( "ui_gf_self_show" ) )
 			decoration
 		}
 
-		// fill — width follows HP (0-100 → 0-120), light greyish white
+		// fill — width follows HP (0-100 → 0-120), white base; the red overlay below fades in as HP drops (white→red gradient)
 		itemDef
 		{
-			rect			-60 -22 120 4 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
-			exp				rect Y( -22 + dvarFloat( "ui_gf_self_off" ) )
+			rect			-60 -16 120 2 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
+			exp				rect Y( -16 + dvarFloat( "ui_gf_self_off" ) )
 			exp				rect W( dvarInt( "ui_gf_self_hp" ) * 1.2 )
-			style			WINDOW_STYLE_FILLED
-			backcolor		0.85 0.85 0.87 0.9
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		1 1 1 0.8
+			visible			when( dvarInt( "ui_gf_self_show" ) )
+			decoration
+		}
+
+		// red overlay — same rect/width as the white base, but its ALPHA rises as HP drops,
+		// so the bar reads white at full health and turns red as the overlay fades in. forecolor A
+		// (alpha) is the only color-component expression the menu parser accepts — two
+		// component exps on one item (e.g. forecolor G + B) fail to parse — so the gradient
+		// is done by fading this red layer in over the white base, not by driving R/G/B.
+		itemDef
+		{
+			rect			-60 -16 120 2 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
+			exp				rect Y( -16 + dvarFloat( "ui_gf_self_off" ) )
+			exp				rect W( dvarInt( "ui_gf_self_hp" ) * 1.2 )
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		0.8 0.12 0.12 1
+			exp				forecolor A( ( 100 - dvarInt( "ui_gf_self_hp" ) ) / 100 )
 			visible			when( dvarInt( "ui_gf_self_show" ) )
 			decoration
 		}
@@ -89,8 +164,8 @@
 		itemDef
 		{
 			type			ITEM_TYPE_TEXT
-			rect			-60 -34 120 10 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
-			exp				rect Y( -34 + dvarFloat( "ui_gf_self_off" ) )
+			rect			-60 -28 120 10 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
+			exp				rect Y( -28 + dvarFloat( "ui_gf_self_off" ) )
 			exp				text( dvarString( "ui_gf_self_name" ) )
 			textfont		UI_FONT_NORMAL
 			textscale		0.25
@@ -105,8 +180,8 @@
 		itemDef
 		{
 			type			ITEM_TYPE_TEXT
-			rect			-60 -34 120 10 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
-			exp				rect Y( -34 + dvarFloat( "ui_gf_self_off" ) )
+			rect			-60 -28 120 10 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
+			exp				rect Y( -28 + dvarFloat( "ui_gf_self_off" ) )
 			exp				text( dvarString( "ui_gf_self_hp" ) )
 			textfont		UI_FONT_NORMAL
 			textscale		0.25
