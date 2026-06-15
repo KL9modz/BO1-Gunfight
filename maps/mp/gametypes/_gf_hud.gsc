@@ -1,7 +1,7 @@
 // Gunfight HUD
 //
-// Both the Health HUD and the Loadout HUD are CLIENT-SIDE (newClientHudElem), built
-// per player in the player's own thread. This is deliberate: T5 server team-HUD
+// The Health HUD is CLIENT-SIDE (newClientHudElem), built per player in the player's own thread
+// (the Loadout HUD is now fully menu-rendered — see below). This is deliberate: T5 server team-HUD
 // elements (newTeamHudElem) do NOT live-update their text/alpha/color mid-round — the
 // change only flushes to clients on a round transition — and client elements created
 // from a level thread never network at all. So per-player + player-thread is the only
@@ -11,12 +11,16 @@
 //   - Level thread gf_startHealthHUD() ONLY computes the team totals (HP / fill
 //     fraction / player count / alive count) and publishes them to level.gf_* vars.
 //   - Each player runs gf_runHealthHUD() (singleton via self notify/endon), which
-//     builds the panel (faction frame + 2 team bars + skull icons + HP numbers), slides
-//     it in, and updates it every 0.1s from the published vars. Row 0 = own team
+//     builds the panel (faction frame + 2 team bars + skull icons + HP numbers), cross-
+//     fades it in, and updates it every 0.1s from the published vars. Row 0 = own team
 //     (green), row 1 = enemy (red). map_restart wipes the panel between rounds; it's
 //     recreated on the next spawn.
 //
-// Loadout HUD: gf_showWeaponHUD(), also per-player / self thread.
+// Loadout HUD: gf_showWeaponHUD() pushes a centered-column create-a-class overview
+//   (primary, secondary, 3 equipment, 3 perks — each icon + bracket + name) that is
+//   fully MENU-rendered (ui_mp/hud_gf_health.menu, ui_gf_lo_* dvars). It uses ZERO
+//   client hudelems, so it can't hit the ~17 drawn-per-player render cap and never
+//   touches setText/configstrings. The slide is driven by ui_gf_lo_off.
 
 #include maps\mp\gametypes\_hud_util;
 
@@ -92,7 +96,7 @@ gf_updateHealthHUD()
 // two team bars, alive-skull icons, and HP numbers. Created / updated / destroyed in
 // the player's own thread (gf_runHealthHUD) — T5 client elements don't network if
 // touched from a level thread. Reads the team totals published by gf_updateHealthHUD.
-// Row 0 = own team (green), row 1 = enemy (red). Everything slides in together.
+// Row 0 = own team (green), row 1 = enemy (red). Everything cross-fades in together.
 
 // Row y is the SKULL center; the strip hangs 6 below, so the combined block's visual
 // center is ~y+2. These are pre-shifted up 2 so the block centers on the background
@@ -106,33 +110,34 @@ gf_HP_PANEL_Y_OFF()  { return -40; }
 
 // Skull icon size (square). blockWidth derives from this + the pitch.
 gf_HP_ICON_SIZE()    { return 10; }
-gf_HP_SLIDE_OFFSET() { return -420; }   // past the ultrawide left edge — parked elements
-                                        // stay invisible at full alpha (pure-slide reveal)
 
-// skipIntroWait: spectators get no loadout intro, so their panel shows immediately.
-// Team players wait until the loadout intro has cleared before the panel is CREATED:
-// the intro owns ~18 client HUD elements and the pool is shared — when the two
-// coexisted, the loadout intro visibly lost elements. A 7.5s timeout fallback fires
-// the wait even if the intro-done signal is dropped, so the panel can't be stranded.
-gf_runHealthHUD( skipIntroWait )
+// Shared spawn-in reveal duration. The health panel slide, the loadout overview
+// slide+fade, and the self bar slide all animate over this so they reveal in sync.
+// Both panels are kicked off on spawn, so equal duration = synced. Tune here (GSC
+// rawfile — map_restart, no mod.ff rebuild).
+gf_REVEAL_TIME() { return 0.6; }
+
+// The loadout overview is now fully menu-rendered (0 client hudelems), so it no longer competes with
+// the health panel for the ~17 drawn-per-player client-hudelem render cap. The panel is therefore
+// built IMMEDIATELY on spawn and coexists with the loadout intro — no more waiting for the intro to
+// finish (that wait was only needed when the intro was ~18 client hudelems). This also removes the
+// ~6s post-round window where the panel was absent during the intro.
+gf_runHealthHUD()
 {
     self notify( "gf_kill_health_hud" );
     self gf_destroyHealthPanel();
     self endon( "gf_kill_health_hud" );
     self endon( "disconnect" );
 
-    if ( !isDefined( skipIntroWait ) || !skipIntroWait )
-        self gf_waitLoadoutIntroDone();
+    self setClientDvar( "ui_gf_hp_alpha", 0 );   // menu chrome (border + self bar) starts invisible; reveal fades it in
 
     gf_updateHealthHUD();              // seed the published totals
-    self gf_createHealthPanel();       // pool is free now that the loadout intro is gone
+    self gf_createHealthPanel();       // build now — loadout HUD is menu-rendered, no client-elem conflict
     self gf_updateHealthPanel();       // fill values + target alphas in before revealing
     self gf_hideHealthPanelForIntro(); // park off-screen (full opacity)
-    self gf_revealHealthPanel();       // pure slide in — all elements move together
+    self gf_revealHealthPanel();       // slide in — all elements move together, synced with loadout
     self thread gf_hidePanelChromeOnRoundEnd();   // hide menu border in sync with the round-end wipe
-    wait 0.75;                         // let the reveal finish before the loop retargets
-
-    self thread gf_dbgRows();          // TEMP: enemy-row diagnostic (gf_dbg_rows 1)
+    wait gf_REVEAL_TIME();             // let the reveal finish before the loop retargets
 
     for ( ;; )
     {
@@ -141,57 +146,27 @@ gf_runHealthHUD( skipIntroWait )
     }
 }
 
-// Hold until the per-player loadout intro has finished and slid out (gf_showWeaponHUD
-// notifies "gf_loadout_intro_done" when it tears down). The timeout makes a dropped
-// signal cost at most 7.5s instead of stranding the panel.
-gf_waitLoadoutIntroDone()
-{
-    self endon( "disconnect" );
-    self endon( "gf_kill_health_hud" );
-
-    self thread gf_loadoutIntroTimeout();
-    self waittill( "gf_loadout_intro_done" );
-}
-
-gf_loadoutIntroTimeout()
-{
-    self endon( "disconnect" );
-    self endon( "gf_kill_health_hud" );
-    self endon( "gf_loadout_intro_done" );
-    wait 7.5;
-    self notify( "gf_loadout_intro_done" );
-}
-
 gf_createHealthPanel()
 {
-    self.gf_hudElems = [];
-    self.gf_rows = [];
+    // FULLY MENU-RENDERED now (ui_mp/hud_gf_health.menu): bg fade + border + every skull / bar /
+    // number is a menu itemDef driven by per-client dvars (ui_gf_panel_*, ui_gf_rN_*, ui_gf_hp_alpha).
+    // ZERO client hudelems. The panel used to be 17 client hudelems, and ALL hudelem types share one
+    // global per-client DRAWN cap (~17-20) — so the panel + stock HUD + score popup + overtime flag
+    // objpoint together blew past it, silently starving the popup and flag (they only appeared once
+    // the round-end teardown freed slots). Menu items are a separate rendering system, exempt from
+    // that cap, so moving the panel there frees the whole budget. Enemy-team data is fine to show:
+    // it's computed server-side (gf_updateHealthHUD) and pushed per-client via setClientDvar — the
+    // client only displays a server-pushed value, it never reads enemy health itself.
+    self.gf_panelActive = true;
+    self.gf_dvarCache = [];               // force the first per-row push to send
 
-    off = gf_HP_PANEL_Y_OFF();
-
-    // Background fade stays a client hudelem (1), drawn BEHIND the rows (low sort) — correct layering.
-    self.gf_bg = self gf_clCreateFrame( -150, -39 + off, 320, 48, "hud_frame_faction_fade", ( 0, 0, 0 ), 0.55, 37 );
-
-    // Border lines are MENU-rendered (hud_gf_health.menu) instead of client hudelems. T5 only DRAWS
-    // ~17 client hudelems per player (a cap invisible to allocation probes — alloc + alpha look fine
-    // but the engine silently doesn't render the overflow). The 4 border lines pushed the panel to 21
-    // and dropped the last row's bar+number. Menu items cost 0 client hudelems and draw on top of
-    // hudelems (correct for an outline). This leaves the panel at 17 (bg + 16 rows). See
-    // gf_pushPanelChrome; menu reads ui_gf_panel_x/y + ui_gf_panel_show.
-    self gf_pushPanelChrome();
-
-    self.gf_rows[0] = self gf_clCreateRow( gf_HP_ROW0_Y() + off, 40 );
-    self.gf_rows[1] = self gf_clCreateRow( gf_HP_ROW1_Y() + off, 50 );
-
-    // Self bar is menu-rendered (hud_gf_health.menu) — just seed its name dvar; the
-    // hp/show dvars are pushed on change from gf_updateSelfBar.
     self setClientDvar( "ui_gf_self_name", self.name );
     self.gf_sbHp = undefined;
     self.gf_sbShow = undefined;
 
-    // Completion checkpoint: if this line is missing from the log after a spawn, the
-    // creation thread died partway (e.g., a setText configstring overflow error).
-    logPrint( "GF_HUD: panel built for " + self.name + " elems=" + self.gf_hudElems.size + "\n" );
+    self gf_pushPanelChrome();            // ui_gf_panel_x/y — the border-box anchor the menu lays out from
+
+    logPrint( "GF_HUD: menu panel activated for " + self.name + "\n" );
 }
 
 // Seeds the menu-rendered panel chrome position (hud_gf_health.menu reads these). bg fade + border
@@ -203,6 +178,12 @@ gf_pushPanelChrome()
 {
     self setClientDvar( "ui_gf_panel_x", -22 );   // border-box left
     self setClientDvar( "ui_gf_panel_y", 142 );   // border-box top
+
+    // Material names pushed as dvars so the menu uses exp material(dvarString(...)) — a DYNAMIC
+    // (runtime-resolved) material reference. A static background "hud_..." makes the linker try to
+    // bundle the image (.iwi missing → build error); dynamic resolves from base fastfiles at runtime.
+    self setClientDvar( "ui_gf_skull_mat", "hud_death_suicide" );        // alive/dead skull icon
+    self setClientDvar( "ui_gf_fade_mat",  "hud_frame_faction_fade" );   // soft panel bg fade
 }
 
 // The bg fade + rows are client hudelems wiped instantly by map_restart at round end, but the
@@ -280,24 +261,16 @@ gf_updateSelfBar()
 
 // Slide-from-bottom reveal: the menu items add dvarFloat("ui_gf_self_off") to their Y,
 // so animating the dvar 40→0 slides the whole bar up from below the screen edge.
-// Runs once per reveal (~10 setClientDvar pushes over 0.5s) — negligible traffic.
+// Runs over gf_REVEAL_TIME() to match the panel/loadout reveals (synced spawn-in).
 gf_slideSelfBarIn()
 {
     self notify( "gf_sb_slide" );
     self endon( "gf_sb_slide" );
     self endon( "disconnect" );
 
-    self setClientDvar( "ui_gf_self_off", 40 );
-    self setClientDvar( "ui_gf_self_show", 1 );
-
-    for ( off = 32; off > 0; off -= 8 )
-    {
-        wait 0.05;
-        self setClientDvar( "ui_gf_self_off", off );
-    }
-
-    wait 0.05;
+    // INTRO ANIM DISABLED (snap in): was a slide of ui_gf_self_off 40->0 over gf_REVEAL_TIME().
     self setClientDvar( "ui_gf_self_off", 0 );
+    self setClientDvar( "ui_gf_self_show", 1 );
 }
 
 gf_clCreateRow( y, sortBase )
@@ -383,8 +356,11 @@ gf_clText( font, scale )
     return t;
 }
 
-// Debug probe (set gf_debug_elem_probe 1): counts how many client HUD elements are
-// still free once the panel is up, by allocating until failure and freeing them.
+// Debug probe (set gf_debug_elem_probe 1): counts client HUD elems that can still be ALLOCATED.
+// WARNING: this is the allocation pool only (~900+ free) — it is NOT the binding limit. T5 silently
+// stops DRAWING client hudelems past ~17/player, and that render cap is invisible to allocation
+// (and to .alpha/.x). For the real budget watch the HUD pool overlay's DRAWN counter
+// (gf_debug_hud_pool). Kept only as an allocation sanity check.
 gf_debugElemProbe()
 {
     self endon( "disconnect" );
@@ -396,89 +372,25 @@ gf_debugElemProbe()
     if ( isDefined( self.gf_hudElems ) )
         panelUsed = self.gf_hudElems.size;
 
-    // Allocate client HUD elems until the pool runs out, rendering EACH as its own number in a
-    // grid (1, 2, 3, ...). The last visible number = how many free slots there were beyond what
-    // the HUD already uses. The grid stays up a few seconds, then everything is freed.
+    // Allocate plain client HUD elems until the pool runs out, then free them. No on-screen grid:
+    // the grid was misleading (it implied the alloc count was meaningful, but only ~17 of those
+    // would actually DRAW). This just confirms the allocation pool is huge (it is).
     probe = [];
-    for ( i = 0; i < 1024; i++ )   // cap high enough that we hit the real engine wall, not the loop
+    for ( i = 0; i < 1024; i++ )
     {
         e = newClientHudElem( self );
         if ( !isDefined( e ) )
             break;
-
-        e.elemType  = "font";
-        e.font      = "default";
-        e.fontscale = 0.85;
-        e.x         = 0;
-        e.y         = 0;
-        e.width     = 0;
-        e.height    = int( level.fontHeight * 0.85 );
-        e.xOffset   = 0;
-        e.yOffset   = 0;
-        e.children  = [];
-        e setParent( level.uiParent );
-        e.hidden     = false;
-        e.archived   = false;
-        e.foreground = true;
-        e.sort       = 99;
-        e.color      = ( 1, 1, 0.3 );
-        e.alpha      = 1;
-        e setPoint( "TOP LEFT", "TOP LEFT", 8 + ( i % 24 ) * 22, 60 + int( i / 24 ) * 15 );
-        e setValue( i + 1 );
-
         probe[probe.size] = e;
     }
 
-    free = probe.size;
-    capNote = "";
-    if ( free >= 1024 )
-        capNote = " (hit probe cap 1024)";
-
-    self iPrintLnBold( "^3HUD POOL: panel ^5" + panelUsed + " ^3+ free ^2" + free
-                       + " ^3= ceiling ^6" + ( panelUsed + free ) + capNote );
-    logPrint( "GF_HUD: pool probe for " + self.name + " - panelUsed=" + panelUsed
-              + " free=" + free + " ceiling>=" + ( panelUsed + free ) + "\n" );
-
-    wait 6;   // leave the grid of numbers up so the limit is visible on screen
-
     for ( i = 0; i < probe.size; i++ )
         probe[i] destroy();
-}
 
-// TEMP diagnostic (set gf_dbg_rows 1): prints the ENEMY row's resolved stats + the actual
-// fill/number element states once a second, so we can see whether HP is really 0 or the
-// elements are mis-rendered. Remove once the enemy-bar issue is understood.
-gf_dbgRows()
-{
-    self endon( "gf_kill_health_hud" );
-    self endon( "disconnect" );
-
-    for ( ;; )
-    {
-        wait 1;
-        if ( getDvarInt( "gf_dbg_rows" ) != 1 )
-            continue;
-        if ( !isDefined( self.gf_rows ) || !isDefined( self.gf_rows[1] ) )
-            continue;
-
-        eTeam = "axis";
-        if ( isDefined( self.pers["team"] ) && self.pers["team"] == "axis" )
-            eTeam = "allies";
-
-        r = self.gf_rows[1];
-        msg = "EN(" + eTeam + ") hp=" + gf_readTeamHP( eTeam ) + " frac=" + gf_readTeamFrac( eTeam )
-            + " cnt=" + gf_readTeamCount( eTeam ) + " alv=" + gf_readTeamAlive( eTeam );
-        if ( isDefined( r.fill ) )
-            msg += " | fill a=" + r.fill.alpha + " x=" + r.fill.x;
-        else
-            msg += " | fill UNDEF";
-        if ( isDefined( r.number ) )
-            msg += " | num a=" + r.number.alpha + " x=" + r.number.x;
-        else
-            msg += " | num UNDEF";
-
-        self iPrintLn( msg );
-    }
+    free = probe.size;
+    self iPrintLnBold( "^3ALLOC free: ^2" + free + " ^7(pool only — NOT the ~17 DRAWN cap)" );
+    logPrint( "GF_HUD: alloc probe for " + self.name + " - panelUsed=" + panelUsed
+              + " allocFree=" + free + " (allocation pool, not the render cap)\n" );
 }
 
 gf_clCreateFrame( x, y, w, h, shader, color, alpha, sort )
@@ -548,62 +460,106 @@ gf_clCreateNumber( y, sort )
     return num;
 }
 
-// Park the whole panel off-screen left at FULL opacity. The old version also faded
-// alphas 0→target during the slide, which made small elements (numbers, skulls, thin
-// bars) read as "fading in at their spot" instead of sliding with the frames. Pure
-// slide like the loadout HUD — the park offset is past the widescreen edge so parked
-// elements can't be seen.
+// Fade reveal: capture each element's target alpha, then hide it (alpha 0) AT its home
+// position. gf_revealHealthPanel fades each back to its captured target over the shared
+// reveal time, in sync with the loadout overview and the menu-rendered chrome. (Earlier
+// this parked the panel off-screen for a pure slide; the user asked for a cross-fade.)
 gf_hideHealthPanelForIntro()
 {
-    if ( !isDefined( self.gf_hudElems ) )
-        return;
-
-    offset = gf_HP_SLIDE_OFFSET();
-    for ( i = 0; i < self.gf_hudElems.size; i++ )
-        gf_offsetHealthHUDElem( self.gf_hudElems[i], offset, 0 );
+    self setClientDvar( "ui_gf_hp_alpha", 0 );   // panel starts invisible; reveal fades it in
 }
 
-// Slide everything back to home together over 0.75s — no fade, visible motion on
-// every element.
+// Cross-fade the whole panel in: every client-hudelem piece fades 0 -> its captured
+// target alpha, and the menu-rendered chrome (border + self bar) fades via ui_gf_hp_alpha
+// — both over gf_REVEAL_TIME(), so the health HUD and loadout overview reveal in sync.
 gf_revealHealthPanel()
 {
-    if ( !isDefined( self.gf_hudElems ) )
-        return;
+    self setClientDvar( "ui_gf_panel_show", 1 );
+    // INTRO ANIM DISABLED (snap in) — testing whether the HUD just being there on spawn looks cleaner.
+    // Was: self thread gf_fadeDvar( "ui_gf_hp_alpha", 0, 1, gf_REVEAL_TIME() );
+    self setClientDvar( "ui_gf_hp_alpha", 1 );
+}
 
-    self setClientDvar( "ui_gf_panel_show", 1 );   // menu-rendered chrome appears with the rows
+// Linear fade of a client dvar from->to over dur (0.05s frames) — cross-fades the menu-
+// rendered health chrome (border + self bar) via ui_gf_hp_alpha, matching the client
+// panel's fadeOverTime and the loadout fade.
+gf_fadeDvar( dvarName, from, to, dur )
+{
+    self notify( "gf_fade_" + dvarName );
+    self endon( "gf_fade_" + dvarName );
+    self endon( "disconnect" );
 
-    offset = gf_HP_SLIDE_OFFSET();
-    for ( i = 0; i < self.gf_hudElems.size; i++ )
-        gf_offsetHealthHUDElem( self.gf_hudElems[i], 0 - offset, 0.75 );
+    steps = int( dur / 0.05 );
+    if ( steps < 1 )
+        steps = 1;
+
+    self setClientDvar( dvarName, from );
+    for ( i = 1; i <= steps; i++ )
+    {
+        wait 0.05;
+        self setClientDvar( dvarName, from + ( to - from ) * i / steps );
+    }
+    self setClientDvar( dvarName, to );
 }
 
 gf_updateHealthPanel()
 {
-    if ( !isDefined( self.gf_rows ) )
+    if ( !isDefined( self.gf_panelActive ) )
         return;
 
-    // Runs for everyone — hides itself while dead/spectating.
+    // Self bar (its own menu dvars); hides itself while dead/spectating.
     self gf_updateSelfBar();
 
-    team = undefined;
-    if ( isDefined( self.pers["team"] ) )
-        team = self.pers["team"];
-
-    if ( team == "axis" )
+    // Row 0 = friendly (green in the menu), row 1 = enemy (red). The viewer's own team maps to row 0,
+    // so spectators/unassigned get a fixed allies=green / axis=red layout. Data is server-side
+    // (level.gf_*) and pushed per-client, so the viewer sees BOTH teams — enemy included.
+    friendlyTeam = "allies";
+    enemyTeam    = "axis";
+    if ( isDefined( self.pers["team"] ) && self.pers["team"] == "axis" )
     {
         friendlyTeam = "axis";
         enemyTeam    = "allies";
     }
-    else
-    {
-        // Allies viewer — and also spectators/unassigned, who always see the whole HUD
-        // with a fixed mapping: allies in the green row, axis in the red row.
-        friendlyTeam = "allies";
-        enemyTeam    = "axis";
-    }
 
-    self gf_setHealthRow( self.gf_rows[0], friendlyTeam, ( 0.42, 0.68, 0.46 ) );
-    self gf_setHealthRow( self.gf_rows[1], enemyTeam,    ( 0.73, 0.29, 0.19 ) );
+    self gf_pushHealthRow( 0, friendlyTeam );
+    self gf_pushHealthRow( 1, enemyTeam );
+}
+
+// Push one row's data (hp number, bar fill width, skull count, alive count) as per-client dvars the
+// menu reads. The menu fixes row 0 = green, row 1 = red, so colour isn't pushed. Fill width is in
+// pixels (0..gf_HP_BAR_W) so the menu just does exp rect W( dvar ).
+gf_pushHealthRow( r, team )
+{
+    hp    = gf_readTeamHP( team );
+    frac  = gf_readTeamFrac( team );
+    count = gf_readTeamCount( team );
+    alive = gf_readTeamAlive( team );
+
+    if ( count > gf_HP_MAX_SKULLS() ) count = gf_HP_MAX_SKULLS();
+    if ( alive > gf_HP_MAX_SKULLS() ) alive = gf_HP_MAX_SKULLS();
+
+    fw = int( gf_HP_BAR_W() * frac + 0.5 );
+    if ( hp <= 0 )
+        fw = 0;
+    else if ( fw < 1 )
+        fw = 1;
+
+    self gf_setRowDvar( "ui_gf_r" + r + "_hp",    int( hp ) );
+    self gf_setRowDvar( "ui_gf_r" + r + "_fw",    fw );
+    self gf_setRowDvar( "ui_gf_r" + r + "_cnt",   count );
+    self gf_setRowDvar( "ui_gf_r" + r + "_alive", alive );
+}
+
+// setClientDvar only on change (cached on self) — the 0.1s update loop would otherwise spam 8
+// pushes/tick. gf_createHealthPanel resets gf_dvarCache so the first push each spawn always sends.
+gf_setRowDvar( name, val )
+{
+    if ( !isDefined( self.gf_dvarCache ) )
+        self.gf_dvarCache = [];
+    if ( isDefined( self.gf_dvarCache[name] ) && self.gf_dvarCache[name] == val )
+        return;
+    self.gf_dvarCache[name] = val;
+    self setClientDvar( name, val );
 }
 
 gf_setHealthRow( row, team, color )
@@ -812,33 +768,6 @@ gf_getHealthFraction( current, maxHealth )
     return frac;
 }
 
-gf_offsetHealthHUDElem( elem, xOffset, moveTime )
-{
-    if ( !isDefined( elem ) )
-        return;
-
-    if ( isDefined( moveTime ) && moveTime > 0 )
-        elem moveOverTime( moveTime );
-    elem.x += xOffset;
-
-    if ( isDefined( elem.elemType ) && elem.elemType == "bar" )
-    {
-        if ( isDefined( elem.bar ) )
-        {
-            if ( isDefined( moveTime ) && moveTime > 0 )
-                elem.bar moveOverTime( moveTime );
-            elem.bar.x += xOffset;
-        }
-
-        if ( isDefined( elem.barFrame ) )
-        {
-            if ( isDefined( moveTime ) && moveTime > 0 )
-                elem.barFrame moveOverTime( moveTime );
-            elem.barFrame.x += xOffset;
-        }
-    }
-}
-
 // ─── Loadout HUD ─────────────────────────────────────────────────────────────
 
 gf_showWeaponHUD( load )
@@ -847,161 +776,86 @@ gf_showWeaponHUD( load )
         return;
 
     self notify( "gf_kill_loadout_hud" );
-    gf_destroyLoadoutHUD();
     self endon( "gf_kill_loadout_hud" );
+    self endon( "disconnect" );
     level endon( "game_ended" );
 
-    self.gf_loadoutHudElems = [];
+    // The loadout overview is fully MENU-rendered (ui_mp/hud_gf_health.menu): a
+    // centered-column create-a-class summary — big primary, secondary, a 3-across
+    // equipment row, a 3-across perk row, each item icon + bracket + name. It costs
+    // ZERO client hudelems (no createIcon/createFontString, no setText), so it can't
+    // hit T5's ~17 drawn-per-player render cap or burn the configstring table the old
+    // client-elem version risked. We push the 8 icon materials + 8 names + the anchor,
+    // then animate the unified slide via ui_gf_lo_off (added to every item's X).
 
-    shaders = [];
-    shaders[0] = load["primaryShader"];
-    shaders[1] = load["secondaryShader"];
-    shaders[2] = load["lethalShader"];
-    shaders[3] = load["tacticalShader"];
-    shaders[4] = load["equipShader"];
-    shaders[5] = gf_getPerkShader( "specialty_flakjacket" );
-    shaders[6] = gf_getPerkShader( "specialty_movefaster" );    // Lightweight
-    shaders[7] = gf_getPerkShader( "specialty_longersprint" );  // Marathon
+    // Icons (materials). All precached — weapons/equipment in gf.gsc, perks in stock
+    // _class.gsc:421 — so the menu's material(dvarString) resolves every one.
+    self setClientDvar( "ui_gf_lo_icon0", load["primaryShader"] );
+    self setClientDvar( "ui_gf_lo_icon1", load["secondaryShader"] );
+    self setClientDvar( "ui_gf_lo_icon2", load["lethalShader"] );
+    self setClientDvar( "ui_gf_lo_icon3", load["tacticalShader"] );
+    self setClientDvar( "ui_gf_lo_icon4", load["equipShader"] );
+    self setClientDvar( "ui_gf_lo_icon5", gf_getPerkShader( "specialty_flakjacket" ) );    // Flak Jacket
+    self setClientDvar( "ui_gf_lo_icon6", gf_getPerkShader( "specialty_longersprint" ) );   // Marathon
+    self setClientDvar( "ui_gf_lo_icon7", gf_getPerkShader( "specialty_movefaster" ) );     // Lightweight
 
-    names = [];
-    names[0] = load["primaryName"];
-    names[1] = load["secondaryName"];
-    names[2] = load["lethalName"];
-    names[3] = load["tacticalName"];
-    names[4] = load["equipName"];
-    names[5] = "Flak Jacket";
-    names[6] = "Lightweight";
-    names[7] = "Marathon";
+    // Names (plain client dvars — NOT setText, so no configstring exhaustion).
+    self setClientDvar( "ui_gf_lo_name0", load["primaryName"] );
+    self setClientDvar( "ui_gf_lo_name1", load["secondaryName"] );
+    self setClientDvar( "ui_gf_lo_name2", load["lethalName"] );
+    self setClientDvar( "ui_gf_lo_name3", load["tacticalName"] );
+    self setClientDvar( "ui_gf_lo_name4", load["equipName"] );
+    self setClientDvar( "ui_gf_lo_name5", "Flak Jacket" );
+    self setClientDvar( "ui_gf_lo_name6", "Marathon" );
+    self setClientDvar( "ui_gf_lo_name7", "Lightweight" );
 
-    // yPos: row position in user_bottom coords.
-    // Weapon icon rendered_y = yPos - 58; perk text yText = yIcon - 16.
-    yPos = [];
-    yPos[0] = -262;
-    yPos[1] = -222;
-    yPos[2] = -182;
-    yPos[3] = -142;
-    yPos[4] = -102;
-    yPos[5] = -242;
-    yPos[6] = -202;
-    yPos[7] = -162;
+    // Anchor: center-right column. cx = column center (px left of the right safe
+    // edge), cy = block vertical center (px from the reticle). Both retune live with
+    // a map_restart — no mod.ff rebuild (only the item sizes/spacing are baked in).
+    self setClientDvar( "ui_gf_lo_cx", -104 );
+    self setClientDvar( "ui_gf_lo_cy", -6 );
 
-    icons = [];
-    texts = [];
+    // INTRO ANIM DISABLED (snap in) — testing whether the HUD just being there on spawn looks cleaner.
+    // Was: self gf_slideLoadout( 70, 0, 0, 1, gf_REVEAL_TIME() );  // slide+fade in. Outro below is kept.
+    self setClientDvar( "ui_gf_lo_off", 0 );
+    self setClientDvar( "ui_gf_lo_alpha", 1 );
+    self setClientDvar( "ui_gf_lo_show", 1 );
 
-    // Weapon rows — right side (slots 0-4)
-    for ( i = 0; i < 5; i++ )
+    wait 7;
+
+    // Slide back out + fade (off 0 -> 70, alpha 1 -> 0) over 0.5s. The intro is a snap now, so this
+    // is the only loadout animation left.
+    self gf_slideLoadout( 0, 70, 1, 0, 0.5 );
+    self setClientDvar( "ui_gf_lo_show", 0 );
+}
+
+// Linear slide+fade of the overview over `dur` seconds (0.05s frames). The menu
+// adds ui_gf_lo_off to every item's X and multiplies ui_gf_lo_alpha into every
+// item's alpha, so this drives the whole block in/out as one. The fade masks the
+// 20Hz stepping that made a long pure-slide look choppy. ui_gf_lo_show is raised on
+// the first frame so the block is never seen parked. ui_gf_lo_off is kept FRACTIONAL
+// (no int() rounding) so each 20Hz step moves an equal distance — int() truncation
+// made the steps alternate (e.g. 4px,3px,4px,3px) and read as extra stutter.
+gf_slideLoadout( offFrom, offTo, alphaFrom, alphaTo, dur )
+{
+    steps = int( dur / 0.05 );
+    if ( steps < 1 )
+        steps = 1;
+
+    self setClientDvar( "ui_gf_lo_off", offFrom );
+    self setClientDvar( "ui_gf_lo_alpha", alphaFrom );
+    self setClientDvar( "ui_gf_lo_show", 1 );
+
+    for ( i = 1; i <= steps; i++ )
     {
-        yRendered = yPos[i] - 58;
-
-        icon = createIcon( shaders[i], 32, 32 );
-        icon.horzAlign = "user_right";
-        icon.vertAlign = "user_bottom";
-        icon.alignX    = "right";
-        icon.alignY    = "middle";
-        icon.x         = 400;
-        icon.y         = yRendered;
-        icon.archived  = false;
-        icon.foreground = true;
-        icon.hidewheninmenu = true;
-        icon.hidewheninkillcam = true;
-        icon.hidewhileremotecontrolling = true;
-
-        if ( i < 2 )
-            icon setShader( shaders[i], 64, 32 );
-
-        text = createFontString( "default", 1.4 );
-        text.horzAlign = "user_right";
-        text.vertAlign = "user_bottom";
-        text.alignX    = "right";
-        text.alignY    = "middle";
-        text.x         = 400;
-        text.y         = yRendered;
-        text.archived  = false;
-        text.foreground = true;
-        text.hidewheninmenu = true;
-        text.hidewheninkillcam = true;
-        text.hidewhileremotecontrolling = true;
-        text setText( names[i] );
-        text.alpha = 1;
-
-        icon moveOverTime( 0.75 );
-        icon.x = -5;
-        text moveOverTime( 0.75 );
-        text.x = -72;
-
-        icons[i] = icon;
-        texts[i] = text;
-        self.gf_loadoutHudElems[self.gf_loadoutHudElems.size] = icon;
-        self.gf_loadoutHudElems[self.gf_loadoutHudElems.size] = text;
+        wait 0.05;
+        frac = i / steps;
+        self setClientDvar( "ui_gf_lo_off",   offFrom   + ( offTo - offFrom ) * frac );
+        self setClientDvar( "ui_gf_lo_alpha", alphaFrom + ( alphaTo - alphaFrom ) * frac );
     }
 
-    // Perk rows — left side (slots 5-8)
-    for ( i = 5; i < 8; i++ )
-    {
-        yIcon = yPos[i] - 58;
-        yText = yIcon - 16;
-
-        icon = createIcon( shaders[i], 32, 32 );
-        icon.horzAlign = "user_left";
-        icon.vertAlign = "user_bottom";
-        icon.alignX    = "left";
-        icon.alignY    = "bottom";
-        icon.x         = -200;
-        icon.y         = yIcon;
-        icon.archived  = false;
-        icon.foreground = true;
-        icon.hidewheninmenu = true;
-        icon.hidewheninkillcam = true;
-        icon.hidewhileremotecontrolling = true;
-
-        text = createFontString( "default", 1.4 );
-        text.horzAlign = "user_left";
-        text.vertAlign = "user_bottom";
-        text.alignX    = "left";
-        text.alignY    = "middle";
-        text.x         = -200;
-        text.y         = yText;
-        text.archived  = false;
-        text.foreground = true;
-        text.hidewheninmenu = true;
-        text.hidewheninkillcam = true;
-        text.hidewhileremotecontrolling = true;
-        text setText( names[i] );
-        text.alpha = 1;
-
-        icon moveOverTime( 0.75 );
-        icon.x = 5;
-        text moveOverTime( 0.75 );
-        text.x = 42;
-
-        icons[i] = icon;
-        texts[i] = text;
-        self.gf_loadoutHudElems[self.gf_loadoutHudElems.size] = icon;
-        self.gf_loadoutHudElems[self.gf_loadoutHudElems.size] = text;
-    }
-
-    wait 5;
-
-    for ( i = 0; i < 5; i++ )
-    {
-        icons[i] moveOverTime( 0.75 );
-        icons[i].x = 400;
-        texts[i] moveOverTime( 0.75 );
-        texts[i].x = 400;
-    }
-    for ( i = 5; i < 8; i++ )
-    {
-        icons[i] moveOverTime( 0.75 );
-        icons[i].x = -400;
-        texts[i] moveOverTime( 0.75 );
-        texts[i].x = -400;
-    }
-
-    wait 0.8;
-    gf_destroyLoadoutHUD();
-
-    // Cue the health panel to build + slide in now that the intro freed its pool slots.
-    self notify( "gf_loadout_intro_done" );
+    self setClientDvar( "ui_gf_lo_off",   offTo );
+    self setClientDvar( "ui_gf_lo_alpha", alphaTo );
 }
 
 gf_getPerkShader( specialty )
@@ -1017,52 +871,41 @@ gf_getPerkShader( specialty )
 
 gf_destroyLoadoutHUD()
 {
-    if ( !isDefined( self.gf_loadoutHudElems ) )
-        return;
-
-    for ( i = 0; i < self.gf_loadoutHudElems.size; i++ )
+    // The overview is menu-rendered now (no client hudelems), so teardown is just
+    // hiding it. The legacy client-elem cleanup is kept to tolerate any stale state.
+    if ( isDefined( self.gf_loadoutHudElems ) )
     {
-        if ( isDefined( self.gf_loadoutHudElems[i] ) )
-            self.gf_loadoutHudElems[i] destroyElem();
+        for ( i = 0; i < self.gf_loadoutHudElems.size; i++ )
+            if ( isDefined( self.gf_loadoutHudElems[i] ) )
+                self.gf_loadoutHudElems[i] destroyElem();
+        self.gf_loadoutHudElems = undefined;
     }
 
-    self.gf_loadoutHudElems = undefined;
+    self setClientDvar( "ui_gf_lo_show", 0 );
 }
 
 // ─── Score popup ─────────────────────────────────────────────────────────────
-// Mod-owned center-screen popup (replaces _rank::updateRankScoreHUD): shows
-// "Elimination" / "Assist" text instead of score numbers. text MUST be a
-// precached localized istring (&"GF_POPUP_*" from gf.str in mod.ff) — raw
-// literals allocate from the exhaustible dynamic string table and silently
-// fail when it's full. pri keeps a higher-priority popup (Elimination) from
-// being stomped by a lower one (Assist) arriving in the same window.
+// "Elimination" / "Assist" center-screen popup. Reuses the ENGINE'S own score popup element
+// (self.hud_rankscroreupdate, a NewScoreHudElem created at _rank spawn init) so it matches the stock
+// yellow score popup EXACTLY — same font / scale / glow / fontPulse — AND renders at any lobby size:
+// NewScoreHudElem is a dedicated score-element pool, NOT the newClientHudElem pool with the ~17
+// per-player DRAWN render cap (our old lazily-created client hudelem hit that cap and vanished as the
+// lobby grew). The mod sets score with the popup suppressed (zeroed kill/assist values + a no-popup
+// score setter), so the stock rank popup never fires on its own — the element is free to reuse.
+// popupType: 2 = elimination, 1 = assist. pri keeps Elimination from being stomped by Assist.
+// SIZE knob: gf_popupSize() (resting fontscale). It's applied via baseFontScale/maxFontScale, NOT
+// .fontscale — fontPulse (_hud.gsc) always animates the element back to baseFontScale, so a plain
+// .fontscale set is immediately overwritten by the pulse.
+gf_popupSize() { return 1.5; }   // popup resting fontscale (the engine stock score popup is 2.0)
+gf_popupX()    { return 170; }   // horizontal offset from screen centre (+ = right; element is centre-aligned)
+gf_popupY()    { return 0; }     // vertical offset from screen centre (+ = down, - = up; 0 = middle screen)
 
-gf_showScorePopup( text, pri )
+gf_showScorePopup( popupType, pri )
 {
     self endon( "disconnect" );
 
     if ( !isDefined( pri ) )
         pri = 1;
-
-    if ( !isDefined( self.gf_dmgPopup ) )
-    {
-        elem = newClientHudElem( self );
-        elem.horzAlign = "center";
-        elem.vertAlign = "middle";
-        elem.alignX    = "center";
-        elem.alignY    = "middle";
-        elem.x         = 0;
-        elem.y         = -60;
-        elem.font      = "default";
-        elem.fontscale = 1.6;
-        elem.archived  = false;
-        elem.sort      = 50;
-        elem.color     = ( 1, 1, 0.5 );
-        elem.alpha     = 0;
-        elem.overrridewhenindemo = true;   // keep visible during the round-end killcam
-        elem maps\mp\gametypes\_hud::fontPulseInit();
-        self.gf_dmgPopup = elem;
-    }
 
     now = getTime();
     if ( isDefined( self.gf_popupExpire ) && now < self.gf_popupExpire
@@ -1072,15 +915,53 @@ gf_showScorePopup( text, pri )
     self.gf_popupPri    = pri;
     self.gf_popupExpire = now + 1000;
 
+    self gf_ensureScorePopupElem();
+
+    text = &"GF_POPUP_ASSIST";
+    if ( popupType == 2 )
+        text = &"GF_POPUP_ELIMINATION";
+
+    self notify( "update_score" );   // cancel any in-flight stock rank popup sharing this element
     self notify( "gf_dmg_popup" );
     self endon( "gf_dmg_popup" );
 
-    self.gf_dmgPopup.label = &"";
-    self.gf_dmgPopup setText( text );
-    self.gf_dmgPopup.alpha = 0.85;
-    self.gf_dmgPopup thread maps\mp\gametypes\_hud::fontPulse( self );
+    self.hud_rankscroreupdate.label = &"";
+    self.hud_rankscroreupdate.color = ( 1, 1, 0.5 );
+    self.hud_rankscroreupdate.baseFontScale = gf_popupSize();       // resting size — fontPulse returns here
+    self.hud_rankscroreupdate.maxFontScale  = gf_popupSize() * 2;   // pulse peak (stock 2x ratio)
+    self.hud_rankscroreupdate.fontScale     = gf_popupSize();       // start the pulse from the resting size
+    self.hud_rankscroreupdate.x             = gf_popupX();          // shift right of centre
+    self.hud_rankscroreupdate.y             = gf_popupY();          // vertical position (0 = middle screen)
+    self.hud_rankscroreupdate setText( text );
+    self.hud_rankscroreupdate.alpha = 0.85;
+    self.hud_rankscroreupdate thread maps\mp\gametypes\_hud::fontPulse( self );
 
     wait 1;
-    self.gf_dmgPopup fadeOverTime( 0.75 );
-    self.gf_dmgPopup.alpha = 0;
+    self.hud_rankscroreupdate fadeOverTime( 0.75 );
+    self.hud_rankscroreupdate.alpha = 0;
+}
+
+// The engine's _rank::onPlayerSpawned makes self.hud_rankscroreupdate on spawn; mirror that creation
+// as a fallback so the popup works even if that init didn't run for this player. NewScoreHudElem is
+// the dedicated score-element pool (render-cap-exempt). Matches the stock properties verbatim.
+gf_ensureScorePopupElem()
+{
+    if ( isDefined( self.hud_rankscroreupdate ) )
+        return;
+
+    self.hud_rankscroreupdate = NewScoreHudElem( self );
+    self.hud_rankscroreupdate.horzAlign = "center";
+    self.hud_rankscroreupdate.vertAlign = "middle";
+    self.hud_rankscroreupdate.alignX    = "center";
+    self.hud_rankscroreupdate.alignY    = "middle";
+    self.hud_rankscroreupdate.x         = 0;
+    self.hud_rankscroreupdate.y         = -60;
+    self.hud_rankscroreupdate.font      = "default";
+    self.hud_rankscroreupdate.fontscale = 2.0;
+    self.hud_rankscroreupdate.archived  = false;
+    self.hud_rankscroreupdate.color     = ( 1, 1, 0.5 );
+    self.hud_rankscroreupdate.alpha     = 0;
+    self.hud_rankscroreupdate.sort      = 50;
+    self.hud_rankscroreupdate maps\mp\gametypes\_hud::fontPulseInit();
+    self.hud_rankscroreupdate.overrridewhenindemo = true;
 }

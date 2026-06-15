@@ -9,7 +9,12 @@ const cp   = require('child_process');
 const WEB_PORT   = 3000;
 const RCON_TIMEOUT = 3000;
 const COLLECT_MS   = 350;
+const DVAR_COLLECT_MS = 120;   // shorter window for single-value dvar reads (one small packet)
+const DVAR_CHUNK   = 8;        // concurrent dvar reads per batch
 const PUBLIC_DIR   = path.join(__dirname, 'public');
+// dedicated.cfg lives at storage/t5/dedicated.cfg; this file is at
+// storage/t5/mods/mp_gunfight/tools/rcon/server.js → four levels up.
+const CFG_PATH     = path.resolve(__dirname, '..', '..', '..', '..', 'dedicated.cfg');
 
 // ─── RCON UDP ─────────────────────────────────────────────────────────────────
 
@@ -19,7 +24,7 @@ function buildPacket(password, command) {
   return Buffer.concat([OOB, Buffer.from(`rcon ${password} ${command}`, 'utf8')]);
 }
 
-function sendRcon(host, port, password, command) {
+function sendRcon(host, port, password, command, collectMs = COLLECT_MS) {
   return new Promise((resolve, reject) => {
     const sock   = dgram.createSocket('udp4');
     const chunks = [];
@@ -36,7 +41,7 @@ function sendRcon(host, port, password, command) {
     sock.on('message', (msg) => {
       chunks.push(msg);
       clearTimeout(collectTimer);
-      collectTimer = setTimeout(finish, COLLECT_MS);
+      collectTimer = setTimeout(finish, collectMs);
     });
     sock.on('error', (err) => { cleanup(); reject(err); });
 
@@ -113,6 +118,26 @@ function parseDvarValue(text, dvarName) {
   return m ? m[1].trim() : null;
 }
 
+// Read many dvars and return { name: value|null }. Reads in chunks of DVAR_CHUNK
+// concurrently with a short collect window so a ~100-dvar sweep finishes in ~2-3s
+// instead of ~35s. A per-dvar timeout/parse-miss yields null (frontend keeps its default).
+async function readDvars(host, port, password, names) {
+  const values = {};
+  for (let i = 0; i < names.length; i += DVAR_CHUNK) {
+    const chunk = names.slice(i, i + DVAR_CHUNK);
+    await Promise.all(chunk.map(async (name) => {
+      try {
+        const buf  = await sendRcon(host, port, password, name, DVAR_COLLECT_MS);
+        const text = parseRconResponse(buf);
+        values[name] = parseDvarValue(text, name);
+      } catch (_) {
+        values[name] = null;
+      }
+    }));
+  }
+  return values;
+}
+
 function parseGfState(stateStr) {
   // format: "wA:wX:round:aliveA:aliveX:gametype"
   const parts = String(stateStr).split(':');
@@ -125,6 +150,36 @@ function parseGfState(stateStr) {
     aliveAxis:  parseInt(parts[4]) || 0,
     gametype:   parts[5] || '',
   };
+}
+
+// ─── dedicated.cfg persistence ────────────────────────────────────────────────
+// Upsert `set <name> "<value>"` lines into existing cfg text, preserving every other
+// line. A name already present (set/seta/sets, quoted or not) is replaced in place;
+// otherwise it's appended under a managed marker. Returns { text, updated, added }.
+function upsertCfg(text, dvars, eol) {
+  const lines = text.split(/\r?\n/);
+  let updated = 0, added = 0;
+  const toAppend = [];
+  for (const name of Object.keys(dvars)) {
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re  = new RegExp('^(\\s*)set[as]?\\s+"?' + esc + '"?\\s', 'i');
+    const line = `set ${name} "${dvars[name]}"`;
+    let found = false;
+    for (let i = 0; i < lines.length; i++) {
+      if (re.test(lines[i])) {
+        const cm = lines[i].match(/(\s+\/\/.*)$/);   // keep an aligned trailing // comment
+        lines[i] = line + (cm ? cm[1] : '');
+        updated++; found = true; break;
+      }
+    }
+    if (!found) toAppend.push(line);
+  }
+  if (toAppend.length) {
+    const marker = '// --- GF RCON tool ---';
+    if (!lines.some(l => l.trim() === marker)) { lines.push('', marker); }
+    for (const l of toAppend) { lines.push(l); added++; }
+  }
+  return { text: lines.join(eol), updated, added };
 }
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -205,6 +260,19 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ── GET /api/dvars ── batch-read dvar values: ?names=a,b,c (read-only, chunked)
+  if (req.method === 'GET' && pathname === '/api/dvars') {
+    const { host = '127.0.0.1', port = '28960', password = '', names = '' } = query;
+    const list = names.split(',').map(s => s.trim()).filter(Boolean);
+    if (!list.length) return sendJson(res, { ok: false, error: 'No dvar names' }, 400);
+    try {
+      const values = await readDvars(host, parseInt(port), password, list);
+      return sendJson(res, { ok: true, values });
+    } catch (err) {
+      return sendJson(res, { ok: false, error: err.message });
+    }
+  }
+
   // ── POST /api/rcon ──
   if (req.method === 'POST' && pathname === '/api/rcon') {
     let body;
@@ -215,6 +283,26 @@ const server = http.createServer(async (req, res) => {
       const buf      = await sendRcon(host, parseInt(port), password, command);
       const response = parseRconResponse(buf);
       return sendJson(res, { ok: true, response });
+    } catch (err) {
+      return sendJson(res, { ok: false, error: err.message });
+    }
+  }
+
+  // ── POST /api/savecfg ── persist dvars to dedicated.cfg (upsert; makes a .bak)
+  if (req.method === 'POST' && pathname === '/api/savecfg') {
+    let body;
+    try { body = JSON.parse(await readBody(req)); } catch (_) { return sendJson(res, { ok: false, error: 'Bad JSON' }, 400); }
+    const dvars   = body.dvars || {};
+    const cfgPath = body.path || CFG_PATH;
+    if (!Object.keys(dvars).length) return sendJson(res, { ok: false, error: 'No dvars to save' }, 400);
+    try {
+      if (!fs.existsSync(cfgPath)) return sendJson(res, { ok: false, error: 'dedicated.cfg not found at ' + cfgPath }, 404);
+      const orig = fs.readFileSync(cfgPath, 'utf8');
+      fs.writeFileSync(cfgPath + '.bak', orig);                       // safety backup (last save)
+      const eol = orig.includes('\r\n') ? '\r\n' : '\n';
+      const { text, updated, added } = upsertCfg(orig, dvars, eol);
+      fs.writeFileSync(cfgPath, text);
+      return sendJson(res, { ok: true, updated, added, count: Object.keys(dvars).length, path: cfgPath });
     } catch (err) {
       return sendJson(res, { ok: false, error: err.message });
     }

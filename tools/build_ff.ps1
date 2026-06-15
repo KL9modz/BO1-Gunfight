@@ -129,6 +129,14 @@ foreach ($line in $manifestLines) {
     }
 }
 
+# hud_gf_health.menu is loaded TRANSITIVELY via hud_gf.txt's loadMenu directive, so it
+# is intentionally NOT a mod.csv menufile entry (a duplicate menufile entry double-
+# registers the menu and crashes the whole UI). The linker still reads it from raw/
+# when it expands hud_gf.txt, so it must be staged (and cleaned) like everything else
+# -- otherwise edits to it silently never reach mod.ff and the linker compiles a stale
+# raw/ copy. Add it to the stage/clean list explicitly.
+$assetsToStage.Add("ui_mp/hud_gf_health.menu")
+
 $stagedCount = 0
 foreach ($asset in ($assetsToStage | Select-Object -Unique)) {
     $source = Find-SourceFile $asset

@@ -209,8 +209,8 @@ gf_playerSpawnedCB()
             self thread gf_startHUDPoolOverlay();
     }
 
-    // One-shot pool headroom measurement — prints "free client HUD elems: N" ~9s after
-    // spawn (when the loadout intro is gone and the health panel is fully built).
+    // One-shot ALLOCATION sanity check — prints "ALLOC free: N" ~9s after spawn. Measures the
+    // allocation pool only (huge); the real per-player DRAWN cap (~17) shows on the pool overlay.
     if ( getDvarInt( "gf_debug_elem_probe" ) == 1 )
     {
         if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
@@ -226,10 +226,9 @@ gf_onSpawnSpectator( origin, angles )
 
     // Spectators always see the whole health HUD. Only create the panel if this player
     // doesn't already have one (a dead team player free-looking keeps their existing
-    // panel — restarting it here would replay the slide-in every death). Spectators get
-    // no loadout intro, so skip the intro wait and show immediately.
+    // panel — restarting it here would replay the slide-in every death).
     if ( ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] ) && !isDefined( self.gf_hudElems ) )
-        self thread gf_runHealthHUD( true );
+        self thread gf_runHealthHUD();
 }
 
 gf_onSpawned()
@@ -1294,9 +1293,9 @@ gf_onPlayerKilled( eInflictor, attacker, iDamage, sMeansOfDeath, sWeapon, vDir, 
             if ( !isDefined( damager.pers["isBot"] ) || !damager.pers["isBot"] )
             {
                 if ( isDefined( attacker ) && damager == attacker )
-                    damager thread gf_showScorePopup( &"GF_POPUP_ELIMINATION", 2 );
+                    damager thread gf_showScorePopup( 2, 2 );   // type 2 = elimination, pri 2
                 else
-                    damager thread gf_showScorePopup( &"GF_POPUP_ASSIST", 1 );
+                    damager thread gf_showScorePopup( 1, 1 );   // type 1 = assist, pri 1
             }
         }
 

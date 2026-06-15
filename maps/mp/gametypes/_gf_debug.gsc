@@ -298,7 +298,8 @@ gf_startHUDPoolOverlay()
     overlay = self.gf_hudPoolOverlayElem;
 
     svMax = 64;
-    clMax = 64;
+    clMax = 17;   // empirical per-player DRAWN client-hudelem budget — past ~17-20 the engine
+                  // silently stops rendering the overflow (a cap allocation probes can't see).
 
     while ( true )
     {
@@ -318,7 +319,12 @@ gf_startHUDPoolOverlay()
         if ( isDefined( level.gf_dbg_axisHP ) )   xHP = level.gf_dbg_axisHP;
         if ( isDefined( level.gf_dbg_axisN ) )    xN  = level.gf_dbg_axisN;
 
-        overlay setText( "SV: " + svCount + "/" + svMax + "  CL: " + clCount + "/" + clMax + "   A " + aHP + "hp/" + aN + "p  X " + xHP + "hp/" + xN + "p" );
+        if ( clCount >= clMax )                       // red at/over the DRAWN budget (the real wall)
+            overlay.color = ( 1, 0.3, 0.3 );
+        else
+            overlay.color = ( 0.5, 1.0, 0.7 );
+
+        overlay setText( "SV: " + svCount + "/" + svMax + "  DRAWN: " + clCount + "/" + clMax + "   A " + aHP + "hp/" + aN + "p  X " + xHP + "hp/" + xN + "p" );
         wait 0.2;
     }
 }

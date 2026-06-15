@@ -12,6 +12,7 @@ More details (every function)
 Server info 
 Leverage “releases” or “bugs”
 Bare bones branch
+No: _bot, _debug, _bridge
 ---
 
 ## Dedicated Server Setup
@@ -466,7 +467,24 @@ CodeCallback_GlassSmash()        glass break FX
 
 ## T5 HUD System
 
-### Server-side HUD (current approach)
+### ⚠️ The per-client DRAWN render cap — the real HUD limit (learned 2026-06-14)
+
+T5 has **two separate** client-HUD limits, and only the harmless one is measurable:
+- **Allocation pool** — `newClientHudElem` succeeds until ~900+ used (global, ~1024 total). Measured `free=903`. NOT the constraint.
+- **Per-client DRAWN/render cap (~17–20)** — the engine only actually *draws* ~17–20 client hudelems per player. Beyond that the overflow **silently does not render**, even though allocation succeeds AND the element's `.alpha`/`.x` are set. **No script probe can detect this** (allocation says "tons free"; reading `.alpha` looks healthy) — only the human eye sees it. It also has a **global component**, so it scales with lobby size: a *late-created* element (e.g. the kill popup) draws fine at 2 players and silently vanishes as the lobby grows.
+
+**Symptom:** the last-created elements silently disappear (enemy HP row dropped when the panel hit 21 elems; kill popup vanished in bigger lobbies). Creation order matters — late elements drop first.
+
+The cap is **global across ALL hudelem types** (our stuff + stock ammo/compass HUD + score popup + overtime flag objpoint all share it), and proven so: with the panel at 17 client hudelems, the kill popup AND the flag icon were invisible during play and only appeared when the round-end teardown freed slots. So "17 for us" was wrong — 17 is most of the *whole* per-client budget.
+
+**Mitigation — move EVERYTHING mod-owned off client hudelems into the MENU layer** (`ui_mp/hud_gf_health.menu`), a separate rendering system with no such cap (0 client hudelems). Server pushes state via `setClientDvar` only on change; menu itemDefs read the dvars (`exp rect X/Y`, `exp rect W`, `exp forecolor A`, `exp material(dvarString())`, `visible when(...)` — `when` supports `>`/`<=`/`&&`, not just `==`). All mod HUD is now menu-rendered → **~0 client hudelems**:
+- **Team health panel** (2026-06-15) — bg fade + 8 skulls + 2 bars + 2 numbers. Dvars: `ui_gf_panel_x/y` (anchor), `ui_gf_hp_alpha` (reveal fade), `ui_gf_rN_hp/_fw/_cnt/_alive` (row N=0 friendly/1 enemy), `ui_gf_skull_mat`/`ui_gf_fade_mat` (material names). GSC `gf_pushHealthRow`/`gf_setRowDvar`. Skulls = alive(team-colour)+dead(white) itemDef per slot (forecolor R/G/B isn't exp-drivable, only A). Materials MUST be dynamic `exp material(dvarString())` — static `background "hud_..."` makes the linker try to bundle the .iwi (missing → build error).
+- **Self health bar** (`ui_gf_self_*`), **Loadout overview** (`ui_gf_lo_*`), **Team-panel border** (`ui_gf_panel_*`).
+- **Kill popup** "Elimination"/"Assist" — reuses the ENGINE's score popup element `self.hud_rankscroreupdate` (`NewScoreHudElem`, created by `_rank` at spawn) for the exact stock yellow look (font/glow/fontPulse); `gf_showScorePopup` `setText`'s it. Still counts in the global cap, but there's room now that the panel is off the pool. (Dormant `ui_gf_popup_*` menu items remain from an earlier attempt — unused.)
+
+`gf_debug_hud_pool` overlay shows `DRAWN: N/17` (now ~0 for mod HUD). Menu *structure* changes need a `mod.ff` rebuild; dvar values/positions are GSC-tunable (no rebuild). **Always build with `tools/build_ff.ps1`** (stages both zones + cleans `raw/`); a leftover staged `.menu` in `raw/` double-loads and kills the gametype UI. See memory `settext-configstring-exhaustion` + `build-stage-transitive-menu`.
+
+### Server-side HUD (reference — NOT the current health/loadout approach)
 
 Both the Loadout HUD and Health HUD use `newTeamHudElem(team)` (server-side elements) so one element pair per team covers the full lobby without consuming per-player client pool slots.
 

@@ -24,6 +24,7 @@ input:focus,select:focus{border-color:var(--ac)}
 #iHost{width:110px}#iPort{width:70px}#iPass{width:135px}
 .bdg{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid;white-space:nowrap}
 .bdg.off{color:var(--dm);border-color:var(--bd)}.bdg.on{color:var(--ok);border-color:var(--ok)}.bdg.err{color:var(--ng);border-color:var(--ng)}
+.bdg.mode-ded{color:var(--ac);border-color:var(--ac)}.bdg.mode-listen{color:var(--wn);border-color:var(--wn)}
 
 /* Body */
 .body{display:flex;flex:1;overflow:hidden}
@@ -99,10 +100,7 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .b-sm{padding:3px 8px;font-size:11px}.b-lg{width:100%;padding:11px;font-size:14px;letter-spacing:.05em}
 #cBtn{background:var(--ac);color:#0d0f17;border-color:var(--ac);font-weight:700;padding:5px 14px}
 #cBtn:hover{opacity:.85}#cBtn.disc{background:transparent;color:var(--ng);border-color:var(--ng)}
-#applyBtn{background:transparent;color:var(--dm);border-color:var(--bd);font-weight:700;padding:5px 14px}
-#applyBtn:hover:not(:disabled){background:var(--sf2)}
-#applyBtn.has-pending{color:var(--wn);border-color:var(--wn)}
-#applyBtn.has-pending:hover{background:var(--wn);color:#0d0f17}
+.set-all-row{display:flex;justify-content:flex-end;gap:6px;margin-top:6px}
 
 /* Layout helpers */
 .block{background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:10px 12px}
@@ -220,9 +218,9 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     <input id="iPort" type="number" placeholder="Port" value="28960">
     <input id="iPass" type="password" placeholder="rcon_password" value="s5ZrXQDfmSPp">
     <button id="cBtn" onclick="doConn()">Connect</button>
-    <button id="applyBtn" class="ctrl" onclick="applyAll()">Apply All (0)</button>
   </div>
   <span id="badge" class="bdg off">● Disconnected</span>
+  <span id="modeBadge" class="bdg off" style="display:none" data-tip="Detected from the server's status output (loopback = listen).&#10;DEDICATED: live scoreboard + Kill Server available.&#10;LISTEN: Noclip (host) available; scoreboard has no live data.">—</span>
 </header>
 
 <div class="body">
@@ -278,92 +276,14 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
 <!-- ── Main ── -->
 <div class="main">
 <div class="tab-bar">
-  <button class="tab active" onclick="tab('gf')">GUNFIGHT</button>
-  <button class="tab" onclick="tab('bots')">BOTS</button>
+  <button class="tab active" onclick="tab('match')">MATCH</button>
   <button class="tab" onclick="tab('maps')">MAPS</button>
-  <button class="tab" onclick="tab('mods')">MODS</button>
-  <button class="tab" onclick="tab('dev')">DEV</button>
   <button class="tab" onclick="tab('srv')">SERVER</button>
   <button class="tab" onclick="tab('con')">CONSOLE</button>
 </div>
 
-<!-- ═══ GUNFIGHT ═══ -->
-<div id="p-gf" class="panel active">
-  <div class="block">
-    <div class="btitle">ROUND SETTINGS</div>
-    <div class="srow" data-tip="gf_player_health&#10;Read at each spawn. Default: 100"><span class="slbl">Player Health</span>
-      <input id="vHp" class="num ctrl" type="number" value="100" min="1" max="999">
-      <button class="b-gh b-sm ctrl" onclick="qdv('gf_player_health','vHp')">Queue</button>
-      <span class="shint">next spawn</span></div>
-    <div class="srow" data-tip="scr_gf_numlives&#10;Lives per player per round. Default: 1"><span class="slbl">Lives / Round</span>
-      <input id="vLv" class="num ctrl" type="number" value="1" min="1" max="10">
-      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_numlives','vLv')">Queue</button>
-      <span class="shint">next round</span></div>
-    <div class="srow" data-tip="scr_team_maxsize&#10;Players per team max; overflow goes to spectator. 0 = unlimited"><span class="slbl">Max Team Size</span>
-      <input id="vTs" class="num ctrl" type="number" value="2" min="1" max="12">
-      <button class="b-gh b-sm ctrl" onclick="qdv('scr_team_maxsize','vTs')">Queue</button>
-      <span class="shint">next round</span></div>
-    <div class="srow" data-tip="scr_gf_teamspawnmode&#10;auto = switch by team size (BOTH teams 4+ &#8594; large)&#10;large / small = force the mode&#10;Large: full-map TDM spawns, no wager barriers, OT flag at Dom B, 1:30 round / 5s cap / 30s OT"><span class="slbl">Team Spawn Mode</span>
-      <span style="flex:1"></span>
-      <select id="vTsm" class="ctrl" onchange="queueDvar('scr_gf_teamspawnmode',this.value)">
-        <option value="auto">Auto (4+ &#8594; large)</option>
-        <option value="large">Force Large</option>
-        <option value="small">Force Small</option>
-      </select>
-      <span class="shint">next round</span></div>
-    <div class="srow" data-tip="scr_gf_timelimit&#10;Round time (min) for SMALL mode (&#8804;3p teams). 0 = no limit. Default: 0.75 (45s)"><span class="slbl">Round Time &#8212; Small (min)</span>
-      <input id="vTl" class="num ctrl" type="number" value="0.75" min="0" max="60" step="0.25">
-      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_timelimit','vTl')">Queue</button>
-      <span class="shint">next round</span></div>
-    <div class="srow" data-tip="scr_gf_timelimit_large&#10;Round time limit (min) for LARGE mode (4p+ teams). Default: 1.5 (1:30)"><span class="slbl">Round Time &#8212; Large (min)</span>
-      <input id="vTlL" class="num ctrl" type="number" value="1.5" min="0" max="60" step="0.5">
-      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_timelimit_large','vTlL')">Queue</button>
-      <span class="shint">next round</span></div>
-    <div class="srow" data-tip="scr_gf_scorelimit&#10;Round wins needed to win the match. Default: 6"><span class="slbl">Rounds to Win</span>
-      <input id="vSl" class="num ctrl" type="number" value="6" min="1" max="10">
-      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_scorelimit','vSl')">Queue</button>
-      <span class="shint">next round</span></div>
-    <div class="srow" data-tip="scr_gf_roundlimit&#10;Hard round cap regardless of score. 0 = use scorelimit only. Default: 0"><span class="slbl">Max Rounds (0=off)</span>
-      <input id="vRl" class="num ctrl" type="number" value="0" min="0" max="15">
-      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_roundlimit','vRl')">Queue</button>
-      <span class="shint">next round</span></div>
-    <div class="srow" data-tip="scr_gf_roundswitch&#10;Swap attacker/defender sides every N rounds. 0 = never. Default: 2"><span class="slbl">Side Switch Every N Rounds</span>
-      <input id="vRsw" class="num ctrl" type="number" value="2" min="0" max="9">
-      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_roundswitch','vRsw')">Queue</button>
-      <span class="shint">next round</span></div>
-    <div class="srow" data-tip="scr_team_fftype&#10;0 = off, 1 = on, 2 = reflect, 3 = shared&#10;Toggle sets 0 or 1"><span class="slbl">Friendly Fire</span>
-      <span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbFF" onchange="applyFF()"><span class="tog-t"></span><span class="tog-th"></span></label>
-      <span id="ffLbl" class="tlbl">OFF</span>
-      <span class="shint">immediate</span></div>
-    <div class="srow" data-tip="level.killstreaksenabled&#10;Runtime level var — bridge: killstreaks_on / killstreaks_off&#10;Disabling also hides killstreak UI"><span class="slbl">Killstreaks</span>
-      <span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbKS" onchange="bridge(cbKS.checked?'killstreaks_on':'killstreaks_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
-      <span class="shint">level var</span></div>
-    <div class="srow" data-tip="level.healthRegenDisabled + scr_player_healthregentime&#10;Bridge sets both. On = 5s delay. Off = disabled (GF default)"><span class="slbl">Health Regen</span>
-      <span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbRegen" onchange="bridge(cbRegen.checked?'regen_on':'regen_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
-      <span class="shint">level var</span></div>
-  </div>
-  <div class="block">
-    <div class="btitle">OVERTIME</div>
-    <div class="srow" data-tip="gf_capture_time&#10;Seconds to capture the OT zone in SMALL mode (&#8804;3p). Default: 3"><span class="slbl">Capture Time &#8212; Small (s)</span>
-      <input id="vCt" class="num ctrl" type="number" value="3" min="0.5" max="30" step="0.5">
-      <button class="b-gh b-sm ctrl" onclick="qdv('gf_capture_time','vCt')">Queue</button>
-      <span class="shint">next OT</span></div>
-    <div class="srow" data-tip="gf_capture_time_large&#10;Seconds to capture the OT zone in LARGE mode (4p+). Default: 5"><span class="slbl">Capture Time &#8212; Large (s)</span>
-      <input id="vCtL" class="num ctrl" type="number" value="5" min="0.5" max="30" step="0.5">
-      <button class="b-gh b-sm ctrl" onclick="qdv('gf_capture_time_large','vCtL')">Queue</button>
-      <span class="shint">next OT</span></div>
-    <div class="srow" data-tip="scr_gf_overtimelimit&#10;OT countdown (s) in SMALL mode (&#8804;3p). Pauses while contested. Default: 15"><span class="slbl">OT Duration &#8212; Small (s)</span>
-      <input id="vOt" class="num ctrl" type="number" value="15" min="5" max="120">
-      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_overtimelimit','vOt')">Queue</button>
-      <span class="shint">next OT</span></div>
-    <div class="srow" data-tip="scr_gf_overtimelimit_large&#10;OT countdown (s) in LARGE mode (4p+). Pauses while contested. Default: 30"><span class="slbl">OT Duration &#8212; Large (s)</span>
-      <input id="vOtL" class="num ctrl" type="number" value="30" min="5" max="120">
-      <button class="b-gh b-sm ctrl" onclick="qdv('scr_gf_overtimelimit_large','vOtL')">Queue</button>
-      <span class="shint">next OT</span></div>
-  </div>
+<!-- ═══ MATCH ═══ -->
+<div id="p-match" class="panel active">
   <div class="block">
     <div class="btitle">MATCH CONTROL</div>
     <div style="display:flex;flex-direction:column;gap:8px">
@@ -378,10 +298,30 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       </div>
     </div>
   </div>
-</div>
+  <!-- Gunfight round + overtime settings — data-driven from GT_SECTIONS.gf (single
+       source of truth, shared with the SERVER tab); populated + live-read by JS. -->
+  <div id="mt-gf-body"></div>
+  <div class="block">
+    <div class="btitle">GAMEPLAY</div>
+    <div class="srow" data-tip="scr_team_maxsize&#10;Players per team max; overflow goes to spectator. 0 = unlimited&#10;Team Spawn Mode 'auto' keys large/small off this"><span class="slbl">Max Team Size</span>
+      <input id="vTs" class="num ctrl" type="number" value="2" min="1" max="12">
+      <button class="b-ac b-sm ctrl" onclick="sdve('scr_team_maxsize','vTs')">Set</button>      <span class="shint">next round</span></div>
+    <div class="srow" data-tip="scr_team_fftype&#10;0 = off, 1 = on, 2 = reflect, 3 = shared&#10;Toggle sets 0 or 1"><span class="slbl">Friendly Fire</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbFF" onchange="applyFF()"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span id="ffLbl" class="tlbl">OFF</span>
+      <span class="shint">immediate</span></div>
+    <div class="srow" data-tip="level.killstreaksenabled&#10;Runtime level var — bridge: killstreaks_on / killstreaks_off&#10;Disabling also hides killstreak UI"><span class="slbl">Killstreaks</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbKS" onchange="bridge(cbKS.checked?'killstreaks_on':'killstreaks_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">level var</span></div>
+    <div class="srow" data-tip="level.healthRegenDisabled + scr_player_healthregentime&#10;Bridge sets both. On = 5s delay. Off = disabled (GF default)"><span class="slbl">Health Regen</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbRegen" onchange="bridge(cbRegen.checked?'regen_on':'regen_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">level var</span></div>
+    <div class="set-all-row"><button class="b-gh b-sm ctrl" data-tip="Write this block&#39;s values to dedicated.cfg (persists across restarts).&#10;A .bak backup is made; takes effect on next server start or `exec dedicated.cfg`." onclick="saveBlockToCfg(this)">💾 Save</button><button class="b-ac b-sm ctrl" onclick="setAllInBlock(this)">Set All</button></div>
+  </div>
 
-<!-- ═══ BOTS ═══ -->
-<div id="p-bots" class="panel">
   <div class="block">
     <div class="btitle">BOT MANAGEMENT</div>
     <div class="row" style="margin-bottom:10px">
@@ -408,69 +348,26 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       <button class="db fu ctrl" id="d-fu"  onclick="botDiff('fu')">FU</button>
     </div>
   </div>
-</div>
 
-<!-- ═══ MAPS ═══ -->
-<div id="p-maps" class="panel">
-  <div class="mact">
-    <label>Gametype</label>
-    <div class="csel-wrap" id="vGtWrap">
-      <div class="csel-btn" id="vGtBtn" onclick="gtToggle()">
-        <span id="vGtLabel">gf — Gunfight</span>
-        <span class="csel-arr">▾</span>
-      </div>
-      <div class="csel-list" id="vGtList"></div>
-    </div>
-    <button class="b-gh ctrl" data-tip="set g_gametype <value> (RCON dvar)&#10;Sets gametype for the next map load — takes effect on next map restart" onclick="setGt()">Set GT</button>
-    <button class="b-ac ctrl" data-tip="map_restart (RCON console command)&#10;Reloads current map with the selected gametype — resets all scores" onclick="cmd('map_restart')">Restart</button>
-  </div>
-
-  <div class="block">
-    <div class="btitle">QUEUE <span id="qAutoLbl" style="font-weight:400;font-size:10px"></span></div>
-    <div id="qList" class="queue-list"><div class="queue-empty">Queue is empty — click a map below to add</div></div>
-    <div class="row" style="margin-top:8px">
-      <button class="b-ac ctrl" data-tip="set g_gametype + map <id> (RCON commands)&#10;Sends gametype then map load for the first entry in the queue" onclick="qSendNext()">▶ Send Next</button>
-      <button class="b-gh ctrl" data-tip="Clears the local map queue (no server command sent)&#10;Removes all pending maps from the queue list" onclick="qClear()">Clear Queue</button>
-      <label class="tog" style="margin-left:auto" title="Auto-send on map change">
-        <input type="checkbox" id="cbAuto" onchange="toggleAutoQ()">
-        <span class="tog-t"></span><span class="tog-th"></span>
-      </label>
-      <span class="tlbl" style="margin-left:4px;font-size:11px">Auto-advance</span>
-    </div>
-  </div>
-
-  <div class="mfilter">
-    <span class="dm">Show:</span>
-    <button class="active" id="fall" onclick="mf('all')">All Maps</button>
-    <button id="fgf" onclick="mf('gf')">GF Compatible ★</button>
-  </div>
-  <div id="mgrid" class="mgrid"></div>
-</div>
-
-<!-- ═══ MODS ═══ -->
-<div id="p-mods" class="panel">
   <div class="block">
     <div class="btitle">MOVEMENT  <span style="font-weight:400;font-size:10px;color:var(--dm)">affects all players</span></div>
     <div class="slider-row">
       <span class="slbl" style="min-width:120px">Move Speed</span>
-      <input type="range" id="sSpeed" min="50" max="500" value="190" oninput="sv('sSpeed','vSpeed')" class="ctrl">
+      <input type="range" id="sSpeed" min="50" max="500" value="190" oninput="sv('sSpeed','vSpeed')" onchange="sdvv('g_speed',this.value)" class="ctrl">
       <input type="number" id="vSpeed" class="num ctrl" value="190" oninput="su('vSpeed','sSpeed',50,500)">
-      <button class="b-gh b-sm ctrl" onclick="qdv('g_speed','vSpeed')">Queue</button>
-      <button class="b-gh b-sm ctrl" onclick="resetDv('g_speed',190,'vSpeed','sSpeed')">↺</button>
+      <button class="b-ac b-sm ctrl" onclick="sdve('g_speed','vSpeed')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('g_speed',190,'vSpeed','sSpeed')">↺</button>
     </div>
     <div class="slider-row" data-tip="jump_height&#10;Jump impulse height in units. Default: 39">
       <span class="slbl" style="min-width:120px">Jump Height</span>
-      <input type="range" id="sJump" min="1" max="400" value="39" oninput="sv('sJump','vJump')" class="ctrl">
+      <input type="range" id="sJump" min="1" max="400" value="39" oninput="sv('sJump','vJump')" onchange="sdvv('jump_height',this.value)" class="ctrl">
       <input type="number" id="vJump" class="num ctrl" value="39" oninput="su('vJump','sJump',1,400)">
-      <button class="b-gh b-sm ctrl" onclick="qdv('jump_height','vJump')">Queue</button>
-      <button class="b-gh b-sm ctrl" onclick="resetDv('jump_height',39,'vJump','sJump')">↺</button>
+      <button class="b-ac b-sm ctrl" onclick="sdve('jump_height','vJump')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('jump_height',39,'vJump','sJump')">↺</button>
     </div>
     <div class="slider-row" data-tip="bg_gravity&#10;Downward acceleration (units/s²). Default: 800. Lower = floatier">
       <span class="slbl" style="min-width:120px">Gravity</span>
-      <input type="range" id="sGrav" min="10" max="2000" value="800" oninput="sv('sGrav','vGrav')" class="ctrl">
+      <input type="range" id="sGrav" min="10" max="2000" value="800" oninput="sv('sGrav','vGrav')" onchange="sdvv('bg_gravity',this.value)" class="ctrl">
       <input type="number" id="vGrav" class="num ctrl" value="800" oninput="su('vGrav','sGrav',10,2000)">
-      <button class="b-gh b-sm ctrl" onclick="qdv('bg_gravity','vGrav')">Queue</button>
-      <button class="b-gh b-sm ctrl" onclick="resetDv('bg_gravity',800,'vGrav','sGrav')">↺</button>
+      <button class="b-ac b-sm ctrl" onclick="sdve('bg_gravity','vGrav')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('bg_gravity',800,'vGrav','sGrav')">↺</button>
     </div>
     <div class="srow" data-tip="timescale&#10;Game simulation speed multiplier. Requires sv_cheats 1. Default: 1">
       <span class="slbl">Timescale</span>
@@ -494,24 +391,24 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       <label class="tog ctrl"><input type="checkbox" id="cbFall" checked onchange="toggleFallDmg()"><span class="tog-t"></span><span class="tog-th"></span></label>
       <span class="shint">immediate</span>
     </div>
+    <div class="set-all-row"><button class="b-gh b-sm ctrl" data-tip="Write this block&#39;s values to dedicated.cfg (persists across restarts).&#10;A .bak backup is made; takes effect on next server start or `exec dedicated.cfg`." onclick="saveBlockToCfg(this)">💾 Save</button><button class="b-ac b-sm ctrl" onclick="setAllInBlock(this)">Set All</button></div>
   </div>
 
   <div class="block">
     <div class="btitle">VIEW  <span style="font-weight:400;font-size:10px;color:var(--dm)">affects all players</span></div>
     <div class="slider-row" data-tip="bg_viewBobAmplitudeBase&#10;Head-bob amplitude while moving. 0 = no bob. Default: 1">
       <span class="slbl" style="min-width:120px">View Bob</span>
-      <input type="range" id="sBob" min="0" max="1" step="0.05" value="1" oninput="sv('sBob','vBob')" class="ctrl">
+      <input type="range" id="sBob" min="0" max="1" step="0.05" value="1" oninput="sv('sBob','vBob')" onchange="sdvv('bg_viewBobAmplitudeBase',this.value)" class="ctrl">
       <input type="number" id="vBob" class="num ctrl" value="1" step="0.05" oninput="su('vBob','sBob',0,1)">
-      <button class="b-gh b-sm ctrl" onclick="qdv('bg_viewBobAmplitudeBase','vBob')">Queue</button>
-      <button class="b-gh b-sm ctrl" onclick="resetDv('bg_viewBobAmplitudeBase',1,'vBob','sBob')">↺</button>
+      <button class="b-ac b-sm ctrl" onclick="sdve('bg_viewBobAmplitudeBase','vBob')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('bg_viewBobAmplitudeBase',1,'vBob','sBob')">↺</button>
     </div>
     <div class="slider-row" data-tip="cg_fov&#10;Field of view in degrees. Default: 65. Range: 40–120">
       <span class="slbl" style="min-width:120px">FOV</span>
-      <input type="range" id="sFov" min="40" max="120" value="65" oninput="sv('sFov','vFov')" class="ctrl">
+      <input type="range" id="sFov" min="40" max="120" value="65" oninput="sv('sFov','vFov')" onchange="sdvv('cg_fov',this.value)" class="ctrl">
       <input type="number" id="vFov" class="num ctrl" value="65" oninput="su('vFov','sFov',40,120)">
-      <button class="b-gh b-sm ctrl" onclick="qdv('cg_fov','vFov')">Queue</button>
-      <button class="b-gh b-sm ctrl" onclick="resetDv('cg_fov',65,'vFov','sFov')">↺</button>
+      <button class="b-ac b-sm ctrl" onclick="sdve('cg_fov','vFov')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('cg_fov',65,'vFov','sFov')">↺</button>
     </div>
+    <div class="set-all-row"><button class="b-gh b-sm ctrl" data-tip="Write this block&#39;s values to dedicated.cfg (persists across restarts).&#10;A .bak backup is made; takes effect on next server start or `exec dedicated.cfg`." onclick="saveBlockToCfg(this)">💾 Save</button><button class="b-ac b-sm ctrl" onclick="setAllInBlock(this)">Set All</button></div>
   </div>
 
   <div class="block">
@@ -546,10 +443,10 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       <label class="tog ctrl"><input type="checkbox" id="cbHS" onchange="bridge(cbHS.checked?'headshots_on':'headshots_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
       <span class="shint">non-hs dmg = 0</span>
     </div>
-    <div class="srow" data-tip="RCON console command: noclip&#10;Toggles noclip for the host player. Requires sv_cheats 1">
+    <div class="srow" data-tip="RCON console command: noclip&#10;Toggles noclip for the host player. Requires sv_cheats 1&#10;(listen/host only — no host player on a dedicated server)">
       <span class="slbl">Noclip (host only)</span>
       <span style="flex:1"></span>
-      <button class="b-gh b-sm ctrl" onclick="cmd('noclip')">Toggle</button>
+      <button class="b-gh b-sm ctrl listen-only" onclick="cmd('noclip')">Toggle</button>
       <span class="shint">console cmd</span>
     </div>
   </div>
@@ -558,28 +455,28 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     <div class="btitle">VISUAL TWEAKS  <span style="font-weight:400;font-size:10px;color:var(--dm)">setClientDvar -- all players via bridge</span></div>
     <div class="slider-row" data-tip="r_gamma&#10;Screen brightness multiplier. Default: 1.1 | setClientDvar all players">
       <span class="slbl" style="min-width:130px">Gamma</span>
-      <input type="range" id="sGamma" min="0.5" max="3" step="0.05" value="1.1" oninput="sv('sGamma','vGamma')" class="ctrl">
+      <input type="range" id="sGamma" min="0.5" max="3" step="0.05" value="1.1" oninput="sv('sGamma','vGamma')" onchange="visBridge('visgamma_','vGamma')" class="ctrl">
       <input type="number" id="vGamma" class="num ctrl" value="1.1" step="0.05" oninput="su('vGamma','sGamma',0.5,3)">
       <button class="b-gh b-sm ctrl" onclick="visBridge('visgamma_','vGamma')">Set</button>
       <button class="b-gh b-sm ctrl" onclick="visReset('visgamma_',1.1,'vGamma','sGamma')">&#x21BA;</button>
     </div>
     <div class="slider-row" data-tip="r_lightTweakAmbient&#10;Minimum scene fill light. 0 = dark shadows, 2 = fully lit. Default: 0.1">
       <span class="slbl" style="min-width:130px">Ambient Light</span>
-      <input type="range" id="sAmb" min="0" max="2" step="0.05" value="0.1" oninput="sv('sAmb','vAmb')" class="ctrl">
+      <input type="range" id="sAmb" min="0" max="2" step="0.05" value="0.1" oninput="sv('sAmb','vAmb')" onchange="visBridge('visambient_','vAmb')" class="ctrl">
       <input type="number" id="vAmb" class="num ctrl" value="0.1" step="0.05" oninput="su('vAmb','sAmb',0,2)">
       <button class="b-gh b-sm ctrl" onclick="visBridge('visambient_','vAmb')">Set</button>
       <button class="b-gh b-sm ctrl" onclick="visReset('visambient_',0.1,'vAmb','sAmb')">&#x21BA;</button>
     </div>
     <div class="slider-row" data-tip="r_lightGridIntensity&#10;Light probe / irradiance intensity multiplier. Default: 1.1">
       <span class="slbl" style="min-width:130px">Grid Intensity</span>
-      <input type="range" id="sGridI" min="0" max="3" step="0.05" value="1.1" oninput="sv('sGridI','vGridI')" class="ctrl">
+      <input type="range" id="sGridI" min="0" max="3" step="0.05" value="1.1" oninput="sv('sGridI','vGridI')" onchange="visBridge('visgridint_','vGridI')" class="ctrl">
       <input type="number" id="vGridI" class="num ctrl" value="1.1" step="0.05" oninput="su('vGridI','sGridI',0,3)">
       <button class="b-gh b-sm ctrl" onclick="visBridge('visgridint_','vGridI')">Set</button>
       <button class="b-gh b-sm ctrl" onclick="visReset('visgridint_',1.1,'vGridI','sGridI')">&#x21BA;</button>
     </div>
     <div class="slider-row" data-tip="r_lightGridContrast&#10;Light grid contrast. Default: 1.1">
       <span class="slbl" style="min-width:130px">Grid Contrast</span>
-      <input type="range" id="sGridC" min="0" max="3" step="0.05" value="1.1" oninput="sv('sGridC','vGridC')" class="ctrl">
+      <input type="range" id="sGridC" min="0" max="3" step="0.05" value="1.1" oninput="sv('sGridC','vGridC')" onchange="visBridge('visgridcon_','vGridC')" class="ctrl">
       <input type="number" id="vGridC" class="num ctrl" value="1.1" step="0.05" oninput="su('vGridC','sGridC',0,3)">
       <button class="b-gh b-sm ctrl" onclick="visBridge('visgridcon_','vGridC')">Set</button>
       <button class="b-gh b-sm ctrl" onclick="visReset('visgridcon_',1.1,'vGridC','sGridC')">&#x21BA;</button>
@@ -625,137 +522,108 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       <button class="b-gh ctrl" data-tip="Low gravity fun preset&#10;jump_height 180 · bg_gravity 300 · timescale 0.85&#10;sprint_unlimited 1 · no fall damage" onclick="applyPreset('silly')">🎪 Silly</button>
     </div>
   </div>
-</div>
 
-<!-- ═══ DEV ═══ -->
-<div id="p-dev" class="panel">
   <div class="block">
-    <div class="btitle">GUNFIGHT DEBUG</div>
-    <div class="srow" data-tip="gf_debug&#10;0 = off, 1 = basic iPrintLn logging, 2 = verbose (spawns, rounds, HUD). Default: 0">
-      <span class="slbl">Debug Level</span>
-      <span style="flex:1"></span>
-      <div class="row">
-        <button class="b-gh b-sm ctrl" onclick="sdvv('gf_debug','0')">0 — off</button>
-        <button class="b-gh b-sm ctrl" onclick="sdvv('gf_debug','1')">1 — basic</button>
-        <button class="b-gh b-sm ctrl" onclick="sdvv('gf_debug','2')">2 — verbose</button>
+    <div class="btitle">VISION FX  <span style="font-weight:400;font-size:10px;color:var(--dm)">VisionSetNaked / setClientDvar — all players via bridge</span></div>
+    <div class="srow" data-tip="VisionSetNaked per player (bridge: vision_&lt;set&gt;)&#10;cheat_* sets are always loaded; Normal restores the map default vision">
+      <span class="slbl">Vision Set</span>
+      <div class="row" style="gap:4px;flex-wrap:wrap;justify-content:flex-end;flex:1">
+        <button class="b-gh b-sm ctrl" onclick="bridge('vision_normal')">Normal</button>
+        <button class="b-gh b-sm ctrl" onclick="bridge('vision_bw')">B&amp;W</button>
+        <button class="b-gh b-sm ctrl" onclick="bridge('vision_contrast')">Contrast</button>
+        <button class="b-gh b-sm ctrl" onclick="bridge('vision_invert')">Inverted</button>
+        <button class="b-gh b-sm ctrl" onclick="bridge('vision_night')">Night Vision</button>
       </div>
     </div>
-    <div class="srow" data-tip="gf_debug_spawns&#10;Draws spawn point entities and team assignments on screen each round">
-      <span class="slbl">Spawn Debug</span>
-      <span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbDbSpawn" onchange="sdvv('gf_debug_spawns',cbDbSpawn.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    <div class="srow" data-tip="cg_thirdPerson&#10;Third-person camera for all players. setClientDvar via bridge: thirdperson_1/0">
+      <span class="slbl">Third Person</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbTP" onchange="bridge('thirdperson_'+(cbTP.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
     </div>
-    <div class="srow" data-tip="gf_debug_hud_pool&#10;Logs HUD element pool allocation counts each round — useful for diagnosing elem exhaustion">
-      <span class="slbl">HUD Pool Debug</span>
-      <span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbDbHud" onchange="sdvv('gf_debug_hud_pool',cbDbHud.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
-    </div>
-    <div class="srow" data-tip="gf_debug_elem_probe&#10;Probes available client HUD element slots and prints count to dev console">
-      <span class="slbl">Elem Probe</span>
-      <span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbDbElem" onchange="sdvv('gf_debug_elem_probe',cbDbElem.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
-    </div>
-    <div class="srow" data-tip="scr_game_prematchperiod&#10;Seconds of pre-match (freeze) before the round goes live. Default: 15">
-      <span class="slbl">Prematch Duration (s)</span>
-      <input id="vPm" class="num ctrl" type="number" value="15" min="0" max="60">
-      <button class="b-gh b-sm ctrl" onclick="qdv('scr_game_prematchperiod','vPm')">Queue</button>
-      <span class="shint">next round</span>
-    </div>
-    <div class="srow" data-tip="scr_game_allowkillcam&#10;1 = show killcam after death, 0 = skip. Default: 1">
-      <span class="slbl">Killcam</span>
-      <span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbKC" checked onchange="sdvv('scr_game_allowkillcam',cbKC.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
-    </div>
-    <div class="srow" data-tip="compass&#10;1 = show minimap, 0 = hide. Default: 1">
-      <span class="slbl">Minimap</span>
-      <span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbMap" checked onchange="sdvv('compass',cbMap.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
-    </div>
-    <div class="srow" data-tip="sv_cheats&#10;Allows cheat-protected console commands (noclip, god, etc.). Default: 1">
-      <span class="slbl">Allow Cheat Commands</span>
-      <span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbCh" checked onchange="sdvv('sv_cheats',cbCh.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
-    </div>
-    <div class="srow" data-tip="scr_disable_cac&#10;Disables Create-a-Class menu. Players auto-spawn with defaultClass instead of picking. Default: 1">
-      <span class="slbl">Disable Class Select</span>
-      <span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbCac" checked onchange="sdvv('scr_disable_cac',cbCac.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
-    </div>
-    <div class="srow" data-tip="scr_disable_weapondrop&#10;1 = weapons don't drop on death, 0 = they do. Default: 1">
-      <span class="slbl">Disable Weapon Drop</span>
-      <span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbWd" checked onchange="sdvv('scr_disable_weapondrop',cbWd.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
-    </div>
-    <div class="srow" data-tip="scr_showperksonspawn&#10;1 = display perk icons in HUD after spawning. Default: 1">
-      <span class="slbl">Show Perks on Spawn</span>
-      <span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbSps" checked onchange="sdvv('scr_showperksonspawn',cbSps.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    <div class="srow" data-tip="cg_drawFPS&#10;On-screen FPS counter for all players. setClientDvar via bridge: fps_1/0">
+      <span class="slbl">FPS Counter</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbFPS" onchange="bridge('fps_'+(cbFPS.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
     </div>
   </div>
 
   <div class="block">
-    <div class="btitle">SERVER SETTINGS</div>
-    <div class="srow" data-tip="scr_teamchange&#10;1 = players can switch teams freely, 0 = locked. Default: 1">
-      <span class="slbl">Team Change</span><span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbTC" checked onchange="sdvv('scr_teamchange',cbTC.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    <div class="btitle">SILLY COMBAT  <span style="font-weight:400;font-size:10px;color:var(--dm)">all players via bridge</span></div>
+    <div class="srow" data-tip="Every shot traces forward from the eye and detonates on impact&#10;(explosion FX + RadiusDamage). 120ms throttle vs full-auto. Bridge: expbullets_on/off">
+      <span class="slbl">Explosive Bullets</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbExp" onchange="bridge(cbExp.checked?'expbullets_on':'expbullets_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">boom</span>
     </div>
-    <div class="srow" data-tip="scr_teambalance&#10;Prevents players from joining the larger team. Default: 0">
-      <span class="slbl">Keep Balanced Teams</span><span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbBal" onchange="sdvv('scr_teambalance',cbBal.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
-    </div>
-    <div class="srow" data-tip="scr_teamup&#10;Seconds players have to team-up before the match starts. 0 = no delay">
-      <span class="slbl">Team-Up Period (s)</span>
-      <span style="flex:1"></span>
-      <input id="vTup" class="num ctrl" type="number" value="0" min="0" max="120">
-      <button class="b-gh b-sm ctrl" onclick="qdv('scr_teamup','vTup')">Queue</button>
-    </div>
-    <div class="srow" data-tip="scr_autobalanceteams&#10;Auto-moves a player to even teams if imbalanced at round end. Default: 0">
-      <span class="slbl">Auto-Balance Teams</span><span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbAB" onchange="sdvv('scr_autobalanceteams',cbAB.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
-    </div>
-    <div class="srow" data-tip="g_allowvote&#10;1 = players can call /callvote in console, 0 = disabled. Default: 1">
-      <span class="slbl">Allow Voting</span><span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbVote" checked onchange="sdvv('g_allowvote',cbVote.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
-    </div>
-    <div class="srow" data-tip="scr_game_prematchperiod&#10;Toggle: sets to 15s (on) or 0 (off). Affects how long the ready-up freeze lasts">
-      <span class="slbl">Pre-Match</span><span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbPM" onchange="togglePrematch()"><span class="tog-t"></span><span class="tog-th"></span></label>
-    </div>
-    <div class="srow" data-tip="party_minplayers&#10;Minimum players before the match starts. Set to 1 for solo testing. Default: 2">
-      <span class="slbl">Pre-Match Min Players</span>
-      <span style="flex:1"></span>
-      <input id="vPMP" class="num ctrl" type="number" value="2" min="1" max="24">
-      <button class="b-gh b-sm ctrl" onclick="qdv('party_minplayers','vPMP')">Queue</button>
-    </div>
-    <div class="srow" data-tip="sv_maxclients&#10;Maximum simultaneous player connections the server accepts. Requires server restart to take effect">
-      <span class="slbl">Maximum Players</span>
-      <span style="flex:1"></span>
-      <input id="vMax" class="num ctrl" type="number" value="24" min="1" max="24">
-      <button class="b-gh b-sm ctrl" onclick="qdv('sv_maxclients','vMax')">Queue</button>
+    <div class="srow" data-tip="aim_automelee_range&#10;Extends knife-lunge distance. On = 256, Off = 64 (default). setClientDvar via bridge">
+      <span class="slbl">Long Knife</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbLK" onchange="bridge('longknife_'+(cbLK.checked?'256':'64'))"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">lunge 256</span>
     </div>
   </div>
 
   <div class="block">
-    <div class="btitle">CUSTOM DVAR</div>
-    <div class="row" data-tip="Set: sends 'set &lt;dvar&gt; &lt;value&gt;' directly via RCON&#10;Read: sends the dvar name as a command — server echoes current value to console log">
-      <input id="dvName" type="text" placeholder="dvar name" style="width:160px" class="ctrl">
-      <input id="dvVal"  type="text" placeholder="value" style="flex:1" class="ctrl">
-      <button class="b-ac ctrl" onclick="customDv()">Set</button>
-      <button class="b-gh ctrl" onclick="readDv()">Read</button>
+    <div class="btitle">SILLY EXTRAS  <span style="font-weight:400;font-size:10px;color:var(--dm)">all players via bridge</span></div>
+    <div class="srow" data-tip="Continuous mild EarthQuake on every player's camera — wobble without fighting input&#10;Bridge: drunk_on/off">
+      <span class="slbl">Drunk Mode</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbDrunk" onchange="bridge(cbDrunk.checked?'drunk_on':'drunk_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="hide() / show() on all player models — players invisible to each other (troll)&#10;Bridge: invis_on/off">
+      <span class="slbl">Invisible Players</span><span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbInvis" onchange="bridge(cbInvis.checked?'invis_on':'invis_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
+    <div class="srow" data-tip="One strong EarthQuake centered on every player. Bridge: quake">
+      <span class="slbl">Earthquake</span><span style="flex:1"></span>
+      <button class="b-wn b-sm ctrl" onclick="bridge('quake')">💥 Shake</button>
     </div>
   </div>
 
   <div class="block">
-    <div class="btitle">QUICK ACTIONS</div>
-    <div class="three">
-      <button class="b-gh ctrl" data-tip="fast_restart (RCON console command)&#10;Restarts current round — round state resets, scores carry over" onclick="cmd('fast_restart')">Fast Restart</button>
-      <button class="b-gh ctrl" data-tip="map_restart (RCON console command)&#10;Full map reload — resets all scores, round state, and entities" onclick="cmd('map_restart')">Map Restart</button>
-      <button class="b-gh ctrl" data-tip="killserver (RCON console command)&#10;Shuts down the dedicated server process immediately" onclick="cmd('killserver')">Kill Server</button>
-      <button class="b-gh ctrl" data-tip="gf_cmd endround_allies (GSC bridge)&#10;Calls sd_endGame('allies','') — awards round win to Allies" onclick="endRound('allies')">Force Allies Win</button>
-      <button class="b-gh ctrl" data-tip="gf_cmd endround_axis (GSC bridge)&#10;Calls sd_endGame('axis','') — awards round win to Axis" onclick="endRound('axis')">Force Axis Win</button>
-      <button class="b-gh ctrl" data-tip="status (RCON console command)&#10;Prints connected players, scores, pings, GUIDs, and map to the console tab" onclick="cmd('status')">Print Status</button>
+    <div class="btitle">ADMIN  <span style="font-weight:400;font-size:10px;color:var(--dm)">match restart lives in the top bar</span></div>
+    <div class="srow" data-tip="Teleports all players to Player 1 (host/anchor), scattered slightly. Bridge: tpall">
+      <span class="slbl">Gather Players → P1</span><span style="flex:1"></span>
+      <button class="b-gh b-sm ctrl" onclick="bridge('tpall')">Teleport All</button>
+    </div>
+    <div class="srow" data-tip="iPrintLnBold to everyone&#10;Sends dvar gf_say then triggers bridge: saymsg">
+      <span class="slbl">Broadcast</span>
+      <input id="vSay" class="num ctrl" type="text" style="flex:1;min-width:120px" placeholder="message…" onkeydown="if(event.key==='Enter')broadcastMsg()">
+      <button class="b-ac b-sm ctrl" onclick="broadcastMsg()">Send</button>
     </div>
   </div>
+</div>
+
+<!-- ═══ MAPS ═══ -->
+<div id="p-maps" class="panel">
+  <div class="mact">
+    <label>Gametype</label>
+    <div class="csel-wrap" id="vGtWrap">
+      <div class="csel-btn" id="vGtBtn" onclick="gtToggle()">
+        <span id="vGtLabel">gf — Gunfight</span>
+        <span class="csel-arr">▾</span>
+      </div>
+      <div class="csel-list" id="vGtList"></div>
+    </div>
+    <button class="b-gh ctrl" data-tip="set g_gametype <value> (RCON dvar)&#10;Sets gametype for the next map load — takes effect on next map restart" onclick="setGt()">Set GT</button>
+    <button class="b-ac ctrl" data-tip="map_restart (RCON console command)&#10;Reloads current map with the selected gametype — resets all scores" onclick="cmd('map_restart')">Restart</button>
+  </div>
+
+  <div class="block">
+    <div class="btitle">QUEUE <span id="qAutoLbl" style="font-weight:400;font-size:10px"></span></div>
+    <div id="qList" class="queue-list"><div class="queue-empty">Queue is empty — click a map below to add</div></div>
+    <div class="row" style="margin-top:8px">
+      <button class="b-ac ctrl" data-tip="set g_gametype + map <id> (RCON commands)&#10;Sends gametype then map load for the first entry in the queue" onclick="qSendNext()">▶ Send Next</button>
+      <button class="b-gh ctrl" data-tip="Clears the local map queue (no server command sent)&#10;Removes all pending maps from the queue list" onclick="qClear()">Clear Queue</button>
+      <label class="tog" style="margin-left:auto" title="Auto-send on map change">
+        <input type="checkbox" id="cbAuto" onchange="toggleAutoQ()">
+        <span class="tog-t"></span><span class="tog-th"></span>
+      </label>
+      <span class="tlbl" style="margin-left:4px;font-size:11px">Auto-advance</span>
+    </div>
+  </div>
+
+  <div class="mfilter">
+    <span class="dm">Show:</span>
+    <button class="active" id="fall" onclick="mf('all')">All Maps</button>
+    <button id="fgf" onclick="mf('gf')">GF Compatible ★</button>
+  </div>
+  <div id="mgrid" class="mgrid"></div>
 </div>
 
 <!-- ═══ SERVER CFG ═══ -->
@@ -765,6 +633,23 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
 
 <!-- ═══ CONSOLE ═══ -->
 <div id="p-con" class="panel">
+  <div class="block">
+    <div class="btitle">CUSTOM DVAR</div>
+    <div class="row" data-tip="Set: sends 'set &lt;dvar&gt; &lt;value&gt;' directly via RCON&#10;Read: sends the dvar name as a command — server echoes current value to the console log below">
+      <input id="dvName" type="text" placeholder="dvar name" style="width:160px" class="ctrl">
+      <input id="dvVal"  type="text" placeholder="value" style="flex:1" class="ctrl">
+      <button class="b-ac ctrl" onclick="customDv()">Set</button>
+      <button class="b-gh ctrl" onclick="readDv()">Read</button>
+    </div>
+  </div>
+  <div class="block">
+    <div class="btitle">CLIENT BINDS  <span style="font-weight:400;font-size:10px;color:var(--dm)">client-side — copy &amp; paste into the in-game console</span></div>
+    <div class="srow" data-tip="bind SHIFT &quot;+breath_sprint&quot;&#10;bind MOUSE2 &quot;+speed_throw; -breath_sprint; -sprint&quot;&#10;Makes ADS cancel sprint (sprint-out / tactical fix).&#10;Binds can't be pushed from a server — each player pastes these in their own console.">
+      <span class="slbl">Sprint-ADS Fix</span>
+      <span style="flex:1"></span>
+      <button class="b-ac b-sm" onclick="copySprintAdsFix()">📋 Copy binds</button>
+    </div>
+  </div>
   <div id="clog" class="clog"></div>
   <div class="cin-row">
     <input id="cin" type="text" placeholder="rcon command…" onkeydown="cKey(event)">
@@ -802,15 +687,14 @@ const API='http://127.0.0.1:3000/api';
 
 // ─── Maps data ────────────────────────────────────────────────────────────────
 const MAPS=[
-  {id:'mp_array',n:'Array',gf:1},{id:'mp_cairo',n:'Cairo',gf:1},
-  {id:'mp_cosmodrome',n:'Cosmodrome',gf:1},{id:'mp_cracked',n:'Cracked',gf:1},
-  {id:'mp_crisis',n:'Crisis',gf:1},{id:'mp_duga',n:'Duga',gf:1},
+  {id:'mp_array',n:'Array',gf:1},{id:'mp_cairo',n:'Havana',gf:1},
+  {id:'mp_cosmodrome',n:'Launch',gf:1},{id:'mp_cracked',n:'Cracked',gf:1},
+  {id:'mp_crisis',n:'Crisis',gf:1},{id:'mp_duga',n:'Grid',gf:1},
   {id:'mp_firingrange',n:'Firing Range',gf:0},{id:'mp_hanoi',n:'Hanoi',gf:1},
-  {id:'mp_havoc',n:'Havoc',gf:1},{id:'mp_mountain',n:'Mountain',gf:1},
+  {id:'mp_havoc',n:'Jungle',gf:1},{id:'mp_mountain',n:'Summit',gf:1},
   {id:'mp_nuked',n:'Nuketown',gf:0},{id:'mp_radiation',n:'Radiation',gf:1},
-  {id:'mp_russianbase',n:'Russian Base',gf:1},{id:'mp_silo',n:'Silo',gf:0},
-  {id:'mp_summit',n:'Summit',gf:0},{id:'mp_villa',n:'Villa',gf:1},
-  {id:'mp_wmd',n:'WMD',gf:0},{id:'mp_zoo',n:'Zoo',gf:0},
+  {id:'mp_russianbase',n:'WMD',gf:1},{id:'mp_silo',n:'Silo',gf:0},
+  {id:'mp_villa',n:'Villa',gf:1},{id:'mp_zoo',n:'Zoo',gf:0},
   {id:'mp_berlinwall2',n:'Berlin Wall',gf:0,dlc:1},{id:'mp_discovery',n:'Discovery',gf:0,dlc:1},
   {id:'mp_kowloon',n:'Kowloon',gf:0,dlc:1},{id:'mp_stadium',n:'Stadium',gf:0,dlc:1},
   {id:'mp_gridlock',n:'Convoy',gf:0,dlc:1},{id:'mp_hotel',n:'Hotel',gf:0,dlc:1},
@@ -831,26 +715,52 @@ const PRESETS={
             'set player_sprintUnlimited 1','set bg_fallDamageMinHeight 9999','set bg_fallDamageMaxHeight 9999'],
 };
 
-// ─── Pending queue (SERVER tab batch apply) ────────────────────────────────────
-let _pending={};
-function queueDvar(dvar,val){
-  _pending[dvar]=String(val);
-  const n=Object.keys(_pending).length;
-  const btn=g('applyBtn');
-  btn.textContent='Apply All ('+n+')';
-  btn.classList.add('has-pending');
-}
-async function applyAll(){
-  const entries=Object.entries(_pending);
-  if(!entries.length)return;
-  const cmds=entries.map(([d,v])=>`set ${d} ${v}`);
+// ─── Set All ──────────────────────────────────────────────────────────────────
+function sdve(dv,id){sdvv(dv,g(id).value);}
+async function setAllInBlock(btn){
+  const block=btn.closest('.block');
+  const cmds=[];
+  block.querySelectorAll('[onclick^="sdve("]').forEach(el=>{
+    const m=el.getAttribute('onclick').match(/sdve\('([^']+)','([^']+)'\)/);
+    if(m){const inp=g(m[2]);if(inp)cmds.push(`set ${m[1]} ${inp.value}`);}
+  });
+  if(!cmds.length)return;
   const r=await batchCmds(cmds,50);
-  _pending={};
-  const btn=g('applyBtn');btn.textContent='Apply All (0)';btn.classList.remove('has-pending');
   const ok=r.results?r.results.filter(x=>x.ok).length:0;
-  actLog(`Applied ${ok}/${entries.length} vars`,'ok');toast(`Applied ${entries.length} vars`,'ok');
+  actLog(`Set All: ${ok}/${cmds.length}`,'ok');toast(`Set All (${cmds.length})`,'ok');
 }
-function qdv(dv,id){queueDvar(dv,g(id).value);}
+// ─── Save to dedicated.cfg ────────────────────────────────────────────────────
+// Set All applies a block live (this session); Save writes it to dedicated.cfg so it
+// persists across restarts (effective on next server start / `exec dedicated.cfg`).
+// Scans a block for the dvars its controls drive: sdve('dv','inputId') number/text
+// fields, plus sdvv('dv',…) toggles / selects / sliders. Skips bridge/preset buttons.
+function collectBlockDvars(block){
+  const out={};
+  block.querySelectorAll('[onclick],[onchange]').forEach(el=>{
+    const a=(el.getAttribute('onclick')||'')+' '+(el.getAttribute('onchange')||'');
+    let m=a.match(/sdve\('([^']+)','([^']+)'\)/);
+    if(m){const inp=g(m[2]); if(inp&&inp.value!=='') out[m[1]]=inp.value; return;}
+    m=a.match(/sdvv\('([^']+)'/);
+    if(m){const dv=m[1];
+      if(el.type==='checkbox') out[dv]=el.checked?'1':'0';
+      else if(el.tagName==='SELECT'||el.type==='range'||el.type==='number'||el.type==='text') out[dv]=el.value;
+    }
+  });
+  return out;
+}
+async function saveCfgDvars(dvars){
+  return (await fetch(API+'/savecfg',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dvars})})).json();
+}
+async function saveBlockToCfg(btn){
+  const dvars=collectBlockDvars(btn.closest('.block'));
+  const n=Object.keys(dvars).length;
+  if(!n){toast('Nothing saveable in this block','info');return;}
+  const r=await saveCfgDvars(dvars);
+  if(r&&r.ok){
+    toast(`Saved ${n} dvar(s) to dedicated.cfg`,'ok');
+    actLog(`Saved to cfg: ${r.updated} updated, ${r.added} added`,'ok');
+  } else toast('Save failed: '+((r&&r.error)||'?'),'err');
+}
 
 // ─── State ───────────────────────────────────────────────────────────────────
 let live=false, paused=false, mapQueue=[], autoQ=false, hist=[], histI=-1, lastMap=null;
@@ -885,6 +795,10 @@ async function fetchGfState(){
   const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
   return (await fetch(API+'/gfstate?'+p)).json();
 }
+async function fetchDvars(names){
+  const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password,names:names.join(',')});
+  return (await fetch(API+'/dvars?'+p)).json();
+}
 
 // ─── Connect ────────────────────────────────────────────────────────────────
 async function doConn(){
@@ -893,7 +807,7 @@ async function doConn(){
   const btn=g('cBtn');btn.disabled=true;btn.textContent='…';
   try{
     const d=await fetchStatus();
-    if(d.ok){setLive(true);tick(d);actLog('Connected to '+conn().host,'ok');}
+    if(d.ok){setLive(true);tick(d);actLog('Connected to '+conn().host,'ok');readServerDvars();readMatchDvars();}
     else{toast('Failed: '+d.error,'err');setLive(false);}
   }catch(e){toast('Error: '+e.message,'err');setLive(false);}
   btn.disabled=false;
@@ -912,6 +826,7 @@ function setLive(v){
   }else{
     btn.textContent='Connect';btn.className='';
     bdg.textContent='● Disconnected';bdg.className='bdg off';
+    g('modeBadge').style.display='none';
     setCtrl(false);clearInterval(window._rt);clearInterval(window._st);
   }
 }
@@ -958,6 +873,18 @@ function tick(d){
   buildPlayers(d.players);
   g('scoreCard').classList.toggle('listen-muted',_listenServer);
   g('scoreListenNote').style.display=_listenServer?'':'none';
+  applyServerMode();
+}
+// Surface the detected server mode + auto-grey controls that don't apply to it.
+// .ded-only (Kill Server) is greyed on listen; .listen-only (host Noclip) greyed on dedicated.
+function applyServerMode(){
+  const b=g('modeBadge');
+  if(!live){ b.style.display='none'; return; }
+  b.style.display='';
+  b.textContent=_listenServer?'LISTEN':'DEDICATED';
+  b.className='bdg '+(_listenServer?'mode-listen':'mode-ded');
+  document.querySelectorAll('.ded-only').forEach(el=>el.disabled=_listenServer);
+  document.querySelectorAll('.listen-only').forEach(el=>el.disabled=!_listenServer);
 }
 function setCtrl(en){
   document.querySelectorAll('.ctrl').forEach(el=>el.disabled=!en);
@@ -1028,7 +955,7 @@ document.addEventListener('click',hideCtx);
 document.addEventListener('keydown',e=>{if(e.key==='Escape')hideCtx();});
 
 // ─── Tabs ───────────────────────────────────────────────────────────────────
-const TABS=['gf','bots','maps','mods','dev','con'];
+const TABS=['match','maps','srv','con'];
 function tab(n){
   document.querySelectorAll('.panel').forEach(e=>e.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(e=>e.classList.remove('active'));
@@ -1080,6 +1007,14 @@ async function bridge(bcmd){
   const r=await rcon(`set gf_cmd ${bcmd}`);
   if(!r.ok) toast('Bridge error: '+r.error,'err');
   return r.ok;
+}
+// FUN tab: broadcast a chat-style bold message to all players via gf_say + saymsg
+async function broadcastMsg(){
+  const inp=g('vSay'),m=inp.value.trim();
+  if(!m){toast('Enter a message','err');return;}
+  const r=await batchCmds([`set gf_say "${m}"`,'set gf_cmd saymsg'],60);
+  if(r&&r.ok){toast('Broadcast sent','ok');actLog('Broadcast: '+m,'in');inp.value='';}
+  else toast('Broadcast failed','err');
 }
 
 // ─── Perks ─────────────────────────────────────────────────────────────────
@@ -1208,12 +1143,6 @@ async function visResetAll(){
   g('cbFog').checked=true;g('cbHDR').checked=true;
   actLog('Visuals reset to defaults','ok');toast('Visuals reset','ok');
 }
-async function togglePrematch(){
-  const on=g('cbPM').checked;
-  const dur=on?parseInt(g('vPm').value)||15:0;
-  await sdvv('scr_game_prematchperiod',dur);
-  actLog('Pre-match '+(on?'ON ('+dur+'s)':'OFF'),on?'ok':'wn');
-}
 async function toggleFallDmg(){
   const on=g('cbFall').checked;
   await batchCmds([`set bg_fallDamageMinHeight ${on?256:9999}`,`set bg_fallDamageMaxHeight ${on?512:9999}`],50);
@@ -1247,6 +1176,22 @@ async function readDv(){
   const r=await rcon(n);
   if(r.ok){clogAdd(r.response,'li');tab('con');}
   else toast(r.error,'err');
+}
+
+// ─── Client binds (clipboard helpers — these run on the player's machine, not the server) ──
+const SPRINT_ADS_FIX = 'bind SHIFT "+breath_sprint"\nbind MOUSE2 "+speed_throw; -breath_sprint; -sprint"';
+async function copyText(text){
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText){ await navigator.clipboard.writeText(text); return true; } }catch(_){}
+  try{ const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.focus();ta.select();const ok=document.execCommand('copy');document.body.removeChild(ta);return ok;
+  }catch(_){ return false; }
+}
+async function copySprintAdsFix(){
+  if(await copyText(SPRINT_ADS_FIX)){
+    toast('Sprint-ADS Fix copied — paste into the in-game console','ok');
+    actLog('Copied Sprint-ADS Fix binds to clipboard','in');
+    clogAdd(SPRINT_ADS_FIX,'ls');
+  } else toast('Clipboard copy failed','err');
 }
 
 // ─── Console ─────────────────────────────────────────────────────────────────
@@ -1309,9 +1254,9 @@ renderQueue();
 const SRV_SECTIONS = [
   { title: 'GENERAL', vars: [
     { n:'g_password',               lbl:'Join Password',          type:'text',   def:'',    tip:'g_password\nServer join password. Blank = open to all.' },
-    { n:'g_allowvote',              lbl:'Allow Voting',           type:'tog',    def:'0',   tip:'g_allowvote\nLet players call /callvote in console. Default: 0' },
+    { n:'g_allowvote',              lbl:'Allow Voting',           type:'tog',    def:'1',   tip:'g_allowvote\nLet players call /callvote in console. GF default: 1' },
     { n:'g_inactivity',             lbl:'AFK Kick Timer (s)',     type:'num',    def:'190', tip:'g_inactivity\nSeconds of inactivity before auto-kick. 0 = disabled.' },
-    { n:'party_minplayers',         lbl:'Min Players to Start',   type:'num',    def:'1',   tip:'party_minplayers\nMinimum connected players before the match begins. Set 1 for solo testing.' },
+    { n:'party_minplayers',         lbl:'Min Players to Start',   type:'num',    def:'2',   tip:'party_minplayers\nMinimum connected players before the match begins. GF default: 2 (set 1 for solo testing).' },
     { n:'sv_maxclients',            lbl:'Max Players',            type:'num',    def:'24',  tip:'sv_maxclients\nMaximum simultaneous connections the server accepts.' },
     { n:'sv_floodProtect',          lbl:'Chat Flood Protection',  type:'num',    def:'4',   tip:'sv_floodProtect\nThrottle rapid chat messages. Set to 20 when using an RCON tool.' },
     { n:'sv_kickBanTime',           lbl:'Kick Ban Duration (s)',  type:'num',    def:'300', tip:'sv_kickBanTime\nHow long a kicked player must wait before reconnecting.' },
@@ -1399,106 +1344,256 @@ const SRV_SECTIONS = [
   ]},
   { title: 'TEAMS', vars: [
     { n:'scr_teamchange',             lbl:'Allow Team Change',       type:'tog', def:'1',   tip:'scr_teamchange\n1 = players can switch teams freely.' },
-    { n:'scr_teambalance',            lbl:'Block Joining Larger Team',type:'tog',def:'1',   tip:'scr_teambalance\nPrevent players from joining the already-larger team.' },
+    { n:'scr_teambalance',            lbl:'Block Joining Larger Team',type:'tog',def:'0',   tip:'scr_teambalance\nPrevent players from joining the already-larger team. GF default: 0.' },
     { n:'scr_autobalanceteams',       lbl:'Auto-Balance at Round End',type:'tog',def:'0',   tip:'scr_autobalanceteams\nMove one player to even teams at the end of each round.' },
+    { n:'scr_teamup',                 lbl:'Team-Up Period (s)',      type:'num', def:'0',   tip:'scr_teamup\nSeconds players have to team up before the match starts. 0 = no delay.' },
     { n:'scr_team_fftype',            lbl:'Friendly Fire',           type:'sel', def:'0',   opts:[['0','Off'],['1','On'],['2','Reflect'],['3','Shared']], tip:'scr_team_fftype\n0=off, 1=on, 2=damage reflected to shooter, 3=damage shared with team.' },
     { n:'scr_team_kickteamkillers',   lbl:'Kick Team Killers',       type:'tog', def:'0',   tip:'scr_team_kickteamkillers\nAuto-kick players who team kill.' },
     { n:'scr_team_teamkillspawndelay',lbl:'TK Spawn Penalty (s)',    type:'num', def:'20',  tip:'scr_team_teamkillspawndelay\nExtra respawn delay imposed on team killers.' },
     { n:'scr_team_teamkillpointloss', lbl:'TK Point Loss',          type:'tog', def:'1',   tip:'scr_team_teamkillpointloss\nDeduct points for team kills.' },
     { n:'scr_teamKillPunishCount',    lbl:'TK Kick Threshold',       type:'num', def:'4',   tip:'scr_teamKillPunishCount\nNumber of team kills before automatic punishment.' },
   ]},
-  { title: 'GUNFIGHT', vars: [
-    { n:'scr_gf_timelimit', lbl:'Round Time Limit (min)', type:'num', def:'10', tip:'scr_gf_timelimit\nGunfight round timer in minutes.' },
+  { title: 'DEBUG', vars: [
+    { n:'gf_debug',               lbl:'Debug Level',          type:'sel', def:'0', opts:[['0','Off'],['1','Basic'],['2','Verbose']], tip:'gf_debug\n0 = off, 1 = basic iPrintLn logging, 2 = verbose (spawns, rounds, HUD).' },
+    { n:'gf_debug_spawns',        lbl:'Spawn Debug',          type:'tog', def:'0', tip:'gf_debug_spawns\nDraw spawn point entities + team assignments each round.' },
+    { n:'gf_debug_hud_pool',      lbl:'HUD Pool Debug',       type:'tog', def:'0', tip:'gf_debug_hud_pool\nLog HUD element pool allocation counts each round.' },
+    { n:'gf_debug_elem_probe',    lbl:'Elem Probe',           type:'tog', def:'0', tip:'gf_debug_elem_probe\nProbe available client HUD element slots; prints count.' },
+    { n:'scr_game_allowkillcam',  lbl:'Killcam',              type:'tog', def:'1', tip:'scr_game_allowkillcam\n1 = show killcam after death, 0 = skip.' },
+    { n:'compass',                lbl:'Minimap',              type:'tog', def:'1', tip:'compass\n1 = show minimap, 0 = hide.' },
+    { n:'sv_cheats',              lbl:'Allow Cheat Commands', type:'tog', def:'1', tip:'sv_cheats\nAllow cheat-protected console commands (noclip, god, etc.).' },
+    { n:'scr_disable_cac',        lbl:'Disable Class Select', type:'tog', def:'1', tip:'scr_disable_cac\nDisable Create-a-Class; players auto-spawn with the default class.' },
+    { n:'scr_disable_weapondrop', lbl:'Disable Weapon Drop',  type:'tog', def:'1', tip:'scr_disable_weapondrop\n1 = weapons do not drop on death.' },
+    { n:'scr_showperksonspawn',   lbl:'Show Perks on Spawn',  type:'tog', def:'1', tip:'scr_showperksonspawn\n1 = display perk icons in HUD after spawning.' },
   ]},
-  { title: 'TEAM DEATHMATCH', vars: [
+];
+
+// Per-gametype dvar blocks — shown one at a time via the SERVER-tab gametype dropdown
+// (default gf). Keys match GT_OPTS vals. Wager modes inherit the wager framework and
+// expose few unique dvars; seeded values are best-effort and confirmed live by the Read button.
+const GT_SECTIONS = {
+  gf: [
+    { n:'scr_gf_scorelimit',          lbl:'Rounds to Win',            type:'num', def:'6',    tip:'scr_gf_scorelimit\nRound wins needed to win the match.' },
+    { n:'scr_gf_roundlimit',          lbl:'Max Rounds (0=off)',       type:'num', def:'0',    tip:'scr_gf_roundlimit\nHard round cap regardless of score. 0 = scorelimit only.' },
+    { n:'scr_gf_roundswitch',         lbl:'Side Switch Every N',      type:'num', def:'2',    tip:'scr_gf_roundswitch\nSwap attacker/defender sides every N rounds. 0 = never.' },
+    { n:'scr_gf_teamspawnmode',       lbl:'Team Spawn Mode',          type:'sel', def:'auto', opts:[['auto','Auto (4+ → large)'],['large','Force Large'],['small','Force Small']], tip:'scr_gf_teamspawnmode\nauto = switch by team size; large/small = force the mode.' },
+    { n:'scr_gf_timelimit',           lbl:'Round Time — Small (min)', type:'num', def:'0.75', tip:'scr_gf_timelimit\nRound time for SMALL mode (≤3p teams). 0 = no limit.' },
+    { n:'scr_gf_timelimit_large',     lbl:'Round Time — Large (min)', type:'num', def:'1.5',  tip:'scr_gf_timelimit_large\nRound time for LARGE mode (4p+ teams).' },
+    { n:'scr_gf_overtimelimit',       lbl:'OT Duration — Small (s)',  type:'num', def:'15',   tip:'scr_gf_overtimelimit\nOT countdown for SMALL mode. Pauses while contested.' },
+    { n:'scr_gf_overtimelimit_large', lbl:'OT Duration — Large (s)',  type:'num', def:'30',   tip:'scr_gf_overtimelimit_large\nOT countdown for LARGE mode. Pauses while contested.' },
+    { n:'gf_player_health',           lbl:'Player Health',            type:'num', def:'100',  tip:'gf_player_health\nRead at each spawn. Default: 100.' },
+    { n:'scr_gf_numlives',            lbl:'Lives / Round',            type:'num', def:'1',    tip:'scr_gf_numlives\nLives per player per round.' },
+    { n:'gf_capture_time',            lbl:'OT Capture — Small (s)',   type:'num', def:'3',    tip:'gf_capture_time\nSeconds to capture the OT zone in SMALL mode.' },
+    { n:'gf_capture_time_large',      lbl:'OT Capture — Large (s)',   type:'num', def:'5',    tip:'gf_capture_time_large\nSeconds to capture the OT zone in LARGE mode.' },
+  ],
+  tdm: [
     { n:'scr_tdm_scorelimit', lbl:'Score Limit', type:'num', def:'17500', tip:'scr_tdm_scorelimit\nTeam score needed to win.' },
     { n:'scr_tdm_timelimit',  lbl:'Time Limit (min)', type:'num', def:'10', tip:'scr_tdm_timelimit\nMatch duration if score limit not reached.' },
     { n:'scr_tdm_numlives',   lbl:'Lives (0=∞)',  type:'num', def:'0',  tip:'scr_tdm_numlives\nLives per player. 0 = unlimited.' },
-  ]},
-  { title: 'FREE FOR ALL', vars: [
+  ],
+  dm: [
     { n:'scr_dm_scorelimit', lbl:'Score Limit', type:'num', def:'1500', tip:'scr_dm_scorelimit\nFirst player to reach this score wins.' },
     { n:'scr_dm_timelimit',  lbl:'Time Limit (min)', type:'num', def:'10', tip:'scr_dm_timelimit\nMatch duration if score limit not reached.' },
     { n:'scr_dm_numlives',   lbl:'Lives (0=∞)',  type:'num', def:'0',  tip:'scr_dm_numlives\nLives per player. 0 = unlimited.' },
-  ]},
-  { title: 'DOMINATION', vars: [
-    { n:'scr_dom_scorelimit',     lbl:'Score Limit',          type:'num', def:'200', tip:'scr_dom_scorelimit\nTeam score needed to win.' },
-    { n:'scr_dom_timelimit',      lbl:'Time Limit (min)',     type:'num', def:'0',   tip:'scr_dom_timelimit\nMatch duration. 0 = score-limit only.' },
-    { n:'scr_dom_flagcapturetime',lbl:'Flag Capture Time (s)',type:'num', def:'10',  tip:'scr_dom_flagcapturetime\nSeconds to capture a flag.' },
-  ]},
-  { title: 'SEARCH & DESTROY', vars: [
+  ],
+  sd: [
     { n:'scr_sd_scorelimit', lbl:'Round Win Limit', type:'num', def:'4',   tip:'scr_sd_scorelimit\nRound wins needed to win the match.' },
     { n:'scr_sd_timelimit',  lbl:'Round Time (min)',type:'num', def:'2.5', tip:'scr_sd_timelimit\nTime per round.' },
     { n:'scr_sd_bombtimer',  lbl:'Bomb Timer (s)',  type:'num', def:'45',  tip:'scr_sd_bombtimer\nSeconds until planted bomb detonates.' },
     { n:'scr_sd_defusetime', lbl:'Defuse Time (s)', type:'num', def:'5',   tip:'scr_sd_defusetime\nSeconds to defuse the bomb.' },
     { n:'scr_sd_planttime',  lbl:'Plant Time (s)',  type:'num', def:'5',   tip:'scr_sd_planttime\nSeconds to plant the bomb.' },
     { n:'scr_sd_roundswitch',lbl:'Sides Switch Every (rounds)', type:'num', def:'1', tip:'scr_sd_roundswitch\nRounds before teams switch attacker/defender roles.' },
-  ]},
-  { title: 'DEMOLITION', vars: [
+  ],
+  dom: [
+    { n:'scr_dom_scorelimit',     lbl:'Score Limit',          type:'num', def:'200', tip:'scr_dom_scorelimit\nTeam score needed to win.' },
+    { n:'scr_dom_timelimit',      lbl:'Time Limit (min)',     type:'num', def:'0',   tip:'scr_dom_timelimit\nMatch duration. 0 = score-limit only.' },
+    { n:'scr_dom_flagcapturetime',lbl:'Flag Capture Time (s)',type:'num', def:'10',  tip:'scr_dom_flagcapturetime\nSeconds to capture a flag.' },
+  ],
+  dem: [
     { n:'scr_dem_scorelimit', lbl:'Round Win Limit', type:'num', def:'2',   tip:'scr_dem_scorelimit\nRound wins needed to win the match.' },
     { n:'scr_dem_timelimit',  lbl:'Round Time (min)',type:'num', def:'2.5', tip:'scr_dem_timelimit\nTime per round.' },
     { n:'scr_dem_bombtimer',  lbl:'Bomb Timer (s)',  type:'num', def:'45',  tip:'scr_dem_bombtimer\nSeconds until planted bomb detonates.' },
     { n:'scr_dem_defusetime', lbl:'Defuse Time (s)', type:'num', def:'5',   tip:'scr_dem_defusetime\nSeconds to defuse.' },
     { n:'scr_dem_planttime',  lbl:'Plant Time (s)',  type:'num', def:'5',   tip:'scr_dem_planttime\nSeconds to plant.' },
-  ]},
-  { title: 'SABOTAGE', vars: [
+  ],
+  sab: [
     { n:'scr_sab_timelimit',         lbl:'Time Limit (min)',    type:'num', def:'10',  tip:'scr_sab_timelimit\nMatch duration.' },
     { n:'scr_sab_bombtimer',         lbl:'Bomb Timer (s)',      type:'num', def:'45',  tip:'scr_sab_bombtimer\nSeconds until bomb detonates.' },
     { n:'scr_sab_defusetime',        lbl:'Defuse Time (s)',     type:'num', def:'5',   tip:'scr_sab_defusetime\nSeconds to defuse.' },
     { n:'scr_sab_planttime',         lbl:'Plant Time (s)',      type:'num', def:'2.5', tip:'scr_sab_planttime\nSeconds to plant.' },
     { n:'scr_sab_playerrespawndelay',lbl:'Respawn Delay (s)',   type:'num', def:'7.5', tip:'scr_sab_playerrespawndelay\nTime before respawn.' },
-  ]},
-  { title: 'CAPTURE THE FLAG', vars: [
+  ],
+  ctf: [
     { n:'scr_ctf_scorelimit',        lbl:'Score Limit',             type:'num', def:'3',  tip:'scr_ctf_scorelimit\nCaptures needed to win.' },
     { n:'scr_ctf_timelimit',         lbl:'Time Limit (min)',        type:'num', def:'5',  tip:'scr_ctf_timelimit\nRound duration.' },
     { n:'scr_ctf_flagrespawntime',   lbl:'Flag Respawn Time (s)',   type:'num', def:'0',  tip:'scr_ctf_flagrespawntime\nTime before a captured flag respawns. 0 = immediate.' },
     { n:'scr_ctf_idleflagreturntime',lbl:'Idle Flag Return (s)',    type:'num', def:'30', tip:'scr_ctf_idleflagreturntime\nSeconds before a dropped flag auto-returns to base.' },
     { n:'scr_ctf_touchreturn',       lbl:'Touch to Return Flag',    type:'tog', def:'1',  tip:'scr_ctf_touchreturn\nAllow players to return their own flag by touching it.' },
-  ]},
-  { title: 'HEADQUARTERS', vars: [
+  ],
+  koth: [
     { n:'scr_koth_scorelimit', lbl:'Score Limit',      type:'num', def:'250', tip:'scr_koth_scorelimit\nPoints needed to win.' },
     { n:'scr_koth_timelimit',  lbl:'Time Limit (min)', type:'num', def:'15',  tip:'scr_koth_timelimit\nMatch duration if score limit not reached.' },
     { n:'scr_koth_winlimit',   lbl:'Round Win Limit',  type:'num', def:'1',   tip:'scr_koth_winlimit\nRounds needed to win the match.' },
-  ]},
-];
+  ],
+  gun: [
+    { n:'scr_gun_scorelimit', lbl:'Weapon Tiers to Win', type:'num', def:'0',  tip:'scr_gun_scorelimit\nGun Game progression length (0 = full weapon list). Verify via: dvarlist scr_gun' },
+    { n:'scr_gun_timelimit',  lbl:'Time Limit (min)',    type:'num', def:'10', tip:'scr_gun_timelimit\nMatch duration. Wager framework — confirm with the Read button.' },
+  ],
+  oic: [
+    { n:'scr_oic_scorelimit', lbl:'Round Win Limit', type:'num', def:'5',   tip:'scr_oic_scorelimit\nOne in the Chamber round wins to win. Verify via: dvarlist scr_oic' },
+    { n:'scr_oic_timelimit',  lbl:'Round Time (min)',type:'num', def:'2.5', tip:'scr_oic_timelimit\nTime per round. Wager framework — confirm with the Read button.' },
+  ],
+  shrp: [
+    { n:'scr_shrp_scorelimit', lbl:'Score Limit',     type:'num', def:'0',  tip:'scr_shrp_scorelimit\nSharpshooter score to win (0 = time-based). Verify via: dvarlist scr_shrp' },
+    { n:'scr_shrp_timelimit',  lbl:'Time Limit (min)',type:'num', def:'10', tip:'scr_shrp_timelimit\nMatch duration. Wager framework — confirm with the Read button.' },
+  ],
+  hlnd: [
+    { n:'scr_hlnd_scorelimit', lbl:'Score Limit',     type:'num', def:'0',  tip:'scr_hlnd_scorelimit\nSticks & Stones score to win (0 = time-based). Verify via: dvarlist scr_hlnd' },
+    { n:'scr_hlnd_timelimit',  lbl:'Time Limit (min)',type:'num', def:'10', tip:'scr_hlnd_timelimit\nMatch duration. Wager framework — confirm with the Read button.' },
+  ],
+};
+
+// Build one row (control) from a var def. prefix scopes the element id so the same
+// var set can be rendered in two tabs without id collisions (SERVER='srv', MATCH='mt').
+function srvRow(v, prefix) {
+  const tip = `data-tip="${v.tip.replace(/"/g,'&quot;').replace(/\n/g,'&#10;')}"`;
+  const id  = (prefix || 'srv') + '_' + v.n.replace(/[^a-zA-Z0-9]/g,'_');
+  let ctrl;
+  if (v.type === 'tog') {
+    // Toggles apply immediately — no queuing
+    const chk = v.def === '1' ? 'checked' : '';
+    ctrl = `<label class="tog ctrl"><input type="checkbox" id="${id}" ${chk} onchange="sdvv('${v.n}',${id}.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>`;
+  } else if (v.type === 'perk') {
+    // Perk give/remove for all players — recomputes override lists + live-syncs
+    const chk = v.def === '1' ? 'checked' : '';
+    ctrl = `<label class="tog ctrl"><input type="checkbox" id="${id}" data-perk="${v.n}" ${chk} onchange="perkTog()"><span class="tog-t"></span><span class="tog-th"></span></label>`;
+  } else if (v.type === 'sld') {
+    // Range slider — applies the dvar live on release, value readout updates on drag
+    const mn = v.min || '0.1', mx = v.max || '2', st = v.step || '0.05';
+    const dv = parseFloat(v.def).toFixed(3).replace(/0+$/,'').replace(/\.$/,'');
+    ctrl = `<input type="range" id="${id}" class="ctrl sld" min="${mn}" max="${mx}" step="${st}" value="${v.def}" oninput="g('${id}_v').textContent=parseFloat(this.value).toFixed(3).replace(/0+$/,'').replace(/\.$/,'')" onchange="sdvv('${v.n}',this.value)"><span class="sldval" id="${id}_v">${dv}</span>`;
+  } else if (v.type === 'btn') {
+    ctrl = `<button class="b-gh b-sm ctrl" onclick="${v.act}">${v.btxt || 'Run'}</button>`;
+  } else if (v.type === 'sel') {
+    const opts = v.opts.map(o => `<option value="${o[0]}"${o[0]===v.def?' selected':''}>${o[1]}</option>`).join('');
+    ctrl = `<select id="${id}" class="ctrl" onchange="sdvv('${v.n}',this.value)">${opts}</select>`;
+  } else if (v.type === 'text') {
+    ctrl = `<input id="${id}" type="text" class="ctrl" value="${v.def}" style="flex:1;min-width:80px"><button class="b-ac b-sm ctrl" onclick="sdve('${v.n}','${id}')">Set</button>`;
+  } else {
+    const step = v.type === 'flt' ? '0.1' : '1';
+    ctrl = `<input id="${id}" type="number" class="num ctrl" value="${v.def}" step="${step}"><button class="b-ac b-sm ctrl" onclick="sdve('${v.n}','${id}')">Set</button>`;
+  }
+  const sp = (v.type === 'tog' || v.type === 'perk' || v.type === 'btn') ? '<span style="flex:1"></span>' : '';
+  return `<div class="srow" ${tip}><span class="slbl">${v.lbl}</span>${sp}${ctrl}</div>`;
+}
+// Build a titled .block from a vars array (adds a Set All row when it has number/text fields)
+function srvBlock(title, vars, prefix) {
+  const rows = vars.map(v => srvRow(v, prefix)).join('');
+  const hasSetAll = vars.some(v => v.type === 'text' || v.type === 'num' || v.type === 'flt');
+  const setAllRow = hasSetAll ? '<div class="set-all-row"><button class="b-gh b-sm ctrl" data-tip="Write this block&#39;s values to dedicated.cfg (persists across restarts).&#10;A .bak backup is made; takes effect on next server start or `exec dedicated.cfg`." onclick="saveBlockToCfg(this)">💾 Save</button><button class="b-ac b-sm ctrl" onclick="setAllInBlock(this)">Set All</button></div>' : '';
+  return `<div class="block"><div class="btitle">${title}</div>${rows}${setAllRow}</div>`;
+}
 
 function buildServerPanel() {
   const el = g('srv-body');
-  el.innerHTML = SRV_SECTIONS.map(sec => {
-    const rows = sec.vars.map(v => {
-      const tip = `data-tip="${v.tip.replace(/"/g,'&quot;').replace(/\n/g,'&#10;')}"`;
-      const id  = 'srv_' + v.n.replace(/[^a-zA-Z0-9]/g,'_');
-      let ctrl;
-      if (v.type === 'tog') {
-        // Toggles apply immediately — no queuing
-        const chk = v.def === '1' ? 'checked' : '';
-        ctrl = `<label class="tog ctrl"><input type="checkbox" id="${id}" ${chk} onchange="sdvv('${v.n}',${id}.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>`;
-      } else if (v.type === 'perk') {
-        // Perk give/remove for all players — recomputes override lists + live-syncs
-        const chk = v.def === '1' ? 'checked' : '';
-        ctrl = `<label class="tog ctrl"><input type="checkbox" id="${id}" data-perk="${v.n}" ${chk} onchange="perkTog()"><span class="tog-t"></span><span class="tog-th"></span></label>`;
-      } else if (v.type === 'sld') {
-        // Range slider — applies the dvar live on release, value readout updates on drag
-        const mn = v.min || '0.1', mx = v.max || '2', st = v.step || '0.05';
-        const dv = parseFloat(v.def).toFixed(3).replace(/0+$/,'').replace(/\.$/,'');
-        ctrl = `<input type="range" id="${id}" class="ctrl sld" min="${mn}" max="${mx}" step="${st}" value="${v.def}" oninput="g('${id}_v').textContent=parseFloat(this.value).toFixed(3).replace(/0+$/,'').replace(/\.$/,'')" onchange="sdvv('${v.n}',this.value)"><span class="sldval" id="${id}_v">${dv}</span>`;
-      } else if (v.type === 'btn') {
-        ctrl = `<button class="b-gh b-sm ctrl" onclick="${v.act}">${v.btxt || 'Run'}</button>`;
-      } else if (v.type === 'sel') {
-        const opts = v.opts.map(o => `<option value="${o[0]}"${o[0]===v.def?' selected':''}>${o[1]}</option>`).join('');
-        ctrl = `<select id="${id}" class="ctrl" onchange="queueDvar('${v.n}',this.value)">${opts}</select>`;
-      } else if (v.type === 'text') {
-        ctrl = `<input id="${id}" type="text" class="ctrl" value="${v.def}" style="flex:1;min-width:80px"><button class="b-gh b-sm ctrl" onclick="queueDvar('${v.n}',g('${id}').value)">Queue</button>`;
-      } else {
-        const step = v.type === 'flt' ? '0.1' : '1';
-        ctrl = `<input id="${id}" type="number" class="num ctrl" value="${v.def}" step="${step}"><button class="b-gh b-sm ctrl" onclick="queueDvar('${v.n}',g('${id}').value)">Queue</button>`;
-      }
-      const sp = (v.type === 'tog' || v.type === 'perk' || v.type === 'btn') ? '<span style="flex:1"></span>' : '';
-      return `<div class="srow" ${tip}><span class="slbl">${v.lbl}</span>${sp}${ctrl}</div>`;
-    }).join('');
-    return `<div class="block"><div class="btitle">${sec.title}</div>${rows}</div>`;
-  }).join('');
+  // Top toolbar: live-read + dedicated-only Kill Server
+  const toolbar =
+    `<div class="mact" style="margin-bottom:12px">`
+    + `<button class="b-gh ctrl" data-tip="Reads every SERVER-tab dvar's current value from the server and fills the fields.&#10;Runs automatically on connect." onclick="readServerDvars()">↻ Read from server</button>`
+    + `<span style="flex:1"></span>`
+    + `<button class="b-ng ctrl ded-only" data-tip="killserver (RCON console command)&#10;Shuts down the dedicated server process immediately.&#10;(dedicated only — greyed on a listen server)" onclick="cmd('killserver')">Kill Server</button>`
+    + `</div>`;
+  // Shared (always-visible) sections
+  const shared = SRV_SECTIONS.map(sec => srvBlock(sec.title, sec.vars)).join('');
+  // Gametype picker (native select, grouped) — swaps the per-mode block below
+  let selHtml = '<select id="srvGtSel" class="ctrl" onchange="buildGtSection(this.value)">';
+  let grpOpen = false;
+  for (const o of GT_OPTS) {
+    if (o.grp) { if (grpOpen) selHtml += '</optgroup>'; selHtml += `<optgroup label="${o.grp.replace(/—/g,'').trim()}">`; grpOpen = true; }
+    else if (GT_SECTIONS[o.val]) selHtml += `<option value="${o.val}"${o.val==='gf'?' selected':''}>${o.lbl}</option>`;
+  }
+  if (grpOpen) selHtml += '</optgroup>';
+  selHtml += '</select>';
+  const gtPicker =
+    `<div class="mact" style="margin-top:4px"><label>Gametype settings</label>${selHtml}`
+    + `<span class="dm" style="font-size:11px">one mode at a time · GF default</span></div>`
+    + `<div id="srv-gt-body"></div>`;
+  el.innerHTML = toolbar + shared + gtPicker;
+  buildGtSection('gf');
 }
-buildServerPanel();
+// Render a single gametype's dvar block into #srv-gt-body (and live-read it if connected)
+function buildGtSection(key) {
+  const vars = GT_SECTIONS[key] || [];
+  const opt  = GT_OPTS.find(o => o.val === key);
+  const title = (opt ? opt.lbl : key).toUpperCase();
+  g('srv-gt-body').innerHTML = vars.length
+    ? srvBlock(title, vars)
+    : '<div class="block"><div class="dm" style="font-style:italic">No tunable dvars for this gametype.</div></div>';
+  const sel = g('srvGtSel'); if (sel) sel.value = key;
+  setCtrl(live);                 // keep new controls' enabled-state in sync with connection
+  applyServerMode();             // re-grey any mode-specific controls after setCtrl re-enabled them
+  if (live) readGtDvars(key);
+}
+
+// ─── SERVER tab live dvar read ────────────────────────────────────────────────
+// Write a { name: value } map onto the matching srv_* controls. Skips perk/btn rows
+// and any value that came back null (timeout / unset) so the seeded default stays.
+function srvApplyValues(vars, values, prefix) {
+  const pf = prefix || 'srv';
+  vars.forEach(v => {
+    if (v.type === 'perk' || v.type === 'btn') return;
+    const val = values[v.n];
+    if (val === null || val === undefined) return;
+    const base = pf + '_' + v.n.replace(/[^a-zA-Z0-9]/g,'_');
+    const el = g(base);
+    if (!el) return;
+    if (v.type === 'tog') { el.checked = (val === '1' || val === 1 || val === 'true'); }
+    else if (v.type === 'sld') {
+      el.value = val;
+      const vv = g(base + '_v');
+      if (vv) vv.textContent = parseFloat(val).toFixed(3).replace(/0+$/,'').replace(/\.$/,'');
+    } else { el.value = val; }   // num / flt / text / sel
+  });
+}
+// Read every shared dvar + the currently-shown gametype block from the server.
+async function readServerDvars() {
+  if (!live) return;
+  let vars = [];
+  SRV_SECTIONS.forEach(s => { vars = vars.concat(s.vars); });
+  const gtKey = (g('srvGtSel') && g('srvGtSel').value) || 'gf';
+  vars = vars.concat(GT_SECTIONS[gtKey] || []);
+  const names = vars.filter(v => v.type !== 'perk' && v.type !== 'btn').map(v => v.n);
+  if (!names.length) return;
+  actLog('Reading ' + names.length + ' server dvars…', 'in');
+  try {
+    const r = await fetchDvars(names);
+    if (r && r.ok) {
+      srvApplyValues(vars, r.values);
+      const got = Object.values(r.values).filter(x => x !== null).length;
+      actLog('Synced ' + got + '/' + names.length + ' dvars from server', 'ok');
+      toast('SERVER values synced', 'ok');
+    } else toast('Dvar read failed', 'err');
+  } catch (e) { toast('Dvar read error: ' + e.message, 'err'); }
+}
+// Read only one gametype block (used when switching the dropdown while connected).
+async function readGtDvars(key) {
+  if (!live) return;
+  const vars = GT_SECTIONS[key] || [];
+  const names = vars.map(v => v.n);
+  if (!names.length) return;
+  try { const r = await fetchDvars(names); if (r && r.ok) srvApplyValues(vars, r.values); } catch (_) {}
+}
+
+// ─── MATCH tab GUNFIGHT block (same GT_SECTIONS.gf data, mt_ id prefix) ────────
+function buildMatchGf() {
+  g('mt-gf-body').innerHTML = srvBlock('GUNFIGHT', GT_SECTIONS.gf, 'mt');
+  setCtrl(live);
+}
+// Live-read the gunfight dvars into the MATCH GUNFIGHT block (mirror of readGtDvars).
+async function readMatchDvars() {
+  if (!live) return;
+  const names = GT_SECTIONS.gf.map(v => v.n);
+  try { const r = await fetchDvars(names); if (r && r.ok) srvApplyValues(GT_SECTIONS.gf, r.values, 'mt'); } catch (_) {}
+}
 
 // ─── Gametype custom dropdown ─────────────────────────────────────────────────
 const GT_OPTS = [
@@ -1519,6 +1614,10 @@ const GT_OPTS = [
   { val:'shrp', lbl:'shrp — Sharpshooter',            desc:'Sharpshooter. Everyone shares the same randomly rotating weapon. Most kills when time runs out wins.' },
   { val:'hlnd', lbl:'hlnd — Sticks and Stones',       desc:'Sticks and Stones. Crossbow and ballistic knife only. Melee kills bankrupt an enemy\'s score. First to the score limit wins.' },
 ];
+
+// Built here (not at the function def) because buildServerPanel() reads GT_OPTS above.
+buildServerPanel();
+buildMatchGf();
 
 let _gtVal = 'gf';
 

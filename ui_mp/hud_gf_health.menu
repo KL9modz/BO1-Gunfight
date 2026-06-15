@@ -43,93 +43,424 @@
 			decoration
 		}
 
-		// ── Team panel border lines (menu-rendered, 0 client-hudelem cost) ───
-		// The team health panel's bg fade + rows are client hudelems, but T5 caps how many client
-		// hudelems it actually DRAWS per player (~17). These 4 border lines live here instead so they
-		// cost no hudelem slots. Layout = LEFT vertical cap + top/middle/bottom horizontal rules (no
-		// right line). Positioned at the border-box top-left (ui_gf_panel_x / ui_gf_panel_y, pushed
-		// from gf_pushPanelChrome — retunable with a map_restart, no rebuild). Box ~142 wide; top rule
-		// at -1, middle at +20, bottom at +39. Gated by ui_gf_panel_show.
-
-		// top rule
+		// -- Team panel border (menu-rendered) -- fades via ui_gf_hp_alpha --------
+		// LEFT vertical cap + top/middle/bottom rules at ui_gf_panel_x/y (gf_pushPanelChrome).
+		// Gated by ui_gf_panel_show; alpha cross-fades with the client-hudelem panel via
+		// ui_gf_hp_alpha (gf_revealHealthPanel). SHADER+white so forecolor-A drives the fade.
 		itemDef
 		{
 			rect			0 0 142 0.5 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
 			exp				rect X( dvarInt( "ui_gf_panel_x" ) )
 			exp				rect Y( dvarInt( "ui_gf_panel_y" ) - 1 )
-			style			WINDOW_STYLE_FILLED
-			backcolor		0 0 0 0.5
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		0 0 0 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_hp_alpha" ) )
 			visible			when( dvarInt( "ui_gf_panel_show" ) )
 			decoration
 		}
-
-		// middle rule (divider between the two team rows)
 		itemDef
 		{
 			rect			0 0 142 0.5 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
 			exp				rect X( dvarInt( "ui_gf_panel_x" ) )
 			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 20 )
-			style			WINDOW_STYLE_FILLED
-			backcolor		0 0 0 0.5
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		0 0 0 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_hp_alpha" ) )
 			visible			when( dvarInt( "ui_gf_panel_show" ) )
 			decoration
 		}
-
-		// bottom rule
 		itemDef
 		{
 			rect			0 0 142 0.5 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
 			exp				rect X( dvarInt( "ui_gf_panel_x" ) )
 			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 39 )
-			style			WINDOW_STYLE_FILLED
-			backcolor		0 0 0 0.5
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		0 0 0 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_hp_alpha" ) )
 			visible			when( dvarInt( "ui_gf_panel_show" ) )
 			decoration
 		}
-
-		// left vertical cap
 		itemDef
 		{
 			rect			0 0 0.5 40 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
 			exp				rect X( dvarInt( "ui_gf_panel_x" ) )
 			exp				rect Y( dvarInt( "ui_gf_panel_y" ) )
-			style			WINDOW_STYLE_FILLED
-			backcolor		0 0 0 0.5
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		0 0 0 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_hp_alpha" ) )
 			visible			when( dvarInt( "ui_gf_panel_show" ) )
 			decoration
 		}
 
-		// ── Self health bar (bottom-center) ──────────────────────────────────
-		// Fully client-rendered: the server pushes ui_gf_self_hp / ui_gf_self_show /
-		// ui_gf_self_name via setClientDvar only when they change; the UI does the rest.
-		// Bar: 120x2 white fill over a translucent black bg with a 0.5-unit gray ring.
+		// ══ Team health panel rows (fully menu-rendered — 0 client hudelems) ══
+		// bg fade + 8 skulls + 2 bars + 2 numbers, anchored to ui_gf_panel_x/y (gf_pushPanelChrome),
+		// faded by ui_gf_hp_alpha (gf_revealHealthPanel). Per-row data: ui_gf_rN_hp / _fw / _cnt /
+		// _alive (gf_pushHealthRow). Row 0 = friendly (green), row 1 = enemy (red). Skulls: an alive
+		// (team-colour) item + a dead (white) item per slot, gated by alive/cnt (forecolor R/G/B can't
+		// be exp-driven, so two items per slot). Gated by ui_gf_panel_show.
 
-		// All items add dvarFloat("ui_gf_self_off") to Y — the server animates it 40→0
-		// on reveal, sliding the whole bar up from below the screen edge.
+		// soft dark background fade (first = drawn behind the rows)
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 320 48 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) - 128 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) - 5 )
+			exp				material( dvarString( "ui_gf_fade_mat" ) );
+			forecolor		0 0 0 1
+			exp				forecolor A( 0.55 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) )
+			decoration
+		}
 
+		// ─── Row 0 (friendly, green) ───
+		// bar background
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			rect			0 0 45 3 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 85 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 14 )
+			background		"white"
+			forecolor		0 0 0 1
+			exp				forecolor A( 0.45 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) )
+			decoration
+		}
+		// bar fill (width = ui_gf_r0_fw px)
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			rect			0 0 1 3 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 85 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 14 )
+			exp				rect W( dvarInt( "ui_gf_r0_fw" ) )
+			background		"white"
+			forecolor		0.42 0.68 0.46 1
+			exp				forecolor A( 0.9 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) )
+			decoration
+		}
+		// HP number
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			0 0 60 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 85 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 2 )
+			exp				text( dvarString( "ui_gf_r0_hp" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.3
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) )
+			decoration
+		}
+		// skull slot 0 — alive (green)
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 30 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 6 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		0.42 0.68 0.46 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_alive" ) > 0 ) )
+			decoration
+		}
+		// skull slot 0 — dead (white)
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 30 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 6 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_cnt" ) > 0 ) && ( dvarInt( "ui_gf_r0_alive" ) <= 0 ) )
+			decoration
+		}
+		// skull slot 1 — alive
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 43 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 6 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		0.42 0.68 0.46 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_alive" ) > 1 ) )
+			decoration
+		}
+		// skull slot 1 — dead
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 43 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 6 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_cnt" ) > 1 ) && ( dvarInt( "ui_gf_r0_alive" ) <= 1 ) )
+			decoration
+		}
+		// skull slot 2 — alive
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 56 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 6 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		0.42 0.68 0.46 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_alive" ) > 2 ) )
+			decoration
+		}
+		// skull slot 2 — dead
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 56 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 6 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_cnt" ) > 2 ) && ( dvarInt( "ui_gf_r0_alive" ) <= 2 ) )
+			decoration
+		}
+		// skull slot 3 — alive
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 69 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 6 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		0.42 0.68 0.46 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_alive" ) > 3 ) )
+			decoration
+		}
+		// skull slot 3 — dead
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 69 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 6 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_cnt" ) > 3 ) && ( dvarInt( "ui_gf_r0_alive" ) <= 3 ) )
+			decoration
+		}
+
+		// ─── Row 1 (enemy, red) ───
+		// bar background
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			rect			0 0 45 3 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 85 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 34 )
+			background		"white"
+			forecolor		0 0 0 1
+			exp				forecolor A( 0.45 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) )
+			decoration
+		}
+		// bar fill (width = ui_gf_r1_fw px)
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			rect			0 0 1 3 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 85 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 34 )
+			exp				rect W( dvarInt( "ui_gf_r1_fw" ) )
+			background		"white"
+			forecolor		0.73 0.29 0.19 1
+			exp				forecolor A( 0.9 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) )
+			decoration
+		}
+		// HP number
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			0 0 60 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 85 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 22 )
+			exp				text( dvarString( "ui_gf_r1_hp" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.3
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) )
+			decoration
+		}
+		// skull slot 0 — alive (red)
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 30 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 26 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		0.73 0.29 0.19 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_alive" ) > 0 ) )
+			decoration
+		}
+		// skull slot 0 — dead (white)
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 30 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 26 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_cnt" ) > 0 ) && ( dvarInt( "ui_gf_r1_alive" ) <= 0 ) )
+			decoration
+		}
+		// skull slot 1 — alive
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 43 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 26 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		0.73 0.29 0.19 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_alive" ) > 1 ) )
+			decoration
+		}
+		// skull slot 1 — dead
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 43 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 26 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_cnt" ) > 1 ) && ( dvarInt( "ui_gf_r1_alive" ) <= 1 ) )
+			decoration
+		}
+		// skull slot 2 — alive
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 56 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 26 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		0.73 0.29 0.19 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_alive" ) > 2 ) )
+			decoration
+		}
+		// skull slot 2 — dead
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 56 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 26 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_cnt" ) > 2 ) && ( dvarInt( "ui_gf_r1_alive" ) <= 2 ) )
+			decoration
+		}
+		// skull slot 3 — alive
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 69 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 26 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		0.73 0.29 0.19 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_alive" ) > 3 ) )
+			decoration
+		}
+		// skull slot 3 — dead
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 10 10 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				rect X( dvarInt( "ui_gf_panel_x" ) + 69 )
+			exp				rect Y( dvarInt( "ui_gf_panel_y" ) + 26 )
+			exp				material( dvarString( "ui_gf_skull_mat" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_cnt" ) > 3 ) && ( dvarInt( "ui_gf_r1_alive" ) <= 3 ) )
+			decoration
+		}
+
+		// -- Self health bar (bottom-center) -- slide (ui_gf_self_off) + fade --
+		// (ui_gf_hp_alpha). Server pushes ui_gf_self_hp / _show / _name on change.
 		// border ring
 		itemDef
 		{
 			rect			-60.5 -16.5 121 3 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
 			exp				rect Y( -16.5 + dvarFloat( "ui_gf_self_off" ) )
-			style			WINDOW_STYLE_FILLED
-			backcolor		0.7 0.7 0.7 0.3
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		0.7 0.7 0.7 1
+			exp				forecolor A( 0.3 * dvarFloat( "ui_gf_hp_alpha" ) )
 			visible			when( dvarInt( "ui_gf_self_show" ) )
 			decoration
 		}
-
 		// bar background
 		itemDef
 		{
 			rect			-60 -16 120 2 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
 			exp				rect Y( -16 + dvarFloat( "ui_gf_self_off" ) )
-			style			WINDOW_STYLE_FILLED
-			backcolor		0 0 0 0.3
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		0 0 0 1
+			exp				forecolor A( 0.3 * dvarFloat( "ui_gf_hp_alpha" ) )
 			visible			when( dvarInt( "ui_gf_self_show" ) )
 			decoration
 		}
-
-		// fill — width follows HP (0-100 → 0-120), white base; the red overlay below fades in as HP drops (white→red gradient)
+		// fill -- white base, width follows HP
 		itemDef
 		{
 			rect			-60 -16 120 2 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
@@ -137,16 +468,12 @@
 			exp				rect W( dvarInt( "ui_gf_self_hp" ) * 1.2 )
 			style			WINDOW_STYLE_SHADER
 			background		"white"
-			forecolor		1 1 1 0.8
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.8 * dvarFloat( "ui_gf_hp_alpha" ) )
 			visible			when( dvarInt( "ui_gf_self_show" ) )
 			decoration
 		}
-
-		// red overlay — same rect/width as the white base, but its ALPHA rises as HP drops,
-		// so the bar reads white at full health and turns red as the overlay fades in. forecolor A
-		// (alpha) is the only color-component expression the menu parser accepts — two
-		// component exps on one item (e.g. forecolor G + B) fail to parse — so the gradient
-		// is done by fading this red layer in over the white base, not by driving R/G/B.
+		// red overlay -- alpha rises as HP drops (white->red), also gated by the fade
 		itemDef
 		{
 			rect			-60 -16 120 2 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
@@ -155,12 +482,11 @@
 			style			WINDOW_STYLE_SHADER
 			background		"white"
 			forecolor		0.8 0.12 0.12 1
-			exp				forecolor A( ( 100 - dvarInt( "ui_gf_self_hp" ) ) / 100 )
+			exp				forecolor A( ( ( 100 - dvarInt( "ui_gf_self_hp" ) ) / 100 ) * dvarFloat( "ui_gf_hp_alpha" ) )
 			visible			when( dvarInt( "ui_gf_self_show" ) )
 			decoration
 		}
-
-		// player name — above the bar, left edge
+		// player name
 		itemDef
 		{
 			type			ITEM_TYPE_TEXT
@@ -172,11 +498,11 @@
 			textalign		ITEM_ALIGN_MIDDLE_LEFT
 			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
 			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_hp_alpha" ) )
 			visible			when( dvarInt( "ui_gf_self_show" ) )
 			decoration
 		}
-
-		// HP number — above the bar, right edge
+		// HP number
 		itemDef
 		{
 			type			ITEM_TYPE_TEXT
@@ -188,7 +514,459 @@
 			textalign		ITEM_ALIGN_MIDDLE_RIGHT
 			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
 			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_hp_alpha" ) )
 			visible			when( dvarInt( "ui_gf_self_show" ) )
+			decoration
+		}
+
+		// == Loadout overview (centered-column, create-a-class style) =========
+		// GUNS: icon, rule BELOW with ends flaring UP, name. EQUIPMENT/PERK ROWS:
+		// rule spanning ABOVE the 3 icons with a DOWN-flare centered on each slot,
+		// icons, names. Menu-rendered; slide ui_gf_lo_off + fade ui_gf_lo_alpha.
+
+		// -- Primary --------------------------------------------------------
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 96 48 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 48 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) - 120 )
+			exp				material( dvarString( "ui_gf_lo_icon0" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			rect			0 0 88 1 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 44 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) - 66 )
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			rect			0 0 1 4 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 44.5 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) - 69 )
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			rect			0 0 1 4 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) + 43.5 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) - 69 )
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			0 0 110 12 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 55 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) - 65 )
+			exp				text( dvarString( "ui_gf_lo_name0" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.24
+			textalign		ITEM_ALIGN_MIDDLE_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+
+		// -- Secondary ------------------------------------------------------
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 72 36 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 36 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) - 44 )
+			exp				material( dvarString( "ui_gf_lo_icon1" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			rect			0 0 66 1 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 33 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) - 2 )
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			rect			0 0 1 4 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 33.5 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) - 5 )
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			rect			0 0 1 4 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) + 32.5 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) - 5 )
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			0 0 110 12 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 55 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) - 1 )
+			exp				text( dvarString( "ui_gf_lo_name1" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.24
+			textalign		ITEM_ALIGN_MIDDLE_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+
+		// -- Equipment row --------------------------------------------------
+		itemDef
+		{
+			rect			0 0 94 1 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 47 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 20 )
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			rect			0 0 1 4 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 46.5 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 20 )
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			rect			0 0 1 4 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 0.5 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 20 )
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			rect			0 0 1 4 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) + 45.5 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 20 )
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 28 28 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 60 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 26 )
+			exp				material( dvarString( "ui_gf_lo_icon2" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			0 0 56 10 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 74 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 57 )
+			exp				text( dvarString( "ui_gf_lo_name2" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.2
+			textalign		ITEM_ALIGN_MIDDLE_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 28 28 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 14 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 26 )
+			exp				material( dvarString( "ui_gf_lo_icon3" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			0 0 56 10 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 28 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 57 )
+			exp				text( dvarString( "ui_gf_lo_name3" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.2
+			textalign		ITEM_ALIGN_MIDDLE_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 28 28 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) + 32 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 26 )
+			exp				material( dvarString( "ui_gf_lo_icon4" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			0 0 56 10 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) + 18 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 57 )
+			exp				text( dvarString( "ui_gf_lo_name4" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.2
+			textalign		ITEM_ALIGN_MIDDLE_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+
+		// -- Perk row -------------------------------------------------------
+		itemDef
+		{
+			rect			0 0 94 1 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 47 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 73 )
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			rect			0 0 1 4 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 46.5 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 73 )
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			rect			0 0 1 4 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 0.5 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 73 )
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			rect			0 0 1 4 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) + 45.5 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 73 )
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		1 1 1 1
+			exp				forecolor A( 0.5 * dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 28 28 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 60 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 79 )
+			exp				material( dvarString( "ui_gf_lo_icon5" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			0 0 56 10 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 74 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 110 )
+			exp				text( dvarString( "ui_gf_lo_name5" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.2
+			textalign		ITEM_ALIGN_MIDDLE_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 28 28 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 14 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 79 )
+			exp				material( dvarString( "ui_gf_lo_icon6" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			0 0 56 10 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 28 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 110 )
+			exp				text( dvarString( "ui_gf_lo_name6" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.2
+			textalign		ITEM_ALIGN_MIDDLE_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			0 0 28 28 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) + 32 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 79 )
+			exp				material( dvarString( "ui_gf_lo_icon7" ) );
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			0 0 56 10 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) + 18 )
+			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) + 110 )
+			exp				text( dvarString( "ui_gf_lo_name7" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.2
+			textalign		ITEM_ALIGN_MIDDLE_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 1 1 1
+			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			decoration
+		}
+
+		// ── Kill popup (menu-rendered, 0 client hudelems) ────────────────────
+		// "Elimination" / "Assist" center-screen, fading via ui_gf_popup_alpha (pushed + animated by
+		// gf_showScorePopup). 0 client hudelems → works at any player count, unlike the old lazily-
+		// created client hudelem that fell past the per-client DRAWN render cap once the lobby grew.
+		// ui_gf_popup_type: 2 = elim, 1 = assist. Gated by ui_gf_popup_show.
+
+		// Elimination
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			-100 -60 200 20 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_CENTER
+			exp				text( locString( "@GF_POPUP_ELIMINATION" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.5
+			textalign		ITEM_ALIGN_MIDDLE_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 1 0.5 1
+			exp				forecolor A( dvarFloat( "ui_gf_popup_alpha" ) )
+			visible			when( dvarInt( "ui_gf_popup_show" ) && ( dvarInt( "ui_gf_popup_type" ) == 2 ) )
+			decoration
+		}
+
+		// Assist
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			-100 -60 200 20 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_CENTER
+			exp				text( locString( "@GF_POPUP_ASSIST" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.5
+			textalign		ITEM_ALIGN_MIDDLE_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 1 0.5 1
+			exp				forecolor A( dvarFloat( "ui_gf_popup_alpha" ) )
+			visible			when( dvarInt( "ui_gf_popup_show" ) && ( dvarInt( "ui_gf_popup_type" ) == 1 ) )
 			decoration
 		}
 	}

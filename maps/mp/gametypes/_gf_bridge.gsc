@@ -23,6 +23,18 @@
 //   pperks_<num>       - give perks to one player
 //   pnoclip_<num>      - noclip one player
 //
+// FUN / SILLY (mined from EnCoReV8 + iMCSx mod menus):
+//   vision_<set>       - VisionSetNaked all players: normal/bw/contrast/invert/night
+//   thirdperson_1/0    - cg_thirdPerson all players (setClientDvar)
+//   fps_1/0            - cg_drawFPS all players (setClientDvar)
+//   expbullets_on/off  - every shot detonates on impact (trace + RadiusDamage + FX)
+//   longknife_<range>  - aim_automelee_range all players (e.g. 256 on, 64 off)
+//   drunk_on/off       - continuous mild EarthQuake on every player's camera
+//   invis_on/off       - hide()/show() all player models (troll)
+//   quake              - one strong EarthQuake centered on every player
+//   tpall              - teleport all players to Player 1 (host/anchor)
+//   saymsg             - iPrintLnBold the contents of dvar gf_say to everyone
+//
 // Telemetry dvar (read-only, updated every 2s):
 //   gf_state -> "allies_wins:axis_wins:round:alive_allies:alive_axis"
 //   e.g.  "3:2:5:2:1"
@@ -36,6 +48,8 @@ gf_bridgeInit()
 
     if ( getDvar( "gf_cmd" ) == "" )
         setDvar( "gf_cmd", "" );
+    if ( getDvar( "gf_say" ) == "" )
+        setDvar( "gf_say", "" );
 
     setDvar( "gf_state", "0:0:1:0:0:" + level.gameType );
 
@@ -44,6 +58,10 @@ gf_bridgeInit()
     level.gf_godMode       = false;
     level.gf_radarOn       = false;
     level.gf_headshotsOnly = false;
+    level.gf_expBullets    = false;
+    level.gf_drunk         = false;
+    level.gf_invisible     = false;
+    level.gf_defaultVision = getDvar( "mapname" );   // for vision_normal reset
 
     level thread gf_bridgeTelemetry();
 
@@ -129,6 +147,22 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "radar_off"       ) { gf_bridgeRadar( false );       return; }
     if ( cmd == "headshots_on"    ) { gf_bridgeHeadshots( true );    return; }
     if ( cmd == "headshots_off"   ) { gf_bridgeHeadshots( false );   return; }
+
+    // --- Fun / silly (EnCoReV8 + iMCSx) ---
+    if ( isSubStr( cmd, "vision_"      ) ) { gf_bridgeVision( getSubStr( cmd, 7,  cmd.size ) ); return; }
+    if ( isSubStr( cmd, "thirdperson_" ) ) { gf_bridgeVisSet( "cg_thirdPerson",    getSubStr( cmd, 12, cmd.size ) ); return; }
+    if ( isSubStr( cmd, "fps_"         ) ) { gf_bridgeVisSet( "cg_drawFPS",        getSubStr( cmd, 4,  cmd.size ) ); return; }
+    if ( isSubStr( cmd, "longknife_"   ) ) { gf_bridgeVisSet( "aim_automelee_range", getSubStr( cmd, 10, cmd.size ) ); return; }
+
+    if ( cmd == "expbullets_on"  ) { gf_bridgeExpBullets( true );  return; }
+    if ( cmd == "expbullets_off" ) { gf_bridgeExpBullets( false ); return; }
+    if ( cmd == "drunk_on"       ) { gf_bridgeDrunk( true );       return; }
+    if ( cmd == "drunk_off"      ) { gf_bridgeDrunk( false );      return; }
+    if ( cmd == "invis_on"       ) { gf_bridgeInvisible( true );   return; }
+    if ( cmd == "invis_off"      ) { gf_bridgeInvisible( false );  return; }
+    if ( cmd == "quake"          ) { gf_bridgeQuake();             return; }
+    if ( cmd == "tpall"          ) { gf_bridgeTeleportAll();       return; }
+    if ( cmd == "saymsg"         ) { gf_bridgeBroadcast();         return; }
 
     // Per-player commands: pgod_<num>, pfreeze_<num>, punfreeze_<num>, pperks_<num>
     if ( isSubStr( cmd, "pgod_"      ) ) { gf_bridgePlayerCmd( "god",      getSubStr( cmd, 5,  cmd.size ) ); return; }
@@ -381,4 +415,191 @@ gf_bridgePlayerCmd( action, numStr )
         target SetPerk( "specialty_bulletaccuracy" );
         iPrintLnBold( "^2Perks: " + name );
     }
+}
+
+// ============================================================================
+// FUN / SILLY -- mined from EnCoReV8 + iMCSx mod menus
+// ============================================================================
+
+// --- Vision sets -------------------------------------------------------------
+// visionSetNaked swaps the post-process vision. In the MP server VM it is a
+// BARE (non-method) builtin -- _globallogic/_killcam/_pregame all call it with
+// no entity prefix, and bare = global vision applied to every client. (Calling
+// it as a per-player method `player visionSetNaked()` throws "unknown function"
+// because no method builtin of that name is registered in MP.) We use the
+// cheat_* sets (always loaded) plus the map's default vision for "normal".
+
+gf_bridgeVision( vkey )
+{
+    set = level.gf_defaultVision;          // "normal" -> map default
+    if ( vkey == "bw"       ) set = "cheat_bw";
+    if ( vkey == "contrast" ) set = "cheat_bw_contrast";
+    if ( vkey == "invert"   ) set = "cheat_bw_invert";
+    if ( vkey == "night"    ) set = "default_night";
+
+    visionSetNaked( set, 0.5 );            // bare = global, all clients
+    iPrintLnBold( "^5Vision: " + vkey );
+}
+
+// --- Explosive bullets -------------------------------------------------------
+// Each shot traces forward from the eye and detonates at the impact point.
+// Per-player watcher survives across rounds (endon disconnect); a connect
+// watcher arms late joiners. Throttled so full-auto doesn't lag the server.
+
+gf_bridgeExpBullets( enable )
+{
+    if ( enable )
+    {
+        if ( level.gf_expBullets ) return;
+        level.gf_expBullets = true;
+        if ( !isDefined( level.gf_fxExplode ) )
+            level.gf_fxExplode = loadfx( "explosions/fx_default_explosion_mp" );
+        players = level.players;
+        for ( i = 0; i < players.size; i++ )
+            players[i] thread gf_expBulletsPlayer();
+        level thread gf_expBulletsConnectWatch();
+        iPrintLnBold( "^1Explosive Bullets ON" );
+    }
+    else
+    {
+        level.gf_expBullets = false;
+        level notify( "gf_expbullets_stop" );
+        iPrintLnBold( "^7Explosive Bullets OFF" );
+    }
+}
+
+gf_expBulletsConnectWatch()
+{
+    level endon( "game_ended" );
+    level endon( "gf_expbullets_stop" );
+    for ( ;; )
+    {
+        level waittill( "connected", player );
+        player thread gf_expBulletsPlayer();
+    }
+}
+
+gf_expBulletsPlayer()
+{
+    self endon( "disconnect" );
+    level endon( "game_ended" );
+    level endon( "gf_expbullets_stop" );
+
+    self.gf_expLast = 0;
+    for ( ;; )
+    {
+        self waittill( "weapon_fired" );
+        if ( getTime() - self.gf_expLast < 120 )   // ms throttle vs full-auto
+            continue;
+        self.gf_expLast = getTime();
+
+        eye     = self getEye();
+        forward = anglesToForward( self getPlayerAngles() );
+        end     = eye + ( forward[0] * 8000, forward[1] * 8000, forward[2] * 8000 );
+        tr      = bulletTrace( eye, end, false, self );
+        pos     = tr["position"];
+
+        if ( isDefined( level.gf_fxExplode ) )
+            playFx( level.gf_fxExplode, pos );
+        RadiusDamage( pos, 200, 120, 40, self );
+    }
+}
+
+// --- Drunk mode --------------------------------------------------------------
+// Continuous mild camera EarthQuake on every living player -- wobble without
+// fighting their input.
+
+gf_bridgeDrunk( enable )
+{
+    if ( enable )
+    {
+        if ( level.gf_drunk ) return;
+        level.gf_drunk = true;
+        level thread gf_drunkLoop();
+        iPrintLnBold( "^5Drunk Mode ON" );
+    }
+    else
+    {
+        level.gf_drunk = false;
+        level notify( "gf_drunk_stop" );
+        iPrintLnBold( "^7Drunk Mode OFF" );
+    }
+}
+
+gf_drunkLoop()
+{
+    level endon( "game_ended" );
+    level endon( "gf_drunk_stop" );
+    for ( ;; )
+    {
+        players = level.players;
+        for ( i = 0; i < players.size; i++ )
+        {
+            p = players[i];
+            if ( p.health <= 0 ) continue;
+            EarthQuake( 0.4, 1.2, p.origin, 200 );
+        }
+        wait 1.0;
+    }
+}
+
+// --- Invisible players (troll) ----------------------------------------------
+
+gf_bridgeInvisible( enable )
+{
+    level.gf_invisible = enable;
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        if ( enable )
+            players[i] hide();
+        else
+            players[i] show();
+    }
+    if ( enable )
+        iPrintLnBold( "^5Players Invisible" );
+    else
+        iPrintLnBold( "^7Players Visible" );
+}
+
+// --- One-shot earthquake -----------------------------------------------------
+
+gf_bridgeQuake()
+{
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+        EarthQuake( 0.7, 2.0, players[i].origin, 1200 );
+    iPrintLnBold( "^1*** EARTHQUAKE ***" );
+}
+
+// --- Teleport all to anchor (Player 1 / host) -------------------------------
+
+gf_bridgeTeleportAll()
+{
+    players = level.players;
+    if ( players.size < 2 ) return;
+
+    anchor = players[0];
+    org    = anchor.origin;
+    ang    = anchor.angles;
+
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( p == anchor )   continue;
+        if ( p.health <= 0 ) continue;
+        p SetOrigin( org + ( randomInt( 40 ) - 20, randomInt( 40 ) - 20, 0 ) );
+        p SetPlayerAngles( ang );
+    }
+    iPrintLnBold( "^3Gathered all players -> " + anchor.name );
+}
+
+// --- Broadcast message -------------------------------------------------------
+// Reads dvar gf_say (set by RCON just before this command) and bold-prints it.
+
+gf_bridgeBroadcast()
+{
+    msg = getDvar( "gf_say" );
+    if ( msg == "" ) return;
+    iPrintLnBold( msg );
 }
