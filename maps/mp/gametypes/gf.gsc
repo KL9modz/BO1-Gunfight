@@ -7,7 +7,7 @@
 #include maps\mp\gametypes\_gf_rounds;
 #include maps\mp\gametypes\_gf_loadouts;
 #include maps\mp\gametypes\_gf_wager_zones;
-// #strip-begin features - RCON bridge include (kept on release branch; stripped in bare-bones zip)
+// #strip-begin - RCON bridge include (dev/main only; stripped from public release)
 #include maps\mp\gametypes\_gf_bridge;
 // #strip-end
 
@@ -323,7 +323,7 @@ onStartGameType()
     if ( !level.gf_largeMode )
         gf_applyWagerZoneAssets();
 
-    // #strip-begin features - RCON bridge + bot init (kept on release branch; stripped in bare-bones zip)
+    // #strip-begin - RCON bridge + bot init (dev/main only; stripped from public release)
     thread gf_bridgeInit();
     thread maps\mp\gametypes\_bot::init();
     // #strip-end

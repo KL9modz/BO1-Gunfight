@@ -5,11 +5,12 @@
 - Finish/Adjust spawns
 - Setup a modded T5 Plutonium server on a VPS
 
-- Organize repo:
-README
+- Update release branch readme:
 Screenshots 
-More details (every function)
+More details (every function, dvar)
 Server info 
+
+- Organize repo:
 Leverage “releases” or “bugs” — DONE: `release` branch (GitHub default) + Release zip, via tools/package_release.ps1 (see "Release & Distribution")
 Bare bones branch — DONE: `release` branch keeps bots+RCON; the Release zip is ultra bare-bones
 No: _bot, _debug, _bridge — DONE: stripped from public outputs via `// #strip-begin` markers (still present on `main`)
@@ -280,21 +281,21 @@ Currently set to `playlist_tdm`. Change and rebuild mod.ff to update.
 
 **Plutonium T5 has NO client-side mod download.** Every player *and* the server must install the mod locally — a joiner without it gets no HUD, blank localized text, and missing FX (gameplay GSC still runs server-side). A public server therefore needs a manual distribution step; there is no in-engine way around it. This is the whole reason the player package exists.
 
-### Three content tiers (all staged from full `main` source)
+### Two outputs, one minimal public profile
 | Output | Content | Built by |
 |---|---|---|
 | **`main` branch** | Everything: bots (`_bot`/`bots`), RCON (`_gf_bridge`), `_gf_debug`, `tools/`, `.claude/`. The real history — develop here. | — |
-| **`release` branch** (GitHub **default** branch) | "A little less dev": keeps bots + RCON, strips `_gf_debug` + dev tooling; `mod.ff` included. A force-pushed **orphan single commit** (no history → no binary bloat). | `package_release.ps1 -PublishBranch` |
-| **Release zip** (GitHub Release asset) | Ultra bare-bones: strips bots + RCON + debug. | `package_release.ps1 -Publish` |
+| **`release` branch** (GitHub **default**) + **Release zip** | **Same minimal content**: `mod.ff` + the gameplay GSC + `README.md`. No bots/RCON/debug, no `tools/`, no `mod.csv`. Branch = browsable/clonable; zip = download. | `package_release.ps1 -PublishBranch` (branch) / `-Publish` (zip) |
 
-⚠️ Because `release` is the GitHub default branch, a fresh `git clone` lands there (no `tools/`). **Keep pushing `main`** via `push_all.ps1` — it is the only branch with history/tooling. Run `git checkout main` after a fresh clone to develop. GitHub Releases are repo-wide/tag-based, independent of the default branch.
+The branch is a force-pushed **orphan single commit** (no history → no binary bloat, `mod.ff` included). The zip is just the archive of the same staged tree, so **branch and zip are byte-identical in content.**
 
-### Category-strip markers
-Dev wiring in source is wrapped in category markers, stripped per profile by `package_release.ps1`:
-- `// #strip-begin features … // #strip-end` — RCON bridge include + bot/RCON init (`gf.gsc`). Stripped in the **zip only**.
-- `// #strip-begin debug … // #strip-end` — `_gf_debug` include + `gf_debug_*` blocks (`_gf_rounds.gsc`). Stripped in **both** zip and branch.
+⚠️ Because `release` is the GitHub default branch, a fresh `git clone` lands there (minimal, no `tools/`). **Keep pushing `main`** via `push_all.ps1` — it is the only branch with history/tooling. `git checkout main` after a fresh clone to develop. GitHub Releases are repo-wide/tag-based, independent of the default branch.
 
-Marker *comment* lines are always removed from staged files; the *body* between them is removed only when that category is in the profile's strip list. On `main` the markers are inert `//` comments, so the dev build is unaffected.
+### Strip markers
+Dev wiring that lives inside *kept* gameplay files is wrapped in markers and removed from the public outputs by `package_release.ps1`:
+- `// #strip-begin … // #strip-end` — e.g. the RCON bridge include + bot/RCON init in `gf.gsc`, and the `_gf_debug` include + `gf_debug_*` blocks in `_gf_rounds.gsc`.
+
+Every `#strip-begin … #strip-end` region (marker lines + body) is removed when staging. On `main` the markers are inert `//` comments, so the dev build is unaffected. (The fully dev files — `_bot`, `bots/`, `_gf_bridge`, `_gf_debug` — are excluded by filename via `$DevFiles`.)
 
 ### Scripts (`tools/`, ASCII-only so Windows PowerShell 5.1 parses them)
 - **`build_ff.ps1`** — build `mod.ff` (stages both zones, cleans `raw/`). Always build via this.

@@ -2,7 +2,7 @@
 // _globallogic::endGame handles scoring, win-limit, intermission, and respawn.
 
 #include maps\mp\gametypes\_gf_hud;
-// #strip-begin debug - _gf_debug (stripped from all public releases)
+// #strip-begin - _gf_debug include (dev/main only; stripped from public release)
 #include maps\mp\gametypes\_gf_debug;
 // #strip-end
 #include maps\mp\gametypes\_hud_util;
@@ -202,7 +202,7 @@ gf_playerSpawnedCB()
     if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
         self thread gf_runHealthHUD();
 
-    // #strip-begin debug - spawn recorder + HUD-pool overlays (stripped from all public releases)
+    // #strip-begin - spawn recorder + HUD-pool overlays (dev/main only; stripped from public release)
     if ( getDvarInt( "gf_debug_spawns" ) == 1 )
         self thread gf_startSpawnRecorder();
 
