@@ -62,7 +62,8 @@ function Build-Staging {
         [string]$StageMod,
         [string[]]$ExcludeFiles,
         [string[]]$StripCats,
-        [string]$Label
+        [string]$Label,
+        [switch]$IncludeRconTool
     )
     if (Test-Path -LiteralPath $StageMod) { Remove-Item -Recurse -Force -LiteralPath $StageMod }
     New-Item -ItemType Directory -Force -Path $StageMod | Out-Null
@@ -123,7 +124,22 @@ Full source and development are on the
 '@ -replace '__VERSION__', $Version
     [System.IO.File]::WriteAllText((Join-Path $StageMod "README.md"), $readme, $Utf8NoBom)
 
-    Write-Host ("  [{0}] {1} GSC file(s); excluded {2} file(s); stripped [{3}]" -f $Label, $n, $ExcludeFiles.Count, ($StripCats -join "+"))
+    $rconCount = 0
+    if ($IncludeRconTool) {
+        $rconSrc = Join-Path $WorkspaceRoot "tools\rcon"
+        if (Test-Path -LiteralPath $rconSrc) {
+            $rconFiles = Get-ChildItem -Recurse -File -LiteralPath $rconSrc | Where-Object { $_.FullName -notmatch '\\node_modules\\' }
+            foreach ($rf in $rconFiles) {
+                $rrel = $rf.FullName.Substring($WorkspaceRoot.Length).TrimStart('\', '/')
+                $rdest = Join-Path $StageMod $rrel
+                New-Item -ItemType Directory -Force -Path (Split-Path -Parent $rdest) | Out-Null
+                Copy-Item -Force -LiteralPath $rf.FullName -Destination $rdest
+                $rconCount++
+            }
+        }
+    }
+
+    Write-Host ("  [{0}] {1} GSC file(s); excluded {2} file(s); stripped [{3}]; rcon tool {4} file(s)" -f $Label, $n, $ExcludeFiles.Count, ($StripCats -join "+"), $rconCount)
     return $n
 }
 
@@ -165,7 +181,7 @@ Write-Host ("Zip:    {0} ({1} KB)" -f $zip.FullName, [math]::Round($zip.Length /
 if ($PublishBranch) {
     Write-Host ""
     Write-Host "Staging 'less dev' snapshot for branch '$ReleaseBranch' ..."
-    Build-Staging $BranchStageMod $BranchExclude $BranchStrip "branch (keeps bots+RCON)" | Out-Null
+    Build-Staging $BranchStageMod $BranchExclude $BranchStrip "branch (keeps bots+RCON)" -IncludeRconTool | Out-Null
 
     $tmpIndex = Join-Path ([System.IO.Path]::GetTempPath()) ("gf_relidx_" + [System.Guid]::NewGuid().ToString("N"))
     $prevIndex = $env:GIT_INDEX_FILE
