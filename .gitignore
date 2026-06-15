@@ -1,5 +1,6 @@
 # Build output
 mod.ff
+tools/dist/
 
 # Runtime/log output
 *.log

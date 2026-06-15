@@ -2,7 +2,9 @@
 // _globallogic::endGame handles scoring, win-limit, intermission, and respawn.
 
 #include maps\mp\gametypes\_gf_hud;
+// #release-strip-begin — dev tools, removed by tools/package_release.ps1
 #include maps\mp\gametypes\_gf_debug;
+// #release-strip-end
 #include maps\mp\gametypes\_hud_util;
 
 gf_registerOvertimeLimitDvar()
@@ -200,6 +202,7 @@ gf_playerSpawnedCB()
     if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
         self thread gf_runHealthHUD();
 
+    // #release-strip-begin — dev diagnostics (spawn recorder + HUD-pool overlays), removed by tools/package_release.ps1
     if ( getDvarInt( "gf_debug_spawns" ) == 1 )
         self thread gf_startSpawnRecorder();
 
@@ -216,6 +219,7 @@ gf_playerSpawnedCB()
         if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
             self thread gf_debugElemProbe();
     }
+    // #release-strip-end
 }
 
 
