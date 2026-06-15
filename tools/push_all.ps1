@@ -47,7 +47,9 @@ if ($hasStaged) {
     # Write the message to a temp file so quotes/newlines survive intact.
     $msgFile = Join-Path ([System.IO.Path]::GetTempPath()) ("gf_commit_" + [System.Guid]::NewGuid().ToString("N") + ".txt")
     try {
-        Set-Content -LiteralPath $msgFile -Value $Message -Encoding utf8
+        # UTF-8 without BOM — Set-Content -Encoding utf8 (PS 5.1) prepends a BOM
+        # that ends up inside the commit message.
+        [System.IO.File]::WriteAllText($msgFile, $Message, (New-Object System.Text.UTF8Encoding($false)))
         Invoke-Git @("commit", "-F", $msgFile)
     }
     finally {
