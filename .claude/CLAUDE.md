@@ -10,9 +10,9 @@ README
 Screenshots 
 More details (every function)
 Server info 
-Leverage “releases” or “bugs”
-Bare bones branch
-No: _bot, _debug, _bridge
+Leverage “releases” or “bugs” — DONE: `release` branch (GitHub default) + Release zip, via tools/package_release.ps1 (see "Release & Distribution")
+Bare bones branch — DONE: `release` branch keeps bots+RCON; the Release zip is ultra bare-bones
+No: _bot, _debug, _bridge — DONE: stripped from public outputs via `// #strip-begin` markers (still present on `main`)
 ---
 
 ## Dedicated Server Setup
@@ -271,6 +271,36 @@ Available values: `playlist_tdm`, `playlist_ffa`, `playlist_search_destroy`, `pl
 Currently set to `playlist_tdm`. Change and rebuild mod.ff to update.
 
 **menufile double-load pitfall** â€” If a `.menu` file is already referenced by a `loadMenu` directive inside another `menufile` (e.g. `hud_gf.txt` loads `hud_gf_health.menu`), do NOT also list it as a separate `menufile` entry in `mod.csv`. The engine registers the menu name twice, which crashes the menu system and makes **all gametypes disappear** from the UI â€” a symptom that looks completely unrelated to the duplicate. Rule: each `.menu` file appears in `mod.csv` exactly once, either as a direct `menufile` OR via a txt loader, never both.
+
+---
+
+## Release & Distribution
+
+> Deployment infra (set up 2026-06-15). Scripts live in `tools/`; their output goes to gitignored `tools/dist/`.
+
+**Plutonium T5 has NO client-side mod download.** Every player *and* the server must install the mod locally — a joiner without it gets no HUD, blank localized text, and missing FX (gameplay GSC still runs server-side). A public server therefore needs a manual distribution step; there is no in-engine way around it. This is the whole reason the player package exists.
+
+### Three content tiers (all staged from full `main` source)
+| Output | Content | Built by |
+|---|---|---|
+| **`main` branch** | Everything: bots (`_bot`/`bots`), RCON (`_gf_bridge`), `_gf_debug`, `tools/`, `.claude/`. The real history — develop here. | — |
+| **`release` branch** (GitHub **default** branch) | "A little less dev": keeps bots + RCON, strips `_gf_debug` + dev tooling; `mod.ff` included. A force-pushed **orphan single commit** (no history → no binary bloat). | `package_release.ps1 -PublishBranch` |
+| **Release zip** (GitHub Release asset) | Ultra bare-bones: strips bots + RCON + debug. | `package_release.ps1 -Publish` |
+
+⚠️ Because `release` is the GitHub default branch, a fresh `git clone` lands there (no `tools/`). **Keep pushing `main`** via `push_all.ps1` — it is the only branch with history/tooling. Run `git checkout main` after a fresh clone to develop. GitHub Releases are repo-wide/tag-based, independent of the default branch.
+
+### Category-strip markers
+Dev wiring in source is wrapped in category markers, stripped per profile by `package_release.ps1`:
+- `// #strip-begin features … // #strip-end` — RCON bridge include + bot/RCON init (`gf.gsc`). Stripped in the **zip only**.
+- `// #strip-begin debug … // #strip-end` — `_gf_debug` include + `gf_debug_*` blocks (`_gf_rounds.gsc`). Stripped in **both** zip and branch.
+
+Marker *comment* lines are always removed from staged files; the *body* between them is removed only when that category is in the profile's strip list. On `main` the markers are inert `//` comments, so the dev build is unaffected.
+
+### Scripts (`tools/`, ASCII-only so Windows PowerShell 5.1 parses them)
+- **`build_ff.ps1`** — build `mod.ff` (stages both zones, cleans `raw/`). Always build via this.
+- **`package_release.ps1 [ver] [-PublishBranch] [-Publish] [-SkipBuild]`** — bare-bones zip; `-PublishBranch` force-pushes the `release` snapshot; `-Publish` cuts the GitHub Release (tags `release` via `--target`).
+- **`package_server.ps1 [ver] [-SanitizeConfig] [-IncludeRconTool]`** — **PRIVATE** VPS bundle: full mod + `dedicated.cfg` (carries `rcon_password` — never publish) + production `gamesettings`-less setup + `DEPLOY.txt`. Extract into the Plutonium `t5/` storage dir.
+- **`push_all.ps1 ["msg"]`** — stage/commit/push the current branch.
 
 ---
 

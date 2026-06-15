@@ -91,30 +91,37 @@ function Build-Staging {
     }
     [System.IO.File]::WriteAllLines((Join-Path $StageMod "mod.csv"), $keptCsv, $Utf8NoBom)
 
-    $readme = @"
-mp_gunfight - Gunfight gametype for Call of Duty: Black Ops 1 (Plutonium T5)
-Version: $Version
+    $readme = @'
+# mp_gunfight
 
-IMPORTANT: Plutonium's T5 client cannot download mods from a server. EVERY
-player who wants to play - and the server host - must install these files
-locally. Joining a server running this mod without it installed means missing
-HUD, blank text, and missing effects.
+Gunfight gametype for **Call of Duty: Black Ops 1** (Plutonium T5) - one life per
+round, shared random loadouts, six rounds to win the match.
 
-INSTALL
-  1. Open your Plutonium storage mods folder:
-       %localappdata%\Plutonium\storage\t5\mods\
-  2. Extract this zip there so the path looks like:
-       ...\storage\t5\mods\mp_gunfight\mod.ff
-  3. In the Plutonium client console (or in your server config):
+**Version __VERSION__**
+
+## Install (required for every player AND the server)
+
+Plutonium's T5 client cannot download mods from a server, so everyone joining must
+install the mod locally. Without it you get no HUD, blank text, and missing effects.
+
+1. Open your Plutonium storage mods folder: `%localappdata%\Plutonium\storage\t5\mods\`
+2. Extract so the path is `...\storage\t5\mods\mp_gunfight\mod.ff`
+3. In the Plutonium console (or your server config):
+
        loadMod mp_gunfight
        map_restart
-  4. Start a match on Gunfight:
-       g_gametype gf
-       map mp_havoc        (or any supported map)
 
-Source & updates: https://github.com/KL9modz/gunfight
-"@
-    [System.IO.File]::WriteAllText((Join-Path $StageMod "README.txt"), $readme, $Utf8NoBom)
+4. Start a match:
+
+       g_gametype gf
+       map mp_havoc
+
+## Source
+
+Full source and development are on the
+[`main`](https://github.com/KL9modz/gunfight/tree/main) branch.
+'@ -replace '__VERSION__', $Version
+    [System.IO.File]::WriteAllText((Join-Path $StageMod "README.md"), $readme, $Utf8NoBom)
 
     Write-Host ("  [{0}] {1} GSC file(s); excluded {2} file(s); stripped [{3}]" -f $Label, $n, $ExcludeFiles.Count, ($StripCats -join "+"))
     return $n
