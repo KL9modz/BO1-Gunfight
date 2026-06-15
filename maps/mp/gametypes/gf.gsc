@@ -7,9 +7,9 @@
 #include maps\mp\gametypes\_gf_rounds;
 #include maps\mp\gametypes\_gf_loadouts;
 #include maps\mp\gametypes\_gf_wager_zones;
-// #release-strip-begin — dev tools, removed by tools/package_release.ps1
+// #strip-begin features - RCON bridge include (kept on release branch; stripped in bare-bones zip)
 #include maps\mp\gametypes\_gf_bridge;
-// #release-strip-end
+// #strip-end
 
 main()
 {
@@ -323,10 +323,10 @@ onStartGameType()
     if ( !level.gf_largeMode )
         gf_applyWagerZoneAssets();
 
-    // #release-strip-begin — dev tools (RCON bridge + bot support), removed by tools/package_release.ps1
+    // #strip-begin features - RCON bridge + bot init (kept on release branch; stripped in bare-bones zip)
     thread gf_bridgeInit();
     thread maps\mp\gametypes\_bot::init();
-    // #release-strip-end
+    // #strip-end
 }
 
 // ─── Cosmodrome rocket: once per match, not once per round ───────────────────

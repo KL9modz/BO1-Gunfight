@@ -4,117 +4,94 @@ param(
     [string]$ModName = "mp_gunfight",
     [string]$WorkspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [switch]$SkipBuild,
-    [switch]$Publish
+    [switch]$Publish,
+    [switch]$PublishBranch,
+    [string]$ReleaseBranch = "release"
 )
 
 $ErrorActionPreference = "Stop"
 
-# Produce a clean, player-ready release zip of the mod:
-#   - rebuilds mod.ff (unless -SkipBuild)
-#   - stages mod.ff + gameplay GSC + mod.csv into a mp_gunfight\ folder
-#   - removes the dev tools: deletes _bot/_gf_debug/_gf_bridge files and strips
-#     their wiring via the "// #release-strip-begin / -end" markers in source
-#   - generates a player INSTALL README
-#   - zips to tools\dist\mp_gunfight-<version>.zip
-#   - with -Publish, creates a GitHub Release for tag <version> via gh
+# Two public content profiles, both staged from the full 'main' source:
+#   ZIP    "ultra bare bones" deliverable -> excludes bots + RCON + debug
+#   BRANCH "a little less dev" snapshot    -> excludes debug only (keeps bots + RCON)
+# ('main' keeps everything; this script never modifies it.)
+#
+# Dev wiring in source is wrapped in CATEGORY markers this script strips:
+#   // #strip-begin features ...  // #strip-end   (RCON bridge + bot init)
+#   // #strip-begin debug    ...  // #strip-end   (_gf_debug include + blocks)
+# Marker COMMENT lines are always removed from staged files; the body between
+# them is removed only when that category is in the profile's strip list.
 #
 # Usage:
-#   tools\package_release.ps1                 # snapshot zip, no publish
-#   tools\package_release.ps1 1.0.0           # versioned zip, no publish
-#   tools\package_release.ps1 1.0.0 -Publish  # build, zip, and gh release create
-#   tools\package_release.ps1 -SkipBuild      # reuse the existing mod.ff
+#   tools\package_release.ps1                        # build the bare-bones zip
+#   tools\package_release.ps1 1.0.0                  # versioned zip
+#   tools\package_release.ps1 1.0.0 -Publish         # zip + GitHub Release
+#   tools\package_release.ps1 1.0.0 -PublishBranch   # also push 'release' branch
+#   tools\package_release.ps1 -SkipBuild             # reuse the existing mod.ff
 
-# Dev-only files excluded from the release (forward-slash, repo-relative).
-$DevFiles = @(
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+# Files excluded per category (forward-slash, repo-relative).
+$FeatureFiles = @(
     "maps/mp/gametypes/_bot.gsc",
     "maps/mp/bots/_bot_loadout.gsc",
     "maps/mp/bots/_bot_script.gsc",
     "maps/mp/bots/_bot_utility.gsc",
-    "maps/mp/gametypes/_gf_debug.gsc",
     "maps/mp/gametypes/_gf_bridge.gsc"
 )
+$DebugFiles = @( "maps/mp/gametypes/_gf_debug.gsc" )
 
-$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$ZipExclude = $FeatureFiles + $DebugFiles
+$ZipStrip = @("features", "debug")
+$BranchExclude = $DebugFiles
+$BranchStrip = @("debug")
 
-function Strip-ReleaseMarkers {
-    param([Parameter(Mandatory = $true)][string]$Content)
-
-    # Remove everything from a line containing #release-strip-begin through the
-    # next line containing #release-strip-end (inclusive of both marker lines
-    # and the trailing newline).
-    $pattern = '(?ms)^[^\r\n]*#release-strip-begin.*?#release-strip-end[^\r\n]*\r?\n?'
-    return [regex]::Replace($Content, $pattern, "")
-}
-
-function Copy-GscStripped {
-    param(
-        [Parameter(Mandatory = $true)][string]$Source,
-        [Parameter(Mandatory = $true)][string]$Destination
-    )
-
-    $content = [System.IO.File]::ReadAllText($Source)
-    if ($content -match "#release-strip-begin") {
-        $content = Strip-ReleaseMarkers $content
+function Strip-Regions {
+    param([string]$Content, [string[]]$StripCategories)
+    foreach ($cat in $StripCategories) {
+        $pat = "(?ms)^[^\r\n]*#strip-begin\s+" + [regex]::Escape($cat) + "\b.*?#strip-end[^\r\n]*\r?\n?"
+        $Content = [regex]::Replace($Content, $pat, "")
     }
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Destination) | Out-Null
-    [System.IO.File]::WriteAllText($Destination, $content, $Utf8NoBom)
+    # Drop leftover marker comment lines (kept categories), keeping their body.
+    $Content = [regex]::Replace($Content, "(?m)^[^\r\n]*#strip-(begin|end)[^\r\n]*\r?\n?", "")
+    return $Content
 }
 
-# -- Resolve paths ------------------------------------------------------------
-$ModRoot = $WorkspaceRoot   # repo root IS the mod folder (tools\ lives under it)
-$ModFf = Join-Path $ModRoot "mod.ff"
-$ModCsv = Join-Path $ModRoot "mod.csv"
-$DistDir = Join-Path $WorkspaceRoot "tools\dist"
-$StageRoot = Join-Path $DistDir "stage"
-$StageMod = Join-Path $StageRoot $ModName
-$ZipPath = Join-Path $DistDir "$ModName-$Version.zip"
+function Build-Staging {
+    param(
+        [string]$StageMod,
+        [string[]]$ExcludeFiles,
+        [string[]]$StripCats,
+        [string]$Label
+    )
+    if (Test-Path -LiteralPath $StageMod) { Remove-Item -Recurse -Force -LiteralPath $StageMod }
+    New-Item -ItemType Directory -Force -Path $StageMod | Out-Null
 
-Write-Host "Packaging $ModName release"
-Write-Host "Version: $Version"
-Write-Host "Mod:     $ModRoot"
+    Copy-Item -Force -LiteralPath $ModFf -Destination (Join-Path $StageMod "mod.ff")
 
-# -- Build mod.ff -------------------------------------------------------------
-if (-not $SkipBuild) {
-    $buildScript = Join-Path $PSScriptRoot "build_ff.ps1"
-    if (!(Test-Path -LiteralPath $buildScript)) { throw "build_ff.ps1 not found: $buildScript" }
-    Write-Host ""
-    Write-Host "Building mod.ff ..."
-    & $buildScript -GameRoot $GameRoot -ModName $ModName
-    if ($LASTEXITCODE -ne 0) { throw "build_ff.ps1 failed (exit $LASTEXITCODE)" }
-}
+    $gscFiles = Get-ChildItem -Recurse -File -LiteralPath (Join-Path $ModRoot "maps") -Filter *.gsc
+    $n = 0
+    foreach ($file in $gscFiles) {
+        $rel = $file.FullName.Substring($ModRoot.Length).TrimStart('\', '/').Replace('\', '/')
+        if ($ExcludeFiles -contains $rel) { continue }
+        $content = [System.IO.File]::ReadAllText($file.FullName)
+        $content = Strip-Regions $content $StripCats
+        $dest = Join-Path $StageMod ($rel -replace '/', '\')
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null
+        [System.IO.File]::WriteAllText($dest, $content, $Utf8NoBom)
+        $n++
+    }
 
-if (!(Test-Path -LiteralPath $ModFf)) { throw "mod.ff not found (build it first): $ModFf" }
+    $csvLines = Get-Content -LiteralPath $ModCsv
+    $keptCsv = foreach ($line in $csvLines) {
+        $norm = $line.Replace('\', '/')
+        $excluded = $false
+        foreach ($ex in $ExcludeFiles) { if ($norm -match [regex]::Escape($ex)) { $excluded = $true; break } }
+        if (-not $excluded) { $line }
+    }
+    [System.IO.File]::WriteAllLines((Join-Path $StageMod "mod.csv"), $keptCsv, $Utf8NoBom)
 
-# -- Fresh staging dir --------------------------------------------------------
-if (Test-Path -LiteralPath $StageRoot) { Remove-Item -Recurse -Force -LiteralPath $StageRoot }
-New-Item -ItemType Directory -Force -Path $StageMod | Out-Null
-
-# -- mod.ff (binary copy) -----------------------------------------------------
-Copy-Item -Force -LiteralPath $ModFf -Destination (Join-Path $StageMod "mod.ff")
-
-# -- Gameplay GSC (every .gsc under maps\ minus the dev files; strip markers) --
-$gscFiles = Get-ChildItem -Recurse -File -LiteralPath (Join-Path $ModRoot "maps") -Filter *.gsc
-$includedGsc = 0
-foreach ($file in $gscFiles) {
-    $rel = $file.FullName.Substring($ModRoot.Length).TrimStart('\', '/').Replace('\', '/')
-    if ($DevFiles -contains $rel) { continue }
-    Copy-GscStripped $file.FullName (Join-Path $StageMod ($rel -replace '/', '\'))
-    $includedGsc++
-    Write-Host "  + $rel"
-}
-
-# -- mod.csv (drop dev rawfile lines) -----------------------------------------
-$csvLines = Get-Content -LiteralPath $ModCsv
-$keptCsv = foreach ($line in $csvLines) {
-    $norm = $line.Replace('\', '/')
-    $isDev = $false
-    foreach ($dev in $DevFiles) { if ($norm -match [regex]::Escape($dev)) { $isDev = $true; break } }
-    if (-not $isDev) { $line }
-}
-[System.IO.File]::WriteAllLines((Join-Path $StageMod "mod.csv"), $keptCsv, $Utf8NoBom)
-
-# -- Player INSTALL README ----------------------------------------------------
-$readme = @"
+    $readme = @"
 mp_gunfight - Gunfight gametype for Call of Duty: Black Ops 1 (Plutonium T5)
 Version: $Version
 
@@ -135,38 +112,90 @@ INSTALL
        g_gametype gf
        map mp_havoc        (or any supported map)
 
-CONTENTS
-  mod.ff      compiled client assets (HUD, text, effects, gametype)
-  mod.csv     asset manifest
-  maps\       server-side gametype scripts
-
 Source & updates: https://github.com/KL9modz/gunfight
 "@
-[System.IO.File]::WriteAllText((Join-Path $StageMod "README.txt"), $readme, $Utf8NoBom)
+    [System.IO.File]::WriteAllText((Join-Path $StageMod "README.txt"), $readme, $Utf8NoBom)
 
-# -- Zip ----------------------------------------------------------------------
-if (Test-Path -LiteralPath $ZipPath) { Remove-Item -Force -LiteralPath $ZipPath }
-Compress-Archive -Path $StageMod -DestinationPath $ZipPath -Force
+    Write-Host ("  [{0}] {1} GSC file(s); excluded {2} file(s); stripped [{3}]" -f $Label, $n, $ExcludeFiles.Count, ($StripCats -join "+"))
+    return $n
+}
 
-$zip = Get-Item -LiteralPath $ZipPath
+# -- Resolve paths ------------------------------------------------------------
+$ModRoot = $WorkspaceRoot
+$ModFf = Join-Path $ModRoot "mod.ff"
+$ModCsv = Join-Path $ModRoot "mod.csv"
+$DistDir = Join-Path $WorkspaceRoot "tools\dist"
+$ZipStageMod = Join-Path $DistDir "stage\$ModName"
+$BranchStageMod = Join-Path $DistDir "branch-stage\$ModName"
+$ZipPath = Join-Path $DistDir "$ModName-$Version.zip"
+
+Write-Host "Packaging $ModName release"
+Write-Host "Version: $Version"
+Write-Host "Mod:     $ModRoot"
+
+# -- Build mod.ff -------------------------------------------------------------
+if (-not $SkipBuild) {
+    $buildScript = Join-Path $PSScriptRoot "build_ff.ps1"
+    if (!(Test-Path -LiteralPath $buildScript)) { throw "build_ff.ps1 not found: $buildScript" }
+    Write-Host ""
+    Write-Host "Building mod.ff ..."
+    & $buildScript -GameRoot $GameRoot -ModName $ModName
+    if ($LASTEXITCODE -ne 0) { throw "build_ff.ps1 failed (exit $LASTEXITCODE)" }
+}
+if (!(Test-Path -LiteralPath $ModFf)) { throw "mod.ff not found (build it first): $ModFf" }
+
+# -- Stage + zip the ultra-bare-bones deliverable -----------------------------
 Write-Host ""
-Write-Host "Staged $includedGsc gameplay GSC file(s) (excluded $($DevFiles.Count) dev file(s))."
-Write-Host "Zip:    $($zip.FullName) ($([math]::Round($zip.Length / 1KB, 1)) KB)"
-Write-Host "Stage:  $StageMod  (left for inspection)"
+Build-Staging $ZipStageMod $ZipExclude $ZipStrip "zip (bare bones)" | Out-Null
+if (Test-Path -LiteralPath $ZipPath) { Remove-Item -Force -LiteralPath $ZipPath }
+Compress-Archive -Path $ZipStageMod -DestinationPath $ZipPath -Force
+$zip = Get-Item -LiteralPath $ZipPath
+Write-Host ("Zip:    {0} ({1} KB)" -f $zip.FullName, [math]::Round($zip.Length / 1KB, 1))
 
-# -- Optional GitHub Release --------------------------------------------------
+# -- Optional: publish 'release' branch (a-little-less-dev profile) ------------
+# Force-pushed as a single orphan commit (mod.ff included), so history never
+# accumulates binaries. Temp index + git plumbing -> working tree untouched.
+if ($PublishBranch) {
+    Write-Host ""
+    Write-Host "Staging 'less dev' snapshot for branch '$ReleaseBranch' ..."
+    Build-Staging $BranchStageMod $BranchExclude $BranchStrip "branch (keeps bots+RCON)" | Out-Null
+
+    $tmpIndex = Join-Path ([System.IO.Path]::GetTempPath()) ("gf_relidx_" + [System.Guid]::NewGuid().ToString("N"))
+    $prevIndex = $env:GIT_INDEX_FILE
+    try {
+        $env:GIT_INDEX_FILE = $tmpIndex
+        & git -C $WorkspaceRoot read-tree --empty
+        if ($LASTEXITCODE -ne 0) { throw "git read-tree failed" }
+        & git -C $WorkspaceRoot --work-tree=$BranchStageMod add --force --all
+        if ($LASTEXITCODE -ne 0) { throw "git add (snapshot) failed" }
+        $tree = (& git -C $WorkspaceRoot write-tree).Trim()
+        if (-not $tree) { throw "git write-tree produced no tree" }
+        $commit = (& git -C $WorkspaceRoot commit-tree $tree -m "Release $Version (clean snapshot)").Trim()
+        if (-not $commit) { throw "git commit-tree produced no commit" }
+        $refspec = $commit + ":refs/heads/" + $ReleaseBranch
+        & git -C $WorkspaceRoot push -f origin $refspec
+        if ($LASTEXITCODE -ne 0) { throw "git push to '$ReleaseBranch' failed" }
+        Write-Host "Published branch '$ReleaseBranch' -> $commit"
+    }
+    finally {
+        if ($null -ne $prevIndex) { $env:GIT_INDEX_FILE = $prevIndex }
+        else { Remove-Item env:GIT_INDEX_FILE -ErrorAction SilentlyContinue }
+        if (Test-Path -LiteralPath $tmpIndex) { Remove-Item -Force -LiteralPath $tmpIndex }
+    }
+}
+
+# -- Optional GitHub Release (the ultra-bare-bones zip) -----------------------
 if ($Publish) {
-    $gh = (Get-Command gh -ErrorAction SilentlyContinue)
-    if (-not $gh) { throw "gh CLI not found; cannot publish. Install GitHub CLI or omit -Publish." }
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        throw "gh CLI not found; cannot publish. Install GitHub CLI or omit -Publish."
+    }
     Write-Host ""
     Write-Host "Publishing GitHub Release '$Version' ..."
-    & gh release create $Version $ZipPath --title "$ModName $Version" --notes "Gunfight $Version. Install: extract into ...\storage\t5\mods\ then 'loadMod mp_gunfight'. See README.txt."
+    & gh release create $Version $ZipPath --target $ReleaseBranch --title "$ModName $Version" --notes "Gunfight $Version. Install: extract into ...\storage\t5\mods\ then 'loadMod mp_gunfight'. See README.txt."
     if ($LASTEXITCODE -ne 0) { throw "gh release create failed (exit $LASTEXITCODE)" }
     Write-Host "Published."
 }
 else {
     Write-Host ""
-    Write-Host "Not published. To create the GitHub Release:"
-    Write-Host "  gh release create $Version `"$ZipPath`" --title `"$ModName $Version`" --notes `"...`""
-    Write-Host "  (or re-run with -Publish)"
+    Write-Host "Not published. GitHub Release: re-run with -Publish (or run gh release create $Version manually)."
 }
