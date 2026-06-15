@@ -83,14 +83,8 @@ function Build-Staging {
         $n++
     }
 
-    $csvLines = Get-Content -LiteralPath $ModCsv
-    $keptCsv = foreach ($line in $csvLines) {
-        $norm = $line.Replace('\', '/')
-        $excluded = $false
-        foreach ($ex in $ExcludeFiles) { if ($norm -match [regex]::Escape($ex)) { $excluded = $true; break } }
-        if (-not $excluded) { $line }
-    }
-    [System.IO.File]::WriteAllLines((Join-Path $StageMod "mod.csv"), $keptCsv, $Utf8NoBom)
+    # No mod.csv: it's a build-time zone-source manifest (linker/mod tools), not
+    # read by Plutonium at runtime. Runtime needs only mod.ff + the GSC.
 
     $readme = @'
 # mp_gunfight
@@ -146,7 +140,6 @@ Full source and development are on the
 # -- Resolve paths ------------------------------------------------------------
 $ModRoot = $WorkspaceRoot
 $ModFf = Join-Path $ModRoot "mod.ff"
-$ModCsv = Join-Path $ModRoot "mod.csv"
 $DistDir = Join-Path $WorkspaceRoot "tools\dist"
 $ZipStageMod = Join-Path $DistDir "stage\$ModName"
 $BranchStageMod = Join-Path $DistDir "branch-stage\$ModName"
