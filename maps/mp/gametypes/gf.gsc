@@ -206,9 +206,17 @@ onStartGameType()
     // fast-switch specialty granted in gf_giveCustomLoadout. Lower = faster:
     // 0.833 = ~1.2x speed, 0.5 = 2x. Live-tunable via rcon (it's a real dvar).
     setDvar( "perk_weapSwitchMultiplier", "0.833" );
+    // #strip-begin - dev cheats + RCON/join password for LOCAL listen-server testing only.
+    // package_release.ps1 strips this whole block from public builds. On the dedicated VPS
+    // this block is gone, so dedicated.cfg is the sole owner of rcon_password/g_password/
+    // sv_cheats. The value below is a DEV-ONLY throwaway and is intentionally DIFFERENT from
+    // the real VPS password (which lives only in dedicated.cfg, never in git) — so it stays
+    // harmless even if `main` is public on GitHub. Rotate the VPS password in dedicated.cfg,
+    // NOT here. This value only takes effect on a listen server (where dedicated.cfg isn't read).
     setDvar( "sv_cheats", "1" );
-    setDvar( "rcon_password", "s5ZrXQDfmSPp" );
+    setDvar( "rcon_password", "aBHguGlfMQA9NcqEO1YJ5WKm" );   // dev/listen-server only — NOT the VPS password
     setDvar( "g_password", "" );
+    // #strip-end
 
     dvar = "scr_" + level.gameType + "_visualtweaks";
     if ( GetDvar( dvar ) == "" )

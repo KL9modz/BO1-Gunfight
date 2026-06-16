@@ -14,7 +14,6 @@ Edit source files in this folder, especially:
 
 ```
 maps\mp\gametypes\
-scripts\mp\
 ui_mp\
 localizedstrings\
 ```
@@ -41,11 +40,15 @@ After loading the mod in-game, use `map_restart` to reload script changes during
 
 | Dvar | Default | Description |
 |------|---------|-------------|
-| `set scr_gf_timelimit` | `1` | Minutes per round |
+| `scr_gf_timelimit` | `0.75` | Minutes per round in small mode (`0.75` = 45s) |
 | `scr_gf_overtimelimit` | `15` | Seconds of overtime after round time expires; `0` disables overtime |
 | `scr_gf_scorelimit` | `6` | Round wins to win the match |
 | `scr_gf_roundswitch` | `2` | Rounds between side switches |
 | `scr_gf_roundsperloadout` | `2` | Rounds before the shared loadout rotates |
+| `scr_gf_teamspawnmode` | `auto` | `auto` / `large` / `small` team-size mode |
+
+Large-team mode uses `_large` variants of the round/overtime/capture dvars. See
+`.claude/CLAUDE.md` ("Gametype Dvars" + "Team-Size Mode") for the complete list.
 
 ## Overtime
 

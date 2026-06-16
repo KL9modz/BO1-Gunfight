@@ -474,12 +474,12 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       <button class="b-gh b-sm ctrl" onclick="visBridge('visgridint_','vGridI')">Set</button>
       <button class="b-gh b-sm ctrl" onclick="visReset('visgridint_',1.1,'vGridI','sGridI')">&#x21BA;</button>
     </div>
-    <div class="slider-row" data-tip="r_lightGridContrast&#10;Light grid contrast. Default: 1.1">
+    <div class="slider-row" data-tip="r_lightGridContrast&#10;Light grid contrast. Domain: -1..1. Default: 1">
       <span class="slbl" style="min-width:130px">Grid Contrast</span>
-      <input type="range" id="sGridC" min="0" max="3" step="0.05" value="1.1" oninput="sv('sGridC','vGridC')" onchange="visBridge('visgridcon_','vGridC')" class="ctrl">
-      <input type="number" id="vGridC" class="num ctrl" value="1.1" step="0.05" oninput="su('vGridC','sGridC',0,3)">
+      <input type="range" id="sGridC" min="-1" max="1" step="0.05" value="1" oninput="sv('sGridC','vGridC')" onchange="visBridge('visgridcon_','vGridC')" class="ctrl">
+      <input type="number" id="vGridC" class="num ctrl" value="1" step="0.05" oninput="su('vGridC','sGridC',-1,1)">
       <button class="b-gh b-sm ctrl" onclick="visBridge('visgridcon_','vGridC')">Set</button>
-      <button class="b-gh b-sm ctrl" onclick="visReset('visgridcon_',1.1,'vGridC','sGridC')">&#x21BA;</button>
+      <button class="b-gh b-sm ctrl" onclick="visReset('visgridcon_',1,'vGridC','sGridC')">&#x21BA;</button>
     </div>
     <div class="srow" data-tip="r_fog&#10;Enable/disable distance fog. setClientDvar all players">
       <span class="slbl">Fog</span><span style="flex:1"></span>
@@ -490,7 +490,7 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       <label class="tog ctrl"><input type="checkbox" id="cbHDR" checked onchange="bridge('vishdr_'+(cbHDR.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
     </div>
     <div class="row" style="margin-top:6px">
-      <button class="b-gh ctrl" data-tip="Resets all visual dvars to defaults via bridge&#10;r_gamma 1.1 · r_lightTweakAmbient 0.1 · r_lightGridIntensity 1.1&#10;r_lightGridContrast 1.1 · r_fog 1 · r_fullHDRrendering 1" onclick="visResetAll()">&#x21BA; Reset All Visuals</button>
+      <button class="b-gh ctrl" data-tip="Resets all visual dvars to defaults via bridge&#10;r_gamma 1.1 · r_lightTweakAmbient 0.1 · r_lightGridIntensity 1.1&#10;r_lightGridContrast 1 · r_fog 1 · r_fullHDRrendering 1" onclick="visResetAll()">&#x21BA; Reset All Visuals</button>
     </div>
   </div>
 
@@ -648,6 +648,65 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       <span class="slbl">Sprint-ADS Fix</span>
       <span style="flex:1"></span>
       <button class="b-ac b-sm" onclick="copySprintAdsFix()">📋 Copy binds</button>
+    </div>
+    <div class="srow" data-tip="com_drawFps 1&#10;developer 1&#10;cl_showSnaps 1&#10;Client-side debug overlays (FPS, developer logging, net-snapshot graph).&#10;Can't be pushed from a server — each player pastes these in their own console.">
+      <span class="slbl">Debug Dvars</span>
+      <span style="flex:1"></span>
+      <button class="b-ac b-sm" onclick="copyDebugDvars()">📋 Copy dvars</button>
+    </div>
+  </div>
+  <div class="block">
+    <div class="btitle">COMMAND REFERENCE  <span style="font-weight:400;font-size:10px;color:var(--dm)">click = run &amp; show output below &middot; &#9998; = fills input (needs args)</span></div>
+    <div class="qcmds">
+      <span class="dm" style="align-self:center;font-size:11px;min-width:82px">Diagnostics</span>
+      <button onclick="qc('status')" title="connected players, slots, ping">status</button>
+      <button onclick="qc('serverinfo')" title="server-info (sets) dvars">serverinfo</button>
+      <button onclick="qc('systeminfo')" title="system dvars">systeminfo</button>
+      <button onclick="qc('teamstatus')" title="per-team status">teamstatus</button>
+      <button onclick="qc('configstrings')" title="active configstrings">configstrings</button>
+      <button onclick="qc('uptime')" title="server uptime">uptime</button>
+    </div>
+    <div class="qcmds">
+      <span class="dm" style="align-self:center;font-size:11px;min-width:82px">Profiling</span>
+      <button onclick="qc('stringUsage')" title="configstring / string-table usage — watch HUD headroom (settext exhaustion)">stringUsage</button>
+      <button onclick="qc('scriptUsage')" title="GSC script memory usage">scriptUsage</button>
+      <button onclick="qc('meminfo')" title="engine memory usage">meminfo</button>
+      <button onclick="qc('scripthashes')" title="loaded GSC script hashes">scripthashes</button>
+    </div>
+    <div class="qcmds">
+      <span class="dm" style="align-self:center;font-size:11px;min-width:82px">GSC level</span>
+      <button onclick="qc('level_keys')" title="list all level.* keys">level_keys</button>
+      <button onclick="qf('level_get ')" title="level_get &lt;key&gt; — read a level.* var">&#9998; level_get</button>
+      <button onclick="qf('level_set ')" title="level_set &lt;key&gt; &lt;value&gt; — write a level.* var (e.g. gf_headshotsOnly 1)">&#9998; level_set</button>
+      <button onclick="qf('level_notify ')" title="level_notify &lt;name&gt; — fire a GSC level notify">&#9998; level_notify</button>
+    </div>
+    <div class="qcmds">
+      <span class="dm" style="align-self:center;font-size:11px;min-width:82px">Mod / assets</span>
+      <button onclick="qc('reloadmenus')" title="re-register .menu files">reloadmenus</button>
+      <button onclick="qc('imagelist')" title="loaded images">imagelist</button>
+      <button onclick="qc('dumpmateriallist')" title="loaded materials">dumpmateriallist</button>
+      <button onclick="qf('listassetpool ')" title="listassetpool &lt;type&gt; — e.g. fx, material, xmodel, rawfile">&#9998; listassetpool</button>
+      <button onclick="qf('loadmod mods/mp_gunfight')" title="reloads the mod — disruptive, restarts scripts">&#9998; loadmod</button>
+    </div>
+    <div class="qcmds">
+      <span class="dm" style="align-self:center;font-size:11px;min-width:82px">Bots</span>
+      <button onclick="qc('spawnbot')" title="spawn one bot (Plutonium native)">spawnbot</button>
+    </div>
+    <div class="qcmds">
+      <span class="dm" style="align-self:center;font-size:11px;min-width:82px">Match</span>
+      <button onclick="qc('map_restart')" title="restart current round">map_restart</button>
+      <button onclick="qc('fast_restart')" title="fast restart (no reload)">fast_restart</button>
+      <button onclick="qc('map_rotate')" title="advance map rotation">map_rotate</button>
+      <button onclick="qf('map ')" title="map &lt;mp_x&gt; — hard map change">&#9998; map</button>
+    </div>
+    <div class="qcmds">
+      <span class="dm" style="align-self:center;font-size:11px;min-width:82px">Admin</span>
+      <button onclick="qf('kick ')" title="kick &lt;name&gt;">&#9998; kick</button>
+      <button onclick="qf('clientkick ')" title="clientkick &lt;num&gt;">&#9998; clientkick</button>
+      <button onclick="qf('tempBanClient ')" title="tempBanClient &lt;num&gt;">&#9998; tempBan</button>
+      <button onclick="qf('banClient ')" title="banClient &lt;num&gt;">&#9998; banClient</button>
+      <button onclick="qf('muteclient ')" title="muteclient &lt;num&gt;">&#9998; muteclient</button>
+      <button onclick="qf('unbanUser ')" title="unbanUser &lt;name&gt;">&#9998; unbanUser</button>
     </div>
   </div>
   <div id="clog" class="clog"></div>
@@ -1131,7 +1190,7 @@ async function visResetAll(){
     'set gf_cmd visfog_1',
     'set gf_cmd visambient_0.1',
     'set gf_cmd visgridint_1.1',
-    'set gf_cmd visgridcon_1.1',
+    'set gf_cmd visgridcon_1',
     'set gf_cmd visgamma_1.1',
     'set gf_cmd vishdr_1',
   ];
@@ -1139,7 +1198,7 @@ async function visResetAll(){
   g('sGamma').value=g('vGamma').value=1.1;
   g('sAmb').value=g('vAmb').value=0.1;
   g('sGridI').value=g('vGridI').value=1.1;
-  g('sGridC').value=g('vGridC').value=1.1;
+  g('sGridC').value=g('vGridC').value=1;
   g('cbFog').checked=true;g('cbHDR').checked=true;
   actLog('Visuals reset to defaults','ok');toast('Visuals reset','ok');
 }
@@ -1180,6 +1239,7 @@ async function readDv(){
 
 // ─── Client binds (clipboard helpers — these run on the player's machine, not the server) ──
 const SPRINT_ADS_FIX = 'bind SHIFT "+breath_sprint"\nbind MOUSE2 "+speed_throw; -breath_sprint; -sprint"';
+const DEBUG_DVARS = 'com_drawFps 1\ndeveloper 1\ncl_showSnaps 1';
 async function copyText(text){
   try{ if(navigator.clipboard&&navigator.clipboard.writeText){ await navigator.clipboard.writeText(text); return true; } }catch(_){}
   try{ const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
@@ -1191,6 +1251,13 @@ async function copySprintAdsFix(){
     toast('Sprint-ADS Fix copied — paste into the in-game console','ok');
     actLog('Copied Sprint-ADS Fix binds to clipboard','in');
     clogAdd(SPRINT_ADS_FIX,'ls');
+  } else toast('Clipboard copy failed','err');
+}
+async function copyDebugDvars(){
+  if(await copyText(DEBUG_DVARS)){
+    toast('Debug dvars copied — paste into the in-game console','ok');
+    actLog('Copied debug dvars to clipboard','in');
+    clogAdd(DEBUG_DVARS,'ls');
   } else toast('Clipboard copy failed','err');
 }
 
@@ -1208,6 +1275,7 @@ async function cSend(){
   catch(e){clogAdd(e.message,'le');}
 }
 function qc(c){g('cin').value=c;tab('con');cSend();}
+function qf(c){tab('con');const inp=g('cin');inp.value=c;inp.focus();}
 function cKey(e){
   const inp=g('cin');
   if(e.key==='Enter'){cSend();return;}

@@ -6,14 +6,16 @@
 - Setup a modded T5 Plutonium server on a VPS
 
 - Update release branch readme:
+Instalation
 Screenshots 
 More details (every function, dvar)
 Server info 
 
-- Organize repo:
-Leverage “releases” or “bugs” — DONE: `release` branch (GitHub default) + Release zip, via tools/package_release.ps1 (see "Release & Distribution")
-Bare bones branch — DONE: `release` branch keeps bots+RCON; the Release zip is ultra bare-bones
-No: _bot, _debug, _bridge — DONE: stripped from public outputs via `// #strip-begin` markers (still present on `main`)
+- Organize repo — DONE:
+`release` branch (GitHub default) + Release zip now carry the SAME minimal content (mod.ff + gameplay GSC + README), via tools/package_release.ps1 (see "Release & Distribution")
+Dev files (_bot, _gf_debug, _gf_bridge, bots/, tools/) and in-file dev wiring (`// #strip-begin ... // #strip-end`) are stripped from public outputs; all still present on `main`
+
+- SECURITY (do this): rotate the RCON password on the VPS + dedicated.cfg. The old hardcoded value leaked via public git history; the gf.gsc dvar block is now strip-wrapped (dev-only) but `main` is still public if the GitHub repo is public — prefer dedicated.cfg as the sole owner.
 ---
 
 ## Dedicated Server Setup
@@ -56,6 +58,65 @@ No: _bot, _debug, _bridge — DONE: stripped from public outputs via `// #strip-
 - Perk display notification 
 - HUD recreation per spawn 
 
+
+---
+
+## Team-Size Mode (Large vs Small)
+
+Gunfight runs two spatial modes depending on team size, selected by
+`scr_<gametype>_teamspawnmode` = `auto` (default) | `large` | `small`. Resolved every round
+in `onStartGameType` -> `gf_resolveTeamMode()` (`_gf_rounds.gsc`); the result lives in
+`level.gf_largeMode` (wiped + re-derived each `map_restart`).
+
+- **small** (default below 4v4): curated, clustered gunfight spawns from `_gf_locations.gsc`
+  (fall back to `mp_wager_spawn`, then `mp_tdm_spawn`). The baked wager blockers
+  (`gun/oic/hlnd/shrp`) are KEPT in the `_gameobjects` allow-list to shrink the play space, the
+  wager compass material is applied, and overtime uses the curated OT flag spot.
+- **large** (auto when BOTH teams have 4+): full-map `mp_tdm_spawn` pool. Wager blockers are
+  OMITTED so `_gameobjects::main` deletes them and the whole map opens up; overtime uses the
+  native Domination B flag (`dom` is always kept in the allow-list so that flag survives).
+
+`auto` can't trust a live roster count inside `onStartGameType` (bots/late joiners connect
+after it — `_bot::init()` is threaded at its end), so it reads `game["gf_autoLargeMode"]`,
+captured at round activation by `gf_updateAutoTeamMode()` once everyone has spawned and
+persisted across `map_restart` in `game[]`. The live count is only a first-setup fallback.
+
+Each mode reads its OWN copy of the tunable dvars (round length, overtime limit, capture
+time) via a `_large` suffix, so flipping modes never clobbers the other mode's value.
+
+---
+
+## Gametype Dvars
+
+Registered/clamped in `gf.gsc` (`onStartGameType` + the `register*Dvar` calls in `main()`) and
+`_gf_rounds.gsc` (`gf_cfgFloat`). Set in `dedicated.cfg` or via RCON. The `scr_gf_*` family
+persists through `map_restart`.
+
+| Dvar | Default | Meaning |
+|---|---|---|
+| `scr_gf_timelimit` | 0.75 | Round length (min), SMALL mode (0.75 = 45s) |
+| `scr_gf_timelimit_large` | 1.5 | Round length (min), LARGE mode |
+| `scr_gf_scorelimit` | 6 | Round wins to win the match |
+| `scr_gf_roundswitch` | 2 | Rounds between side switches |
+| `scr_gf_roundsperloadout` | 2 | Rounds before the shared loadout rotates (clamped 1-9) |
+| `scr_gf_overtimelimit` | 15 | Overtime seconds, SMALL; `0` disables OT (HP decides immediately) |
+| `scr_gf_overtimelimit_large` | 30 | Overtime seconds, LARGE |
+| `gf_capture_time` | 3 | OT zone hold-to-capture seconds, SMALL |
+| `gf_capture_time_large` | 5 | OT zone hold-to-capture seconds, LARGE |
+| `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (see Team-Size Mode) |
+| `scr_team_maxsize` | 0 | `>0` caps players/team; overflow is sent to spectator on spawn (`gf_playerSpawnedCB`) |
+| `perk_weapSwitchMultiplier` | 0.833 | Engine weapon-swap speed (lower = faster); gated by the granted `specialty_fastweaponswitch` |
+| `gf_perk_on` / `gf_perk_off` | "" | Comma-separated perk override lists (RCON-managed) applied AFTER the base perk set in `gf_giveCustomLoadout` |
+
+**Level flags (not dvars), toggled by the dev RCON bridge `_gf_bridge.gsc`:** `level.gf_headshotsOnly`
+(only head/helmet hits deal damage). The bridge is dev-only (stripped from public builds), so this is off in release.
+
+**Dev/debug dvars** (callers are strip-wrapped, so only active on `main`): `gf_debug_spawns`,
+`gf_debug_hud_pool`, `gf_debug_elem_probe`.
+
+> Note: `gf_playerSpawnedCB` also force-pushes client video dvars on every spawn
+> (`r_gamma 1.1`, `r_fullHDRrendering 1`, lightgrid/ambient tweaks) — this overrides each
+> player's own video settings. Intentional "visual tweaks"; gate behind a dvar if that's unwanted.
 
 ---
 
@@ -313,25 +374,33 @@ Custom Gunfight game mode for Black Ops 1 running on Plutonium T5 MP.
 **Mod folder must be prefixed `mp_`** for it to appear in the in-game mod menu.
 
 ```
-Gunfight/  (GitHub: KL9modz/Gunfight)
-  CLAUDE.md                        <- this file
-  README.md
-  .gitignore
-  mp_gunfight.code-workspace
-  .vscode/
-    settings.json                  <- GSC extension config, runtime folder exclusions, rulers
-    extensions.json                <- recommends eyza.aw-gsc
-  raw/
-    scripts/
-      mp/
-        mp_gunfight.gsc            <- entry point, init, state persistence, player lifecycle
-        _gf_loadouts.gsc           <- loadout pool, picking, giving, attachment randomizer
-        _gf_hud.gsc                <- HP HUD, perk pop-in display
-        _gf_rounds.gsc             <- round management, end conditions, audio, bomb suppression
-        mp_spawn_fix.gsc           <- spawn fix utility
-      sp/
-        zm_spawn_fix.gsc
+mp_gunfight/  (GitHub: KL9modz/Gunfight)
+  .claude/CLAUDE.md                  <- this file (project instructions)
+  README.md                          <- dev README (release README is generated by the packager)
+  mod.csv                            <- build manifest: zone-source list the linker reads
+  mp/gametypesTable.csv              <- registers the 'gf' gametype row in the UI
+  localizedstrings/gf.str            <- localized UI strings (titles, popups)
+  ui_mp/
+    hud_gf.txt                       <- menufile loader (loadMenu hud_gf_health.menu)
+    hud_gf_health.menu               <- ALL mod HUD: health panel + loadout overview + self bar
+  maps/mp/gametypes/
+    gf.gsc                           <- ENTRY POINT: main(), callbacks, precache, spawn pipeline
+    _gf_rounds.gsc                   <- round lifecycle, overtime, damage/score, team-size mode
+    _gf_loadouts.gsc                 <- loadout pool, shuffle, give, camo randomizer
+    _gf_hud.gsc                      <- health panel + loadout overview + score popup (menu-driven)
+    _gf_locations.gsc                <- per-map curated spawns + overtime flag points
+    _gf_wager_zones.gsc              <- wager compass material + map-specific zone helpers
+    _gf_debug.gsc        (dev only)  <- spawn recorder + entity dump (stripped from public)
+    _gf_bridge.gsc       (dev only)  <- RCON web-tool bridge   (stripped from public)
+    _bot.gsc             (dev only)  <- bot integration        (stripped from public)
+  maps/mp/bots/          (dev only)  <- vendored bot framework: _bot_loadout/_bot_script/_bot_utility
+  raw/fx/misc/*.efx                  <- custom overtime apron FX (white halo; gold/red use stock FX)
+  tools/                 (dev only)  <- build_ff.ps1, package_release.ps1, package_server.ps1, push_all.ps1
 ```
+
+> Entry point is `gf.gsc::main()` (NOT `mp_gunfight.gsc` — that file does not exist). There
+> is no `_gf_tests.gsc`, `mp_spawn_fix.gsc`, or `zm_spawn_fix.gsc`. The `(dev only)` files
+> are excluded from public release outputs by `package_release.ps1` (see "Release & Distribution").
 
 ---
 
@@ -347,11 +416,15 @@ These are confirmed-broken functions in T5 mod scripts and their correct replace
 | `isAlive(player)` (standalone) | `player.health > 0` |
 | `player.team` | `player.pers["team"]` â†’ returns `"allies"`, `"axis"`, or `"spectator"` |
 | `setDvar("scr_player_healthregentime", "0")` | `setDvar("scr_player_healthregentime", "0")` DOES work â€” set it before `_healthoverlay::init()` threads so the engine reads 0 and disables regen itself |
-| `level.onGiveLoadout = ::fn` | Does not exist in T5. Use `level.playerSpawnedCB = ::gf_playerSpawnedCB` instead; fire `level notify("spawned_player")` inside it to keep SD happy, then `self thread gf_onSpawned()` â€” thread runs after `giveLoadout` with no yield gap |
+| `level.onGiveLoadout = ::fn` | Does not exist in T5. Two hooks do the job: (1) `level.giveCustomLoadout = ::gf_giveCustomLoadout` is the actual loadout-delivery hook — `_class::giveLoadout` calls it, so weapons/perks are given there (no `takeAllWeapons`-after-spawn race). (2) `level.playerSpawnedCB = ::gf_playerSpawnedCB` handles player lifecycle: it fires `level notify("spawned_player")` to keep SD happy, then threads `gf_onSpawned()` / the health HUD |
 
 **Compile error diagnosis:** When T5 throws `unknown function: @ scripts/mp/<file>::<func>`, the broken call is INSIDE the named function â€” scan every call within it for T5 compatibility.
 
-**Cross-file calls require `#include`:** Each `.gsc` file must `#include` every other mod script whose functions it calls **directly**. T5 does **not** support transitive includes â€” if A includes B which includes C, A cannot call functions from C. Each file must have its own explicit `#include` for every file it calls into. Missing include â†’ `unknown function` compile error on the calling function. Current include chain: `mp_gunfight.gsc` â†’ `_gf_rounds.gsc` â†’ `_gf_loadouts.gsc` â†’ `_gf_hud.gsc`. `_gf_tests.gsc` includes both `_gf_rounds` and `_gf_loadouts` directly since it calls functions from both.
+**Cross-file calls require `#include`:** Each `.gsc` file must `#include` every other mod script whose functions it calls **directly**. T5 does **not** support transitive includes â€” if A includes B which includes C, A cannot call functions from C. Each file must have its own explicit `#include` for every file it calls into. Missing include â†’ `unknown function` compile error on the calling function. Current include graph (each file `#include`s what it calls directly):
+- `gf.gsc` -> `_gf_locations`, `_gf_rounds`, `_gf_loadouts`, `_gf_wager_zones` (+ `_gf_bridge` dev) + stock `_utility`/`_hud_util`
+- `_gf_rounds.gsc` -> `_gf_hud` (+ `_gf_debug` dev) + stock `_hud_util`
+- `_gf_loadouts.gsc` -> `_gf_hud`
+- `_gf_hud.gsc` -> stock `_hud_util`
 
 ---
 
@@ -384,7 +457,7 @@ level.onOneLeftEvent(team)   // fires when last player on team is alive
 level.onTimeLimit            // fires when round clock hits 0
 level.onRoundSwitch          // fires at halftime / side swap
 level.onRoundEndGame         // should return winner string "allies"/"axis"/"tie"
-level.onGiveLoadout          // fires at end of giveLoadout â€” override to swap weapons
+level.giveCustomLoadout      // called BY _class::giveLoadout to deliver the loadout (gf = ::gf_giveCustomLoadout). NOTE: level.onGiveLoadout does NOT exist in T5 — this is the real hook
 level.spawnClient            // queues/delays client spawn; default: _globallogic_spawn::spawnClient
 level.spawnPlayer            // puts player into world; default: _globallogic_spawn::spawnPlayer
 level._setTeamScore          // set team score directly (default updates game["teamScores"])
@@ -397,10 +470,9 @@ Order of operations every time a player spawns:
 2. `[[level.onSpawnPlayer]]()` â€” SD's callback; sets `isBombCarrier = false`, selects spawnpoint, calls `self spawn(...)`
 3. `[[level.playerSpawnedCB]]()` â€” SD fires `level notify("spawned_player")` here â† our waittill
 4. `maps\mp\gametypes\_class::setClass(self.class)` â€” sets perk state
-5. `maps\mp\gametypes\_class::giveLoadout(team, class)` â€” gives default class weapons
-6. **Our `gf_roundLoop` thread wakes** from `waittill("spawned_player")` and overwrites weapons with gunfight loadout
+5. `maps\mp\gametypes\_class::giveLoadout(team, class)` â€” builds the default class, then calls `[[level.giveCustomLoadout]]()` = **our `gf_giveCustomLoadout`**, which `setupBlankRandomPlayer` (clears) and gives the gunfight primary/secondary/knife/lethal/tactical/equipment + perks + threads the loadout HUD
 
-Step 6 is correct â€” our `takeAllWeapons` + custom weapons run *after* the engine's `giveLoadout`, replacing whatever it gave.
+The gunfight loadout is delivered *inside* `giveLoadout` via the `level.giveCustomLoadout` hook (step 5) â€” there is no separate `waittill("spawned_player")` + `takeAllWeapons` overwrite thread. `gf_playerSpawnedCB` (step 3, via `playerSpawnedCB`) only handles lifecycle: it fires `spawned_player`, seeds damage/capture score, and threads the health HUD.
 
 ### Key game state vars
 ```gsc
@@ -1187,6 +1259,20 @@ gf_overtimeCountdown()
     level notify( "gf_overtime_expired" );
 }
 ```
+
+> **Why the OT clock is a custom decrement loop (not the native round timer) — reviewed 2026-06-16.**
+> The real implementation (`gf_beginOvertime` / `gf_overtimeClock` / `gf_syncOvertimeRemaining` /
+> `gf_pause`/`gf_resumeOvertimeForCapture` in `_gf_rounds.gsc`) tracks `level.gf_overtimeRemaining`
+> in ms and drives the HUD via `setGameEndTime`, with `level.timeLimitOverride = true` suppressing
+> the native `onTimeLimit`. This is custom on purpose: the native round timer has **no** support for
+> (a) pausing/resuming on a *gameplay condition* (the OT clock must freeze while the zone is being
+> captured and resume if the capture breaks — done here with a depth counter), (b) *hiding* the clock
+> during that pause (`setGameEndTime(0)`), or (c) a per-second countdown tick during OT. It already
+> uses the native `pauseTimer()`/`setGameEndTime()` where they fit. A rewrite onto
+> `pauseTimer`/`resumeTimer` + re-enabled `onTimeLimit` was evaluated and **rejected**: it would still
+> need custom expiry detection, tick sound, and hide-on-capture, so it trades a well-tested flow
+> (pause depth, resume-on-interrupt, expiry-by-HP, capture-win, wipe-during-OT) for little real LOC
+> savings. Keep it unless the native timer gains condition-pause support.
 
 ### Delayed grenade delivery (prevents spawn-instant-throw)
 ```gsc

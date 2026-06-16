@@ -191,7 +191,7 @@ gf_playerSpawnedCB()
     gf_queueHealthHUDUpdate();
     self setClientDvar( "r_lightTweakAmbient",  "0.1" );
     self setClientDvar( "r_lightGridIntensity", "1.1" );
-    self setClientDvar( "r_lightGridContrast",  "1.1" );
+    self setClientDvar( "r_lightGridContrast",  "1"   );   // domain is -1..1; 1.1 is rejected by the engine
     self setClientDvar( "r_gamma",              "1.1" );
     self setClientDvar( "r_fullHDRrendering",   "1"   );
     self thread gf_onSpawned();
@@ -228,10 +228,10 @@ gf_onSpawnSpectator( origin, angles )
     maps\mp\gametypes\_globallogic_defaults::default_onSpawnSpectator( origin, angles );
     gf_queueHealthHUDUpdate();
 
-    // Spectators always see the whole health HUD. Only create the panel if this player
-    // doesn't already have one (a dead team player free-looking keeps their existing
-    // panel — restarting it here would replay the slide-in every death).
-    if ( ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] ) && !isDefined( self.gf_hudElems ) )
+    // Spectators always see the whole health HUD. The panel is fully menu-rendered and the
+    // intro is a snap now, so re-threading gf_runHealthHUD on each spectator spawn is cheap
+    // and harmless (it re-pushes the per-client dvars).
+    if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
         self thread gf_runHealthHUD();
 }
 
@@ -850,21 +850,6 @@ gf_setOvertimeZoneIconColor( zone, team )
         zone maps\mp\gametypes\_gameobjects::setOwnerTeam( "neutral" );
         gf_setOvertimeZoneIcons( zone, "captureneutral", "captureneutral" );
     }
-
-    // Diagnostic for the missing-flag-icon report: server-side state of both objpoints
-    // after every icon update. If this logs shown/alpha>0 while a player sees no icon,
-    // the element is healthy on the server and the failure is client-side rendering.
-    if ( isDefined( zone.objPoints ) && isDefined( zone.objPoints["allies"] ) && isDefined( zone.objPoints["axis"] ) )
-    {
-        logPrint( "GF_OT: iconstate state=" + team
-            + " alliesAlpha=" + zone.objPoints["allies"].alpha + " alliesShown=" + int( zone.objPoints["allies"].isShown )
-            + " axisAlpha=" + zone.objPoints["axis"].alpha + " axisShown=" + int( zone.objPoints["axis"].isShown )
-            + " x=" + int( zone.objPoints["allies"].x ) + " y=" + int( zone.objPoints["allies"].y ) + " z=" + int( zone.objPoints["allies"].z ) + "\n" );
-    }
-    else
-    {
-        logPrint( "GF_OT: iconstate state=" + team + " OBJPOINTS MISSING\n" );
-    }
 }
 
 // Polls player positions every 0.1 s and drives all OT zone visuals (FX apron,
@@ -878,18 +863,13 @@ gf_overtimeZoneVisuals( zone, flagTrigger )
 
     curState  = "neutral";
     label     = zone maps\mp\gametypes\_gameobjects::getLabel();
-    heartbeat = 0;
-    logPrint( "GF_OT: visuals thread STARTED label=" + label + "\n" );
 
     while ( true )
     {
         wait 0.1;
 
         if ( !isDefined( zone ) || !isDefined( flagTrigger ) )
-        {
-            logPrint( "GF_OT: visuals thread EXITING - zone or trigger undefined\n" );
             return;
-        }
 
         alliesCount = 0;
         axisCount   = 0;
@@ -911,20 +891,12 @@ gf_overtimeZoneVisuals( zone, flagTrigger )
         else if ( alliesCount > 0 )                newState = "allies";
         else if ( axisCount   > 0 )                newState = "axis";
 
-        heartbeat++;
-        if ( heartbeat >= 50 )
-        {
-            logPrint( "GF_OT: heartbeat state=" + curState + " al=" + alliesCount + " ax=" + axisCount + "\n" );
-            heartbeat = 0;
-        }
-
         if ( newState == curState )
             continue;
 
         oldState = curState;
         curState  = newState;
 
-        logPrint( "GF_OT: TRANSITION " + oldState + " -> " + curState + " al=" + alliesCount + " ax=" + axisCount + "\n" );
         gf_setOvertimeZoneIconColor( zone, curState );
         setDvar( "scr_obj" + label + "_flash", int( curState != "neutral" ) );
         setDvar( "scr_obj" + label, curState );
@@ -1017,8 +989,6 @@ gf_loadOvertimeApronFx()
     level.gf_ot_baseFx_allies    = goldFx;    // a team is capturing
     level.gf_ot_baseFx_axis      = goldFx;    // ...same gold regardless of which team
     level.gf_ot_baseFx_contested = redFx;     // both teams contesting
-
-    logPrint( "GF_OT: apron FX white=" + int( isDefined( whiteFx ) ) + " gold=" + int( isDefined( goldFx ) ) + " red=" + int( isDefined( redFx ) ) + "\n" );
 }
 
 gf_createOvertimeZone()
@@ -1056,12 +1026,6 @@ gf_createOvertimeZone()
     visuals[0] = flagModel;
 
     zone = maps\mp\gametypes\_gameobjects::createUseObject( "neutral", flagTrigger, visuals, ( 0, 0, 100 ) );
-
-    // Diagnostic for the rare "no icon above the flag" report: if either objpoint is 0
-    // here, the server HUD element pool was exhausted at creation time.
-    haveAllies = isDefined( zone.objPoints ) && isDefined( zone.objPoints["allies"] );
-    haveAxis   = isDefined( zone.objPoints ) && isDefined( zone.objPoints["axis"] );
-    logPrint( "GF_OT: zone created entNum=" + zone.entNum + " objpointAllies=" + int( haveAllies ) + " objpointAxis=" + int( haveAxis ) + "\n" );
 
     zone maps\mp\gametypes\_gameobjects::allowUse( "any" );
     zone maps\mp\gametypes\_gameobjects::setUseTime( gf_getCaptureTime() );

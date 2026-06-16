@@ -13,7 +13,5 @@ rawfile,maps/mp/bots/_bot_loadout.gsc
 rawfile,maps/mp/bots/_bot_script.gsc
 rawfile,maps/mp/bots/_bot_utility.gsc
 fx,misc/fx_ui_flagbase_gf_white
-fx,misc/fx_ui_flagbase_gf_blue
-fx,misc/fx_ui_flagbase_gf_red
 stringtable,mp/gametypesTable.csv
 localize,gf

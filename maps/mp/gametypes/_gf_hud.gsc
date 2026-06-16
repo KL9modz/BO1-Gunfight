@@ -1,26 +1,28 @@
 // Gunfight HUD
 //
-// The Health HUD is CLIENT-SIDE (newClientHudElem), built per player in the player's own thread
-// (the Loadout HUD is now fully menu-rendered — see below). This is deliberate: T5 server team-HUD
-// elements (newTeamHudElem) do NOT live-update their text/alpha/color mid-round — the
-// change only flushes to clients on a round transition — and client elements created
-// from a level thread never network at all. So per-player + player-thread is the only
-// pattern that updates reliably during a round.
+// Both HUDs are now fully MENU-rendered (ui_mp/hud_gf_health.menu) — ZERO client hudelems.
+// This is deliberate: T5 has a per-client DRAWN render cap (~17-20 elements) shared across
+// ALL hudelem types (our HUD + stock ammo/compass + score popup + the OT flag objpoint), and
+// the old client-side panel (~17 elems) pushed past it, silently starving the popup and flag.
+// Menu items are a separate rendering system exempt from that cap, and reading client dvars
+// (setClientDvar) avoids setText/configstring exhaustion entirely.
 //
 // Health HUD:
-//   - Level thread gf_startHealthHUD() ONLY computes the team totals (HP / fill
-//     fraction / player count / alive count) and publishes them to level.gf_* vars.
-//   - Each player runs gf_runHealthHUD() (singleton via self notify/endon), which
-//     builds the panel (faction frame + 2 team bars + skull icons + HP numbers), cross-
-//     fades it in, and updates it every 0.1s from the published vars. Row 0 = own team
-//     (green), row 1 = enemy (red). map_restart wipes the panel between rounds; it's
-//     recreated on the next spawn.
+//   - Level thread gf_startHealthHUD() ONLY computes the team totals (HP / fill fraction /
+//     player count / alive count) and publishes them to level.gf_* vars.
+//   - Each player runs gf_runHealthHUD() (singleton via self notify/endon), which pushes
+//     those totals to per-client dvars (ui_gf_panel_*, ui_gf_rN_*, ui_gf_hp_alpha) every
+//     0.1s and reveals the menu-rendered panel (bg fade + border + 2 team bars + skull
+//     icons + HP numbers). Row 0 = own team (green), row 1 = enemy (red). map_restart wipes
+//     the client-pushed state between rounds; it's re-pushed on the next spawn.
 //
 // Loadout HUD: gf_showWeaponHUD() pushes a centered-column create-a-class overview
-//   (primary, secondary, 3 equipment, 3 perks — each icon + bracket + name) that is
-//   fully MENU-rendered (ui_mp/hud_gf_health.menu, ui_gf_lo_* dvars). It uses ZERO
-//   client hudelems, so it can't hit the ~17 drawn-per-player render cap and never
-//   touches setText/configstrings. The slide is driven by ui_gf_lo_off.
+//   (primary, secondary, 3 equipment, 3 perks — each icon + bracket + name) via the
+//   ui_gf_lo_* dvars. The slide is driven by ui_gf_lo_off.
+//
+// Score popup: gf_showScorePopup() reuses the ENGINE's own score element
+//   (self.hud_rankscroreupdate, NewScoreHudElem) — a render-cap-exempt pool — for the
+//   stock yellow "Elimination"/"Assist" look.
 
 #include maps\mp\gametypes\_hud_util;
 
@@ -91,25 +93,13 @@ gf_updateHealthHUD()
     level.gf_dbg_axisN    = axisStats.players.size;
 }
 
-// ─── Per-player client health panel ──────────────────────────────────────────
-// The entire health HUD is client-side per viewer (newClientHudElem): faction frame,
-// two team bars, alive-skull icons, and HP numbers. Created / updated / destroyed in
-// the player's own thread (gf_runHealthHUD) — T5 client elements don't network if
-// touched from a level thread. Reads the team totals published by gf_updateHealthHUD.
-// Row 0 = own team (green), row 1 = enemy (red). Everything cross-fades in together.
-
-// Row y is the SKULL center; the strip hangs 6 below, so the combined block's visual
-// center is ~y+2. These are pre-shifted up 2 so the block centers on the background
-// band art (which was tuned around -45/-27).
-gf_HP_ROW0_Y()       { return -47; }
-gf_HP_ROW1_Y()       { return -27; }
-
-// Whole-panel vertical offset (applied to frames + rows at creation). Negative = up.
-// -40 parks the panel just below the minimap instead of at mid-screen-left.
-gf_HP_PANEL_Y_OFF()  { return -40; }
-
-// Skull icon size (square). blockWidth derives from this + the pitch.
-gf_HP_ICON_SIZE()    { return 10; }
+// ─── Per-player health panel ───────────────────────────────────────────────────
+// The health panel is fully MENU-RENDERED (ui_mp/hud_gf_health.menu): bg fade, border,
+// two team bars, alive-skull icons and HP numbers are all menu itemDefs driven by
+// per-client dvars (ui_gf_panel_*, ui_gf_rN_*, ui_gf_hp_alpha) — ZERO client hudelems.
+// The level thread gf_updateHealthHUD only computes the team totals; gf_runHealthHUD
+// (per player) pushes them and reveals the panel. Row 0 = own team (green), row 1 =
+// enemy (red). Panel layout (skull pitch, bar geometry, anchor) lives in the menu file.
 
 // Shared spawn-in reveal duration. The health panel slide, the loadout overview
 // slide+fade, and the self bar slide all animate over this so they reveal in sync.
@@ -165,8 +155,6 @@ gf_createHealthPanel()
     self.gf_sbShow = undefined;
 
     self gf_pushPanelChrome();            // ui_gf_panel_x/y — the border-box anchor the menu lays out from
-
-    logPrint( "GF_HUD: menu panel activated for " + self.name + "\n" );
 }
 
 // Seeds the menu-rendered panel chrome position (hud_gf_health.menu reads these). bg fade + border
@@ -186,8 +174,8 @@ gf_pushPanelChrome()
     self setClientDvar( "ui_gf_fade_mat",  "hud_frame_faction_fade" );   // soft panel bg fade
 }
 
-// The bg fade + rows are client hudelems wiped instantly by map_restart at round end, but the
-// menu-rendered border (gated by ui_gf_panel_show) would otherwise linger until the NEXT spawn's
+// The per-client row dvars are wiped by map_restart at round end, but the menu-rendered
+// border (gated by ui_gf_panel_show) would otherwise linger until the NEXT spawn's
 // gf_destroyHealthPanel. gf_endRound fires "gf_round_over" just before that wipe, so hide the
 // border there to keep it in sync. gf_revealHealthPanel re-shows it with the rows next round.
 gf_hidePanelChromeOnRoundEnd()
@@ -199,33 +187,11 @@ gf_hidePanelChromeOnRoundEnd()
     self setClientDvar( "ui_gf_panel_show", 0 );
 }
 
-// Row layout (reference-image style): up to 4 skull icons (4v4 support) on the left,
-// then a fixed column with the white HP number on top and the health bar underneath.
-// Skulls fill in left-to-right as the team populates; the number/bar column is fixed at
-// gf_HP_BAR_X so both rows stay aligned regardless of team size. The bar = hairline
-// border + semi-transparent black background + team-colored fill (green/red).
+// The two layout constants the GSC side still needs (the menu file owns the rest of the
+// layout). MAX_SKULLS caps the skull count per row (4v4); BAR_W is the fill width in px
+// that gf_pushHealthRow scales by the health fraction before pushing ui_gf_rN_fw.
 gf_HP_MAX_SKULLS()   { return 4; }
-gf_HP_ICON_STEP()    { return 13; }   // integer pitch — fractional steps round to uneven pixel gaps
-gf_HP_ROW_CENTER_X() { return 32; }   // visual center of the frame/lines art (right-biased in its
-                                      // quad — the old tuned layout centered content here, not at
-                                      // the quad midpoint)
-
-// True span of N skull quads: (N-1) steps + one icon width.
-gf_HP_blockWidth( count ) { return ( count - 1 ) * gf_HP_ICON_STEP() + gf_HP_ICON_SIZE(); }
-gf_HP_blockLeft( count )  { return gf_HP_ROW_CENTER_X() - int( gf_HP_blockWidth( count ) / 2 ); }
-
-// Bar geometry (reference-image layout): a fixed-length bar sits UNDER the HP number,
-// to the right of the skull block. Both rows' bars are column-aligned at the same x
-// regardless of team size; the bar is ~3x the number's width. The bar has its own
-// semi-transparent black background and a hairline border behind it.
-gf_HP_BAR_X() { return gf_HP_blockLeft( gf_HP_MAX_SKULLS() ) + gf_HP_blockWidth( gf_HP_MAX_SKULLS() ) + 6; }
 gf_HP_BAR_W() { return 45; }
-gf_HP_BAR_H() { return 3; }
-
-// Inner-assembly x nudge: the border sits at a half-unit offset, and sub-unit
-// positions round asymmetrically at some resolutions, biasing the bg+fill LEFT
-// inside the ring. This shifts them right a fraction to re-center visually.
-gf_HP_BAR_INNER_NUDGE() { return 0.3; }
 
 // ─── Self health bar (bottom-center) ─────────────────────────────────────────
 // FULLY CLIENT-RENDERED via ui_mp/hud_gf_health.menu (in mod.ff): the bar, name, and
@@ -273,89 +239,7 @@ gf_slideSelfBarIn()
     self setClientDvar( "ui_gf_self_show", 1 );
 }
 
-gf_clCreateRow( y, sortBase )
-{
-    row = spawnstruct();
-    row.y = y;
-
-    left = gf_HP_blockLeft( gf_HP_MAX_SKULLS() );
-
-    row.icons = [];
-    for ( i = 0; i < gf_HP_MAX_SKULLS(); i++ )
-        row.icons[i] = self gf_clCreateIcon( left + i * gf_HP_ICON_STEP(), y, sortBase + 5 );
-
-    // Bar block (reference layout): number above, bar below, both left-aligned at
-    // gf_HP_BAR_X. Layering bottom-up: hairline border (1px larger all around),
-    // semi-transparent black background, then the team-colored fill.
-    barX = gf_HP_BAR_X();
-    barY = y + 4;
-    // 0.5-unit ring ≈ 1px at 1080p — about the practical floor; sub-unit sizes can
-    // round unevenly per side at some resolutions, so check it looks symmetric.
-    inX = barX + gf_HP_BAR_INNER_NUDGE();   // bg + fill nudged right to center in the ring
-    row.barBorder = self gf_clCreateRect( barX - 0.5, barY, gf_HP_BAR_W() + 1, gf_HP_BAR_H() + 1, ( 0.7, 0.7, 0.7 ), 0.5, sortBase );
-    row.barBg     = self gf_clCreateRect( inX,        barY, gf_HP_BAR_W(),     gf_HP_BAR_H(),     ( 0, 0, 0 ),       0.45, sortBase + 1 );
-    row.fill      = self gf_clCreateRect( inX,        barY, 1,                 gf_HP_BAR_H(),     ( 1, 1, 1 ),       0,    sortBase + 2 );
-
-    row.number = self gf_clCreateNumber( y - 4, sortBase + 6 );
-    return row;
-}
-
-// ─── Guarded client element construction ────────────────────────────────────
-// newClientHudElem returns undefined when the per-client pool is exhausted, and
-// _hud_util's createIcon/createFontString then crash setting fields on undefined —
-// killing the whole panel-creation thread partway (symptom: partial chrome, no
-// updates). These guarded builders log the exhaustion and let the panel degrade
-// gracefully instead.
-
-gf_clNewElem()
-{
-    elem = newClientHudElem( self );
-    if ( !isDefined( elem ) )
-        logPrint( "GF_HUD: CLIENT ELEM POOL EXHAUSTED for " + self.name + "\n" );
-    return elem;
-}
-
-gf_clIcon( shader, w, h )
-{
-    icon = self gf_clNewElem();
-    if ( !isDefined( icon ) )
-        return undefined;
-
-    icon.elemType = "icon";
-    icon.x = 0;
-    icon.y = 0;
-    icon.width = w;
-    icon.height = h;
-    icon.xOffset = 0;
-    icon.yOffset = 0;
-    icon.children = [];
-    icon setParent( level.uiParent );
-    icon.hidden = false;
-    icon setShader( shader, w, h );
-    return icon;
-}
-
-gf_clText( font, scale )
-{
-    t = self gf_clNewElem();
-    if ( !isDefined( t ) )
-        return undefined;
-
-    t.elemType = "font";
-    t.font = font;
-    t.fontscale = scale;
-    t.x = 0;
-    t.y = 0;
-    t.width = 0;
-    t.height = int( level.fontHeight * scale );
-    t.xOffset = 0;
-    t.yOffset = 0;
-    t.children = [];
-    t setParent( level.uiParent );
-    t.hidden = false;
-    return t;
-}
-
+// #strip-begin - dev HUD allocation probe (only threaded under gf_debug_elem_probe; stripped from public)
 // Debug probe (set gf_debug_elem_probe 1): counts client HUD elems that can still be ALLOCATED.
 // WARNING: this is the allocation pool only (~900+ free) — it is NOT the binding limit. T5 silently
 // stops DRAWING client hudelems past ~17/player, and that render cap is invisible to allocation
@@ -392,73 +276,7 @@ gf_debugElemProbe()
     logPrint( "GF_HUD: alloc probe for " + self.name + " - panelUsed=" + panelUsed
               + " allocFree=" + free + " (allocation pool, not the render cap)\n" );
 }
-
-gf_clCreateFrame( x, y, w, h, shader, color, alpha, sort )
-{
-    icon = self gf_clIcon( shader, w, h );
-    if ( !isDefined( icon ) )
-        return undefined;
-    icon setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
-    icon.color = color;
-    gf_styleHealthElem( icon, sort );
-    icon.alpha = alpha;
-    self.gf_hudElems[self.gf_hudElems.size] = icon;
-    return icon;
-}
-
-// Panel framing lines drawn from thin "white" rects, replacing the stock hud_frame_faction_lines so
-// we control alignment exactly. Layout: a LEFT vertical cap + three horizontal rules (top, middle,
-// bottom) and NO right line, so the panel reads as open/anchored on the left. The middle rule runs
-// between the two team rows (at cy). Rects are added to self.gf_hudElems by gf_clCreateRect, so they
-// slide in and tear down with the rest of the panel. Same element count as the old 4-side box.
-gf_clCreatePanelLines( cx, cy, w, h, thick, color, alpha, sort )
-{
-    left = cx - w / 2;
-    self gf_clCreateRect( left, cy - h / 2,     w,     thick, color, alpha, sort );   // top
-    self gf_clCreateRect( left, cy,             w,     thick, color, alpha, sort );   // middle divider (between rows)
-    self gf_clCreateRect( left, cy + h / 2 - 1, w,     thick, color, alpha, sort );   // bottom (1px up to sit flush)
-    self gf_clCreateRect( left, cy,             thick, h,     color, alpha, sort );   // left vertical cap (no right)
-}
-
-// Generic solid rectangle (tinted "white" shader). Used for the bar's border, its
-// background, and the fill (which is resized each tick via setShader).
-gf_clCreateRect( x, y, w, h, color, alpha, sort )
-{
-    rect = self gf_clIcon( "white", w, h );
-    if ( !isDefined( rect ) )
-        return undefined;
-    rect setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
-    rect.color = color;
-    gf_styleHealthElem( rect, sort );
-    rect.alpha = alpha;
-    self.gf_hudElems[self.gf_hudElems.size] = rect;
-    return rect;
-}
-
-gf_clCreateIcon( x, y, sort )
-{
-    icon = self gf_clIcon( "hud_death_suicide", gf_HP_ICON_SIZE(), gf_HP_ICON_SIZE() );
-    if ( !isDefined( icon ) )
-        return undefined;
-    icon setPoint( "CENTER LEFT", "CENTER LEFT", x, y );
-    icon.color = ( 1, 1, 1 );
-    gf_styleHealthElem( icon, sort );
-    icon.alpha = 0;
-    self.gf_hudElems[self.gf_hudElems.size] = icon;
-    return icon;
-}
-
-gf_clCreateNumber( y, sort )
-{
-    num = self gf_clText( "default", 1.0 );
-    if ( !isDefined( num ) )
-        return undefined;
-    num setPoint( "CENTER LEFT", "CENTER LEFT", 80, y );   // initial x; retargeted just past the skull block each tick
-    gf_styleHealthElem( num, sort );
-    num.alpha = 0;
-    self.gf_hudElems[self.gf_hudElems.size] = num;
-    return num;
-}
+// #strip-end
 
 // Fade reveal: capture each element's target alpha, then hide it (alpha 0) AT its home
 // position. gf_revealHealthPanel fades each back to its captured target over the shared
@@ -562,64 +380,6 @@ gf_setRowDvar( name, val )
     self setClientDvar( name, val );
 }
 
-gf_setHealthRow( row, team, color )
-{
-    if ( !isDefined( row ) )
-        return;
-
-    hp    = gf_readTeamHP( team );
-    frac  = gf_readTeamFrac( team );
-    count = gf_readTeamCount( team );
-    alive = gf_readTeamAlive( team );
-
-    if ( count > gf_HP_MAX_SKULLS() ) count = gf_HP_MAX_SKULLS();
-    if ( alive > gf_HP_MAX_SKULLS() ) alive = gf_HP_MAX_SKULLS();
-
-    // Fixed left anchor: the block always starts where the leftmost skull of a full
-    // team would sit, so skulls fill in left-to-right as the team populates instead of
-    // re-centering for each count.
-    blockLeft = gf_HP_blockLeft( gf_HP_MAX_SKULLS() );
-
-    // Fill: fixed-length bar, fraction of gf_HP_BAR_W. The bg/border stay visible even
-    // when the team is dead — an empty bar reads as "wiped".
-    if ( isDefined( row.fill ) )
-    {
-        if ( hp > 0 )
-        {
-            w = int( gf_HP_BAR_W() * frac + 0.5 );
-            if ( w < 1 )
-                w = 1;
-            row.fill setShader( "white", w, gf_HP_BAR_H() );
-            row.fill.color = color;
-            row.fill.alpha = 0.9;
-        }
-        else
-        {
-            row.fill.alpha = 0;
-        }
-    }
-
-    gf_setHealthNumber( row.number, hp );
-
-    for ( i = 0; i < gf_HP_MAX_SKULLS(); i++ )
-    {
-        icon = row.icons[i];
-        if ( !isDefined( icon ) )
-            continue;
-        if ( i >= count )
-        {
-            icon.alpha = 0;
-            continue;
-        }
-        icon.x = blockLeft + i * gf_HP_ICON_STEP();
-        icon.alpha = 0.95;
-        if ( i < alive )
-            icon.color = color;
-        else
-            icon.color = ( 1, 1, 1 );
-    }
-}
-
 gf_readTeamHP( team )
 {
     if ( team == "allies" && isDefined( level.gf_hpAllies ) )
@@ -656,58 +416,12 @@ gf_readTeamAlive( team )
     return 0;
 }
 
-gf_setHealthNumber( num, hp )
-{
-    if ( !isDefined( num ) )
-        return;
-
-    if ( hp > 0 )
-    {
-        // White, left-aligned with the bar below it (reference-image layout). The bar
-        // fill color carries the team identity; the number stays neutral.
-        // setValue, NOT setText: setText burns engine configstring slots and the table
-        // survives map_restart — repeated per-tick setText overflows it over a session,
-        // after which every setText throws and kills the calling thread.
-        num setValue( int( hp ) );
-        num.x = gf_HP_BAR_X();
-        num.color = ( 1, 1, 1 );
-        num.alpha = 1;
-    }
-    else
-    {
-        // Team wiped — show a literal 0 instead of hiding the number, so the panel
-        // reads "0" next to the empty bar rather than going blank.
-        num setValue( 0 );
-        num.x = gf_HP_BAR_X();
-        num.color = ( 1, 1, 1 );
-        num.alpha = 1;
-    }
-}
-
 gf_destroyHealthPanel()
 {
-    self setClientDvar( "ui_gf_panel_show", 0 );   // hide menu-rendered chrome with the panel
-
-    if ( !isDefined( self.gf_hudElems ) )
-        return;
-
-    for ( i = 0; i < self.gf_hudElems.size; i++ )
-    {
-        elem = self.gf_hudElems[i];
-        if ( !isDefined( elem ) )
-            continue;
-        if ( isDefined( elem.elemType ) && elem.elemType == "bar" )
-        {
-            if ( isDefined( elem.bar ) )
-                elem.bar destroyElem();
-            if ( isDefined( elem.barFrame ) )
-                elem.barFrame destroyElem();
-        }
-        elem destroyElem();
-    }
-
-    self.gf_hudElems = undefined;
-    self.gf_rows = undefined;
+    // The panel is fully menu-rendered (no client hudelems), so teardown is just hiding
+    // the menu chrome. The old self.gf_hudElems client-element loop was removed with the
+    // legacy client-side builders.
+    self setClientDvar( "ui_gf_panel_show", 0 );
 }
 
 gf_getTeamHealthStats( team )
