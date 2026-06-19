@@ -382,7 +382,7 @@ Every `#strip-begin … #strip-end` region (marker lines + body) is removed when
 ### Scripts (`tools/`, ASCII-only so Windows PowerShell 5.1 parses them)
 - **`build_ff.ps1`** — build `mod.ff` (stages both zones, cleans `raw/`). Always build via this.
 - **`package_release.ps1 [ver] [-PublishBranch] [-Publish] [-SkipBuild]`** — bare-bones zip; `-PublishBranch` force-pushes the `release` snapshot; `-Publish` cuts the GitHub Release (tags `release` via `--target`).
-- **`package_server.ps1 [ver] [-SanitizeConfig] [-IncludeRconTool]`** — **PRIVATE** VPS bundle: full mod + `dedicated.cfg` (carries `rcon_password` — never publish) + production `gamesettings`-less setup + `DEPLOY.txt`. Extract into the Plutonium `t5/` storage dir.
+- **`package_server.ps1 [ver] [-RotateRcon] [-SanitizeConfig] [-IncludeRconTool]`** — **PRIVATE** VPS bundle: full mod + `dedicated.cfg` (carries `rcon_password` — never publish) + production `gamesettings`-less setup + `DEPLOY.txt`. Extract into the Plutonium `t5/` storage dir. `-RotateRcon` injects a fresh cryptographically-random `rcon_password` into the bundled cfg **only** (source cfg untouched) and prints it to the console — so the live password is never the one in git history; deploy the bundle, then paste the printed value into your RCON client. Takes precedence over `-SanitizeConfig`.
 - **`push_all.ps1 ["msg"]`** — stage/commit/push the current branch.
 
 ---

@@ -5,7 +5,8 @@ param(
     [string]$WorkspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [switch]$SkipBuild,
     [switch]$IncludeRconTool,
-    [switch]$SanitizeConfig
+    [switch]$SanitizeConfig,
+    [switch]$RotateRcon
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,6 +26,7 @@ $ErrorActionPreference = "Stop"
 # Usage:
 #   tools\package_server.ps1                       # snapshot bundle (config as-is)
 #   tools\package_server.ps1 1.0.0                 # versioned bundle
+#   tools\package_server.ps1 1.0.0 -RotateRcon     # generate+inject a fresh rcon_password, print it
 #   tools\package_server.ps1 1.0.0 -SanitizeConfig # blank rcon_password in the copy
 #   tools\package_server.ps1 -IncludeRconTool      # also bundle the web RCON panel
 
@@ -34,6 +36,17 @@ function Copy-Into {
     param([string]$Source, [string]$Destination)
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Destination) | Out-Null
     Copy-Item -Force -LiteralPath $Source -Destination $Destination
+}
+
+# Cryptographically-random alphanumeric password. Alnum only on purpose: no quotes,
+# spaces, or shell/cfg metacharacters that could break the cfg line or the RCON protocol.
+function New-RconPassword {
+    param([int]$Length = 28)
+    $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'.ToCharArray()
+    $bytes = New-Object 'System.Byte[]' $Length
+    $rng = [System.Security.Cryptography.RNGCryptoServiceProvider]::new()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    -join ($bytes | ForEach-Object { $chars[ $_ % $chars.Length ] })
 }
 
 # -- Resolve paths ------------------------------------------------------------
@@ -77,23 +90,44 @@ foreach ($f in $gsc) {
 }
 Write-Host "  + mod.ff, mod.csv, $($gsc.Count) GSC file(s) (full set, dev tools included)"
 
-# -- dedicated.cfg (optionally blank the rcon_password) -----------------------
+# -- dedicated.cfg (rotate / blank / pass through the rcon_password) -----------
+# Rotation rewrites ONLY the bundled copy; the source dedicated.cfg is the template
+# and stays untouched. The deployed copy is the live source of truth on the VPS, so
+# the live password is never the one sitting in git history.
 $cfgIncluded = $false
 $cfgSanitized = $false
+$cfgRotated = $false
+$newRcon = ""
+$rconRe = '(?m)^(\s*set\s+rcon_password\s+)".*?"'
 if (Test-Path -LiteralPath $DedCfg) {
     $cfgContent = [System.IO.File]::ReadAllText($DedCfg)
-    if ($SanitizeConfig) {
-        $cfgContent = [regex]::Replace($cfgContent, '(?m)^(\s*set\s+rcon_password\s+)".*?"', '$1"CHANGEME"')
+    if ($RotateRcon) {
+        if ($SanitizeConfig) { Write-Warning "-RotateRcon and -SanitizeConfig both set; -RotateRcon wins (a real password is injected)." }
+        $newRcon = New-RconPassword
+        if ([regex]::IsMatch($cfgContent, $rconRe)) {
+            $cfgContent = [regex]::Replace($cfgContent, $rconRe, ('$1"' + $newRcon + '"'))
+        }
+        else {
+            Write-Warning "no 'set rcon_password' line in dedicated.cfg; appending one."
+            if ($cfgContent.Length -gt 0 -and -not $cfgContent.EndsWith("`n")) { $cfgContent += "`r`n" }
+            $cfgContent += ('set rcon_password "' + $newRcon + '"' + "`r`n")
+        }
+        $cfgRotated = $true
+    }
+    elseif ($SanitizeConfig) {
+        $cfgContent = [regex]::Replace($cfgContent, $rconRe, '$1"CHANGEME"')
         $cfgSanitized = $true
     }
     [System.IO.File]::WriteAllText((Join-Path $StageRoot "t5\dedicated.cfg"), $cfgContent, $Utf8NoBom)
     $cfgIncluded = $true
-    $sanNote = ""
-    if ($cfgSanitized) { $sanNote = " (rcon_password blanked)" }
-    Write-Host "  + dedicated.cfg$sanNote"
+    $cfgNote = ""
+    if ($cfgRotated) { $cfgNote = " (rcon_password ROTATED)" }
+    elseif ($cfgSanitized) { $cfgNote = " (rcon_password blanked)" }
+    Write-Host "  + dedicated.cfg$cfgNote"
 }
 else {
     Write-Warning "dedicated.cfg not found at $DedCfg - bundle will not include it."
+    if ($RotateRcon) { Write-Warning "-RotateRcon had no effect: there is no dedicated.cfg to inject the password into." }
 }
 
 # No gamesettings/gf.cfg: its only purpose was the dev spawn recorder, which is
@@ -122,6 +156,10 @@ $rconLine = ""
 if ($IncludeRconTool) {
     $rconLine = "  tools\rcon\             -> web RCON panel (Node.js; run 'npm install' then start.bat/node server.js)"
 }
+$rconStep = "  1. rcon_password  - set a NEW strong password (rotate the bundled one)."
+if ($cfgRotated) {
+    $rconStep = "  1. rcon_password  - already auto-rotated to a fresh value for this bundle (also" + "`r`n" + "     printed during packaging). No action needed unless you want to change it." + "`r`n" + "     Paste the same value into your RCON client / web panel."
+}
 $deploy = @"
 mp_gunfight - VPS SERVER deployment bundle
 Version: $Version
@@ -136,7 +174,7 @@ $rconLine
 Extract this zip so the 't5' folder lands inside your Plutonium 'storage' directory.
 
 EDIT dedicated.cfg FOR THE VPS BEFORE GOING LIVE:
-  1. rcon_password  - set a NEW strong password (rotate the bundled one).
+$rconStep
   2. rconWhitelistAdd lines - the bundled IPs are a home LAN. Set them to the IP
      of wherever your RCON tool runs, OR remove them all to allow loopback + any.
   3. party_minplayers "2"   - "1" is only for solo testing.
@@ -158,9 +196,23 @@ $zip = Get-Item -LiteralPath $ZipPath
 Write-Host ""
 Write-Host "Zip:    $($zip.FullName) ($([math]::Round($zip.Length / 1KB, 1)) KB)"
 Write-Host "Stage:  $StageRoot  (left for inspection)"
+if ($cfgRotated) {
+    Write-Host ""
+    Write-Host "==================================================================" -ForegroundColor Green
+    Write-Host " NEW rcon_password (injected into the bundled dedicated.cfg):" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "     $newRcon" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host " Save this now. Paste it into your RCON client / web panel after" -ForegroundColor Green
+    Write-Host " deploying. It is live the moment this cfg is loaded on the VPS." -ForegroundColor Green
+    Write-Host "==================================================================" -ForegroundColor Green
+}
 if ($cfgIncluded -and -not $cfgSanitized) {
     Write-Host ""
-    Write-Host "*** SECURITY: this bundle contains dedicated.cfg WITH your rcon_password. ***" -ForegroundColor Yellow
-    Write-Host "*** Keep it private; never attach it to a public GitHub Release.          ***" -ForegroundColor Yellow
-    Write-Host "*** Re-run with -SanitizeConfig to produce a password-blanked copy.       ***" -ForegroundColor Yellow
+    Write-Host "*** SECURITY: this bundle contains dedicated.cfg WITH a live rcon_password. ***" -ForegroundColor Yellow
+    Write-Host "*** Keep it private; never attach it to a public GitHub Release.            ***" -ForegroundColor Yellow
+    if (-not $cfgRotated) {
+        Write-Host "*** Re-run with -RotateRcon to inject a fresh password, or -SanitizeConfig  ***" -ForegroundColor Yellow
+        Write-Host "*** to produce a password-blanked copy.                                    ***" -ForegroundColor Yellow
+    }
 }
