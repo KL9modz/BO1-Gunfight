@@ -46,17 +46,26 @@ gf_cfgFloat( dvar, def, lo, hi )
         setDvar( dvar, def );
 
     v = GetDvarFloat( dvar );
-    if ( v < lo )
+    clamped = maps\mp\gametypes\_globallogic_utils::getValueInRange( v, lo, hi );
+    if ( clamped != v )
+        setDvar( dvar, clamped );   // persist the clamped value back, as before
+    return clamped;
+}
+
+// The engine's native prematch (matchStartTimer) draws the countdown number but plays NO sound.
+// Mirror a per-second tick so the prematch has the same audible cadence as the overtime tick.
+// Loops while level.inPrematchPeriod, so it self-stops at prematch_over.
+gf_nativePrematchTicker()
+{
+    level endon( "game_ended" );
+
+    tickObj = spawn( "script_origin", ( 0, 0, 0 ) );
+    while ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
     {
-        v = lo;
-        setDvar( dvar, v );
+        tickObj playSound( "mpl_ui_timer_countdown" );
+        wait 1.0;
     }
-    else if ( v > hi )
-    {
-        v = hi;
-        setDvar( dvar, v );
-    }
-    return v;
+    tickObj delete();
 }
 
 // ─── Team-Size Spawn/Barrier Mode ──────────────────────────────────────────
@@ -105,8 +114,10 @@ gf_resolveTeamMode()
         return;
     }
 
-    counts = gf_countTeams();
-    level.gf_largeMode = ( counts["allies"] >= 4 && counts["axis"] >= 4 );
+    // level.playerCount is engine-maintained (_globallogic::updateTeamStatus) and initialized
+    // in _globallogic::init(), so it's safe to read here. This is only the first-setup fallback;
+    // once a round activates, gf_updateAutoTeamMode persists the decision in game[].
+    level.gf_largeMode = ( level.playerCount["allies"] >= 4 && level.playerCount["axis"] >= 4 );
 }
 
 // Captures the live team sizes once the round is active and everyone (incl.
@@ -117,30 +128,7 @@ gf_updateAutoTeamMode()
     if ( GetDvar( "scr_" + level.gameType + "_teamspawnmode" ) != "auto" )
         return;
 
-    counts = gf_countTeams();
-    game["gf_autoLargeMode"] = ( counts["allies"] >= 4 && counts["axis"] >= 4 );
-}
-
-gf_countTeams()
-{
-    counts = [];
-    counts["allies"] = 0;
-    counts["axis"]   = 0;
-
-    players = level.players;
-    for ( i = 0; i < players.size; i++ )
-    {
-        if ( !isDefined( players[i].pers["team"] ) )
-            continue;
-
-        team = players[i].pers["team"];
-        if ( team == "allies" )
-            counts["allies"]++;
-        else if ( team == "axis" )
-            counts["axis"]++;
-    }
-
-    return counts;
+    game["gf_autoLargeMode"] = ( level.playerCount["allies"] >= 4 && level.playerCount["axis"] >= 4 );
 }
 
 // ─── Player Lifecycle ──────────────────────────────────────────────────────
@@ -245,8 +233,6 @@ gf_onSpawned()
 
     if ( !level.gf_roundActive )
         level thread gf_tryActivateRound();
-    else if ( isDefined( level.gf_roundStartFreezeActive ) && level.gf_roundStartFreezeActive )
-        self thread gf_freezeLateJoinerForRoundStart();
 }
 
 // ─── Round Activation ──────────────────────────────────────────────────────
@@ -278,176 +264,167 @@ gf_tryActivateRound()
     // team-size decision for the next round's setup.
     gf_updateAutoTeamMode();
 
-    if ( game["roundsplayed"] > 0 )
-    {
-        // Flag the freeze window so anyone who spawns DURING the countdown
-        // (late-connecting bots, mid-countdown joiners) freezes themselves on
-        // spawn instead of slipping past this one-time snapshot loop.
-        level.gf_roundStartFreezeActive = true;
+    // The engine's native per-round prematch (set up in onStartGameType via level.prematchPeriod)
+    // owns the countdown, player freeze, intro VO, objective hint, and timer-hide. We reach here
+    // ~0.2s INTO it (players spawn frozen during the prematch, and that first spawn is what
+    // triggers gf_tryActivateRound), so wait for the prematch to finish before starting the round
+    // clock — otherwise it draws the round timer over the countdown AND burns round time. While
+    // the clock isn't running, timeLimitOverride stays false, so the engine hides the timer for
+    // the whole prematch (clean, no flicker), exactly like SD.
+    if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
+        level waittill( "prematch_over" );
 
-        for ( i = 0; i < level.players.size; i++ )
-        {
-            p = level.players[i];
-            if ( p.sessionstate == "playing" )
-                p gf_applyRoundStartFreeze();
-        }
-
-        maps\mp\gametypes\_globallogic_utils::pauseTimer();
-        gf_hideRoundTimerForCountdown();
-        level thread gf_roundStartCountdown();
-        wait 7;
-        maps\mp\gametypes\_globallogic_utils::resumeTimer();
-        gf_restoreRoundTimerAfterCountdown();
-        gf_playRoundStartDialog();
-        gf_showRoundObjective();
-
-        // Closing the window releases the snapshot players (below) and signals
-        // any late-joiner freeze threads to self-release.
-        level.gf_roundStartFreezeActive = false;
-
-        for ( i = 0; i < level.players.size; i++ )
-        {
-            p = level.players[i];
-            if ( p.sessionstate == "playing" )
-                p gf_clearRoundStartFreeze();
-        }
-    }
+    // Take over the live-round timer. This silences the native 30s "time running out" sequence
+    // (announcer + TIME_OUT music + beeps) and drives our own countdown instead: VO at 15s, beeps
+    // in the final 10s, no music.
+    gf_startRoundClock();
 }
 
-gf_applyRoundStartFreeze()
+// ─── Live-Round Clock ──────────────────────────────────────────────────────
+//
+// We own the live-round timer instead of the native one. The stock
+// _globallogic::timeLimitClock fires a fixed "time running out" sequence at
+// hardcoded thresholds (announcer VO ~32s, TIME_OUT music + countdown beeps at
+// 30s), keyed off absolute seconds remaining — so on a 45s round it triggers
+// almost immediately and there is no dvar to retune it. pauseTimer() sets
+// level.timerStopped, which gates off that native loop entirely (no music, no
+// VO, no beeps); we then drive the HUD clock via setGameEndTime and own expiry
+// via level.timeLimitOverride. Same proven approach as the overtime clock below.
+gf_startRoundClock()
 {
-    self freezeControls( 1 );
-    if ( isDefined( self.pers["isBot"] ) && self.pers["isBot"] )
-    {
-        self.bot_lock_goal = true;
-        self SetScriptGoal( self.origin, 8 );
-    }
+    // Round length (minutes) -> ms. level.timeLimit is per-mode (small vs _large),
+    // re-derived each round in main()/onStartGameType.
+    roundLen = 0.75;
+    if ( isDefined( level.timeLimit ) && level.timeLimit > 0 )
+        roundLen = level.timeLimit;
+
+    level.gf_roundRemaining    = roundLen * 60 * 1000;
+    level.gf_roundLastTime     = gettime();
+    level.gf_roundLastTick     = undefined;
+    level.gf_roundWarned       = false;
+    level.gf_roundClockRunning = true;
+    level.timeLimitOverride    = true;
+
+    if ( isDefined( level.gf_roundTickObject ) )
+        level.gf_roundTickObject delete();
+    level.gf_roundTickObject = spawn( "script_origin", ( 0, 0, 0 ) );
+
+    maps\mp\gametypes\_globallogic_utils::pauseTimer();
+    gf_updateRoundGameEndTime();
+
+    // pauseTimer() freezes getTimePassed() at ~0 for the whole round, which breaks
+    // the stock grenade-dud window (_weapons::turnGrenadeIntoADud compares
+    // dudTime >= getTimePassed()/1000). With the clock frozen that stays true all
+    // round, so frags/semtex AND launchers (gl_*, china_lake_mp) fire as duds and
+    // spam "unavailable for 1 second". Negative thresholds disable the dud system
+    // entirely (no positive value would ever elapse against a frozen clock). Set
+    // here (after map_restart wipes level.*) so it re-applies every round; persists
+    // through overtime in the same round.
+    level.grenadeLauncherDudTime = -1;
+    level.thrownGrenadeDudTime   = -1;
+
+    level thread gf_roundClock();
 }
 
-gf_clearRoundStartFreeze()
-{
-    self freezeControls( 0 );
-    if ( isDefined( self.pers["isBot"] ) && self.pers["isBot"] )
-    {
-        self.bot_lock_goal = false;
-        self ClearScriptGoal();
-    }
-}
-
-// A player that spawns mid-countdown missed the snapshot freeze loop. Lock it on
-// the spot and self-release when the window closes. We re-assert each tick because
-// a freshly spawned bot's bot_on_spawn sets bot_lock_goal=false right after spawn —
-// it can race our lock off, so one set isn't enough (the snapshot loop dodges this
-// via gf_tryActivateRound's 0.2s pre-wait; a late joiner has no such buffer).
-gf_freezeLateJoinerForRoundStart()
-{
-    self endon( "death" );
-    self endon( "disconnect" );
-
-    while ( isDefined( level.gf_roundStartFreezeActive ) && level.gf_roundStartFreezeActive )
-    {
-        self gf_applyRoundStartFreeze();
-        wait 0.5;
-    }
-
-    self gf_clearRoundStartFreeze();
-}
-
-gf_roundStartCountdown()
+gf_roundClock()
 {
     level endon( "game_ended" );
+    level endon( "gf_round_over" );   // round ended early by elimination
 
-    label = createServerFontString( "extrabig", 1.5 );
-    label setPoint( "CENTER", "CENTER", 0, -40 );
-    label.sort = 1001;
-    label.foreground = false;
-    label.hidewheninmenu = true;
-    label setText( "ROUND BEGINS IN" );
-
-    num = createServerFontString( "extrabig", 2.2 );
-    num setPoint( "CENTER", "CENTER", 0, 0 );
-    num.sort = 1001;
-    num.color = ( 1, 1, 0 );
-    num.foreground = false;
-    num.hidewheninmenu = true;
-    num maps\mp\gametypes\_hud::fontPulseInit();
-
-    tickObj = spawn( "script_origin", ( 0, 0, 0 ) );
-
-    count = 7;
-    while ( count > 0 )
+    while ( isDefined( level.gf_roundClockRunning ) && level.gf_roundClockRunning )
     {
-        num setValue( count );
-        num thread maps\mp\gametypes\_hud::fontPulse( level );
-        tickObj playSound( "mpl_ui_timer_countdown" );
-        count--;
-        wait 1.0;
+        gf_syncRoundRemaining();
+
+        if ( level.gf_roundRemaining <= 0 )
+        {
+            level.gf_roundClockRunning = false;
+            // Leave level.timerStopped / level.timeLimitOverride set: expiry either
+            // enters overtime (which re-pauses + keeps the override) or ends the round
+            // (map_restart wipes the state). Only clear our own clock vars here.
+            gf_cleanupRoundTimerState();
+            gf_onTimeLimit();
+            return;
+        }
+
+        gf_updateRoundGameEndTime();
+        gf_updateRoundWarning();
+
+        wait 0.1;
     }
-
-    tickObj delete();
-    num destroyElem();
-    label destroyElem();
 }
 
-gf_hideRoundTimerForCountdown()
+gf_syncRoundRemaining()
 {
-    level.gf_preRoundTimeLimitOverride = false;
-    if ( isDefined( level.timeLimitOverride ) && level.timeLimitOverride )
-        level.gf_preRoundTimeLimitOverride = true;
+    if ( !isDefined( level.gf_roundLastTime ) )
+        level.gf_roundLastTime = gettime();
 
-    level.timeLimitOverride = true;
-    setGameEndTime( 0 );
+    now = gettime();
+    elapsed = now - level.gf_roundLastTime;
+    level.gf_roundLastTime = now;
+
+    if ( elapsed > 0 )
+        level.gf_roundRemaining -= elapsed;
+
+    if ( level.gf_roundRemaining < 0 )
+        level.gf_roundRemaining = 0;
 }
 
-gf_restoreRoundTimerAfterCountdown()
+gf_updateRoundGameEndTime()
 {
-    if ( isDefined( level.gf_preRoundTimeLimitOverride ) && level.gf_preRoundTimeLimitOverride )
-    {
-        level.gf_preRoundTimeLimitOverride = undefined;
+    if ( !isDefined( level.gf_roundRemaining ) )
         return;
-    }
 
-    level.gf_preRoundTimeLimitOverride = undefined;
-    level.timeLimitOverride = false;
+    remaining = level.gf_roundRemaining;
+    if ( remaining < 0 )
+        remaining = 0;
 
-    if ( !isDefined( level.startTime ) || !isDefined( level.timeLimit ) || level.timeLimit <= 0 )
-    {
-        setGameEndTime( 0 );
+    setGameEndTime( int( gettime() + remaining ) );
+}
+
+gf_updateRoundWarning()
+{
+    if ( !isDefined( level.gf_roundRemaining ) )
         return;
+
+    remaining = level.gf_roundRemaining;
+
+    // Announcer VO once at 15s remaining. No team arg -> leaderDialogBothTeams plays
+    // the generic "timesup" callout to everyone (no "squad_30sec" variant). No music:
+    // we never fire the native match_ending_* notifies that drive TIME_OUT.
+    if ( remaining <= 15000 && ( !isDefined( level.gf_roundWarned ) || !level.gf_roundWarned ) )
+    {
+        level.gf_roundWarned = true;
+        maps\mp\gametypes\_globallogic_audio::leaderDialog( "timesup" );
     }
 
-    timeLeft = maps\mp\gametypes\_globallogic_utils::getTimeRemaining();
-    if ( timeLeft > 0 )
-        setGameEndTime( getTime() + int( timeLeft ) );
-    else
-        setGameEndTime( 0 );
+    // Countdown beeps in the final 10 seconds only (one per second, 10 -> 1).
+    if ( remaining <= 0 || remaining > 10000 )
+        return;
+
+    tick = int( ( remaining + 999 ) / 1000 );
+    if ( tick < 1 || tick > 10 )
+        return;
+
+    if ( isDefined( level.gf_roundLastTick ) && level.gf_roundLastTick == tick )
+        return;
+
+    level.gf_roundLastTick = tick;
+
+    if ( isDefined( level.gf_roundTickObject ) )
+        level.gf_roundTickObject playSound( "mpl_ui_timer_countdown" );
 }
 
-gf_playRoundStartDialog()
+gf_cleanupRoundTimerState()
 {
-    maps\mp\gametypes\_globallogic_audio::leaderDialog( "offense_obj", game["attackers"], "introboost" );
-    maps\mp\gametypes\_globallogic_audio::leaderDialog( "defense_obj", game["defenders"], "introboost" );
-}
+    level.gf_roundClockRunning = false;
+    level.gf_roundRemaining    = undefined;
+    level.gf_roundLastTime     = undefined;
+    level.gf_roundLastTick     = undefined;
 
-// Re-show the gametype objective splash each round — the same stock objective hint
-// (_hud_message::hintMessage) that _globallogic shows once at match start
-// (prematchPeriod, _globallogic.gsc). This is the visual half; gf_playRoundStartDialog
-// above is the VO half. Mirrors _globallogic's per-player hasSpawned guard.
-gf_showRoundObjective()
-{
-    for ( i = 0; i < level.players.size; i++ )
+    if ( isDefined( level.gf_roundTickObject ) )
     {
-        player = level.players[i];
-        if ( !isDefined( player ) || !isPlayer( player ) )
-            continue;
-        if ( !isDefined( player.hasSpawned ) || !player.hasSpawned )
-            continue;
-
-        hintText = maps\mp\gametypes\_globallogic_ui::getObjectiveHintText( player.pers["team"] );
-        if ( !isDefined( hintText ) )
-            continue;
-
-        player thread maps\mp\gametypes\_hud_message::hintMessage( hintText );
+        level.gf_roundTickObject delete();
+        level.gf_roundTickObject = undefined;
     }
 }
 
@@ -464,6 +441,10 @@ gf_endRound( winner )
     level.gf_roundEnding = true;
     level.gf_roundActive = false;
     level notify( "gf_round_over" );
+
+    // gf_round_over endons the round clock thread before it can self-clean; tear down
+    // its tick object + state here so an early elimination end doesn't leave them.
+    gf_cleanupRoundTimerState();
 
     gf_forceHealthHUDUpdate();
 
@@ -553,7 +534,7 @@ gf_beginOvertime( overtimeLimit )
     level.gf_overtimePauseDepth    = 0;
     level.gf_overtimeRemaining     = overtimeLimit * 1000;
     level.gf_overtimeLastTime      = gettime();
-    level.gf_overtimeLastTick      = undefined;
+    level.gf_overtimeLastTickMs    = undefined;
     level.gf_overtimeClockRunning  = true;
     level.inOvertime               = true;
     level.timeLimitOverride        = true;
@@ -701,17 +682,22 @@ gf_updateOvertimeTickSound()
         return;
 
     remaining = level.gf_overtimeRemaining;
-    if ( remaining <= 0 || remaining > 15000 )
+    if ( remaining <= 0 || remaining > 10000 )   // tick only in the final 10s
         return;
 
-    tick = int( ( remaining + 999 ) / 1000 );
-    if ( tick < 1 || tick > 15 )
+    // 1 beep/sec from 10s -> 5s (matches the round beeps), then 2 beeps/sec for the final 5s.
+    // Driven off the OT remaining time, NOT wall-clock, so it honors the capture pause/resume —
+    // gf_overtimeClock only calls this while the clock is running, and remaining freezes during a
+    // pause, so the cadence freezes with it.
+    if ( remaining > 5000 )  interval = 1000;   // 10s..5s : 1/sec
+    else                     interval = 500;    // last 5s : 2/sec
+
+    // First tick fires immediately on entering the 10s window (lastTickMs undefined); after that,
+    // tick once the remaining time has dropped by at least the current interval.
+    if ( isDefined( level.gf_overtimeLastTickMs ) && ( level.gf_overtimeLastTickMs - remaining ) < interval )
         return;
 
-    if ( isDefined( level.gf_overtimeLastTick ) && level.gf_overtimeLastTick == tick )
-        return;
-
-    level.gf_overtimeLastTick = tick;
+    level.gf_overtimeLastTickMs = remaining;
 
     if ( isDefined( level.gf_overtimeTickObject ) )
         level.gf_overtimeTickObject playSound( "mpl_ui_timer_countdown" );
@@ -731,7 +717,7 @@ gf_pauseOvertimeForCapture()
 
     gf_syncOvertimeRemaining();
     level.gf_overtimePaused = true;
-    setGameEndTime( 0 );
+    setGameEndTime( 0 );   // hide the clock while paused; a re-push "freeze" flickers (engine has no display-hold)
 }
 
 gf_resumeOvertimeForCapture()
@@ -760,7 +746,7 @@ gf_cleanupOvertimeTimerState()
     level.gf_overtimePauseDepth   = 0;
     level.gf_overtimeRemaining    = undefined;
     level.gf_overtimeLastTime     = undefined;
-    level.gf_overtimeLastTick     = undefined;
+    level.gf_overtimeLastTickMs   = undefined;
     level.gf_overtimeClockRunning = false;
     level.inOvertime              = false;
     level.timeLimitOverride       = false;
@@ -1477,9 +1463,11 @@ gf_onOneLeftEvent( team )
 
     level.gf_warnedLastPlayer[team] = true;
 
-    player = gf_getLastLivingPlayer( team );
-    if ( !isDefined( player ) )
+    // onOneLeftEvent fires when level.aliveCount[team] == 1, so the engine-maintained
+    // level.alivePlayers[team] holds exactly that last living player at index 0.
+    if ( level.alivePlayers[team].size <= 0 )
         return;
+    player = level.alivePlayers[team][0];
 
     player maps\mp\gametypes\_globallogic_audio::leaderDialogOnPlayer( "last_one" );
     player playLocalSound( "mus_last_stand" );
@@ -1498,34 +1486,21 @@ gf_onRoundSwitch()
 
 // ─── Utilities ─────────────────────────────────────────────────────────────
 
+// Sum of living HP for a team. level.alivePlayers[team] is the engine-maintained array of
+// alive, playing players on that team (built in _globallogic::updateTeamStatus), so it's
+// exactly the set the old all-players scan filtered to. The health>0 guard is redundant
+// (alive implies it) but kept defensive.
 gf_getTeamHP( team )
 {
     total = 0;
-    for ( i = 0; i < level.players.size; i++ )
+    arr = level.alivePlayers[team];
+    for ( i = 0; i < arr.size; i++ )
     {
-        p = level.players[i];
-        if ( p.pers["team"] == team && p.sessionstate == "playing" && p.health > 0 )
+        p = arr[i];
+        if ( isDefined( p ) && isDefined( p.health ) && p.health > 0 )
             total += p.health;
     }
     return total;
-}
-
-gf_getLastLivingPlayer( team )
-{
-    for ( i = 0; i < level.players.size; i++ )
-    {
-        player = level.players[i];
-        if ( !isDefined( player ) || !isPlayer( player ) )
-            continue;
-
-        if ( !isDefined( player.pers["team"] ) || player.pers["team"] != team )
-            continue;
-
-        if ( player.sessionstate == "playing" && player.health > 0 )
-            return player;
-    }
-
-    return undefined;
 }
 
 gf_getHPWinner()

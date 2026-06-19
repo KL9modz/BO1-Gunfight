@@ -4,6 +4,25 @@
 - Refine loadouts
 - Finish/Adjust spawns
 - Setup a modded T5 Plutonium server on a VPS
+- ship weapon files: ads fov/move speed
+- custom camos
+- Custom round-timer HUD: the stock game timer turns orange + shows tenths in the final 30s, which
+  is hardcoded in the engine CG layer (NOT GSC-tunable — no dvar/property/hook; `setGameEndTime`
+  only feeds it the end time). To trigger that at 10s instead, draw our OWN top-center timer fed by
+  the existing `gf_roundRemaining` clock (MM:SS white normally, switch to S.T + orange at <=10s),
+  hide the engine timer (`setGameEndTime 0`), and route the OT countdown through the same element
+  so round + OT share one style. Moderate work, not a threshold tweak.
+
+BUGS:
+- Bot spawn issue
+- round takes a few extra seconds to end if a team is killed early
+
+DONE:
+- 30s warning replaced by a mod-owned live-round clock (`gf_startRoundClock` etc. in
+  `_gf_rounds.gsc`): native `timeLimitClock` is silenced via `pauseTimer()`, so the stock
+  time-out sequence (announcer + TIME_OUT music + 30s beeps + the 1-min/12s client cues) no
+  longer fires. We drive the HUD via `setGameEndTime` and play our own warning: `timesup` VO at
+  15s remaining (no music), countdown beeps in the final 10s only. Verify the VO wording in-game.
 
 - Update release branch readme:
 Instalation
@@ -16,6 +35,8 @@ Server info
 Dev files (_bot, _gf_debug, _gf_bridge, bots/, tools/) and in-file dev wiring (`// #strip-begin ... // #strip-end`) are stripped from public outputs; all still present on `main`
 
 - SECURITY (do this): rotate the RCON password on the VPS + dedicated.cfg. The old hardcoded value leaked via public git history; the gf.gsc dvar block is now strip-wrapped (dev-only) but `main` is still public if the GitHub repo is public — prefer dedicated.cfg as the sole owner.
+
+Fix ADS: `exec autoexec`
 ---
 
 ## Dedicated Server Setup
@@ -1273,6 +1294,22 @@ gf_overtimeCountdown()
 > need custom expiry detection, tick sound, and hide-on-capture, so it trades a well-tested flow
 > (pause depth, resume-on-interrupt, expiry-by-HP, capture-win, wipe-during-OT) for little real LOC
 > savings. Keep it unless the native timer gains condition-pause support.
+
+> **The live (non-OT) round timer is ALSO mod-owned now (added 2026-06-18).**
+> `gf_startRoundClock` / `gf_roundClock` / `gf_syncRoundRemaining` / `gf_updateRoundWarning` in
+> `_gf_rounds.gsc` mirror the OT clock for the main round. `gf_tryActivateRound` calls
+> `gf_startRoundClock()` once the round goes live (round 1 directly; rounds > 0 after the start
+> countdown). It `pauseTimer()`s — which gates off the stock `_globallogic::timeLimitClock` warning
+> loop (`if ( !level.timerStopped && level.timeLimit )`) so NONE of the native time-out sequence fires
+> (no announcer, no `TIME_OUT` music, no 30s/12s/1-min beeps or client cues) — sets
+> `level.timeLimitOverride = true` (own expiry via `gf_onTimeLimit`), and drives the HUD via
+> `setGameEndTime`. Our warning: `leaderDialog("timesup")` once at 15s remaining (no team arg → both
+> teams, generic callout, no music), then `mpl_ui_timer_countdown` beeps each second in the final 10s.
+> Expiry still hands to `gf_onTimeLimit` (→ overtime or HP decision). Reason this is custom: the stock
+> warning thresholds are hardcoded absolute seconds and `level.timeLimit` is re-set from the dvar every
+> `updateGameTypeDvars` tick, so there is no flag that silences the native warning without also freezing
+> the clock — owning it is the only clean route. Trade-off: the stock last-round winning/losing VO is
+> also suppressed (it rides the same `match_ending_soon` notify).
 
 ### Delayed grenade delivery (prevents spawn-instant-throw)
 ```gsc

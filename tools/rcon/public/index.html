@@ -216,7 +216,7 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
   <div class="conn-row">
     <input id="iHost" type="text" placeholder="Host" value="127.0.0.1">
     <input id="iPort" type="number" placeholder="Port" value="28960">
-    <input id="iPass" type="password" placeholder="rcon_password" value="s5ZrXQDfmSPp">
+    <input id="iPass" type="password" placeholder="rcon_password" value="aBHguGlfMQA9NcqEO1YJ5WKm">
     <button id="cBtn" onclick="doConn()">Connect</button>
   </div>
   <span id="badge" class="bdg off">● Disconnected</span>
@@ -574,6 +574,10 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       <button class="b-wn b-sm ctrl" onclick="bridge('quake')">💥 Shake</button>
     </div>
   </div>
+
+  <!-- Plutonium server modifier dvars (sv_*/scr_oldschool) — data-driven from
+       MATCH_MODIFIERS; toggles call sdvv directly. Rendered into this placeholder. -->
+  <div id="mt-mod-body"></div>
 
   <div class="block">
     <div class="btitle">ADMIN  <span style="font-weight:400;font-size:10px;color:var(--dm)">match restart lives in the top bar</span></div>
@@ -1433,6 +1437,22 @@ const SRV_SECTIONS = [
     { n:'scr_disable_weapondrop', lbl:'Disable Weapon Drop',  type:'tog', def:'1', tip:'scr_disable_weapondrop\n1 = weapons do not drop on death.' },
     { n:'scr_showperksonspawn',   lbl:'Show Perks on Spawn',  type:'tog', def:'1', tip:'scr_showperksonspawn\n1 = display perk icons in HUD after spawning.' },
   ]},
+  { title: 'BOT TUNING', vars: [
+    { n:'sv_botFov',             lbl:'Bot FOV (deg)',         type:'num', def:'65',   tip:'sv_botFov\nField of view bots use to acquire targets. Higher = they see you sooner.\nCheat-protected — needs sv_cheats 1.' },
+    { n:'sv_botMinReactionTime', lbl:'Reaction Min (ms)',     type:'num', def:'500',  tip:'sv_botMinReactionTime\nFastest reaction time on spotting a target. Lower = harder bots.\nCheat-protected — needs sv_cheats 1.' },
+    { n:'sv_botMaxReactionTime', lbl:'Reaction Max (ms)',     type:'num', def:'1000', tip:'sv_botMaxReactionTime\nSlowest reaction time. Lower = harder bots.\nCheat-protected — needs sv_cheats 1.' },
+    { n:'sv_botMinFireTime',     lbl:'Fire Burst Min (ms)',   type:'num', def:'400',  tip:'sv_botMinFireTime\nShortest continuous-fire burst. Cheat-protected — needs sv_cheats 1.' },
+    { n:'sv_botMaxFireTime',     lbl:'Fire Burst Max (ms)',   type:'num', def:'600',  tip:'sv_botMaxFireTime\nLongest continuous-fire burst. Cheat-protected — needs sv_cheats 1.' },
+    { n:'sv_botStrafeChance',    lbl:'Strafe Chance (0–1)',   type:'flt', def:'0.1',  tip:'sv_botStrafeChance\nProbability a bot strafes during a fight. Cheat-protected — needs sv_cheats 1.' },
+    { n:'sv_botCloseDistance',   lbl:'Close Distance',        type:'num', def:'256',  tip:'sv_botCloseDistance\nRange under which bots treat you as close-quarters. Cheat-protected — needs sv_cheats 1.' },
+    { n:'sv_botSprintDistance',  lbl:'Sprint Distance',       type:'num', def:'512',  tip:'sv_botSprintDistance\nRange beyond which bots sprint toward targets/objectives. Cheat-protected — needs sv_cheats 1.' },
+    { n:'sv_botMeleeDist',       lbl:'Melee Distance',        type:'num', def:'80',   tip:'sv_botMeleeDist\nRange at which bots attempt a melee. Cheat-protected — needs sv_cheats 1.' },
+    { n:'sv_botPitchSpeed',      lbl:'Aim Pitch Speed',       type:'num', def:'2',    tip:'sv_botPitchSpeed\nVertical aim turn speed. Higher = snappier. Cheat-protected — needs sv_cheats 1.' },
+    { n:'sv_botYawSpeed',        lbl:'Aim Yaw Speed',         type:'num', def:'4',    tip:'sv_botYawSpeed\nHorizontal aim turn speed. Higher = snappier. Cheat-protected — needs sv_cheats 1.' },
+    { n:'sv_botAllowGrenades',   lbl:'Bots Throw Grenades',   type:'tog', def:'1',    tip:'sv_botAllowGrenades\nAllow bots to throw lethal grenades.' },
+    { n:'sv_randomizeBotNames',  lbl:'Randomize Bot Names',   type:'tog', def:'1',    tip:'sv_randomizeBotNames\nGive bots random player-style names.' },
+    { n:'sv_botUseFriendNames',  lbl:'Bots Use Friend Names', type:'tog', def:'1',    tip:'sv_botUseFriendNames\nBots borrow names from your friends list.' },
+  ]},
 ];
 
 // Per-gametype dvar blocks — shown one at a time via the SERVER-tab gametype dropdown
@@ -1656,11 +1676,24 @@ function buildMatchGf() {
   g('mt-gf-body').innerHTML = srvBlock('GUNFIGHT', GT_SECTIONS.gf, 'mt');
   setCtrl(live);
 }
-// Live-read the gunfight dvars into the MATCH GUNFIGHT block (mirror of readGtDvars).
+// MATCH tab GAME MODIFIERS block — Plutonium server cheat/fun dvars (mt_ id prefix).
+function buildMatchModifiers() {
+  g('mt-mod-body').innerHTML = srvBlock('GAME MODIFIERS', MATCH_MODIFIERS, 'mt');
+  setCtrl(live);
+}
+// Set every modifier toggle back to 0 (off) and uncheck the UI.
+async function resetModifiers() {
+  const dvars = MATCH_MODIFIERS.filter(v => v.type === 'tog').map(v => v.n);
+  await batchCmds(dvars.map(d => `set ${d} 0`), 40);
+  dvars.forEach(n => { const el = g('mt_' + n.replace(/[^a-zA-Z0-9]/g,'_')); if (el) el.checked = false; });
+  actLog('Game modifiers reset', 'ok'); toast('Modifiers reset', 'ok');
+}
+// Live-read the gunfight + modifier dvars into their MATCH blocks (mirror of readGtDvars).
 async function readMatchDvars() {
   if (!live) return;
-  const names = GT_SECTIONS.gf.map(v => v.n);
-  try { const r = await fetchDvars(names); if (r && r.ok) srvApplyValues(GT_SECTIONS.gf, r.values, 'mt'); } catch (_) {}
+  const vars = GT_SECTIONS.gf.concat(MATCH_MODIFIERS);
+  const names = vars.filter(v => v.type !== 'btn').map(v => v.n);
+  try { const r = await fetchDvars(names); if (r && r.ok) srvApplyValues(vars, r.values, 'mt'); } catch (_) {}
 }
 
 // ─── Gametype custom dropdown ─────────────────────────────────────────────────
@@ -1683,9 +1716,26 @@ const GT_OPTS = [
   { val:'hlnd', lbl:'hlnd — Sticks and Stones',       desc:'Sticks and Stones. Crossbow and ballistic knife only. Melee kills bankrupt an enemy\'s score. First to the score limit wins.' },
 ];
 
+// Plutonium server modifier dvars surfaced on the MATCH tab (GAME MODIFIERS block).
+// All are plain server dvars (no GSC bridge) — set live via RCON. Most take effect on
+// the next round; scr_oldschool needs a map_restart. Toggles call sdvv directly.
+const MATCH_MODIFIERS = [
+  { n:'sv_BigHeadMode',         lbl:'Big Head Mode',         type:'tog', def:'0', tip:'sv_BigHeadMode\nOversized player heads — easy headshots, crowd-pleaser.\nApplies on the next round.' },
+  { n:'sv_TripleBullet',        lbl:'Triple Bullet',         type:'tog', def:'0', tip:'sv_TripleBullet\nEvery shot fires three bullets.\nApplies on the next round.' },
+  { n:'sv_SuperPenetrate',      lbl:'Super Penetration',     type:'tog', def:'0', tip:'sv_SuperPenetrate\nBullets wallbang through almost anything.\nApplies on the next round.' },
+  { n:'sv_InfiniteSprint',      lbl:'Infinite Sprint',       type:'tog', def:'0', tip:'sv_InfiniteSprint\nSprint never runs out.\nApplies on the next round.' },
+  { n:'sv_InstantReload',       lbl:'Instant Reload',        type:'tog', def:'0', tip:'sv_InstantReload\nReloads complete instantly.\nApplies on the next round.' },
+  { n:'sv_FullAmmo',            lbl:'Full Ammo',             type:'tog', def:'0', tip:'sv_FullAmmo\nAmmo never depletes.\nApplies on the next round.' },
+  { n:'sv_QuickHealthRecharge', lbl:'Quick Health Recharge', type:'tog', def:'0', tip:'sv_QuickHealthRecharge\nVery fast health regen.\nNOTE: overrides the Gunfight no-regen rule. Applies on the next round.' },
+  { n:'sv_RadarAlwaysOn',       lbl:'Radar Always On',       type:'tog', def:'0', tip:'sv_RadarAlwaysOn\nPermanent radar for everyone (Plutonium-native).\nOverlaps with GAME RULES → Force UAV and PLAYER STATE → Radar.' },
+  { n:'scr_oldschool',          lbl:'Old School Mode',       type:'tog', def:'0', tip:'scr_oldschool\nClassic high-jump / map-pickup movement feel.\nNeeds a map_restart to take effect.' },
+  { n:'__modreset',             lbl:'Reset all modifiers',   type:'btn', act:'resetModifiers()', btxt:'Reset', tip:'Sets every modifier above back to 0 (off).' },
+];
+
 // Built here (not at the function def) because buildServerPanel() reads GT_OPTS above.
 buildServerPanel();
 buildMatchGf();
+buildMatchModifiers();
 
 let _gtVal = 'gf';
 

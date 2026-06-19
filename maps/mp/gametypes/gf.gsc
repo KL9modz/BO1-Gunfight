@@ -242,6 +242,39 @@ onStartGameType()
         setDvar( "ui_timelimit", level.timelimit ); // keep the HUD clock in sync
     }
 
+    // Stock sets level.gracePeriod = 15 (numLives branch) before onStartGameType, and
+    // _globallogic::updateGameEvents() suppresses onDeadEvent while inGracePeriod — so an
+    // early-round team wipe can't end the round until grace expires (the "few seconds with
+    // everyone dead" symptom). Shorten it; early-round PvP is already gated by the round-start
+    // freeze + !gf_roundActive in the damage handler, so we don't need stock grace protection.
+    level.gracePeriod = 3;
+
+    // Per-round prematch via the engine's native countdown. The engine zeroes level.prematchPeriod
+    // every round (Callback_StartGameType) and only refills it once per match, so we set it HERE
+    // each round: onStartGameType runs after the engine's prematch randomization and before
+    // startGame()'s prematchPeriod(), so this exact value drives the countdown every round (>=2
+    // required for the engine to render the timer). The native prematch freezes controls (incl.
+    // firing), plays the intro VO, shows the objective hint, and hides the round timer until
+    // prematch_over — gf_tryActivateRound waits for prematch_over before starting our round clock.
+    if ( getDvar( "scr_gf_match_prematch_seconds" ) == "" )
+        setDvar( "scr_gf_match_prematch_seconds", "15" );   // first round of the match (longer intro)
+    if ( getDvar( "scr_gf_prematch_seconds" ) == "" )
+        setDvar( "scr_gf_prematch_seconds", "7" );          // every later round
+
+    // roundsplayed == 0 is the match's first round (longer intro); later rounds get the shorter one.
+    if ( game["roundsplayed"] == 0 )
+    {
+        level.prematchPeriod = maps\mp\gametypes\_globallogic_utils::getValueInRange( getDvarInt( "scr_gf_match_prematch_seconds" ), 2, 30 );
+    }
+    else
+    {
+        level.prematchPeriod = maps\mp\gametypes\_globallogic_utils::getValueInRange( getDvarInt( "scr_gf_prematch_seconds" ), 2, 20 );
+        // matchStartTimer setText's game["strings"]["match_starting_in"]; round 1 keeps the engine's
+        // "MATCH STARTING IN", rounds 2+ say "ROUND BEGINS IN" (raw string is fine — no rebuild).
+        game["strings"]["match_starting_in"] = "ROUND BEGINS IN";
+    }
+    level thread gf_nativePrematchTicker();      // engine matchStartTimer is silent — re-add the per-second tick
+
     level.gf_roundActive     = false;
     level.gf_roundEnding     = false;
     level.gf_activatingRound = false;
@@ -381,17 +414,10 @@ gf_registerLoadoutCycleDvar()
     if ( GetDvar( dvar ) == "" )
         setDvar( dvar, 2 );
 
-    value = GetDvarInt( dvar );
-    if ( value < 1 )
-    {
-        value = 1;
-        setDvar( dvar, value );
-    }
-    else if ( value > 9 )
-    {
-        value = 9;
-        setDvar( dvar, value );
-    }
+    raw   = GetDvarInt( dvar );
+    value = maps\mp\gametypes\_globallogic_utils::getValueInRange( raw, 1, 9 );
+    if ( value != raw )
+        setDvar( dvar, value );   // persist the clamped value back, as before
 
     level.gf_cfg_roundsPerLoadout = value;
 }
