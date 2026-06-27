@@ -199,13 +199,17 @@ onStartGameType()
 {
     level.noPersistence = true;
 
+    // These are STOCK engine dvars, NOT mod-registered scr_gf_* dvars: _globallogic::registerDvars()
+    // runs during Callback_StartGameType and seeds scr_disable_cac to "0" BEFORE this callback fires,
+    // so a `== ""` guard never sees empty and never sticks. Force them every map_restart, or the
+    // class-select screen reappears (cac) and weapon drops come back.
     setDvar( "scr_disable_cac", "1" );
-    setDvar( "scr_disable_weapondrop", 1 );
-    setDvar( "scr_showperksonspawn", "1" );
-    // Faster weapon swaps. Engine multiplier on drop/raise time, gated by the
-    // fast-switch specialty granted in gf_giveCustomLoadout. Lower = faster:
-    // 0.833 = ~1.2x speed, 0.5 = 2x. Live-tunable via rcon (it's a real dvar).
-    setDvar( "perk_weapSwitchMultiplier", "0.833" );
+    setDvar( "scr_disable_weapondrop", "1" );
+    setDvar( "scr_showperksonspawn", "0" );   // pinned: stock perk popup off; the custom loadout HUD (gf_showWeaponHUD) owns perk display
+    // Weapon-swap speed left fully stock by default: we neither force perk_weapSwitchMultiplier nor
+    // grant specialty_fastweaponswitch (gf_giveCustomLoadout no longer adds it). To speed up swaps,
+    // an admin enables Fast Weapon Switch in the RCON Perks tab (-> gf_perk_on), then tunes the
+    // "Weapon Switch Speed" slider; without the perk the multiplier dvar is inert.
     // #strip-begin - dev cheats + RCON/join password for LOCAL listen-server testing only.
     // package_release.ps1 strips this whole block from public builds. On the dedicated VPS
     // this block is gone, so dedicated.cfg is the sole owner of rcon_password/g_password/

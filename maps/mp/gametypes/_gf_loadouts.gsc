@@ -413,7 +413,9 @@ gf_giveCustomLoadout()
     self SetPerk( "specialty_longersprint"      );   // Marathon (no pro specialty exists in T5 source)
     self SetPerk( "specialty_armorvest"         );   // Flak Jacket
     self SetPerk( "specialty_flakjacket"        );   // Flak Jacket Pro — throwback grenades
-    self SetPerk( "specialty_fastweaponswitch"  );   // gates perk_weapSwitchMultiplier (faster swaps) — silent, not shown in perk HUD
+    // specialty_fastweaponswitch (gates perk_weapSwitchMultiplier) is OFF by default now — stock
+    // weapon-swap speed. Admins opt in via the RCON Perks tab (adds it to gf_perk_on below), which
+    // both grants the perk and makes the "Weapon Switch Speed" slider take effect.
 
     // RCON perk overrides — admin-managed extra/removed perks (rcon Perks tab).
     // Applied AFTER the base set so toggles win. Empty dvars return early, so

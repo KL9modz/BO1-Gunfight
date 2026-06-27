@@ -13,9 +13,9 @@
 //   allperks_off       - remove those perks
 //   perksync           - re-apply gf_perk_on / gf_perk_off lists to live players
 //                        (rcon Perks tab; loadout re-applies them each spawn)
-//   infammo_on         - start infinite ammo loop
-//   infammo_off        - stop infinite ammo loop
-//   radar_on / radar_off       - all players visible on minimap
+//   infammo_on         - sv_FullAmmo 1 + one-shot refill of live players
+//   infammo_off        - sv_FullAmmo 0
+//   radar_on / radar_off       - force UAV: scr_game_forceradar + live radar match flags
 //   headshots_on / headshots_off - non-headshot damage zeroed
 //   pgod_<num>         - god mode one player by entitynum
 //   pfreeze_<num>      - freeze one player
@@ -50,6 +50,8 @@ gf_bridgeInit()
         setDvar( "gf_cmd", "" );
     if ( getDvar( "gf_say" ) == "" )
         setDvar( "gf_say", "" );
+    if ( getDvar( "gf_expbullets_radius" ) == "" )
+        setDvar( "gf_expbullets_radius", "200" );   // RCON Blast Radius slider default
 
     setDvar( "gf_state", "0:0:1:0:0:" + level.gameType );
 
@@ -264,32 +266,18 @@ gf_bridgePerkSync()
     iPrintLnBold( "^2Perks synced" );
 }
 
-// --- Infinite ammo -----------------------------------------------------------
+// --- Infinite ammo (native sv_FullAmmo + one-shot top-up) --------------------
+// Consolidated from the old 0.5s refill loop: the engine's sv_FullAmmo flag stops
+// depletion (all weapons + reserve, and it persists across map_restart), while a
+// single immediate refill of live players makes the toggle apply THIS round
+// instead of next spawn. No polling thread.
 
 gf_bridgeInfAmmo( enable )
 {
+    level.gf_infAmmo = enable;
     if ( enable )
     {
-        if ( level.gf_infAmmo ) return;
-        level.gf_infAmmo = true;
-        level thread gf_infAmmoLoop();
-        iPrintLnBold( "^3Infinite Ammo ON" );
-    }
-    else
-    {
-        level.gf_infAmmo = false;
-        level notify( "gf_infammo_stop" );
-        iPrintLnBold( "^7Infinite Ammo OFF" );
-    }
-}
-
-gf_infAmmoLoop()
-{
-    level endon( "game_ended" );
-    level endon( "gf_infammo_stop" );
-    for ( ;; )
-    {
-        wait 0.5;
+        setDvar( "sv_FullAmmo", 1 );
         players = level.players;
         for ( i = 0; i < players.size; i++ )
         {
@@ -297,25 +285,35 @@ gf_infAmmoLoop()
             if ( p.health <= 0 ) continue;
             weapons = p getWeaponsListPrimaries();
             for ( j = 0; j < weapons.size; j++ )
-                p setWeaponAmmoClip( weapons[j], 9999 );
+                p giveMaxAmmo( weapons[j] );
         }
+        iPrintLnBold( "^3Infinite Ammo ON" );
+    }
+    else
+    {
+        setDvar( "sv_FullAmmo", 0 );
+        iPrintLnBold( "^7Infinite Ammo OFF" );
     }
 }
 
-// --- Radar always on ---------------------------------------------------------
-// setMatchFlag mirrors the UAV state flags the engine reads for minimap display.
+// --- Radar always on (stock scr_game_forceradar + live match flags) ----------
+// Consolidated force-UAV: the stock scr_game_forceradar dvar persists the setting
+// (survives map_restart, and is the saveable face in SERVER -> Force UAV), while
+// setMatchFlag drives the UAV state the engine reads for the minimap THIS round.
 
 gf_bridgeRadar( enable )
 {
     level.gf_radarOn = enable;
     if ( enable )
     {
+        setDvar( "scr_game_forceradar", 1 );
         setMatchFlag( "radar_allies", 1 );
         setMatchFlag( "radar_axis",   1 );
         iPrintLnBold( "^3Radar: Always ON" );
     }
     else
     {
+        setDvar( "scr_game_forceradar", 0 );
         setMatchFlag( "radar_allies", 0 );
         setMatchFlag( "radar_axis",   0 );
         iPrintLnBold( "^7Radar: Normal" );
@@ -501,7 +499,9 @@ gf_expBulletsPlayer()
 
         if ( isDefined( level.gf_fxExplode ) )
             playFx( level.gf_fxExplode, pos );
-        RadiusDamage( pos, 200, 120, 40, self );
+        r = getDvarInt( "gf_expbullets_radius" );   // RCON Blast Radius slider; live each shot
+        if ( r < 1 ) r = 200;
+        RadiusDamage( pos, r, 120, 40, self );
     }
 }
 

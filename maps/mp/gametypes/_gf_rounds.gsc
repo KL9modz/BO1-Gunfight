@@ -177,11 +177,15 @@ gf_playerSpawnedCB()
         level thread gf_startHealthHUD();
     }
     gf_queueHealthHUDUpdate();
-    self setClientDvar( "r_lightTweakAmbient",  "0.1" );
-    self setClientDvar( "r_lightGridIntensity", "1.1" );
-    self setClientDvar( "r_lightGridContrast",  "1"   );   // domain is -1..1; 1.1 is rejected by the engine
-    self setClientDvar( "r_gamma",              "1.1" );
-    self setClientDvar( "r_fullHDRrendering",   "1"   );
+    // Forced video tweaks, gated by scr_gf_visualtweaks (0 = leave the player's own video alone).
+    if ( getDvarInt( "scr_gf_visualtweaks" ) )
+    {
+        self setClientDvar( "r_lightTweakAmbient",  "0.1" );
+        self setClientDvar( "r_lightGridIntensity", "1.1" );
+        self setClientDvar( "r_lightGridContrast",  "1"   );   // domain is -1..1; 1.1 is rejected by the engine
+        self setClientDvar( "r_gamma",              "1.1" );
+        self setClientDvar( "r_fullHDRrendering",   "1"   );
+    }
     self thread gf_onSpawned();
 
     // Drive the entire per-player health panel in the PLAYER's own context (create +
@@ -598,6 +602,14 @@ gf_overtimeZoneGameEndCleanup( zone )
 gf_showOvertimeMessage()
 {
     maps\mp\_utility::playSoundOnPlayers( "mpl_hq_cap_us" );
+
+    // Announcer VO: stock "Overtime" callout, then our CTF cue ("ctf_start", registered as
+    // game["dialog"]["gf_overtime_cue"] in gf.gsc::onPrecacheGameType) right after. leaderDialog
+    // queues per-player, so the second line auto-plays ~3s behind the first (see
+    // playLeaderDialogOnPlayer in _globallogic_audio). No team arg -> both teams hear both.
+    // "overtime" comes from the shared _globallogic_audio::init() dialog table.
+    maps\mp\gametypes\_globallogic_audio::leaderDialog( "overtime" );
+    maps\mp\gametypes\_globallogic_audio::leaderDialog( "gf_overtime_cue" );
 
     titleText = &"MP_OVERTIME_CAPS";
     if ( isDefined( game["strings"] ) && isDefined( game["strings"]["overtime"] ) )

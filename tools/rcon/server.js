@@ -206,7 +206,9 @@ function serveFile(res, filePath) {
   try {
     const data = fs.readFileSync(filePath);
     const ext  = path.extname(filePath).toLowerCase();
-    const mime = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css' };
+    const mime = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css',
+      '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.webp': 'image/webp', '.ico': 'image/x-icon' };   // drop extracted game art in public/ and <img> it
     res.writeHead(200, { 'Content-Type': mime[ext] || 'application/octet-stream' });
     res.end(data);
   } catch (_) { res.writeHead(404); res.end('Not found'); }

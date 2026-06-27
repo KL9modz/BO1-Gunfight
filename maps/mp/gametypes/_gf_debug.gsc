@@ -4,7 +4,9 @@
 //   [1] ActionSlot1  record current position for active team
 //   [2] ActionSlot2  toggle active team (allies/axis)
 //   [3] ActionSlot3  save current set, then print all sets and current overtime flag
-//   [4] ActionSlot4  clear recorded sets and current working points
+//   [4] ActionSlot4  undo last recorded point for the active team
+//
+//   An on-screen legend (these controls) + live state line stay up while active.
 //
 // COORDS HUD  --  auto-starts alongside the spawn recorder.
 //   Shows live X/Y/Z and yaw in the bottom-left corner.
@@ -51,8 +53,9 @@ gf_startSpawnRecorder()
     self.gf_rec_sets   = [];
     self.gf_rec_team   = "allies";
 
+    self gf_recCreateLegend();
     self gf_recUpdateHUD();
-    iPrintLnBold( "^2Spawn Recorder ON^7  [1]=record  [2]=toggle  [3]=save/print  [4]=undo" );
+    iPrintLnBold( "^2Spawn Recorder ON" );
 
     while ( true )
     {
@@ -147,6 +150,29 @@ gf_startSpawnRecorder()
             wait 0.3;
         }
     }
+}
+
+gf_recCreateLegend()
+{
+    if ( isDefined( self.gf_rec_legendElem ) )
+        return;
+
+    legend                = newClientHudElem( self );
+    legend.horzAlign      = "left";
+    legend.vertAlign      = "top";
+    legend.alignX         = "left";
+    legend.alignY         = "top";
+    legend.x              = 10;
+    legend.y              = 200;
+    legend.font           = "smallfixed";
+    legend.fontScale      = 1.0;
+    legend.color          = ( 0.9, 0.9, 0.9 );
+    legend.foreground     = true;
+    legend.hidewheninmenu = false;
+    // [{+actionslot N}] resolves to the player's actual bound key (not hardcoded 1-4).
+    legend setText( "^3SPAWN RECORDER\n^3[{+actionslot 1}]^7 record point\n^3[{+actionslot 2}]^7 toggle team\n^3[{+actionslot 3}]^7 save + print\n^3[{+actionslot 4}]^7 undo last" );
+
+    self.gf_rec_legendElem = legend;
 }
 
 gf_recUpdateHUD()

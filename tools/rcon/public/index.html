@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>GF RCON Tool</title>
+<title>GUNFIGHT — KL9 RCON</title>
+<link id="favicon" rel="icon" href="ops.png">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -25,6 +26,30 @@ input:focus,select:focus{border-color:var(--ac)}
 .bdg{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid;white-space:nowrap}
 .bdg.off{color:var(--dm);border-color:var(--bd)}.bdg.on{color:var(--ok);border-color:var(--ok)}.bdg.err{color:var(--ng);border-color:var(--ng)}
 .bdg.mode-ded{color:var(--ac);border-color:var(--ac)}.bdg.mode-listen{color:var(--wn);border-color:var(--wn)}
+
+/* Brand + reticle emblem */
+.brand{display:flex;align-items:center;gap:9px;padding-right:13px;border-right:1px solid var(--bd);white-space:nowrap}
+.emblem{color:var(--ac);flex-shrink:0}
+.brand .emblem{width:27px;height:27px;filter:drop-shadow(0 0 4px rgba(0,180,255,.45))}
+.brand-txt{display:flex;flex-direction:column;line-height:1.05}
+.brand-name{font-size:15px;font-weight:800;letter-spacing:.17em;color:var(--ac)}
+.brand-by{font-size:8.5px;letter-spacing:.24em;color:var(--dm);text-transform:uppercase;margin-top:2px}
+.brand-by b{color:var(--wn);font-weight:800}
+.brand .brand-logo{height:30px;width:auto;flex-shrink:0}
+.sb-foot .brand-logo{height:18px;width:auto;flex-shrink:0}
+/* Logo picker (click the brand) */
+.brand{cursor:pointer;position:relative}
+#logoPicker{position:absolute;top:calc(100% + 7px);left:-4px;display:none;flex-wrap:wrap;gap:7px;width:228px;padding:9px;background:var(--sf2);border:1px solid var(--bd);border-radius:var(--r);box-shadow:0 8px 26px rgba(0,0,0,.6);z-index:9000}
+#logoPicker.open{display:flex}
+.logo-opt{width:46px;height:46px;object-fit:contain;background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:4px;cursor:pointer}
+.logo-opt:hover{border-color:var(--ac)}
+.logo-opt.sel{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac)}
+/* Tab icons */
+.tab .ti{width:13px;height:13px;margin-right:7px;vertical-align:-2px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
+/* Sidebar footer credit */
+.sb-foot{flex-shrink:0;padding:7px 12px;border-top:1px solid var(--bd);display:flex;align-items:center;gap:8px;font-size:10px;font-weight:700;letter-spacing:.16em}
+.sb-foot .emblem{width:15px;height:15px;opacity:.8}
+.sb-foot span{color:var(--ac)}.sb-foot i{font-style:normal;color:var(--wn)}
 
 /* Body */
 .body{display:flex;flex:1;overflow:hidden}
@@ -65,7 +90,7 @@ tr:hover td{background:var(--sf2)}
 .p-ok{color:var(--ok)}.p-mid{color:var(--wn)}.p-bad{color:var(--ng)}
 
 /* Activity log */
-.actlog{height:120px;flex-shrink:0;border-top:1px solid var(--bd);padding:8px 10px;overflow-y:auto;font-size:11px}
+.actlog{height:150px;flex-shrink:0;border-top:1px solid var(--bd);padding:8px 10px;overflow-y:auto;font-size:11px}
 .al-entry{display:flex;gap:6px;padding:2px 0;border-bottom:1px solid rgba(37,40,64,.5)}
 .al-entry:last-child{border-bottom:none}
 .al-time{color:var(--dm);flex-shrink:0;font-family:monospace}
@@ -86,8 +111,34 @@ tr:hover td{background:var(--sf2)}
 .tab-bar::-webkit-scrollbar{height:0}
 .tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--dm);padding:9px 15px;font:700 11px var(--fn);letter-spacing:.06em;cursor:pointer;white-space:nowrap;transition:color .15s,border-color .15s}
 .tab:hover{color:var(--tx)}.tab.active{color:var(--ac);border-bottom-color:var(--ac)}
-.panel{display:none;flex:1;overflow-y:auto;padding:14px;flex-direction:column;gap:12px}
+.panel{display:none;flex:1;overflow-y:auto;padding:18px 14px 14px;flex-direction:column;gap:12px}
 .panel.active{display:flex}
+/* Cap all panels to a readable column, left-aligned next to the sidebar.
+   Shrinks responsively below the cap. */
+#p-match,#p-maps,#p-srv,#p-con{max-width:960px}
+/* SERVER blocks live in one #srv-body wrapper, so space them like the panel's own gap. */
+#srv-body{display:flex;flex-direction:column;gap:12px}
+/* Persistent rail: Match Control + behavior Legend, visible on every page. Default =
+   inline banner at the top of the content; positionRail() promotes it to a fixed column
+   floating in the right black space when the window is wide enough. */
+#rail{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;padding:18px 14px 12px}
+#rail>.block,#rail>.pill-legend{flex:1 1 280px;margin:0}
+#rail.rail-fixed{position:fixed;flex-direction:column;flex-wrap:nowrap;bottom:8px;padding:0;gap:12px;overflow-y:auto;z-index:50}
+#rail.rail-fixed>.block,#rail.rail-fixed>.pill-legend{flex:0 0 auto}
+
+/* Global settings search */
+.gsearch{margin-left:auto;display:flex;align-items:center;flex-shrink:0;padding:0 10px}
+#gSearch{width:188px;font-size:12px;padding:4px 9px}
+.gsr{position:fixed;display:none;background:var(--sf2);border:1px solid var(--bd);border-radius:var(--r);box-shadow:0 8px 24px rgba(0,0,0,.6);z-index:9000;width:348px;max-height:62vh;overflow-y:auto;padding:4px}
+.gsr.open{display:block}
+.gsr-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 9px;border-radius:4px;cursor:pointer}
+.gsr-item:hover,.gsr-item.sel{background:var(--bd)}
+.gsr-lbl{font-size:12px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.gsr-dvar{font-family:monospace;font-size:10px;color:var(--dm);margin-left:6px}
+.gsr-loc{font-size:9px;font-weight:700;letter-spacing:.05em;color:var(--ac);white-space:nowrap;flex-shrink:0}
+.gsr-empty{padding:8px 9px;color:var(--dm);font-style:italic;font-size:12px}
+@keyframes gsrflash{0%{background:rgba(0,180,255,.4)}100%{background:transparent}}
+.gsr-flash{animation:gsrflash 1.7s ease-out}
 
 /* Buttons */
 button{font:600 13px var(--fn);cursor:pointer;border-radius:var(--r);border:1px solid transparent;padding:6px 13px;transition:opacity .15s,background .15s}
@@ -105,12 +156,33 @@ button:disabled{opacity:.35;cursor:not-allowed}
 /* Layout helpers */
 .block{background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:10px 12px}
 .btitle{font-size:10px;font-weight:700;letter-spacing:.12em;color:var(--dm);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--bd)}
+/* Collapsible sections — click a block title to fold/unfold it (state persisted). */
+.btitle{cursor:pointer;user-select:none;position:relative;padding-right:16px;transition:color .12s}
+.btitle:hover{color:var(--tx)}
+.btitle::after{content:'▾';position:absolute;right:1px;top:0;font-size:10px;color:var(--dm);transition:transform .15s}
+.block.collapsed .btitle::after{transform:rotate(-90deg)}
+.block.collapsed .btitle{margin-bottom:0;padding-bottom:0;border-bottom:none}
+.block.collapsed>*:not(.btitle){display:none}
 .srow{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd)}
 .srow:last-child{border-bottom:none;padding-bottom:0}.srow:first-child{padding-top:0}
 .slbl{flex:1;font-size:13px}.shint{color:var(--dm);font-size:11px;min-width:110px;text-align:right}
+/* Any hint/state text that follows a toggle renders to the toggle's LEFT (toggle ordered last). */
+.srow label.tog{order:2}.srow .shint,.srow .tlbl{order:1}
 input.num{width:72px}
 input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:none;padding:0}
 .sldval{min-width:42px;text-align:right;color:var(--ac);font-size:12px;font-variant-numeric:tabular-nums}
+/* Behavior pills — when a control takes effect + how long it sticks (see badges()) */
+.pills{display:inline-flex;gap:4px;margin-left:7px;vertical-align:middle}
+.pill{font-size:8.5px;font-weight:700;letter-spacing:.03em;padding:1px 5px;border-radius:8px;border:1px solid;white-space:nowrap;line-height:1.5;cursor:help}
+.pill.eff-live{color:var(--ok);border-color:rgba(46,198,83,.45)}
+.pill.eff-next{color:var(--ac);border-color:rgba(0,180,255,.45)}
+.pill.eff-restart{color:var(--wn);border-color:rgba(255,214,10,.45)}
+.pill.per-dvar{color:#79b8d6;border-color:rgba(121,184,214,.35)}
+.pill.per-transient{color:var(--dm);border-color:var(--bd)}
+.pill.per-client{color:#b18cff;border-color:rgba(177,140,255,.4)}
+.btitle .pills{margin-left:8px}
+.pill-legend{display:flex;flex-wrap:wrap;gap:4px 5px;align-items:center;font-size:11px;padding:7px 11px;background:var(--sf);border:1px solid var(--bd);border-radius:var(--r)}
+.pill-legend .dm{margin-right:6px}.pill-legend .lg-sep{color:var(--bd);margin:0 2px}
 .row{display:flex;gap:8px;align-items:center}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
@@ -205,14 +277,18 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
 .toast.info{border-color:var(--ac)}.toast.ok{border-color:var(--ok);color:var(--ok)}
 .toast.err{border-color:var(--ng);color:var(--ng)}.toast.wn{border-color:var(--wn);color:var(--wn)}
 @keyframes tin{from{transform:translateX(14px);opacity:0}to{transform:translateX(0);opacity:1}}
-::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--bd);border-radius:3px}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track{background:transparent;margin:6px 0}::-webkit-scrollbar-thumb{background:var(--bd);border-radius:4px}
 </style>
 </head>
 <body>
 <div class="root">
 
 <header>
-  <div class="logo">GF RCON</div>
+  <div class="brand" title="Click to change logo" onclick="toggleLogoPicker(event)">
+    <img id="brandLogo" class="brand-logo" src="ops.png" alt="OPS">
+    <span class="brand-txt"><span class="brand-name">GUNFIGHT</span><span class="brand-by">by <b>KL9</b></span></span>
+    <div id="logoPicker"></div>
+  </div>
   <div class="conn-row">
     <input id="iHost" type="text" placeholder="Host" value="127.0.0.1">
     <input id="iPort" type="number" placeholder="Port" value="28960">
@@ -271,19 +347,29 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     <div class="ctitle" style="margin-bottom:4px">ACTIVITY</div>
     <div id="actEntries"></div>
   </div>
+  <div class="sb-foot">
+    <img id="footLogo" class="brand-logo" src="ops.png" alt="">
+    <span>GUNFIGHT <i>by KL9</i></span>
+  </div>
 </aside>
 
 <!-- ── Main ── -->
 <div class="main">
 <div class="tab-bar">
-  <button class="tab active" onclick="tab('match')">MATCH</button>
-  <button class="tab" onclick="tab('maps')">MAPS</button>
-  <button class="tab" onclick="tab('srv')">SERVER</button>
-  <button class="tab" onclick="tab('con')">CONSOLE</button>
+  <button class="tab active" onclick="tab('match')"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4M6 4h11l-2.5 3.5L17 11H6"/></svg>MATCH</button>
+  <button class="tab" onclick="tab('maps')"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s7-7.2 7-13a7 7 0 1 0-14 0c0 5.8 7 13 7 13z"/><circle cx="12" cy="9" r="2.6"/></svg>MAPS</button>
+  <button class="tab" onclick="tab('srv')"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="6" rx="1.6"/><rect x="3.5" y="13" width="17" height="6" rx="1.6"/><path d="M7 7.5h.01M7 16h.01"/></svg>SERVER</button>
+  <button class="tab" onclick="tab('con')"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M7 10l3 2.5-3 2.5M13.5 15.5H17"/></svg>CONSOLE</button>
+  <div class="gsearch">
+    <input id="gSearch" type="text" placeholder="Search settings   /" autocomplete="off" spellcheck="false"
+           oninput="gSearchRun()" onfocus="gSearchRun()" onkeydown="gSearchKey(event)">
+  </div>
 </div>
+<div id="gSearchResults" class="gsr"></div>
 
-<!-- ═══ MATCH ═══ -->
-<div id="p-match" class="panel active">
+<!-- Persistent right-hand rail — Match Control + behavior Legend, visible on every page.
+     Floats in the right black space when wide (positionRail), inline banner on top when narrow. -->
+<div id="rail">
   <div class="block">
     <div class="btitle">MATCH CONTROL</div>
     <div style="display:flex;flex-direction:column;gap:8px">
@@ -298,27 +384,28 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       </div>
     </div>
   </div>
+</div>
+
+<!-- ═══ MATCH ═══ -->
+<div id="p-match" class="panel active">
   <!-- Gunfight round + overtime settings — data-driven from GT_SECTIONS.gf (single
        source of truth, shared with the SERVER tab); populated + live-read by JS. -->
   <div id="mt-gf-body"></div>
   <div class="block">
     <div class="btitle">GAMEPLAY</div>
-    <div class="srow" data-tip="scr_team_maxsize&#10;Players per team max; overflow goes to spectator. 0 = unlimited&#10;Team Spawn Mode 'auto' keys large/small off this"><span class="slbl">Max Team Size</span>
+    <div class="srow" data-eff="next" data-per="dvar" data-tip="scr_team_maxsize&#10;Players per team max; overflow goes to spectator. 0 = unlimited&#10;Team Spawn Mode 'auto' keys large/small off this"><span class="slbl">Max Team Size</span>
       <input id="vTs" class="num ctrl" type="number" value="2" min="1" max="12">
-      <button class="b-ac b-sm ctrl" onclick="sdve('scr_team_maxsize','vTs')">Set</button>      <span class="shint">next round</span></div>
-    <div class="srow" data-tip="scr_team_fftype&#10;0 = off, 1 = on, 2 = reflect, 3 = shared&#10;Toggle sets 0 or 1"><span class="slbl">Friendly Fire</span>
+      <button class="b-ac b-sm ctrl" onclick="sdve('scr_team_maxsize','vTs')">Set</button></div>
+    <div class="srow" data-eff="live" data-per="dvar" data-tip="scr_team_fftype&#10;0 = off, 1 = on, 2 = reflect, 3 = shared&#10;Toggle sets 0 or 1"><span class="slbl">Friendly Fire</span>
       <span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbFF" onchange="applyFF()"><span class="tog-t"></span><span class="tog-th"></span></label>
-      <span id="ffLbl" class="tlbl">OFF</span>
-      <span class="shint">immediate</span></div>
-    <div class="srow" data-tip="level.killstreaksenabled&#10;Runtime level var — bridge: killstreaks_on / killstreaks_off&#10;Disabling also hides killstreak UI"><span class="slbl">Killstreaks</span>
+      <span id="ffLbl" class="tlbl">OFF</span></div>
+    <div class="srow" data-eff="live" data-per="transient" data-tip="level.killstreaksenabled&#10;Runtime level var — bridge: killstreaks_on / killstreaks_off&#10;Disabling also hides killstreak UI"><span class="slbl">Killstreaks</span>
       <span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbKS" onchange="bridge(cbKS.checked?'killstreaks_on':'killstreaks_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
-      <span class="shint">level var</span></div>
-    <div class="srow" data-tip="level.healthRegenDisabled + scr_player_healthregentime&#10;Bridge sets both. On = 5s delay. Off = disabled (GF default)"><span class="slbl">Health Regen</span>
+      <label class="tog ctrl"><input type="checkbox" id="cbKS" onchange="bridge(cbKS.checked?'killstreaks_on':'killstreaks_off')"><span class="tog-t"></span><span class="tog-th"></span></label></div>
+    <div class="srow" data-eff="live" data-per="transient" data-tip="level.healthRegenDisabled + scr_player_healthregentime&#10;Bridge sets both. On = 5s delay. Off = disabled (GF default)"><span class="slbl">Health Regen</span>
       <span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbRegen" onchange="bridge(cbRegen.checked?'regen_on':'regen_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
-      <span class="shint">level var</span></div>
+      <label class="tog ctrl"><input type="checkbox" id="cbRegen" onchange="bridge(cbRegen.checked?'regen_on':'regen_off')"><span class="tog-t"></span><span class="tog-th"></span></label></div>
     <div class="set-all-row"><button class="b-gh b-sm ctrl" data-tip="Write this block&#39;s values to dedicated.cfg (persists across restarts).&#10;A .bak backup is made; takes effect on next server start or `exec dedicated.cfg`." onclick="saveBlockToCfg(this)">💾 Save</button><button class="b-ac b-sm ctrl" onclick="setAllInBlock(this)">Set All</button></div>
   </div>
 
@@ -339,7 +426,7 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
         <option value="allies">Allies</option><option value="axis">Axis</option>
       </select></div>
   </div>
-  <div class="block">
+  <div class="block" data-eff="live" data-per="transient">
     <div class="btitle">DIFFICULTY <span style="font-weight:400;font-size:10px">(GSC bridge)</span></div>
     <div class="drow" data-tip="Bridge: botdiff_easy / botdiff_normal / botdiff_hard / botdiff_fu&#10;Sets bot reaction speed and accuracy via _bot::bot_set_difficulty()">
       <button class="db ctrl" id="d-easy"   onclick="botDiff('easy')">EASY</button>
@@ -349,7 +436,7 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     </div>
   </div>
 
-  <div class="block">
+  <div class="block" data-eff="live" data-per="dvar">
     <div class="btitle">MOVEMENT  <span style="font-weight:400;font-size:10px;color:var(--dm)">affects all players</span></div>
     <div class="slider-row">
       <span class="slbl" style="min-width:120px">Move Speed</span>
@@ -359,8 +446,8 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     </div>
     <div class="slider-row" data-tip="jump_height&#10;Jump impulse height in units. Default: 39">
       <span class="slbl" style="min-width:120px">Jump Height</span>
-      <input type="range" id="sJump" min="1" max="400" value="39" oninput="sv('sJump','vJump')" onchange="sdvv('jump_height',this.value)" class="ctrl">
-      <input type="number" id="vJump" class="num ctrl" value="39" oninput="su('vJump','sJump',1,400)">
+      <input type="range" id="sJump" min="1" max="1000" value="39" oninput="sv('sJump','vJump')" onchange="sdvv('jump_height',this.value)" class="ctrl">
+      <input type="number" id="vJump" class="num ctrl" value="39" oninput="su('vJump','sJump',1,1000)">
       <button class="b-ac b-sm ctrl" onclick="sdve('jump_height','vJump')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('jump_height',39,'vJump','sJump')">↺</button>
     </div>
     <div class="slider-row" data-tip="bg_gravity&#10;Downward acceleration (units/s²). Default: 800. Lower = floatier">
@@ -369,15 +456,11 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       <input type="number" id="vGrav" class="num ctrl" value="800" oninput="su('vGrav','sGrav',10,2000)">
       <button class="b-ac b-sm ctrl" onclick="sdve('bg_gravity','vGrav')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('bg_gravity',800,'vGrav','sGrav')">↺</button>
     </div>
-    <div class="srow" data-tip="timescale&#10;Game simulation speed multiplier. Requires sv_cheats 1. Default: 1">
-      <span class="slbl">Timescale</span>
-      <div class="row" style="gap:4px">
-        <button class="b-gh b-sm ctrl" onclick="sdvv('timescale','0.5')">0.5×</button>
-        <button class="b-gh b-sm ctrl" onclick="sdvv('timescale','0.75')">0.75×</button>
-        <button class="b-gh b-sm ctrl" onclick="sdvv('timescale','1')">1×</button>
-        <button class="b-gh b-sm ctrl" onclick="sdvv('timescale','1.5')">1.5×</button>
-        <button class="b-gh b-sm ctrl" onclick="sdvv('timescale','2')">2×</button>
-      </div>
+    <div class="slider-row" data-tip="timescale&#10;Game simulation speed multiplier. Requires sv_cheats 1.&#10;1 = normal, below 1 = slow-mo, above 1 = fast. Default: 1">
+      <span class="slbl" style="min-width:120px">Timescale</span>
+      <input type="range" id="sTscale" min="0.1" max="3" step="0.05" value="1" oninput="sv('sTscale','vTscale')" onchange="sdvv('timescale',this.value)" class="ctrl">
+      <input type="number" id="vTscale" class="num ctrl" value="1" step="0.05" min="0.1" max="3" oninput="su('vTscale','sTscale',0.1,3)">
+      <button class="b-ac b-sm ctrl" onclick="sdve('timescale','vTscale')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('timescale',1,'vTscale','sTscale')">↺</button>
     </div>
     <div class="srow" data-tip="player_sprintUnlimited&#10;1 = sprint never times out. Default: 0">
       <span class="slbl">Unlimited Sprint</span>
@@ -394,7 +477,7 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     <div class="set-all-row"><button class="b-gh b-sm ctrl" data-tip="Write this block&#39;s values to dedicated.cfg (persists across restarts).&#10;A .bak backup is made; takes effect on next server start or `exec dedicated.cfg`." onclick="saveBlockToCfg(this)">💾 Save</button><button class="b-ac b-sm ctrl" onclick="setAllInBlock(this)">Set All</button></div>
   </div>
 
-  <div class="block">
+  <div class="block" data-eff="live" data-per="dvar">
     <div class="btitle">VIEW  <span style="font-weight:400;font-size:10px;color:var(--dm)">affects all players</span></div>
     <div class="slider-row" data-tip="bg_viewBobAmplitudeBase&#10;Head-bob amplitude while moving. 0 = no bob. Default: 1">
       <span class="slbl" style="min-width:120px">View Bob</span>
@@ -411,7 +494,7 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     <div class="set-all-row"><button class="b-gh b-sm ctrl" data-tip="Write this block&#39;s values to dedicated.cfg (persists across restarts).&#10;A .bak backup is made; takes effect on next server start or `exec dedicated.cfg`." onclick="saveBlockToCfg(this)">💾 Save</button><button class="b-ac b-sm ctrl" onclick="setAllInBlock(this)">Set All</button></div>
   </div>
 
-  <div class="block">
+  <div class="block" data-eff="live" data-per="transient">
     <div class="btitle">PLAYER STATE  <span style="font-weight:400;font-size:10px;color:var(--dm)">all players via GSC bridge</span></div>
     <div class="srow" data-tip="enableInvulnerability() / disableInvulnerability()&#10;Bridge: god_on / god_off — applies to all currently connected players">
       <span class="slbl">God Mode (all)</span>
@@ -419,11 +502,11 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       <label class="tog ctrl"><input type="checkbox" id="cbGod" onchange="bridge(cbGod.checked?'god_on':'god_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
       <span class="shint">immediate</span>
     </div>
-    <div class="srow" data-tip="Refills all primary weapon clips every 0.5s via GSC loop&#10;Bridge: infammo_on / infammo_off">
+    <div class="srow" data-eff="live" data-per="dvar" data-tip="sv_FullAmmo&#10;Infinite ammo for everyone — native no-depletion flag (all weapons + reserve, persists across rounds) plus a one-shot refill of live players so it applies immediately.&#10;Bridge: infammo_on / infammo_off">
       <span class="slbl">Infinite Ammo (all)</span>
       <span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbAmmo" onchange="bridge(cbAmmo.checked?'infammo_on':'infammo_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
-      <span class="shint">0.5s loop</span>
+      <span class="shint">native</span>
     </div>
     <div class="srow" data-tip="Gives: Marathon, Lightweight, Ghost, Sleight of Hand, Steady Aim, Ninja&#10;Bridge: allperks_on / allperks_off">
       <span class="slbl">Perks (all)</span>
@@ -431,11 +514,11 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       <label class="tog ctrl"><input type="checkbox" id="cbPerks" onchange="bridge(cbPerks.checked?'allperks_on':'allperks_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
       <span class="shint">Marathon·Ghost·SoH</span>
     </div>
-    <div class="srow" data-tip="setMatchFlag('radar_allies/axis', 1) — same as a permanent team UAV&#10;Both teams see each other on minimap. Bridge: radar_on / radar_off">
+    <div class="srow" data-eff="live" data-per="dvar" data-tip="scr_game_forceradar&#10;Force UAV for everyone — both teams see each other on the minimap. Sets the stock scr_game_forceradar dvar (persists across rounds) plus live radar match flags so it applies immediately. Save it to cfg via SERVER → Force UAV.&#10;Bridge: radar_on / radar_off">
       <span class="slbl">Radar Always On</span>
       <span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbRadar" onchange="bridge(cbRadar.checked?'radar_on':'radar_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
-      <span class="shint">team-wide</span>
+      <span class="shint">stock UAV</span>
     </div>
     <div class="srow" data-tip="level.gf_headshotsOnly — checked in damage callback&#10;Non-head/helmet hits return 0 damage. Bridge: headshots_on / headshots_off">
       <span class="slbl">Headshots Only</span>
@@ -451,7 +534,7 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     </div>
   </div>
 
-  <div class="block">
+  <div class="block" data-eff="live" data-per="client">
     <div class="btitle">VISUAL TWEAKS  <span style="font-weight:400;font-size:10px;color:var(--dm)">setClientDvar -- all players via bridge</span></div>
     <div class="slider-row" data-tip="r_gamma&#10;Screen brightness multiplier. Default: 1.1 | setClientDvar all players">
       <span class="slbl" style="min-width:130px">Gamma</span>
@@ -494,7 +577,7 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     </div>
   </div>
 
-  <div class="block">
+  <div class="block" data-eff="live" data-per="transient">
     <div class="btitle">HUD ELEMENTS  <span style="font-weight:400;font-size:10px;color:var(--dm)">all players via bridge</span></div>
     <div class="srow" data-tip="ui_gf_self_show (mod dvar)&#10;Shows/hides the bottom self-health bar. Bridge: selfbar_on / selfbar_off">
       <span class="slbl">Self Health Bar</span><span style="flex:1"></span>
@@ -514,16 +597,8 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     </div>
   </div>
 
-  <div class="block">
-    <div class="btitle">PRESETS</div>
-    <div class="three">
-      <button class="b-gh ctrl" data-tip="Restores default T5 movement values&#10;g_speed 190 · jump_height 39 · bg_gravity 800 · timescale 1&#10;sprint_unlimited 0 · fall damage on · view bob on" onclick="applyPreset('stock')">↺ Stock</button>
-      <button class="b-gh ctrl" data-tip="Fast / modern-feeling movement preset&#10;g_speed 220 · sprint_unlimited 1 · no fall damage&#10;player_adsExitDelay 0 (instant ADS cancel)" onclick="applyPreset('modern')">⚡ Modern COD</button>
-      <button class="b-gh ctrl" data-tip="Low gravity fun preset&#10;jump_height 180 · bg_gravity 300 · timescale 0.85&#10;sprint_unlimited 1 · no fall damage" onclick="applyPreset('silly')">🎪 Silly</button>
-    </div>
-  </div>
 
-  <div class="block">
+  <div class="block" data-eff="live" data-per="transient">
     <div class="btitle">VISION FX  <span style="font-weight:400;font-size:10px;color:var(--dm)">VisionSetNaked / setClientDvar — all players via bridge</span></div>
     <div class="srow" data-tip="VisionSetNaked per player (bridge: vision_&lt;set&gt;)&#10;cheat_* sets are always loaded; Normal restores the map default vision">
       <span class="slbl">Vision Set</span>
@@ -545,21 +620,28 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     </div>
   </div>
 
-  <div class="block">
+  <div class="block" data-eff="live" data-per="transient">
     <div class="btitle">SILLY COMBAT  <span style="font-weight:400;font-size:10px;color:var(--dm)">all players via bridge</span></div>
     <div class="srow" data-tip="Every shot traces forward from the eye and detonates on impact&#10;(explosion FX + RadiusDamage). 120ms throttle vs full-auto. Bridge: expbullets_on/off">
       <span class="slbl">Explosive Bullets</span><span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbExp" onchange="bridge(cbExp.checked?'expbullets_on':'expbullets_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
       <span class="shint">boom</span>
     </div>
-    <div class="srow" data-tip="aim_automelee_range&#10;Extends knife-lunge distance. On = 256, Off = 64 (default). setClientDvar via bridge">
-      <span class="slbl">Long Knife</span><span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbLK" onchange="bridge('longknife_'+(cbLK.checked?'256':'64'))"><span class="tog-t"></span><span class="tog-th"></span></label>
-      <span class="shint">lunge 256</span>
+    <div class="slider-row" data-tip="gf_expbullets_radius&#10;Blast radius of Explosive Bullets in units (50-600). Default 200. Read live each shot, so it applies immediately while Explosive Bullets is on.">
+      <span class="slbl" style="min-width:120px">Blast Radius</span>
+      <input type="range" id="sExpR" min="50" max="600" step="10" value="200" oninput="sv('sExpR','vExpR')" onchange="sdvv('gf_expbullets_radius',this.value)" class="ctrl">
+      <input type="number" id="vExpR" class="num ctrl" value="200" min="50" max="600" oninput="su('vExpR','sExpR',50,600)">
+      <button class="b-ac b-sm ctrl" onclick="sdve('gf_expbullets_radius','vExpR')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('gf_expbullets_radius',200,'vExpR','sExpR')">↺</button>
+    </div>
+    <div class="slider-row" data-tip="aim_automelee_range&#10;Knife-lunge distance in units. 64 = stock, higher = longer reach. setClientDvar to all players via bridge: longknife_N">
+      <span class="slbl" style="min-width:120px">Melee Lunge Range</span>
+      <input type="range" id="sLK" min="64" max="512" step="4" value="64" oninput="sv('sLK','vLK')" onchange="bridge('longknife_'+this.value)" class="ctrl">
+      <input type="number" id="vLK" class="num ctrl" value="64" min="64" max="512" oninput="su('vLK','sLK',64,512)">
+      <button class="b-ac b-sm ctrl" onclick="bridge('longknife_'+g('vLK').value)">Set</button>      <button class="b-gh b-sm ctrl" onclick="bridge('longknife_64');g('vLK').value=g('sLK').value=64">↺</button>
     </div>
   </div>
 
-  <div class="block">
+  <div class="block" data-eff="live" data-per="transient">
     <div class="btitle">SILLY EXTRAS  <span style="font-weight:400;font-size:10px;color:var(--dm)">all players via bridge</span></div>
     <div class="srow" data-tip="Continuous mild EarthQuake on every player's camera — wobble without fighting input&#10;Bridge: drunk_on/off">
       <span class="slbl">Drunk Mode</span><span style="flex:1"></span>
@@ -614,11 +696,11 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     <div class="row" style="margin-top:8px">
       <button class="b-ac ctrl" data-tip="set g_gametype + map <id> (RCON commands)&#10;Sends gametype then map load for the first entry in the queue" onclick="qSendNext()">▶ Send Next</button>
       <button class="b-gh ctrl" data-tip="Clears the local map queue (no server command sent)&#10;Removes all pending maps from the queue list" onclick="qClear()">Clear Queue</button>
-      <label class="tog" style="margin-left:auto" title="Auto-send on map change">
+      <span class="tlbl" style="margin-left:auto;margin-right:6px;font-size:11px">Auto-advance</span>
+      <label class="tog" title="Auto-send on map change">
         <input type="checkbox" id="cbAuto" onchange="toggleAutoQ()">
         <span class="tog-t"></span><span class="tog-th"></span>
       </label>
-      <span class="tlbl" style="margin-left:4px;font-size:11px">Auto-advance</span>
     </div>
   </div>
 
@@ -750,33 +832,24 @@ const API='http://127.0.0.1:3000/api';
 
 // ─── Maps data ────────────────────────────────────────────────────────────────
 const MAPS=[
+  // Base game (14) — all gunfight-ready
   {id:'mp_array',n:'Array',gf:1},{id:'mp_cairo',n:'Havana',gf:1},
   {id:'mp_cosmodrome',n:'Launch',gf:1},{id:'mp_cracked',n:'Cracked',gf:1},
   {id:'mp_crisis',n:'Crisis',gf:1},{id:'mp_duga',n:'Grid',gf:1},
-  {id:'mp_firingrange',n:'Firing Range',gf:0},{id:'mp_hanoi',n:'Hanoi',gf:1},
+  {id:'mp_firingrange',n:'Firing Range',gf:1},{id:'mp_hanoi',n:'Hanoi',gf:1},
   {id:'mp_havoc',n:'Jungle',gf:1},{id:'mp_mountain',n:'Summit',gf:1},
-  {id:'mp_nuked',n:'Nuketown',gf:0},{id:'mp_radiation',n:'Radiation',gf:1},
-  {id:'mp_russianbase',n:'WMD',gf:1},{id:'mp_silo',n:'Silo',gf:0},
-  {id:'mp_villa',n:'Villa',gf:1},{id:'mp_zoo',n:'Zoo',gf:0},
-  {id:'mp_berlinwall2',n:'Berlin Wall',gf:0,dlc:1},{id:'mp_discovery',n:'Discovery',gf:0,dlc:1},
-  {id:'mp_kowloon',n:'Kowloon',gf:0,dlc:1},{id:'mp_stadium',n:'Stadium',gf:0,dlc:1},
-  {id:'mp_gridlock',n:'Convoy',gf:0,dlc:1},{id:'mp_hotel',n:'Hotel',gf:0,dlc:1},
-  {id:'mp_drivein',n:'Drive-In',gf:0,dlc:1},{id:'mp_area51',n:'Hangar 18',gf:0,dlc:1},
-  {id:'mp_golfcourse',n:'Hazard',gf:0,dlc:1},
+  {id:'mp_nuked',n:'Nuketown',gf:1},{id:'mp_radiation',n:'Radiation',gf:1},
+  {id:'mp_russianbase',n:'WMD',gf:1},{id:'mp_villa',n:'Villa',gf:1},
+  // First Strike (4)
+  {id:'mp_berlinwall2',n:'Berlin Wall',gf:1,dlc:1},{id:'mp_discovery',n:'Discovery',gf:1,dlc:1},
+  {id:'mp_kowloon',n:'Kowloon',gf:1,dlc:1},{id:'mp_stadium',n:'Stadium',gf:1,dlc:1},
+  // Escalation (4)
+  {id:'mp_gridlock',n:'Convoy',gf:1,dlc:1},{id:'mp_hotel',n:'Hotel',gf:1,dlc:1},
+  {id:'mp_outskirts',n:'Stockpile',gf:1,dlc:1},{id:'mp_zoo',n:'Zoo',gf:1,dlc:1},
+  // Annihilation (4)
+  {id:'mp_drivein',n:'Drive-In',gf:1,dlc:1},{id:'mp_area51',n:'Hangar 18',gf:1,dlc:1},
+  {id:'mp_golfcourse',n:'Hazard',gf:1,dlc:1},{id:'mp_silo',n:'Silo',gf:1,dlc:1},
 ];
-
-// ─── Presets ─────────────────────────────────────────────────────────────────
-const PRESETS={
-  stock:   ['set g_speed 190','set jump_height 39','set bg_gravity 800','set timescale 1',
-            'set player_sprintUnlimited 0','set player_adsExitDelay 0.4',
-            'set bg_fallDamageMinHeight 256','set bg_fallDamageMaxHeight 512',
-            'set bg_viewBobAmplitudeBase 1'],
-  modern:  ['set g_speed 220','set jump_height 39','set bg_gravity 800','set timescale 1',
-            'set player_sprintUnlimited 1','set player_adsExitDelay 0',
-            'set bg_fallDamageMinHeight 9999','set bg_fallDamageMaxHeight 9999'],
-  silly:   ['set g_speed 190','set jump_height 180','set bg_gravity 300','set timescale 0.85',
-            'set player_sprintUnlimited 1','set bg_fallDamageMinHeight 9999','set bg_fallDamageMaxHeight 9999'],
-};
 
 // ─── Set All ──────────────────────────────────────────────────────────────────
 function sdve(dv,id){sdvv(dv,g(id).value);}
@@ -1027,6 +1100,106 @@ function tab(n){
   document.querySelectorAll('.tab')[i].classList.add('active');
 }
 
+// ─── Global settings search ───────────────────────────────────────────────────
+// Indexes every labelled control in the MATCH + SERVER tabs (DOM scan), plus the
+// per-gametype dvars that aren't rendered until their mode is picked (from the data
+// model). Typing filters by label / dvar / section / tooltip; picking a result jumps
+// to its tab (switching the SERVER gametype dropdown if needed) and flashes the row.
+let _gsIndex=[], _gsResults=[], _gsSel=-1;
+// Text of an element minus any injected behavior pills.
+function _gsClean(el){ if(!el) return ''; const c=el.cloneNode(true); c.querySelectorAll('.pills').forEach(p=>p.remove()); return c.textContent.replace(/\s+/g,' ').trim(); }
+// Best-effort dvar name for a row: the set* call it drives, else the tooltip's first line.
+function _gsDvar(row){
+  const h=row.innerHTML;
+  let m=h.match(/sdve?\('([^']+)'/)||h.match(/sdvv\('([^']+)'/);
+  if(m) return m[1];
+  const first=((row.getAttribute('data-tip')||'').split(/&#10;|\n/)[0]||'').trim();
+  return /^[a-z_][a-z0-9_]*$/i.test(first)?first:'';
+}
+function buildSearchIndex(){
+  _gsIndex=[];
+  document.querySelectorAll('#p-match .srow, #p-match .slider-row, #p-srv .srow, #p-srv .slider-row').forEach(row=>{
+    const lblEl=row.querySelector('.slbl'); if(!lblEl) return;
+    const label=_gsClean(lblEl); if(!label) return;
+    const blk=row.closest('.block'); const block=blk?_gsClean(blk.querySelector('.btitle')):'';
+    const tab=row.closest('#p-srv')?'srv':'match';
+    const dvar=_gsDvar(row);
+    const tip=(row.getAttribute('data-tip')||'').replace(/&#10;/g,' ');
+    _gsIndex.push({label,dvar,block,tab,el:row,hay:(label+' '+dvar+' '+block+' '+tip).toLowerCase()});
+  });
+  // Per-gametype dvars (gf excluded — it lives in the MATCH tab) aren't in the DOM
+  // until selected, so index them from the data model and re-render on navigate.
+  Object.keys(GT_SECTIONS).forEach(key=>{
+    if(key==='gf') return;
+    const opt=GT_OPTS.find(o=>o.val===key), gtl=opt?opt.lbl:key;
+    GT_SECTIONS[key].forEach(v=>{
+      if(v.type==='btn'||v.type==='perk') return;
+      _gsIndex.push({label:v.lbl,dvar:v.n,block:gtl.toUpperCase(),tab:'srv',gt:key,
+        hay:(v.lbl+' '+v.n+' '+gtl+' '+(v.tip||'')).toLowerCase()});
+    });
+  });
+}
+function _gsScore(e,q){
+  let s=0; const l=e.label.toLowerCase(), d=(e.dvar||'').toLowerCase();
+  if(l.startsWith(q)) s+=100; else if(l.includes(q)) s+=40;
+  if(d===q) s+=120; else if(d.startsWith(q)) s+=70; else if(d.includes(q)) s+=30;
+  return s;
+}
+function gSearchRun(){
+  const inp=g('gSearch'), box=g('gSearchResults'), raw=inp.value.trim(), q=raw.toLowerCase();
+  if(!q){ box.classList.remove('open'); return; }
+  const terms=q.split(/\s+/);
+  _gsResults=_gsIndex.filter(e=>terms.every(t=>e.hay.includes(t)))
+                     .sort((a,b)=>_gsScore(b,q)-_gsScore(a,q)).slice(0,14);
+  _gsSel=_gsResults.length?0:-1;
+  box.innerHTML=_gsResults.length
+    ? _gsResults.map((e,i)=>`<div class="gsr-item${i===0?' sel':''}" onmousedown="event.preventDefault();gSearchGo(${i})">`
+        +`<span class="gsr-lbl">${x(e.label)}${e.dvar?`<span class="gsr-dvar">${x(e.dvar)}</span>`:''}</span>`
+        +`<span class="gsr-loc">${e.tab==='srv'?'SERVER':'MATCH'} › ${x(e.block)}</span></div>`).join('')
+    : `<div class="gsr-empty">No settings match “${x(raw)}”</div>`;
+  const r=inp.getBoundingClientRect();
+  box.style.top=(r.bottom+4)+'px'; box.style.right=(window.innerWidth-r.right)+'px';
+  box.classList.add('open');
+}
+function _gsMove(d){
+  const items=g('gSearchResults').querySelectorAll('.gsr-item'); if(!items.length) return;
+  if(items[_gsSel]) items[_gsSel].classList.remove('sel');
+  _gsSel=(_gsSel+d+items.length)%items.length;
+  items[_gsSel].classList.add('sel'); items[_gsSel].scrollIntoView({block:'nearest'});
+}
+function gSearchKey(e){
+  const box=g('gSearchResults');
+  if(e.key==='Escape'){ g('gSearch').value=''; box.classList.remove('open'); g('gSearch').blur(); return; }
+  if(!box.classList.contains('open')) return;
+  if(e.key==='ArrowDown'){ e.preventDefault(); _gsMove(1); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); _gsMove(-1); }
+  else if(e.key==='Enter'){ e.preventDefault(); if(_gsSel>=0) gSearchGo(_gsSel); }
+}
+function gSearchGo(i){
+  const e=_gsResults[i]; if(!e) return;
+  g('gSearchResults').classList.remove('open');
+  tab(e.tab);
+  let el=e.el;
+  if(e.gt){                                 // synthetic gametype entry — render its block first
+    buildGtSection(e.gt);
+    const inp=document.getElementById('srv_'+e.dvar.replace(/[^a-zA-Z0-9]/g,'_'));
+    el=inp?inp.closest('.srow'):null;
+  }
+  if(el){
+    el.scrollIntoView({behavior:'smooth',block:'center'});
+    el.classList.remove('gsr-flash'); void el.offsetWidth; el.classList.add('gsr-flash');
+    setTimeout(()=>el.classList.remove('gsr-flash'),1800);
+  }
+  g('gSearch').blur();
+}
+// "/" focuses search from anywhere; click outside closes the dropdown.
+document.addEventListener('keydown',e=>{
+  if(e.key==='/' && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)){ e.preventDefault(); g('gSearch').focus(); }
+});
+document.addEventListener('click',e=>{
+  if(!e.target.closest('.gsearch') && !e.target.closest('#gSearchResults')) g('gSearchResults').classList.remove('open');
+});
+
 // ─── Gunfight ────────────────────────────────────────────────────────────────
 async function sdv(dv,id){
   const v=g(id).value;
@@ -1084,7 +1257,7 @@ async function broadcastMsg(){
 // Perks the GF loadout already grants every spawn. Toggling one of these OFF
 // goes in the force-OFF list; toggling a non-base perk ON goes in force-ON.
 // The loadout applies base perks, then ON list, then OFF list (OFF wins).
-const BASE_PERKS=['specialty_movefaster','specialty_fallheight','specialty_longersprint','specialty_armorvest','specialty_flakjacket','specialty_fastweaponswitch'];
+const BASE_PERKS=['specialty_movefaster','specialty_fallheight','specialty_longersprint','specialty_armorvest','specialty_flakjacket'];
 async function perkTog(){
   const on=[],off=[];
   document.querySelectorAll('[data-perk]').forEach(cb=>{
@@ -1211,23 +1384,6 @@ async function toggleFallDmg(){
   await batchCmds([`set bg_fallDamageMinHeight ${on?256:9999}`,`set bg_fallDamageMaxHeight ${on?512:9999}`],50);
   actLog('Fall damage '+(on?'ON':'OFF'),on?'ok':'wn');
 }
-async function applyPreset(key){
-  const cmds=PRESETS[key];if(!cmds)return;
-  const r=await batchCmds(cmds,50);
-  if(r.ok){
-    actLog('Preset: '+key,'ok');toast('Preset: '+key,'ok');
-    // Sync UI sliders after preset
-    const vals={stock:{g_speed:190,jump_height:39,bg_gravity:800},
-                modern:{g_speed:220,jump_height:39,bg_gravity:800},
-                silly:{g_speed:190,jump_height:180,bg_gravity:300}};
-    const v=vals[key];if(v){
-      g('vSpeed').value=g('sSpeed').value=v.g_speed;
-      g('vJump').value=g('sJump').value=v.jump_height;
-      g('vGrav').value=g('sGrav').value=v.bg_gravity;
-    }
-  }else toast('Preset failed','err');
-}
-
 // ─── Dev ─────────────────────────────────────────────────────────────────────
 async function customDv(){
   const n=g('dvName').value.trim(),v=g('dvVal').value.trim();
@@ -1324,25 +1480,25 @@ renderQueue();
 
 // ─── Server CFG panel ────────────────────────────────────────────────────────
 const SRV_SECTIONS = [
-  { title: 'GENERAL', vars: [
+  { title: 'GENERAL', eff: 'live', per: 'dvar', vars: [
     { n:'g_password',               lbl:'Join Password',          type:'text',   def:'',    tip:'g_password\nServer join password. Blank = open to all.' },
     { n:'g_allowvote',              lbl:'Allow Voting',           type:'tog',    def:'1',   tip:'g_allowvote\nLet players call /callvote in console. GF default: 1' },
     { n:'g_inactivity',             lbl:'AFK Kick Timer (s)',     type:'num',    def:'190', tip:'g_inactivity\nSeconds of inactivity before auto-kick. 0 = disabled.' },
     { n:'party_minplayers',         lbl:'Min Players to Start',   type:'num',    def:'2',   tip:'party_minplayers\nMinimum connected players before the match begins. GF default: 2 (set 1 for solo testing).' },
-    { n:'sv_maxclients',            lbl:'Max Players',            type:'num',    def:'24',  tip:'sv_maxclients\nMaximum simultaneous connections the server accepts.' },
+    { n:'sv_maxclients',            lbl:'Max Players',            type:'num',    def:'24',  eff:'restart', tip:'sv_maxclients\nMaximum simultaneous connections the server accepts.' },
     { n:'sv_floodProtect',          lbl:'Chat Flood Protection',  type:'num',    def:'4',   tip:'sv_floodProtect\nThrottle rapid chat messages. Set to 20 when using an RCON tool.' },
     { n:'sv_kickBanTime',           lbl:'Kick Ban Duration (s)',  type:'num',    def:'300', tip:'sv_kickBanTime\nHow long a kicked player must wait before reconnecting.' },
     { n:'sv_maxPing',               lbl:'Max Ping (0=any)',       type:'num',    def:'0',   tip:'sv_maxPing\nKick players whose ping exceeds this. 0 = no limit.' },
-    { n:'sv_pure',                  lbl:'Pure Server',            type:'tog',    def:'0',   tip:'sv_pure\nVerify client files match server files. Blocks modded clients.' },
+    { n:'sv_pure',                  lbl:'Pure Server',            type:'tog',    def:'0',   eff:'restart', tip:'sv_pure\nVerify client files match server files. Blocks modded clients.' },
     { n:'sv_disableClientConsole',  lbl:'Block Player Console',   type:'tog',    def:'0',   tip:'sv_disableClientConsole\nPrevent players from using the in-game console.' },
     { n:'sv_doubleCoDPoints',       lbl:'Double CoD Points',      type:'tog',    def:'1',   tip:'sv_doubleCoDPoints\nAward double CoD Points for completed matches.' },
     { n:'sv_voice',                 lbl:'Voice Chat',             type:'tog',    def:'1',   tip:'sv_voice\nEnable in-game voice chat.' },
-    { n:'sv_voicequality',          lbl:'Voice Quality (1–9)',    type:'num',    def:'5',   tip:'sv_voicequality\n1 = lowest (least bandwidth), 9 = highest quality.' },
+    { n:'sv_voicequality',          lbl:'Voice Quality (1–9)',    type:'num',    def:'9',   tip:'sv_voicequality\n1 = lowest (least bandwidth), 9 = highest quality.' },
     { n:'sv_sayName',               lbl:'Console Chat Name',      type:'text',   def:'Console', tip:'sv_sayName\nName shown in chat when the server sends a message.' },
     { n:'scr_xpscale',              lbl:'XP Multiplier',          type:'num',    def:'1',   tip:'scr_xpscale\nRound-end XP = score × scr_xpscale.' },
     { n:'scr_wagerbet',             lbl:'Wager Bet Amount',       type:'num',    def:'100', tip:'scr_wagerbet\nCoD Points cost to enter a wager match.' },
   ]},
-  { title: 'GAMEPLAY', vars: [
+  { title: 'GAMEPLAY', eff: 'live', per: 'dvar', vars: [
     { n:'g_playerCollision',           lbl:'Player Collision',         type:'sel', def:'0', opts:[['0','Everyone'],['1','Enemies only'],['2','Nobody']], tip:'g_playerCollision\nWho players physically collide with.' },
     { n:'g_playerEjection',            lbl:'Player Ejection Source',   type:'sel', def:'0', opts:[['0','Everyone'],['1','Enemies only'],['2','Nobody']], tip:'g_playerEjection\nWho pushes players apart when overlapping.' },
     { n:'g_playerCollisionEjectSpeed', lbl:'Ejection Speed',           type:'num', def:'25',  tip:'g_playerCollisionEjectSpeed\nHow fast players are pushed apart. Range: 0–32000.' },
@@ -1353,7 +1509,7 @@ const SRV_SECTIONS = [
     { n:'g_fixBulletDamageDupe',       lbl:'Fix Bullet Damage Dupe',   type:'tog', def:'0',   tip:'g_fixBulletDamageDupe\nFix double damage when two players intersect.' },
     { n:'g_fix_entity_leaks',          lbl:'Fix Entity Leaks',         type:'tog', def:'0',   tip:'g_fix_entity_leaks\nFix engine entity leak issues across rounds.' },
   ]},
-  { title: 'GAME RULES', vars: [
+  { title: 'GAME RULES', eff: 'restart', per: 'dvar', vars: [
     { n:'scr_game_bulletdamage',    lbl:'Bullet Damage Scale',    type:'flt',  def:'1.0', tip:'scr_game_bulletdamage\nGlobal bullet damage multiplier. 1.0 = normal, 0.5 = half, 2.0 = double.' },
     { n:'scr_game_onlyheadshots',   lbl:'Headshots Only',         type:'tog',  def:'0',   tip:'scr_game_onlyheadshots\nOnly headshots deal damage.' },
     { n:'scr_game_killstreaks',     lbl:'Killstreaks',            type:'tog',  def:'1',   tip:'scr_game_killstreaks\nEnable killstreak rewards.' },
@@ -1362,15 +1518,15 @@ const SRV_SECTIONS = [
     { n:'scr_game_graceperiod',     lbl:'Grace Period (s)',       type:'num',  def:'15',  tip:'scr_game_graceperiod\nInvincibility window at the start of each round.' },
     { n:'scr_game_prematchperiod',  lbl:'Prematch Period (s)',    type:'num',  def:'15',  tip:'scr_game_prematchperiod\nFreeze time before the round goes live.' },
     { n:'scr_game_allowkillcam',    lbl:'Killcam',                type:'tog',  def:'1',   tip:'scr_game_allowkillcam\nShow killcam replay after death.' },
-    { n:'scr_game_forceradar',      lbl:'Force UAV',              type:'tog',  def:'0',   tip:'scr_game_forceradar\nForce UAV (minimap visibility) always on for all players.' },
+    { n:'scr_game_forceradar',      lbl:'Force UAV',              type:'tog',  def:'0',   tip:'scr_game_forceradar\nForce UAV (minimap visibility) always on for all players.\nSame dvar as MATCH -> Radar Always On (set it live there); use Save here to persist it to cfg.' },
     { n:'scr_game_spectatetype',    lbl:'Spectate Mode',          type:'sel',  def:'1',   opts:[['0','Disabled'],['1','Own team'],['2','All players'],['3','All + freecam']], tip:'scr_game_spectatetype\nWho dead players can spectate.' },
     { n:'scr_game_deathpointloss',  lbl:'Points Lost on Death',  type:'num',  def:'0',   tip:'scr_game_deathpointloss\nScore penalty applied on each death.' },
     { n:'scr_game_suicidepointloss',lbl:'Points Lost on Suicide', type:'num', def:'0',   tip:'scr_game_suicidepointloss\nScore penalty applied on suicide.' },
     { n:'scr_intermission_time',    lbl:'Post-Game Screen (s)',   type:'num',  def:'15',  tip:'scr_intermission_time\nTime spent on the end-of-match scoreboard.' },
     { n:'scr_killstreak_stacking',  lbl:'Killstreak Rollover',    type:'tog',  def:'0',   tip:'scr_killstreak_stacking\nAllow killstreak kills to count toward the next streak.' },
   ]},
-  { title: 'PERK MULTIPLIERS', vars: [
-    { n:'perk_weapSwitchMultiplier',     lbl:'Weapon Switch Speed',  type:'sld', def:'0.833', min:'0.25', max:'1.5', step:'0.001', tip:'perk_weapSwitchMultiplier\nWeapon-swap time multiplier. LOWER = FASTER: 0.833 ≈ 1.2x, 0.5 = 2x, 0.25 = 4x, 1.0 = stock.\nGated by Fast Weapon Switch (granted to all players) — so this is LIVE right now.' },
+  { title: 'PERK MULTIPLIERS', eff: 'live', per: 'dvar', vars: [
+    { n:'perk_weapSwitchMultiplier',     lbl:'Weapon Switch Speed',  type:'sld', def:'1.0', min:'0.25', max:'1.5', step:'0.001', tip:'perk_weapSwitchMultiplier\nWeapon-swap time multiplier. LOWER = FASTER: 0.833 ≈ 1.2x, 0.5 = 2x, 0.25 = 4x, 1.0 = stock (default).\nNeeds Fast Weapon Switch enabled in the PERKS section below — OFF by default, so this slider is inert until you enable it.' },
     { n:'perk_weapReloadMultiplier',     lbl:'Reload Speed',         type:'sld', def:'1.0',   min:'0.25', max:'1.5', step:'0.01',  tip:'perk_weapReloadMultiplier\nReload time multiplier. LOWER = FASTER.\nNeeds Sleight of Hand enabled in the PERKS section below.' },
     { n:'perk_weapAdsMultiplier',        lbl:'ADS Speed',            type:'sld', def:'1.0',   min:'0.25', max:'1.5', step:'0.01',  tip:'perk_weapAdsMultiplier\nAim-down-sight time multiplier. LOWER = FASTER.\nNeeds Sleight of Hand Pro enabled in the PERKS section below.' },
     { n:'perk_sprintMultiplier',         lbl:'Sprint Speed',         type:'sld', def:'1.0',   min:'0.5',  max:'2.0', step:'0.01',  tip:'perk_sprintMultiplier\nSprint speed multiplier. 1.0 = stock. Direction is engine-defined — adjust and test.\nGated by Lightweight (granted to all players).' },
@@ -1385,7 +1541,7 @@ const SRV_SECTIONS = [
     { n:'specialty_longersprint',      lbl:'Marathon',                 type:'perk', def:'1', tip:'specialty_longersprint\nLonger sprint duration. BASE perk.' },
     { n:'specialty_armorvest',         lbl:'Flak Jacket',              type:'perk', def:'1', tip:'specialty_armorvest\nReduced explosive damage. BASE perk.' },
     { n:'specialty_flakjacket',        lbl:'Flak Jacket Pro',          type:'perk', def:'1', tip:'specialty_flakjacket\nThrow back live grenades. BASE perk.' },
-    { n:'specialty_fastweaponswitch',  lbl:'Fast Weapon Switch',       type:'perk', def:'1', tip:'specialty_fastweaponswitch\nGates the Weapon Switch Speed slider above. BASE perk.' },
+    { n:'specialty_fastweaponswitch',  lbl:'Fast Weapon Switch',       type:'perk', def:'0', tip:'specialty_fastweaponswitch\nFaster weapon swaps. OFF by default. Enable to make the Weapon Switch Speed slider work.' },
     { n:'specialty_fastreload',        lbl:'Sleight of Hand',          type:'perk', def:'0', tip:'specialty_fastreload\nFaster reloads. Enable to make the Reload Speed slider work.' },
     { n:'specialty_fastads',           lbl:'Sleight of Hand Pro',      type:'perk', def:'0', tip:'specialty_fastads\nFaster ADS. Enable to make the ADS Speed slider work.' },
     { n:'specialty_gpsjammer',         lbl:'Ghost',                    type:'perk', def:'0', tip:'specialty_gpsjammer\nInvisible to UAV / radar.' },
@@ -1404,7 +1560,7 @@ const SRV_SECTIONS = [
     { n:'specialty_killstreak',        lbl:'Hardline',                 type:'perk', def:'0', tip:'specialty_killstreak\nKillstreaks need one fewer kill. (Killstreaks are off in GF by default.)' },
     { n:'__perkreset',                 lbl:'Reset perks to GF default', type:'btn', act:'perkReset()', btxt:'Reset', tip:'Clears all perk overrides and restores the base Gunfight loadout perks.' },
   ]},
-  { title: 'PLAYER', vars: [
+  { title: 'PLAYER', eff: 'restart', per: 'dvar', vars: [
     { n:'scr_player_maxhealth',       lbl:'Max Health',              type:'num', def:'100', tip:'scr_player_maxhealth\nPlayer HP cap. Default: 100.' },
     { n:'scr_player_healthregentime', lbl:'Health Regen Delay (s)',  type:'num', def:'5',   tip:'scr_player_healthregentime\nSeconds without damage before regen begins. 0 = instant.' },
     { n:'scr_player_numlives',        lbl:'Lives per Player',        type:'num', def:'0',   tip:'scr_player_numlives\nLives per player per game. 0 = unlimited.' },
@@ -1414,18 +1570,18 @@ const SRV_SECTIONS = [
     { n:'scr_player_allowrevive',     lbl:'Allow Revive',            type:'tog', def:'1',   tip:'scr_player_allowrevive\nAllow teammates to revive downed players.' },
     { n:'scr_player_suicidespawndelay',lbl:'Suicide Penalty (s)',    type:'num', def:'0',   tip:'scr_player_suicidespawndelay\nExtra respawn delay after suiciding.' },
   ]},
-  { title: 'TEAMS', vars: [
+  { title: 'TEAMS', eff: 'live', per: 'dvar', vars: [
     { n:'scr_teamchange',             lbl:'Allow Team Change',       type:'tog', def:'1',   tip:'scr_teamchange\n1 = players can switch teams freely.' },
     { n:'scr_teambalance',            lbl:'Block Joining Larger Team',type:'tog',def:'0',   tip:'scr_teambalance\nPrevent players from joining the already-larger team. GF default: 0.' },
     { n:'scr_autobalanceteams',       lbl:'Auto-Balance at Round End',type:'tog',def:'0',   tip:'scr_autobalanceteams\nMove one player to even teams at the end of each round.' },
-    { n:'scr_teamup',                 lbl:'Team-Up Period (s)',      type:'num', def:'0',   tip:'scr_teamup\nSeconds players have to team up before the match starts. 0 = no delay.' },
+    { n:'scr_teamup',                 lbl:'Team-Up Period (s)',      type:'num', def:'10',  tip:'scr_teamup\nSeconds players have to team up before the match starts. 0 = no delay.' },
     { n:'scr_team_fftype',            lbl:'Friendly Fire',           type:'sel', def:'0',   opts:[['0','Off'],['1','On'],['2','Reflect'],['3','Shared']], tip:'scr_team_fftype\n0=off, 1=on, 2=damage reflected to shooter, 3=damage shared with team.' },
     { n:'scr_team_kickteamkillers',   lbl:'Kick Team Killers',       type:'tog', def:'0',   tip:'scr_team_kickteamkillers\nAuto-kick players who team kill.' },
     { n:'scr_team_teamkillspawndelay',lbl:'TK Spawn Penalty (s)',    type:'num', def:'20',  tip:'scr_team_teamkillspawndelay\nExtra respawn delay imposed on team killers.' },
     { n:'scr_team_teamkillpointloss', lbl:'TK Point Loss',          type:'tog', def:'1',   tip:'scr_team_teamkillpointloss\nDeduct points for team kills.' },
     { n:'scr_teamKillPunishCount',    lbl:'TK Kick Threshold',       type:'num', def:'4',   tip:'scr_teamKillPunishCount\nNumber of team kills before automatic punishment.' },
   ]},
-  { title: 'DEBUG', vars: [
+  { title: 'DEBUG', eff: 'live', per: 'dvar', vars: [
     { n:'gf_debug',               lbl:'Debug Level',          type:'sel', def:'0', opts:[['0','Off'],['1','Basic'],['2','Verbose']], tip:'gf_debug\n0 = off, 1 = basic iPrintLn logging, 2 = verbose (spawns, rounds, HUD).' },
     { n:'gf_debug_spawns',        lbl:'Spawn Debug',          type:'tog', def:'0', tip:'gf_debug_spawns\nDraw spawn point entities + team assignments each round.' },
     { n:'gf_debug_hud_pool',      lbl:'HUD Pool Debug',       type:'tog', def:'0', tip:'gf_debug_hud_pool\nLog HUD element pool allocation counts each round.' },
@@ -1435,9 +1591,8 @@ const SRV_SECTIONS = [
     { n:'sv_cheats',              lbl:'Allow Cheat Commands', type:'tog', def:'1', tip:'sv_cheats\nAllow cheat-protected console commands (noclip, god, etc.).' },
     { n:'scr_disable_cac',        lbl:'Disable Class Select', type:'tog', def:'1', tip:'scr_disable_cac\nDisable Create-a-Class; players auto-spawn with the default class.' },
     { n:'scr_disable_weapondrop', lbl:'Disable Weapon Drop',  type:'tog', def:'1', tip:'scr_disable_weapondrop\n1 = weapons do not drop on death.' },
-    { n:'scr_showperksonspawn',   lbl:'Show Perks on Spawn',  type:'tog', def:'1', tip:'scr_showperksonspawn\n1 = display perk icons in HUD after spawning.' },
   ]},
-  { title: 'BOT TUNING', vars: [
+  { title: 'BOT TUNING', eff: 'live', per: 'dvar', vars: [
     { n:'sv_botFov',             lbl:'Bot FOV (deg)',         type:'num', def:'65',   tip:'sv_botFov\nField of view bots use to acquire targets. Higher = they see you sooner.\nCheat-protected — needs sv_cheats 1.' },
     { n:'sv_botMinReactionTime', lbl:'Reaction Min (ms)',     type:'num', def:'500',  tip:'sv_botMinReactionTime\nFastest reaction time on spotting a target. Lower = harder bots.\nCheat-protected — needs sv_cheats 1.' },
     { n:'sv_botMaxReactionTime', lbl:'Reaction Max (ms)',     type:'num', def:'1000', tip:'sv_botMaxReactionTime\nSlowest reaction time. Lower = harder bots.\nCheat-protected — needs sv_cheats 1.' },
@@ -1454,6 +1609,14 @@ const SRV_SECTIONS = [
     { n:'sv_botUseFriendNames',  lbl:'Bots Use Friend Names', type:'tog', def:'1',    tip:'sv_botUseFriendNames\nBots borrow names from your friends list.' },
   ]},
 ];
+// SERVER section order: relocate GAMEPLAY below BOT TUNING, with both perk sections just above it.
+(function reorderSrvSections(){
+  const pull = pred => { const i = SRV_SECTIONS.findIndex(pred); return i >= 0 ? SRV_SECTIONS.splice(i,1)[0] : null; };
+  const gameplay = pull(s => s.title === 'GAMEPLAY');
+  const perkMult = pull(s => s.title === 'PERK MULTIPLIERS');
+  const perks    = pull(s => s.title.indexOf('PERKS') === 0);   // full title has an em dash — match by prefix
+  [perkMult, perks, gameplay].forEach(s => { if (s) SRV_SECTIONS.push(s); });
+})();
 
 // Per-gametype dvar blocks — shown one at a time via the SERVER-tab gametype dropdown
 // (default gf). Keys match GT_OPTS vals. Wager modes inherit the wager framework and
@@ -1462,16 +1625,19 @@ const GT_SECTIONS = {
   gf: [
     { n:'scr_gf_scorelimit',          lbl:'Rounds to Win',            type:'num', def:'6',    tip:'scr_gf_scorelimit\nRound wins needed to win the match.' },
     { n:'scr_gf_roundlimit',          lbl:'Max Rounds (0=off)',       type:'num', def:'0',    tip:'scr_gf_roundlimit\nHard round cap regardless of score. 0 = scorelimit only.' },
-    { n:'scr_gf_roundswitch',         lbl:'Side Switch Every N',      type:'num', def:'2',    tip:'scr_gf_roundswitch\nSwap attacker/defender sides every N rounds. 0 = never.' },
+    { n:'scr_gf_roundswitch',         lbl:'Sides Switch Every (rounds)', type:'num', def:'2',    tip:'scr_gf_roundswitch\nSwap attacker/defender sides every N rounds. 0 = never.' },
+    { n:'scr_gf_roundsperloadout',    lbl:'Rounds Per Loadout',       type:'num', def:'2', tip:'scr_gf_roundsperloadout\nRounds the shared random loadout stays before rotating to the next. Clamped 1-9. Independent of Side Switch.' },
     { n:'scr_gf_teamspawnmode',       lbl:'Team Spawn Mode',          type:'sel', def:'auto', opts:[['auto','Auto (4+ → large)'],['large','Force Large'],['small','Force Small']], tip:'scr_gf_teamspawnmode\nauto = switch by team size; large/small = force the mode.' },
     { n:'scr_gf_timelimit',           lbl:'Round Time — Small (min)', type:'num', def:'0.75', tip:'scr_gf_timelimit\nRound time for SMALL mode (≤3p teams). 0 = no limit.' },
     { n:'scr_gf_timelimit_large',     lbl:'Round Time — Large (min)', type:'num', def:'1.5',  tip:'scr_gf_timelimit_large\nRound time for LARGE mode (4p+ teams).' },
+    { n:'scr_gf_match_prematch_seconds', lbl:'Prematch (s)',          type:'num', def:'15', tip:'scr_gf_match_prematch_seconds\nIntro countdown before the first round of the match (MATCH STARTING IN). Clamped 2-30.' },
+    { n:'scr_gf_prematch_seconds',    lbl:'Preround (s)',             type:'num', def:'7',  tip:'scr_gf_prematch_seconds\nCountdown before each later round (ROUND BEGINS IN). Clamped 2-20.' },
     { n:'scr_gf_overtimelimit',       lbl:'OT Duration — Small (s)',  type:'num', def:'15',   tip:'scr_gf_overtimelimit\nOT countdown for SMALL mode. Pauses while contested.' },
     { n:'scr_gf_overtimelimit_large', lbl:'OT Duration — Large (s)',  type:'num', def:'30',   tip:'scr_gf_overtimelimit_large\nOT countdown for LARGE mode. Pauses while contested.' },
-    { n:'gf_player_health',           lbl:'Player Health',            type:'num', def:'100',  tip:'gf_player_health\nRead at each spawn. Default: 100.' },
     { n:'scr_gf_numlives',            lbl:'Lives / Round',            type:'num', def:'1',    tip:'scr_gf_numlives\nLives per player per round.' },
     { n:'gf_capture_time',            lbl:'OT Capture — Small (s)',   type:'num', def:'3',    tip:'gf_capture_time\nSeconds to capture the OT zone in SMALL mode.' },
     { n:'gf_capture_time_large',      lbl:'OT Capture — Large (s)',   type:'num', def:'5',    tip:'gf_capture_time_large\nSeconds to capture the OT zone in LARGE mode.' },
+    { n:'scr_gf_visualtweaks',        lbl:'Force Video Tweaks',       type:'tog', def:'1',    tip:'scr_gf_visualtweaks\n1 = force video dvars (r_gamma, HDR, lightgrid) on every spawn, overriding each player video setting. 0 = leave player video alone.' },
   ],
   tdm: [
     { n:'scr_tdm_scorelimit', lbl:'Score Limit', type:'num', def:'17500', tip:'scr_tdm_scorelimit\nTeam score needed to win.' },
@@ -1542,7 +1708,117 @@ const GT_SECTIONS = {
 
 // Build one row (control) from a var def. prefix scopes the element id so the same
 // var set can be rendered in two tabs without id collisions (SERVER='srv', MATCH='mt').
-function srvRow(v, prefix) {
+//
+// ── Behavior pills ───────────────────────────────────────────────────────────
+// Two orthogonal axes an operator actually reasons about, surfaced as small tags:
+//   eff (when it takes hold): live | next (next round) | restart (needs map_restart)
+//   per (how long it sticks): dvar (survives map_restart; 💾 Save persists to cfg)
+//                             transient (runtime/bridge state, wiped on map_restart)
+//                             client (pushed per-client via setClientDvar, not saved)
+// A blank axis renders no pill. Data-driven rows get section defaults (srvBlock args),
+// overridable per-var via v.eff / v.per; static blocks use data-eff/data-per + hydrateBadges().
+const _EFF = {
+  live:    ['LIVE',    'Applies immediately to the running match.'],
+  next:    ['NEXT',    'Applies on the next round.'],
+  restart: ['RESTART', 'Needs a map_restart to take effect on the running match.'],
+};
+const _PER = {
+  dvar:      ['STICKY', 'Survives map_restart. Use the block’s 💾 Save to persist across a full server restart.'],
+  transient: ['TEMP',   'Runtime / GSC-bridge state — resets to the mod default on map_restart.'],
+  client:    ['CLIENT', 'Pushed to each client (setClientDvar); not stored server-side.'],
+};
+function badges(eff, per) {
+  let h = '';
+  if (eff && _EFF[eff]) h += `<span class="pill eff-${eff}" title="${_EFF[eff][1]}">${_EFF[eff][0]}</span>`;
+  if (per && _PER[per]) h += `<span class="pill per-${per}" title="${_PER[per][1]}">${_PER[per][0]}</span>`;
+  return h ? `<span class="pills">${h}</span>` : '';
+}
+// One-line key for the pills, injected at the top of the MATCH + SERVER panels.
+const LEGEND_HTML =
+  '<div class="pill-legend"><span class="dm">When:</span>'
+  + '<span class="pill eff-live">LIVE</span><span class="dm">now</span>'
+  + '<span class="pill eff-next">NEXT</span><span class="dm">next round</span>'
+  + '<span class="pill eff-restart">RESTART</span><span class="dm">needs map_restart</span>'
+  + '<span class="lg-sep">|</span><span class="dm">Sticks:</span>'
+  + '<span class="pill per-dvar">STICKY</span><span class="dm">survives map_restart · 💾 Save → cfg</span>'
+  + '<span class="pill per-transient">TEMP</span><span class="dm">resets on map_restart</span>'
+  + '<span class="pill per-client">CLIENT</span><span class="dm">per-client, not saved</span></div>';
+// Static (hand-written) blocks/rows opt in via data-eff/data-per. A .block badges its
+// title (whole section behaves the same); any other element badges its .slbl (mixed rows).
+function hydrateBadges() {
+  document.querySelectorAll('[data-eff],[data-per]').forEach(el => {
+    const pills = badges(el.dataset.eff, el.dataset.per);
+    if (!pills) return;
+    const host = el.classList.contains('block') ? el.querySelector('.btitle') : el.querySelector('.slbl');
+    if (host) host.insertAdjacentHTML('beforeend', pills);
+  });
+  g('rail').insertAdjacentHTML('beforeend', LEGEND_HTML);   // single legend, lives in the rail
+}
+// Promote the rail to a fixed column in the right black space when there's >=240px of room
+// beside the 960px-capped panel; otherwise leave it as an inline banner at the top.
+function positionRail(){
+  const rail=g('rail'); if(!rail) return;
+  const main=document.querySelector('.main'), tb=document.querySelector('.tab-bar');
+  if(!main||!tb) return;
+  const panelRight=main.getBoundingClientRect().left+960;   // capped panel's right edge
+  const avail=window.innerWidth-panelRight-26;
+  if(avail>=240){
+    rail.classList.add('rail-fixed');
+    rail.style.top=(tb.getBoundingClientRect().bottom+18)+'px';
+    rail.style.left=(panelRight+12)+'px';
+    rail.style.width=Math.min(360,avail)+'px';
+  }else{
+    rail.classList.remove('rail-fixed');
+    rail.style.top=rail.style.left=rail.style.width='';
+  }
+}
+window.addEventListener('resize',positionRail);
+
+// ─── Brand logo picker ────────────────────────────────────────────────────────
+// Click the header brand to swap the logo (header + sidebar footer + favicon).
+// Drop any transparent PNG into tools/rcon/public/ and add it to LOGOS below.
+const LOGOS=[
+  {f:'ops.png',      n:'OPS'},
+  {f:'3rch.png',     n:'Treyarch'},
+  {f:'15.png',       n:'Pirate Skull'},
+  {f:'14.png',       n:'Prestige Skull'},
+  {f:'blackops.png', n:'Black Ops'},
+];
+function setLogo(f){
+  ['brandLogo','footLogo'].forEach(id=>{ const e=g(id); if(e) e.src=f; });
+  const fav=g('favicon'); if(fav) fav.href=f;
+  try{ localStorage.setItem('gf_logo',f); }catch(_){}
+  document.querySelectorAll('.logo-opt').forEach(o=>o.classList.toggle('sel',o.dataset.f===f));
+}
+function buildLogoPicker(){
+  const p=g('logoPicker'); if(!p) return;
+  p.innerHTML=LOGOS.map(l=>`<img class="logo-opt" src="${l.f}" data-f="${l.f}" title="${l.n}" alt="${l.n}" onclick="event.stopPropagation();setLogo('${l.f}');g('logoPicker').classList.remove('open')">`).join('');
+  let saved='ops.png'; try{ saved=localStorage.getItem('gf_logo')||'ops.png'; }catch(_){}
+  setLogo(saved);
+}
+function toggleLogoPicker(e){ e.stopPropagation(); g('logoPicker').classList.toggle('open'); }
+document.addEventListener('click',e=>{ if(!e.target.closest('.brand')){ const p=g('logoPicker'); if(p) p.classList.remove('open'); } });
+
+// ─── Collapsible sections ─────────────────────────────────────────────────────
+// Click any block title to fold it. Delegated so it covers static + generated blocks.
+// State is keyed by the title text and persisted in localStorage.
+function _blockKey(b){ const t=b.querySelector('.btitle'); return t ? t.textContent.replace(/\s+/g,' ').trim().slice(0,48) : ''; }
+function saveCollapse(){
+  const c=[]; document.querySelectorAll('.block.collapsed').forEach(b=>{ const k=_blockKey(b); if(k) c.push(k); });
+  try{ localStorage.setItem('gf_collapsed', JSON.stringify(c)); }catch(_){}
+}
+function restoreCollapse(){
+  let saved; try{ saved=JSON.parse(localStorage.getItem('gf_collapsed')||'[]'); }catch(_){ return; }
+  const set=new Set(saved||[]);
+  document.querySelectorAll('.block').forEach(b=>{ if(set.has(_blockKey(b))) b.classList.add('collapsed'); });
+}
+document.addEventListener('click',e=>{
+  const t=e.target.closest('.btitle'); if(!t) return;
+  const b=t.closest('.block'); if(!b) return;
+  b.classList.toggle('collapsed'); saveCollapse();
+});
+
+function srvRow(v, prefix, dEff, dPer) {
   const tip = `data-tip="${v.tip.replace(/"/g,'&quot;').replace(/\n/g,'&#10;')}"`;
   const id  = (prefix || 'srv') + '_' + v.n.replace(/[^a-zA-Z0-9]/g,'_');
   let ctrl;
@@ -1571,11 +1847,13 @@ function srvRow(v, prefix) {
     ctrl = `<input id="${id}" type="number" class="num ctrl" value="${v.def}" step="${step}"><button class="b-ac b-sm ctrl" onclick="sdve('${v.n}','${id}')">Set</button>`;
   }
   const sp = (v.type === 'tog' || v.type === 'perk' || v.type === 'btn') ? '<span style="flex:1"></span>' : '';
-  return `<div class="srow" ${tip}><span class="slbl">${v.lbl}</span>${sp}${ctrl}</div>`;
+  const pills = (v.type === 'perk' || v.type === 'btn') ? '' : badges(v.eff || dEff, v.per || dPer);
+  return `<div class="srow" ${tip}><span class="slbl">${v.lbl}${pills}</span>${sp}${ctrl}</div>`;
 }
-// Build a titled .block from a vars array (adds a Set All row when it has number/text fields)
-function srvBlock(title, vars, prefix) {
-  const rows = vars.map(v => srvRow(v, prefix)).join('');
+// Build a titled .block from a vars array (adds a Set All row when it has number/text fields).
+// dEff/dPer = section-level behavior-pill defaults (per-var v.eff / v.per override them).
+function srvBlock(title, vars, prefix, dEff, dPer) {
+  const rows = vars.map(v => srvRow(v, prefix, dEff, dPer)).join('');
   const hasSetAll = vars.some(v => v.type === 'text' || v.type === 'num' || v.type === 'flt');
   const setAllRow = hasSetAll ? '<div class="set-all-row"><button class="b-gh b-sm ctrl" data-tip="Write this block&#39;s values to dedicated.cfg (persists across restarts).&#10;A .bak backup is made; takes effect on next server start or `exec dedicated.cfg`." onclick="saveBlockToCfg(this)">💾 Save</button><button class="b-ac b-sm ctrl" onclick="setAllInBlock(this)">Set All</button></div>' : '';
   return `<div class="block"><div class="btitle">${title}</div>${rows}${setAllRow}</div>`;
@@ -1585,13 +1863,13 @@ function buildServerPanel() {
   const el = g('srv-body');
   // Top toolbar: live-read + dedicated-only Kill Server
   const toolbar =
-    `<div class="mact" style="margin-bottom:12px">`
+    `<div class="mact">`
     + `<button class="b-gh ctrl" data-tip="Reads every SERVER-tab dvar's current value from the server and fills the fields.&#10;Runs automatically on connect." onclick="readServerDvars()">↻ Read from server</button>`
     + `<span style="flex:1"></span>`
     + `<button class="b-ng ctrl ded-only" data-tip="killserver (RCON console command)&#10;Shuts down the dedicated server process immediately.&#10;(dedicated only — greyed on a listen server)" onclick="cmd('killserver')">Kill Server</button>`
     + `</div>`;
   // Shared (always-visible) sections
-  const shared = SRV_SECTIONS.map(sec => srvBlock(sec.title, sec.vars)).join('');
+  const shared = SRV_SECTIONS.map(sec => srvBlock(sec.title, sec.vars, undefined, sec.eff, sec.per)).join('');
   // Gametype picker (native select, grouped) — swaps the per-mode block below
   let selHtml = '<select id="srvGtSel" class="ctrl" onchange="buildGtSection(this.value)">';
   let grpOpen = false;
@@ -1602,21 +1880,32 @@ function buildServerPanel() {
   if (grpOpen) selHtml += '</optgroup>';
   selHtml += '</select>';
   const gtPicker =
-    `<div class="mact" style="margin-top:4px"><label>Gametype settings</label>${selHtml}`
-    + `<span class="dm" style="font-size:11px">one mode at a time · GF default</span></div>`
+    `<div class="mact"><label>Gametype settings</label>${selHtml}`
+    + `<span class="dm" style="font-size:11px">one mode at a time · gf settings live in the MATCH tab</span></div>`
     + `<div id="srv-gt-body"></div>`;
   el.innerHTML = toolbar + shared + gtPicker;
   buildGtSection('gf');
 }
-// Render a single gametype's dvar block into #srv-gt-body (and live-read it if connected)
+// Render a single gametype's dvar block into #srv-gt-body (and live-read it if connected).
+// gf is intentionally NOT editable here — its round/OT dvars have a single home in the
+// MATCH tab (GT_SECTIONS.gf is consumed once, by buildMatchGf). Selecting gf shows a pointer.
 function buildGtSection(key) {
+  const sel = g('srvGtSel'); if (sel) sel.value = key;
+  if (key === 'gf') {
+    g('srv-gt-body').innerHTML =
+      '<div class="block"><div class="btitle">GUNFIGHT</div>'
+      + '<div class="dm" style="font-style:italic;line-height:1.6">Gunfight round &amp; overtime dvars live in the '
+      + '<b style="color:var(--ac)">MATCH</b> tab → GUNFIGHT block (single source, no duplicate copy here). '
+      + 'Set them there; use that block’s 💾 Save to write them to dedicated.cfg.</div></div>';
+    setCtrl(live); applyServerMode();
+    return;
+  }
   const vars = GT_SECTIONS[key] || [];
   const opt  = GT_OPTS.find(o => o.val === key);
   const title = (opt ? opt.lbl : key).toUpperCase();
   g('srv-gt-body').innerHTML = vars.length
-    ? srvBlock(title, vars)
+    ? srvBlock(title, vars, undefined, 'restart', 'dvar')
     : '<div class="block"><div class="dm" style="font-style:italic">No tunable dvars for this gametype.</div></div>';
-  const sel = g('srvGtSel'); if (sel) sel.value = key;
   setCtrl(live);                 // keep new controls' enabled-state in sync with connection
   applyServerMode();             // re-grey any mode-specific controls after setCtrl re-enabled them
   if (live) readGtDvars(key);
@@ -1648,7 +1937,7 @@ async function readServerDvars() {
   let vars = [];
   SRV_SECTIONS.forEach(s => { vars = vars.concat(s.vars); });
   const gtKey = (g('srvGtSel') && g('srvGtSel').value) || 'gf';
-  vars = vars.concat(GT_SECTIONS[gtKey] || []);
+  if (gtKey !== 'gf') vars = vars.concat(GT_SECTIONS[gtKey] || []);   // gf is read into the MATCH tab, not here
   const names = vars.filter(v => v.type !== 'perk' && v.type !== 'btn').map(v => v.n);
   if (!names.length) return;
   actLog('Reading ' + names.length + ' server dvars…', 'in');
@@ -1673,12 +1962,12 @@ async function readGtDvars(key) {
 
 // ─── MATCH tab GUNFIGHT block (same GT_SECTIONS.gf data, mt_ id prefix) ────────
 function buildMatchGf() {
-  g('mt-gf-body').innerHTML = srvBlock('GUNFIGHT', GT_SECTIONS.gf, 'mt');
+  g('mt-gf-body').innerHTML = srvBlock('GUNFIGHT', GT_SECTIONS.gf, 'mt', 'next', 'dvar');
   setCtrl(live);
 }
 // MATCH tab GAME MODIFIERS block — Plutonium server cheat/fun dvars (mt_ id prefix).
 function buildMatchModifiers() {
-  g('mt-mod-body').innerHTML = srvBlock('GAME MODIFIERS', MATCH_MODIFIERS, 'mt');
+  g('mt-mod-body').innerHTML = srvBlock('GAME MODIFIERS', MATCH_MODIFIERS, 'mt', 'next', 'dvar');
   setCtrl(live);
 }
 // Set every modifier toggle back to 0 (off) and uncheck the UI.
@@ -1725,10 +2014,8 @@ const MATCH_MODIFIERS = [
   { n:'sv_SuperPenetrate',      lbl:'Super Penetration',     type:'tog', def:'0', tip:'sv_SuperPenetrate\nBullets wallbang through almost anything.\nApplies on the next round.' },
   { n:'sv_InfiniteSprint',      lbl:'Infinite Sprint',       type:'tog', def:'0', tip:'sv_InfiniteSprint\nSprint never runs out.\nApplies on the next round.' },
   { n:'sv_InstantReload',       lbl:'Instant Reload',        type:'tog', def:'0', tip:'sv_InstantReload\nReloads complete instantly.\nApplies on the next round.' },
-  { n:'sv_FullAmmo',            lbl:'Full Ammo',             type:'tog', def:'0', tip:'sv_FullAmmo\nAmmo never depletes.\nApplies on the next round.' },
   { n:'sv_QuickHealthRecharge', lbl:'Quick Health Recharge', type:'tog', def:'0', tip:'sv_QuickHealthRecharge\nVery fast health regen.\nNOTE: overrides the Gunfight no-regen rule. Applies on the next round.' },
-  { n:'sv_RadarAlwaysOn',       lbl:'Radar Always On',       type:'tog', def:'0', tip:'sv_RadarAlwaysOn\nPermanent radar for everyone (Plutonium-native).\nOverlaps with GAME RULES → Force UAV and PLAYER STATE → Radar.' },
-  { n:'scr_oldschool',          lbl:'Old School Mode',       type:'tog', def:'0', tip:'scr_oldschool\nClassic high-jump / map-pickup movement feel.\nNeeds a map_restart to take effect.' },
+  { n:'scr_oldschool',          lbl:'Old School Mode',       type:'tog', def:'0', eff:'restart', tip:'scr_oldschool\nClassic high-jump / map-pickup movement feel.\nNeeds a map_restart to take effect.' },
   { n:'__modreset',             lbl:'Reset all modifiers',   type:'btn', act:'resetModifiers()', btxt:'Reset', tip:'Sets every modifier above back to 0 (off).' },
 ];
 
@@ -1736,6 +2023,11 @@ const MATCH_MODIFIERS = [
 buildServerPanel();
 buildMatchGf();
 buildMatchModifiers();
+hydrateBadges();   // badge the static (hand-written) MATCH blocks/rows via their data-eff/data-per
+buildSearchIndex();// index every MATCH + SERVER setting for the global search bar
+positionRail();    // place the Match Control + Legend rail (fixed-right if wide, else inline-top)
+buildLogoPicker(); // brand logo swatches + restore the saved choice
+restoreCollapse(); // re-apply any folded sections from a previous session
 
 let _gtVal = 'gf';
 

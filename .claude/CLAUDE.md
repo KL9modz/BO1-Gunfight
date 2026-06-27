@@ -126,7 +126,7 @@ persists through `map_restart`.
 | `gf_capture_time_large` | 5 | OT zone hold-to-capture seconds, LARGE |
 | `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (see Team-Size Mode) |
 | `scr_team_maxsize` | 0 | `>0` caps players/team; overflow is sent to spectator on spawn (`gf_playerSpawnedCB`) |
-| `perk_weapSwitchMultiplier` | 0.833 | Engine weapon-swap speed (lower = faster); gated by the granted `specialty_fastweaponswitch` |
+| `perk_weapSwitchMultiplier` | (engine default) | Engine weapon-swap speed (lower = faster); gated by `specialty_fastweaponswitch`, which is **OFF by default** (no longer in the base loadout). NOT forced by the mod — stock by default. To use it: enable Fast Weapon Switch via the RCON Perks tab (`gf_perk_on`), then tune the slider; inert until the perk is on |
 | `gf_perk_on` / `gf_perk_off` | "" | Comma-separated perk override lists (RCON-managed) applied AFTER the base perk set in `gf_giveCustomLoadout` |
 
 **Level flags (not dvars), toggled by the dev RCON bridge `_gf_bridge.gsc`:** `level.gf_headshotsOnly`
