@@ -21,6 +21,9 @@ zone/
 # Local-only reference/server files
 dedicated.cfg
 dedicated_sp.cfg
+# Server cfgs: block any real/live cfg (carries rcon_password) but allow sanitized templates.
+server/*.cfg
+!server/*.cfg.example
 gsc resources/
 raw/
 tools/ff_extract/
