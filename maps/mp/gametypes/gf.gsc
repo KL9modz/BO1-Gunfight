@@ -16,14 +16,12 @@ main()
     if ( GetDvar( #"mapname" ) == "mp_background" )
         return;
 
-    // Gunfight never wants the wager framework (lives / betting UI / prematch side
-    // effects) — it forces its own wager *compass* in _gf_wager_zones instead. Force
-    // the flag off here, before _globallogic::init() reads it, so that sharing a
-    // rotation with real wager modes (which set xblive_wagermatch 1 before their map
-    // loads) can't bleed wager behavior into a gf round. gf's own compass override is
-    // unaffected. See "Wager Map Zone" in CLAUDE.md.
-    setDvar( "xblive_wagermatch", "0" );
-
+    // gunfight must run with xblive_wagermatch 0 (no wager lives / betting / prematch),
+    // but it CANNOT be forced here: the map's own main() reads xblive_wagermatch at
+    // level-load, BEFORE this gametype main() runs, so a setDvar here is too late for the
+    // load-time reads (the wager pregame/compass decision). The flag is set BEFORE the map
+    // loads by the RCON map page (0 for gf, 1 for the wager gametypes gun/oic/shrp/hlnd);
+    // see tools/rcon/public/index.html and "Wager Map Zone" in CLAUDE.md.
     maps\mp\gametypes\_globallogic::init();
     maps\mp\gametypes\_callbacksetup::SetupCallbacks();
     maps\mp\gametypes\_globallogic::SetupCallbacks();
