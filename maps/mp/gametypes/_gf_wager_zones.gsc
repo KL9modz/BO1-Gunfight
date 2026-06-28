@@ -88,32 +88,29 @@ gf_setupWagerZoneCompass( mapname )
     maps\mp\_compass::setupMiniMap( material );
 }
 
+// Whitelist of maps whose compass_map_<map>_wager image is actually RESIDENT during
+// a gunfight match, so we only force the wager (zoomed) minimap where it can render;
+// every other map returns "" and keeps its own full compass (never blank).
+//
+// Subtlety learned the hard way: the art existing is not enough — it has to be
+// loaded in gunfight. The 12 base maps keep theirs in the always-loaded
+// common_mp_compass zone, and Silo + Berlin Wall keep theirs somewhere resident too,
+// so all of those bind fine. But First Strike & Escalation maps (Discovery,
+// Convoy=mp_gridlock, Hotel, Stockpile=mp_outskirts, Kowloon, Stadium, Zoo) keep
+// their wager compass in a wager-only zone that gunfight (xblive_wagermatch 0) never
+// loads — the art only appears when you set xblive_wagermatch 1, and precaching
+// can't pull it from an unloaded zone. So those stay OFF this list and show their
+// full compass instead of a blank.
 gf_getWagerCompassMaterial( mapname )
 {
-    if ( mapname == "mp_array" )
-        return "compass_map_mp_array_wager";
-    if ( mapname == "mp_cairo" )
-        return "compass_map_mp_cairo_wager";
-    if ( mapname == "mp_cracked" )
-        return "compass_map_mp_cracked_wager";
-    if ( mapname == "mp_crisis" )
-        return "compass_map_mp_crisis_wager";
-    if ( mapname == "mp_cosmodrome" )
-        return "compass_map_mp_cosmodrome_wager";
-    if ( mapname == "mp_duga" )
-        return "compass_map_mp_duga_wager";
-    if ( mapname == "mp_hanoi" )
-        return "compass_map_mp_hanoi_wager";
-    if ( mapname == "mp_havoc" )
-        return "compass_map_mp_havoc_wager";
-    if ( mapname == "mp_mountain" )
-        return "compass_map_mp_mountain_wager";
-    if ( mapname == "mp_radiation" )
-        return "compass_map_mp_radiation_wager";
-    if ( mapname == "mp_russianbase" )
-        return "compass_map_mp_russianbase_wager";
-    if ( mapname == "mp_villa" )
-        return "compass_map_mp_villa_wager";
+    if ( mapname == "mp_array"       || mapname == "mp_cairo"       ||
+         mapname == "mp_cosmodrome"   || mapname == "mp_cracked"     ||
+         mapname == "mp_crisis"       || mapname == "mp_duga"        ||
+         mapname == "mp_hanoi"        || mapname == "mp_havoc"       ||
+         mapname == "mp_mountain"     || mapname == "mp_radiation"   ||
+         mapname == "mp_russianbase"  || mapname == "mp_villa"       ||
+         mapname == "mp_silo"         || mapname == "mp_berlinwall2" )
+        return "compass_map_" + mapname + "_wager";
 
     return "";
 }

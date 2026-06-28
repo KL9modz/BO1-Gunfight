@@ -1321,13 +1321,20 @@ function mapClick(id,name){
   actLog('Queued: '+name+' ('+gt+')','in');
   toast('Added '+name+' to queue','info');
 }
-async function setGt(){await sdvv('g_gametype',_gtVal);}
+// Wager gametypes (codes match the "— Wager —" group in GT_OPTS) need
+// xblive_wagermatch 1 set BEFORE the map loads — the map's main() reads it to pick
+// the wager minimap + framework, and Plutonium never sets it itself. Everything
+// else, Gunfight included, must be 0. So every gametype/map switch sets the flag
+// first. (gf.gsc also force-resets it to 0 as a belt-and-suspenders.)
+const WAGER_GTS=['gun','oic','shrp','hlnd'];
+function wagerFlag(gt){return WAGER_GTS.indexOf(gt)>=0?'1':'0';}
+async function setGt(){await sdvv('xblive_wagermatch',wagerFlag(_gtVal));await sdvv('g_gametype',_gtVal);}
 async function qSendNext(){
   if(!mapQueue.length){toast('Queue empty','info');return;}
   const{id,name,gt}=mapQueue.shift();
   renderQueue();
-  const r=await batchCmds([`set g_gametype ${gt}`,`map ${id}`],200);
-  r.ok?(actLog('Map → '+name+' ('+gt+')','ok'),toast('Loading '+name+'…','info')):toast('Failed','err');
+  const r=await batchCmds([`set xblive_wagermatch ${wagerFlag(gt)}`,`set g_gametype ${gt}`,`map ${id}`],200);
+  r.ok?(actLog('Map → '+name+' ('+gt+') wager='+wagerFlag(gt),'ok'),toast('Loading '+name+'…','info')):toast('Failed','err');
 }
 function qClear(){mapQueue=[];renderQueue();toast('Queue cleared','info');}
 function toggleAutoQ(){autoQ=g('cbAuto').checked;g('qAutoLbl').textContent=autoQ?'(auto-advance on)':'';}
@@ -1988,7 +1995,7 @@ async function readMatchDvars() {
 // ─── Gametype custom dropdown ─────────────────────────────────────────────────
 const GT_OPTS = [
   { grp: '— Custom —' },
-  { val:'gf',   lbl:'gf — Gunfight',                 desc:'Eliminate enemies to win the round. 6 rounds to win the match. Random loadouts. No respawns. No health regen.' },
+  { val:'gf',   lbl:'gf — Gunfight',                 desc:'Eliminate enemies to win the round. 6 rounds to win. Random loadouts. No respawns. No health regen.' },
   { grp: '— Standard —' },
   { val:'tdm',  lbl:'tdm — Team Deathmatch',          desc:'Straight up Team Deathmatch on all maps. Use teamwork to kill enemy players and reach the score limit.' },
   { val:'dm',   lbl:'dm — Free For All',              desc:'Straight up Deathmatch. Every man for himself. Kill everyone.' },

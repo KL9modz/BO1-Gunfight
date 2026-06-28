@@ -2,7 +2,7 @@
 ---
 ### TODO
 - Refine loadouts
-- Finish/Adjust spawns
+- Adjust spawns & flags
 - Setup a modded T5 Plutonium server on a VPS
 - ship weapon files: ads fov/move speed
 - custom camos
@@ -12,10 +12,6 @@
   the existing `gf_roundRemaining` clock (MM:SS white normally, switch to S.T + orange at <=10s),
   hide the engine timer (`setGameEndTime 0`), and route the OT countdown through the same element
   so round + OT share one style. Moderate work, not a threshold tweak.
-
-BUGS:
-- Bot spawn issue
-- round takes a few extra seconds to end if a team is killed early
 
 DONE:
 - 30s warning replaced by a mod-owned live-round clock (`gf_startRoundClock` etc. in

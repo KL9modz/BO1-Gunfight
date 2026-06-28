@@ -40,8 +40,10 @@ function Copy-Into {
 
 # Cryptographically-random alphanumeric password. Alnum only on purpose: no quotes,
 # spaces, or shell/cfg metacharacters that could break the cfg line or the RCON protocol.
+# Length <= 23: Plutonium truncates the rcon password at 23 chars on login, so any longer
+# value is silently chopped and never matches. 20 keeps a safe margin (~119 bits of entropy).
 function New-RconPassword {
-    param([int]$Length = 28)
+    param([int]$Length = 20)
     $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'.ToCharArray()
     $bytes = New-Object 'System.Byte[]' $Length
     $rng = [System.Security.Cryptography.RNGCryptoServiceProvider]::new()

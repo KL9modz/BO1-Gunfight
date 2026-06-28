@@ -16,6 +16,14 @@ main()
     if ( GetDvar( #"mapname" ) == "mp_background" )
         return;
 
+    // Gunfight never wants the wager framework (lives / betting UI / prematch side
+    // effects) — it forces its own wager *compass* in _gf_wager_zones instead. Force
+    // the flag off here, before _globallogic::init() reads it, so that sharing a
+    // rotation with real wager modes (which set xblive_wagermatch 1 before their map
+    // loads) can't bleed wager behavior into a gf round. gf's own compass override is
+    // unaffected. See "Wager Map Zone" in CLAUDE.md.
+    setDvar( "xblive_wagermatch", "0" );
+
     maps\mp\gametypes\_globallogic::init();
     maps\mp\gametypes\_callbacksetup::SetupCallbacks();
     maps\mp\gametypes\_globallogic::SetupCallbacks();
@@ -293,12 +301,12 @@ onStartGameType()
 
     setClientNameMode( "auto_change" ); 
 
-    maps\mp\gametypes\_globallogic_ui::setObjectiveText( "allies", &"OBJECTIVES_TDM" );
-    maps\mp\gametypes\_globallogic_ui::setObjectiveText( "axis",   &"OBJECTIVES_TDM" );
-    maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "allies", &"OBJECTIVES_TDM_SCORE" );
-    maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "axis",   &"OBJECTIVES_TDM_SCORE" );
-    maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "allies", &"OBJECTIVES_TDM_HINT" );
-    maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "axis",   &"OBJECTIVES_TDM_HINT" );
+    maps\mp\gametypes\_globallogic_ui::setObjectiveText( "allies", &"GF_GAMETYPE_DESC" );
+    maps\mp\gametypes\_globallogic_ui::setObjectiveText( "axis",   &"GF_GAMETYPE_DESC" );
+    maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "allies", &"GF_GAMETYPE_DESC_SCORE" );  // &&1 = scorelimit (the splash passes it; needs a token or it appends the number)
+    maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "axis",   &"GF_GAMETYPE_DESC_SCORE" );
+    maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "allies", &"GF_GAMETYPE_DESC" );
+    maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "axis",   &"GF_GAMETYPE_DESC" );
 
     maps\mp\gametypes\_rank::registerScoreInfo( "win",      5   ); 
     maps\mp\gametypes\_rank::registerScoreInfo( "loss",     1   );

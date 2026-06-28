@@ -33,7 +33,10 @@ REFERENCE           NAME
 LANG_ENGLISH        "GUNFIGHT"
 
 REFERENCE           GAMETYPE_DESC
-LANG_ENGLISH        "Eliminate enemies to win the round. 6 rounds to win the match. Random loadouts. No respawns. No health regen."
+LANG_ENGLISH        "Eliminate enemies to win the round.\n6 rounds to win. Random loadouts.\nNo respawns. No health regen."
+
+REFERENCE           GAMETYPE_DESC_SCORE
+LANG_ENGLISH        "Eliminate enemies to win the round.\n&&1 rounds to win. Random loadouts.\nNo respawns. No health regen."
 
 REFERENCE           GUN_DESC
 LANG_ENGLISH        "Gun Game. Get a kill with each weapon to advance. First player to finish the full weapon sequence wins."
