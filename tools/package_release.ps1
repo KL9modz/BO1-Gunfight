@@ -4,6 +4,7 @@ param(
     [string]$ModName = "mp_gunfight",
     [string]$WorkspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [switch]$SkipBuild,
+    [switch]$KeepComments,
     [switch]$Publish,
     [switch]$PublishBranch,
     [string]$ReleaseBranch = "release"
@@ -20,12 +21,18 @@ $ErrorActionPreference = "Stop"
 #     // #strip-begin ... // #strip-end
 # (markers are inert // comments on main, so the dev build is unaffected).
 #
+# The shipped GSC is also COMMENT-STRIPPED (// line + /* */ block comments) so the
+# public source carries no dev notes/TODOs. Strings that contain comment markers are
+# preserved. 'main' keeps every comment; only these staged copies are stripped. Pass
+# -KeepComments to skip stripping (e.g. when debugging a release build).
+#
 # Usage:
 #   tools\package_release.ps1                        # build the zip
 #   tools\package_release.ps1 1.0.0                  # versioned zip
 #   tools\package_release.ps1 1.0.0 -PublishBranch   # zip + push 'release' branch
 #   tools\package_release.ps1 1.0.0 -Publish         # zip + GitHub Release
 #   tools\package_release.ps1 -SkipBuild             # reuse the existing mod.ff
+#   tools\package_release.ps1 -KeepComments          # keep GSC comments in the public copy
 
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
@@ -45,6 +52,97 @@ function Strip-Markers {
     return [regex]::Replace($Content, "(?ms)^[^\r\n]*#strip-begin\b.*?#strip-end[^\r\n]*\r?\n?", "")
 }
 
+function Strip-Comments {
+    param([string]$Content)
+    # Remove // line comments and /* */ block comments from GSC source, leaving any
+    # comment markers that appear INSIDE "string literals" untouched. A character
+    # scan (not regex) is required to tell a real comment from one inside a string
+    # (e.g. a "http://" or a "//" inside a printed message). Newlines inside block
+    # comments are preserved so line numbers barely shift; the resulting comment-only
+    # lines and trailing blanks are then tidied: trailing whitespace trimmed, runs of
+    # blank lines collapsed to one, leading/trailing blank lines removed. Code and
+    # string literals are emitted verbatim.
+    #
+    # MUST run AFTER Strip-Markers: the #strip-begin/#strip-end marker lines are //
+    # comments but the wiring BETWEEN them is real code -- strip the markers first or
+    # comment removal would delete the markers and leak the dev body.
+    #
+    # Blank-line policy: a line that was ONLY a comment is removed outright (no gap
+    # left behind); a blank line the author actually wrote is kept. Runs of blank
+    # lines collapse to one. The scan preserves newlines 1:1, so each stripped line
+    # maps to its original line and the two cases are distinguishable.
+
+    $eol = "`n"
+    if ($Content.Contains("`r`n")) { $eol = "`r`n" }
+    $text = $Content -replace "`r`n", "`n"
+    $text = $text -replace "`r", "`n"
+
+    $sb = New-Object System.Text.StringBuilder
+    $len = $text.Length
+    $i = 0
+    $state = 0   # 0 = code, 1 = string, 2 = line comment, 3 = block comment
+    while ($i -lt $len) {
+        $c = $text.Substring($i, 1)
+        $d = ''
+        if ($i + 1 -lt $len) { $d = $text.Substring($i + 1, 1) }
+
+        if ($state -eq 0) {
+            if ($c -eq '"') { [void]$sb.Append($c); $state = 1; $i++ }
+            elseif ($c -eq '/' -and $d -eq '/') { $state = 2; $i += 2 }
+            elseif ($c -eq '/' -and $d -eq '*') { $state = 3; $i += 2 }
+            else { [void]$sb.Append($c); $i++ }
+        }
+        elseif ($state -eq 1) {
+            # inside "..."; backslash escapes the next char (e.g. \" does not close)
+            if ($c -eq '\') {
+                [void]$sb.Append($c)
+                if ($d -ne '') { [void]$sb.Append($d) }
+                $i += 2
+            }
+            elseif ($c -eq '"') { [void]$sb.Append($c); $state = 0; $i++ }
+            else { [void]$sb.Append($c); $i++ }
+        }
+        elseif ($state -eq 2) {
+            # line comment: drop until newline (newline itself is kept)
+            if ($c -eq "`n") { [void]$sb.Append($c); $state = 0; $i++ }
+            else { $i++ }
+        }
+        else {
+            # block comment: drop until */, but keep newlines so lines stay aligned
+            if ($c -eq '*' -and $d -eq '/') { $state = 0; $i += 2 }
+            elseif ($c -eq "`n") { [void]$sb.Append($c); $i++ }
+            else { $i++ }
+        }
+    }
+
+    $origLines  = $text -split "`n", -1
+    $stripLines = $sb.ToString() -split "`n", -1
+    $out = New-Object System.Collections.Generic.List[string]
+    $blank = 0
+    for ($k = 0; $k -lt $stripLines.Count; $k++) {
+        $t = $stripLines[$k].TrimEnd()
+        if ($t.Length -eq 0) {
+            # Now-blank line: keep it only if the original line was also blank (an
+            # author blank). If the original had content it was a comment-only line
+            # -> drop it so no gap is left. Blank runs collapse to a single blank.
+            $origBlank = $true
+            if ($k -lt $origLines.Count) { $origBlank = ($origLines[$k].Trim().Length -eq 0) }
+            if ($origBlank) {
+                $blank++
+                if ($blank -le 1) { [void]$out.Add('') }
+            }
+        }
+        else {
+            $blank = 0
+            [void]$out.Add($t)
+        }
+    }
+    while ($out.Count -gt 0 -and $out[0] -eq '') { $out.RemoveAt(0) }
+    while ($out.Count -gt 0 -and $out[$out.Count - 1] -eq '') { $out.RemoveAt($out.Count - 1) }
+
+    return ([string]::Join($eol, $out)) + $eol
+}
+
 function Build-Staging {
     param([string]$StageMod)
 
@@ -59,6 +157,7 @@ function Build-Staging {
         $rel = $file.FullName.Substring($ModRoot.Length).TrimStart('\', '/').Replace('\', '/')
         if ($DevFiles -contains $rel) { continue }
         $content = Strip-Markers ([System.IO.File]::ReadAllText($file.FullName))
+        if (-not $KeepComments) { $content = Strip-Comments $content }
         $dest = Join-Path $StageMod ($rel -replace '/', '\')
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null
         [System.IO.File]::WriteAllText($dest, $content, $Utf8NoBom)
@@ -96,11 +195,12 @@ install the mod locally. Without it you get no HUD, blank text, and missing effe
 ## Source
 
 Full source and development are on the
-[`main`](https://github.com/KL9modz/gunfight/tree/main) branch.
+[`main`](https://github.com/KL9modz/BO1-Gunfight/tree/main) branch.
 '@ -replace '__VERSION__', $Version
     [System.IO.File]::WriteAllText((Join-Path $StageMod "README.md"), $readme, $Utf8NoBom)
 
-    Write-Host ("  staged {0} gameplay GSC file(s); excluded {1} dev file(s)" -f $n, $DevFiles.Count)
+    $commentNote = if ($KeepComments) { "comments kept" } else { "comments stripped" }
+    Write-Host ("  staged {0} gameplay GSC file(s); excluded {1} dev file(s); {2}" -f $n, $DevFiles.Count, $commentNote)
 }
 
 # -- Resolve paths ------------------------------------------------------------
