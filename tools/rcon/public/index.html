@@ -292,7 +292,7 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
   <div class="conn-row">
     <input id="iHost" type="text" placeholder="Host" value="127.0.0.1">
     <input id="iPort" type="number" placeholder="Port" value="28960">
-    <input id="iPass" type="password" placeholder="rcon_password" value="aBHguGlfMQA9NcqEO1YJ5WKm">
+    <input id="iPass" type="password" placeholder="rcon_password" value="">
     <button id="cBtn" onclick="doConn()">Connect</button>
   </div>
   <span id="badge" class="bdg off">● Disconnected</span>
@@ -828,7 +828,7 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
 
 <script>
 'use strict';
-const API='http://127.0.0.1:3000/api';
+const API='/api';   // same-origin (relative): works whether the page is opened via 127.0.0.1 or localhost, no CORS needed
 
 // ─── Maps data ────────────────────────────────────────────────────────────────
 const MAPS=[

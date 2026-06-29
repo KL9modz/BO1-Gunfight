@@ -184,10 +184,13 @@ function upsertCfg(text, dvars, eol) {
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
-function readBody(req) {
+function readBody(req, maxBytes = 262144) {
   return new Promise((resolve) => {
     let body = '';
-    req.on('data', c => { body += c.toString(); });
+    req.on('data', c => {
+      body += c.toString();
+      if (body.length > maxBytes) { body = ''; try { req.destroy(); } catch (_) {} resolve(''); }
+    });
     req.on('end', () => resolve(body));
   });
 }
@@ -195,9 +198,8 @@ function readBody(req) {
 function sendJson(res, data, status = 200) {
   const body = JSON.stringify(data);
   res.writeHead(status, {
-    'Content-Type':                'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Content-Length':              Buffer.byteLength(body),
+    'Content-Type':   'application/json',
+    'Content-Length': Buffer.byteLength(body),
   });
   res.end(body);
 }
@@ -221,10 +223,21 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsed.pathname;
   const query    = Object.fromEntries(parsed.searchParams);
 
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
-    return res.end();
+  // ── Local-only guard (anti-CSRF / anti-DNS-rebinding) ──
+  // The API is loopback-only. Reject any request whose Host header isn't localhost (a
+  // DNS-rebinding page reaches 127.0.0.1 but carries its own hostname as Host), and any
+  // cross-origin request (a visited page POSTing here carries its Origin). Same-origin
+  // browser requests send Host=127.0.0.1:PORT and either no Origin (GET) or the matching
+  // Origin (POST), so the panel itself is unaffected.
+  const allowedHosts   = [`127.0.0.1:${WEB_PORT}`, `localhost:${WEB_PORT}`];
+  const allowedOrigins = [`http://127.0.0.1:${WEB_PORT}`, `http://localhost:${WEB_PORT}`];
+  const hostHdr = String(req.headers.host || '').toLowerCase();
+  const origin  = req.headers.origin;
+  if (!allowedHosts.includes(hostHdr) || (origin && !allowedOrigins.includes(origin))) {
+    res.writeHead(403); return res.end('Forbidden');
   }
+
+  if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
 
   // ── Static files ──
   if (req.method === 'GET' && !pathname.startsWith('/api/')) {
@@ -294,9 +307,15 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && pathname === '/api/savecfg') {
     let body;
     try { body = JSON.parse(await readBody(req)); } catch (_) { return sendJson(res, { ok: false, error: 'Bad JSON' }, 400); }
-    const dvars   = body.dvars || {};
-    const cfgPath = body.path || CFG_PATH;
-    if (!Object.keys(dvars).length) return sendJson(res, { ok: false, error: 'No dvars to save' }, 400);
+    const rawDvars = body.dvars || {};
+    // Only accept identifier-shaped dvar names, and strip quotes/newlines from values, so a
+    // crafted name/value can't inject extra cfg lines or break out of the quoted value.
+    const dvars = {};
+    for (const k of Object.keys(rawDvars)) {
+      if (/^[A-Za-z0-9_]+$/.test(k)) dvars[k] = String(rawDvars[k]).replace(/["\r\n;]/g, '').slice(0, 256);
+    }
+    const cfgPath = CFG_PATH;   // pinned: never honor a caller-supplied path (arbitrary-write guard)
+    if (!Object.keys(dvars).length) return sendJson(res, { ok: false, error: 'No valid dvars to save' }, 400);
     try {
       if (!fs.existsSync(cfgPath)) return sendJson(res, { ok: false, error: 'dedicated.cfg not found at ' + cfgPath }, 404);
       const orig = fs.readFileSync(cfgPath, 'utf8');
