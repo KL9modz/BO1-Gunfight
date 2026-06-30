@@ -149,6 +149,9 @@ function Deploy-Web {
         $extra += @("/XF", "web.config")
         Write-Host "Preserving VPS-owned web.config (none tracked in repo)."
     }
+    # Never purge the ACME http-01 challenge dir (Let's Encrypt renewal). It isn't in the
+    # repo, so excluding the name keeps /MIR from deleting it off the live wwwroot.
+    $extra += @("/XD", ".well-known")
 
     Invoke-Robocopy -Source $webSrc -Destination $WebDest -ExtraArgs $extra
     Write-Host "Website deployed$(if ($DryRun) { ' (dry run - nothing changed)' }). No restart needed (static IIS content)."
