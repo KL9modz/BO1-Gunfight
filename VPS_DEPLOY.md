@@ -151,26 +151,67 @@ small Gunfight lobby with headroom.
     `map_rotate`). With no `rconWhitelistAdd` lines active, any IP may send RCON but the
     password is still required; tighten later by adding your own IP.
 
-## Phase 8 - Player mod distribution (VERIFIED: manual install, NOT FastDL)
+## Phase 8 - Player mod distribution via FastDL (clients auto-download mod.ff on join)
 
-**FastDL does NOT work for T5 mods.** This was tested on the live VPS: `sv_wwwBaseURL` was
-set and IIS served `mod.ff` (HTTP 200 externally), yet the game client made **zero** HTTP
-requests for it (proven in the IIS access log) and still failed with "Invalid download
-response." T5's client cannot download mods. The IIS/`sv_wwwBaseURL` setup is therefore
-**unnecessary for the mod** (it would only matter for custom *maps*). Leave it or remove it.
+> **CORRECTION (2026-06-29):** an earlier version of this doc claimed "FastDL does NOT work
+> for T5 mods." **That was wrong** - it was a misconfiguration, not an engine limit. Plutonium
+> T5 *does* download the server's mod to clients on join, and FastDL (`sv_wwwBaseURL`) is the
+> mechanism. Confirmation: Plutonium staff (Resxt, forum topic 44044, Feb 2026): *"FastDL is how
+> you make the downloading happen"*; the client's own log shows `Requesting mod list -> Received
+> mod dl info response! -> found N files required for mod download`; official docs at
+> `plutonium.pw/docs/server/t5/fastdl`. The old "manual install" path still works as a fallback.
 
-So distribution is **manual** - every player (and you) must do ALL THREE before joining,
-or they get `Invalid download response received from the server`:
+**Why the first attempt failed (all three were true at once):**
+1. `sv_wwwBaseURL` was **empty at runtime** - every server log dump showed `sv_wwwBaseURL ""`.
+   With no URL the client has nowhere to fetch from -> "Invalid download response." This dvar
+   **latches at startup**: it must be in `dedicated.cfg` *before launch*, not set over RCON.
+2. **IIS 404s the `.ff` extension** unless a MIME type is mapped (IIS refuses unknown extensions).
+3. A **version mismatch** (r5316 client vs r5328 server) fails the handshake independently.
 
-19. **Install the mod** - give players the public player package
-    (`tools\package_release.ps1` zip / the `release` branch); they extract it into their own
-    `...\storage\t5\mods\mp_gunfight\`. The client's `mod.ff` must **byte-match** the server's.
-20. **Match the Plutonium version** - the client must be on the **same Plutonium build** as
-    the server (a stale client vs a freshly-installed server fails the mod handshake). Players
-    just run the Plutonium launcher so it updates to the current build.
-21. **Load the mod, then join** - in Black Ops: main menu -> **Mods** -> select `mp_gunfight`
-    -> wait for the yellow **"Mod loaded from mods/mp_gunfight"** -> only then Multiplayer ->
-    Server Browser -> join. Merely having the folder present is NOT enough; it must be loaded.
+The server advertises exactly **1 file** for our mod: `mod.ff` (confirmed in `console_mp.log`:
+`found 1 files required for mod download`). So FastDL only needs to serve that one file.
+
+### One-time VPS setup
+
+19. **Map the `.ff` MIME type in IIS** (so it serves `mod.ff` instead of 404ing). Elevated PowerShell:
+    ```powershell
+    & "$env:windir\system32\inetsrv\appcmd.exe" set config /section:staticContent `
+        /+"[fileExtension='.ff',mimeType='application/octet-stream']"
+    # (add .iwd and .iwi the same way only if you later ship custom maps/assets)
+    ```
+    This adds one `<mimeMap>` to the live (VPS-owned, hardened) `web.config`; the existing
+    HTTPS-redirect/HSTS/GET-HEAD-only rules are unaffected. **Alternative (staff-recommended,
+    zero MIME fuss):** run **HFS** (github.com/rejetto/hfs) on a separate port rooted at a folder
+    containing `mods\`, and point `sv_wwwBaseURL` at `http://gunfight.us:<port>/`.
+20. **Set the base URL in `dedicated.cfg`** (the VPS-local one in `storage\t5\`, the sole owner of
+    `rcon_password` - never published), then restart the server:
+    ```cfg
+    set sv_wwwBaseURL "http://gunfight.us/"
+    ```
+    Trailing slash. The URL must point at the dir that *contains* `mods\`, NOT at `mods\` itself.
+    After restart, confirm the startup console dump shows a **non-empty** `sv_wwwBaseURL` (the
+    old failure was it staying `""`).
+
+### Every deploy (automatic)
+
+21. `.\tools\deploy.ps1 -Mod` now publishes `mod.ff` to `C:\inetpub\wwwroot\mods\mp_gunfight\mod.ff`
+    as part of the mod deploy (the FastDL copy is just `mod.ff` - never the mod tree, so nothing
+    private is exposed). `-Web`'s `/MIR` excludes `mods\`+`usermaps\` so it never deletes it.
+    Pass `-NoFastDL` to skip. **Verify** from an external network that
+    `http://gunfight.us/mods/mp_gunfight/mod.ff` **downloads the binary** (not a 404/HTML page)
+    before announcing the server.
+
+### What players still must do
+
+22. **Match the Plutonium build** - FastDL ships the *mod*, not the *engine*. A stale client
+    (e.g. r5316 vs r5328) still fails the handshake; players just run the launcher so it updates.
+    With a matching build + FastDL, joining from the server browser auto-downloads `mod.ff` -
+    **no manual Mods-menu install required.**
+23. **Fallback (manual install)** if you ever run FastDL off: give players the public package
+    (`tools\package_release.ps1` zip / the `release` branch), extract into their own
+    `...\storage\t5\mods\mp_gunfight\` (their `mod.ff` must byte-match the server's), then load it
+    via main menu -> **Mods** -> `mp_gunfight` -> wait for "Mod loaded from mods/mp_gunfight" ->
+    join. With FastDL working this step is unnecessary.
 
 > Remote `connect <ip>:port` does not work on T5 - players find the server in the in-game
 > browser by its `sv_hostname`. Loopback `connect 127.0.0.1:28960` works only on the VPS itself.

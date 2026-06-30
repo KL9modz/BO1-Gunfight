@@ -8,6 +8,7 @@ param(
     [string]$ReleaseRef = "release",
     [switch]$NoPull,
     [switch]$NoRestart,
+    [switch]$NoFastDL,
     [switch]$DryRun
 )
 
@@ -19,15 +20,30 @@ $ErrorActionPreference = "Stop"
 # copies into the two live locations.
 #
 #   .\tools\deploy.ps1 -Web              # mirror site\wwwroot -> IIS wwwroot (no restart)
-#   .\tools\deploy.ps1 -Mod              # pull GSC + release mod.ff -> Plutonium mods, restart
+#   .\tools\deploy.ps1 -Mod              # pull GSC + release mod.ff -> Plutonium mods,
+#                                        #   publish mod.ff to IIS for FastDL, restart
 #   .\tools\deploy.ps1 -Mod -Web         # both
 #   .\tools\deploy.ps1 -Web -DryRun      # show what robocopy WOULD do (no changes)
 #   .\tools\deploy.ps1 -Mod -NoRestart   # copy mod files but leave the server running
+#   .\tools\deploy.ps1 -Mod -NoFastDL    # deploy the mod but skip the FastDL copy
 #
 # Run as the SAME account that runs the game server (gfsvc) so $env:LOCALAPPDATA
 # resolves to that profile's Plutonium storage. If you run it as a different
 # account, pass -ModDest with the explicit path, e.g.
 #   -ModDest C:\Users\gfsvc\AppData\Local\Plutonium\storage\t5\mods\mp_gunfight
+#
+# FastDL (client auto-download): -Mod also copies the release mod.ff to
+#   <WebDest>\mods\<ModName>\mod.ff  so connecting clients download it over HTTP.
+# Two ONE-TIME VPS prereqs deploy.ps1 does NOT do (they live outside the repo):
+#   1. dedicated.cfg:  set sv_wwwBaseURL "http://gunfight.us/"   (latches at start;
+#      must be in the cfg before launch, NOT set over RCON). Verify the startup
+#      dump shows a non-empty value - an empty sv_wwwBaseURL is why the client got
+#      "Invalid download response" before (it had no URL to fetch from).
+#   2. IIS must serve the .ff MIME type, else IIS 404s mod.ff. One-time:
+#      %windir%\system32\inetsrv\appcmd set config /section:staticContent ^
+#        /+"[fileExtension='.ff',mimeType='application/octet-stream']"
+#      (.iwd/.iwi too if you later ship custom maps). HFS on a separate port is
+#      the staff-recommended alt that auto-handles MIME. See VPS_DEPLOY.md Phase 8.
 #
 # Guardrails:
 #   - Never touches dedicated.cfg (lives in storage\t5\, not the mod folder; it
@@ -35,6 +51,9 @@ $ErrorActionPreference = "Stop"
 #   - Refuses to publish the website if it finds a secret (rcon password etc.).
 #   - tools\rcon\ (the private admin panel) is part of the mod tree, NOT the
 #     site; it is never copied to wwwroot.
+#   - FastDL publishes ONLY mod.ff (the public artifact players already get),
+#     never the mod tree - so .git/tools/notes/etc. are never world-readable.
+#   - -Web's /MIR excludes mods\ + usermaps\ so it never purges the FastDL copy.
 # ---------------------------------------------------------------------------
 
 # Secrets that must never reach the world-readable marketing page. These are
@@ -152,6 +171,10 @@ function Deploy-Web {
     # Never purge the ACME http-01 challenge dir (Let's Encrypt renewal). It isn't in the
     # repo, so excluding the name keeps /MIR from deleting it off the live wwwroot.
     $extra += @("/XD", ".well-known")
+    # Never purge the FastDL payload dirs either - mod.ff (mods\) and any custom maps
+    # (usermaps\) are published by Deploy-Mod, not by the website source, so /MIR
+    # must leave them alone or the next -Web would delete the client-download files.
+    $extra += @("/XD", (Join-Path $WebDest "mods"), (Join-Path $WebDest "usermaps"))
 
     Invoke-Robocopy -Source $webSrc -Destination $WebDest -ExtraArgs $extra
     Write-Host "Website deployed$(if ($DryRun) { ' (dry run - nothing changed)' }). No restart needed (static IIS content)."
@@ -172,6 +195,44 @@ function Get-ReleaseModFf {
     }
     $size = (Get-Item -LiteralPath $modFf).Length
     Write-Host "Got mod.ff ($size bytes)."
+}
+
+function Publish-FastDL {
+    # Copy the (clean, release) mod.ff into the IIS web root so connecting clients
+    # auto-download it: <WebDest>\mods\<ModName>\mod.ff, fetched by the engine at
+    # <sv_wwwBaseURL>/mods/<ModName>/mod.ff. The server's own log confirms the mod
+    # download set is exactly ONE file (mod.ff), so that is all we publish - never
+    # the mod tree (keeps .git/tools/notes out of the world-readable web root).
+    if ($NoFastDL) {
+        Write-Host "Skipping FastDL publish (-NoFastDL)."
+        return
+    }
+    $modFf = Join-Path $RepoRoot "mod.ff"
+    if (!(Test-Path -LiteralPath $modFf)) {
+        Write-Host "No mod.ff in the working tree - skipping FastDL publish."
+        return
+    }
+    if (!(Test-Path -LiteralPath $WebDest)) {
+        Write-Host "Web root not found ($WebDest) - skipping FastDL publish (no IIS on this box?)."
+        return
+    }
+
+    $fastDlDir = Join-Path $WebDest (Join-Path "mods" $ModName)
+    $fastDlFf  = Join-Path $fastDlDir "mod.ff"
+
+    Write-Host ""
+    Write-Host "== FastDL =="
+    if ($DryRun) {
+        Write-Host "(dry run) would publish mod.ff -> $fastDlFf"
+        return
+    }
+    New-Item -ItemType Directory -Force -Path $fastDlDir | Out-Null
+    Copy-Item -LiteralPath $modFf -Destination $fastDlFf -Force
+    $size = (Get-Item -LiteralPath $fastDlFf).Length
+    Write-Host "Published mod.ff ($size bytes) -> $fastDlFf"
+    Write-Host "Client fetch URL: <sv_wwwBaseURL>/mods/$ModName/mod.ff"
+    Write-Host "If clients still can't download: confirm dedicated.cfg has a NON-empty" -ForegroundColor Yellow
+    Write-Host "sv_wwwBaseURL and IIS serves the .ff MIME type (see VPS_DEPLOY.md Phase 8)." -ForegroundColor Yellow
 }
 
 function Restart-Server {
@@ -215,11 +276,14 @@ function Deploy-Mod {
     Invoke-Robocopy -Source $RepoRoot -Destination $ModDest -ExtraArgs (@("/XD") + $xd)
     Write-Host "Mod tree + mod.ff deployed$(if ($DryRun) { ' (dry run - nothing changed)' }) to $ModDest"
 
+    Publish-FastDL
+
     Restart-Server
 
     Write-Host ""
-    Write-Host "NOTE: players must install the matching public package themselves -" -ForegroundColor Yellow
-    Write-Host "      T5 has no client mod download. Re-cut it with package_release.ps1 -Publish." -ForegroundColor Yellow
+    Write-Host "NOTE: clients auto-download mod.ff via FastDL on join (sv_wwwBaseURL)." -ForegroundColor Yellow
+    Write-Host "      They must still run the SAME Plutonium build as the server (FastDL" -ForegroundColor Yellow
+    Write-Host "      ships the mod, not the engine). The release zip remains the fallback." -ForegroundColor Yellow
 }
 
 # --- main -------------------------------------------------------------------
