@@ -29,6 +29,25 @@ Made by **KL9**. Come play and talk shop on **[Discord](https://discord.gg/black
 
 ---
 
+## Features
+
+- **Fully custom HUD** — a built-from-scratch heads-up display showing live health for both teams, plus a full loadout preview at the start of every round.
+- **Custom overtime flag** — a hold-to-capture objective that spawns in the center of the map at the end of a round for either team to take.
+- **Health-based round logic** — if both teams survive and neither captures the overtime flag, the round is decided on time expiry by **total remaining health**. Equal health is a draw.
+- **Per-map spawn & overtime points** — hand-placed spawn and overtime-flag locations for each map.
+- **Map-size scaling** — smaller wager-style map sizes for **3v3 and under**, larger full-map sizes for **4v4 and up**.
+- **Loadout system & camos** — a shared, shuffle-without-repeat loadout pool with randomized weapon camos.
+- **Damage-based scoring** — each player's score value is the total damage they've dealt.
+- **Full bot support** — bots are fully supported.
+
+**Adjustable (server-side):**
+- Loadout rotation and side switching — every **2 rounds** by default.
+- Round timer, overtime timer, and capture time.
+
+Full ruleset and every tunable → **[docs/GAMEPLAY.md](docs/GAMEPLAY.md)** · **[docs/REFERENCE.md](docs/REFERENCE.md)**.
+
+---
+
 ## Documentation
 
 | Doc | What's in it |
@@ -57,33 +76,6 @@ You need a legitimate copy of **Black Ops 1** and the **Plutonium** launcher.
 > T5 has no direct IP connect — find the server in the in-game **browser** by its name. Your installed version must **match the server's**, or the gametype/HUD won't load.
 
 Full walkthrough with graphics and aim tips → **[docs/SETUP.md](docs/SETUP.md)**.
-
----
-
-## How it plays
-
-- **One life per round** — no respawns. Wipe the enemy team to take the round.
-- **Shared random loadout** — both teams get the same primary, secondary, lethal, and tactical each round; the loadout rerolls every couple of rounds.
-- **First to 6 rounds** wins the match; sides switch partway through. Draw rounds don't count toward the limit.
-- **Beat the clock** — if the round timer expires, the team with more total health wins. A tie triggers **overtime**: a hold-to-capture zone (or HP if no capture) decides it.
-- **No killstreaks, no health regen, no weapon drops, no perks shown pre-round.**
-- **Auto map scaling** — small lobbies get tight, curated spawns; 4v4+ opens the whole map.
-
-The complete ruleset → **[docs/GAMEPLAY.md](docs/GAMEPLAY.md)**.
-
----
-
-## Systems at a glance
-
-Black Ops Gunfight is built on the stock T5 Search & Destroy framework with custom systems layered on top. Each is documented in **[docs/REFERENCE.md](docs/REFERENCE.md)**:
-
-- **Round lifecycle & win conditions** — one-life rounds, last-team-standing, timer-expiry-by-HP, 6-round match, side switching, draw handling.
-- **Custom round clock** — a mod-owned timer that replaces the stock final-30s sequence with a `timesup` callout + final-10s countdown beeps.
-- **Overtime & capture zone** — a pausable overtime clock plus a hold-to-capture zone with team-relative icons and an absolute-color ground FX ring.
-- **Team-size mode (large/small)** — auto-selects curated wager-style spawns for small lobbies or the full map for 4v4+, each with its own tunable dvars.
-- **Loadout system & camos** — a shared, shuffle-without-repeat loadout pool with randomized weapon camos.
-- **Menu-driven HUD** — health panel, loadout overview, self bar, and kill popup, rendered via the menu layer to dodge the engine's per-client hudelem render cap.
-- **Curated spawns & wager zones** — per-map spawn/overtime points, and reuse of the stock wager play spaces (kept via the `_gameobjects` allow-list) without enabling the wager framework.
 
 ---
 
