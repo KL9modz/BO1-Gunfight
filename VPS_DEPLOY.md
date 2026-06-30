@@ -274,12 +274,17 @@ controlled and editable like any other file (Claude edits it directly).
 > command and fails with "the module 'tools' could not be loaded."
 
 ### One-time setup on the VPS
-1. Install **Git for Windows**. (Optional: GitHub CLI.)
-2. Store a **read-only** credential so the box can pull but never push: a fine-grained PAT
-   (`contents: read`, single repo `KL9modz/BO1-Gunfight`) or a read-only deploy key, saved in
-   **Windows Credential Manager**.
-3. Clone once to a neutral path, **as the `gfsvc` account** (so `$env:LOCALAPPDATA` resolves
-   to the server's Plutonium storage):
+1. Install **Git for Windows**. (No winget on this Server image - download the latest installer
+   from the git-for-windows GitHub releases, or git-scm.com/download/win.)
+2. **No credentials needed** - `KL9modz/BO1-Gunfight` is a public repo, so `git clone`/`pull`
+   work unauthenticated, and the box has no push credentials = read-only (pull-only) for free.
+   (Only if the repo is ever made private: add a read-only fine-grained PAT or deploy key in
+   Windows Credential Manager.)
+3. Clone once to a neutral path, **as the account that runs the game server** (so a plain
+   `.\tools\deploy.ps1 -Mod` resolves `$env:LOCALAPPDATA` to that account's Plutonium storage).
+   The hardening ideal is a low-priv `gfsvc` user; **on this box the server runs as
+   `Administrator`**, so run deploys from an elevated Administrator session (`-Mod` then needs no
+   `-ModDest`). `.\tools\vps_setup.ps1` prints the right command for whichever account you use.
    ```powershell
    git clone -b main https://github.com/KL9modz/BO1-Gunfight.git C:\gfdeploy\BO1-Gunfight
    ```
@@ -288,8 +293,8 @@ controlled and editable like any other file (Claude edits it directly).
    The deploy clone must be on `main`; on an existing clone, switch with `git checkout main`.
    `deploy.ps1 -Mod` then fetches `mod.ff` from the `release` branch on demand (it is a gitignored
    binary on `main`).
-4. Confirm `gfsvc` has write access to `C:\inetpub\wwwroot` and the Plutonium mods path (grant
-   ACLs if needed).
+4. Confirm the deploy account has write access to `C:\inetpub\wwwroot` and the Plutonium mods
+   path (Administrator already does; a low-priv `gfsvc` may need ACL grants).
 
 ### Deploy a WEBSITE change (no restart)
 ```powershell
@@ -300,8 +305,8 @@ tools\push_all.ps1 "web: <what changed>"
 ```
 Mirrors `site\wwwroot\` -> `C:\inetpub\wwwroot`. Secret-scans first and **refuses to publish**
 if it finds an RCON password / secret. The VPS-owned hardened `web.config` (Phase 10) is
-preserved (excluded from the mirror unless you deliberately track one). IIS serves the new
-files immediately - just hard-refresh.
+preserved (excluded from the mirror unless you deliberately track one), and the Let's Encrypt
+`.well-known` challenge dir is never purged. IIS serves the new files immediately - just hard-refresh.
 
 ### Deploy a MOD change (restarts the server)
 ```powershell

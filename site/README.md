@@ -30,14 +30,16 @@ folder and **refuses to publish** if it finds one.
 
 ```powershell
 # Laptop — push the change
-tools\push_all.ps1 "web: <what changed>"
+.\tools\push_all.ps1 "web: <what changed>"
 
 # VPS (RDP) — pull and publish (no server restart; static content)
 cd C:\gfdeploy\BO1-Gunfight
-tools\deploy.ps1 -Web
+git pull
+.\tools\deploy.ps1 -Web
 ```
 
-Preview what would change first with `tools\deploy.ps1 -Web -DryRun`.
+Preview what would change first with `.\tools\deploy.ps1 -Web -DryRun`.
+(The leading `.\` is required by Windows PowerShell.)
 
 ## web.config ownership
 
