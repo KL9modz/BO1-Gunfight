@@ -286,6 +286,11 @@ Write-Host ("Zip:    {0} ({1} KB)" -f $zip.FullName, [math]::Round($zip.Length /
 if ($PublishBranch) {
     Write-Host ""
     Write-Host "Publishing snapshot to orphan branch '$ReleaseBranch' ..."
+    # Native git can write warnings to stderr (e.g. "LF will be replaced by CRLF"),
+    # which under ErrorActionPreference=Stop are promoted to a TERMINATING error and
+    # abort the publish before the push. Real failures are still caught by the
+    # explicit $LASTEXITCODE checks + throw below, so relax to Continue here.
+    $ErrorActionPreference = 'Continue'
     $tmpIndex = Join-Path ([System.IO.Path]::GetTempPath()) ("gf_relidx_" + [System.Guid]::NewGuid().ToString("N"))
     $prevIndex = $env:GIT_INDEX_FILE
     try {
@@ -317,6 +322,9 @@ if ($Publish) {
     }
     Write-Host ""
     Write-Host "Publishing GitHub Release '$Version' ..."
+    # gh writes progress to stderr; relax to Continue so it isn't promoted to a
+    # terminating error (the $LASTEXITCODE check below still catches real failures).
+    $ErrorActionPreference = 'Continue'
     & gh release create $Version $ZipPath --target $ReleaseBranch --title "$ModName $Version" --notes "Gunfight $Version. Install: extract into ...\storage\t5\mods\ then 'loadMod mp_gunfight'. See README.md."
     if ($LASTEXITCODE -ne 0) { throw "gh release create failed (exit $LASTEXITCODE)" }
     Write-Host "Published."
