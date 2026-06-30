@@ -21,11 +21,7 @@ One life per round. A shared random loadout every round. No killstreaks, no heal
 
 ## About
 
-**Black Ops Gunfight** brings an authentic **Gunfight** mode to **Call of Duty: Black Ops 1**, running on the **Plutonium T5** client. It strips multiplayer down to its core: two teams, **one life each per round**, and the **same loadout** for everyone — so rounds are won by gunskill and positioning, not classes or streaks. First team to **6 rounds** wins.
-
-There's **no health regen, no custom loadouts, and no killstreaks** — just the gunfight. Both teams share the same **hand-crafted loadout** that **rotates every 2 rounds**, and each round is decided by the team with the **most health remaining** when the clock runs out — or by **whoever captures the overtime flag**.
-
-It scales to your lobby, too: **smaller wager-style map sizes for 3v3 and under**, and **larger full-map sizes for 4v4 and up**.
+**Black Ops Gunfight** brings the authentic **Gunfight** game mode to **Call of Duty: Black Ops 1** on **Plutonium T5** for PC. Two teams face off using a **shared loadout** that **rotates every other round**. **No health regeneration, no custom loadouts, no killstreaks.** If time expires, capture the **overtime flag** to secure the round. Otherwise, the team with the **most remaining health** wins the round. The first team to win **6 rounds** wins the match.
 
 Made by **KL9**. Come play and talk shop on **[Discord](https://discord.gg/blackops)**.
 

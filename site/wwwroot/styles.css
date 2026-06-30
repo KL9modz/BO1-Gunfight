@@ -69,8 +69,17 @@ a:hover { color: var(--accent); text-decoration: underline; }
 .btn-ghost { border: 1px solid var(--edge); color: var(--text); }
 .btn-ghost:hover { border-color: var(--accent); color: var(--text); text-decoration: none; }
 
+/* ---- About ---- */
+.about { margin-top: 48px; }
+.about p {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.98rem;
+}
+
 /* ---- How to play ---- */
 .how { margin-top: 48px; }
+.about h2,
 .how h2 {
   margin: 0 0 18px;
   font-size: 0.85rem;
