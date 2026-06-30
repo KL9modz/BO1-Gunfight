@@ -26,7 +26,7 @@ adversarially-reviewed analysis). Every apply-to-production command below was ch
 | P2.1 CAA | ✅ done | `0 issue "letsencrypt.org"` (issuewild/iodef skipped). |
 | P2.3 DNSSEC | ✅ done | GoDaddy-managed; DS (2, algo 13) at `.us`, 4 DNSKEYs, queries validate (`AD:true`). **If NS ever change, disable DNSSEC first.** |
 | P2.2 SPF + DMARC | ✅ done | `v=spf1 -all`; DMARC `p=reject; sp=reject; adkim=s; aspf=s`. No MX. |
-| **P1.5 disable TLS 1.0/1.1** | ⬜ remaining | only step needing a **reboot** (game-server downtime + manual bat relaunch). |
+| **P1.5 disable TLS 1.0/1.1** | ✅ done | snapshot-protected reboot 2026-06-29; verified externally — TLS 1.0/1.1 rejected, 1.2 accepted, site 200. (Server 2019 → 1.3 left off.) |
 | Registrar lock + 2FA | ⬜ confirm in portal | `.us` RDAP wouldn't answer remotely — verify GoDaddy Domain lock = ON + 2FA on account & Gmail. |
 
 > **Auto-rollback firewall pattern (used for P0.2, reuse for any remote firewall change):** before
