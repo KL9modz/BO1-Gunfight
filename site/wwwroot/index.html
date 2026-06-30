@@ -3,249 +3,48 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Black Ops Gunfight - Black Ops 1 Plutonium Game Mode</title>
-  <meta name="description" content="Black Ops Gunfight - a round-based, one-life Gunfight game mode for Call of Duty: Black Ops 1 on Plutonium T5. Shared random loadouts, six rounds to win. Install the mod and join the server." />
+  <title>Gunfight &mdash; Black Ops 1 (Plutonium)</title>
+  <meta name="description" content="Gunfight &mdash; a Call of Duty: Black Ops 1 game mode on Plutonium. How to play, plus our Discord and GitHub." />
   <meta name="theme-color" content="#0d0f12" />
-
-  <!-- Open Graph / social preview -->
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Black Ops Gunfight" />
-  <meta property="og:description" content="Round-based, one life, shared random loadouts. A Gunfight game mode for Black Ops 1 on Plutonium." />
+  <meta property="og:title" content="Gunfight &mdash; Black Ops 1 (Plutonium)" />
+  <meta property="og:description" content="A Black Ops 1 Gunfight game mode on Plutonium. How to play, Discord, and GitHub." />
   <meta property="og:url" content="https://gunfight.us/" />
-
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ff7a1a'/%3E%3Ctext x='16' y='22' font-family='Segoe UI,Arial' font-size='15' font-weight='800' text-anchor='middle' fill='%231a1106'%3EGF%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="site-header">
-    <nav class="nav container">
-      <a class="brand" href="#top">
-        <span class="brand-mark">GF</span>
-        <span class="brand-text">Black&nbsp;Ops&nbsp;Gunfight</span>
-      </a>
-      <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
-        <span></span><span></span><span></span>
-      </button>
-      <ul class="nav-links">
-        <li><a href="#features">Features</a></li>
-        <li><a href="#install">Install</a></li>
-        <li><a href="#setup">Setup</a></li>
-        <li><a href="#server">Server</a></li>
-        <li><a href="#media">Media</a></li>
-        <li><a class="nav-cta" href="https://github.com/KL9modz/BO1-Gunfight/releases" target="_blank" rel="noopener">Download</a></li>
-      </ul>
-    </nav>
-  </header>
+  <main class="wrap">
 
-  <main id="top">
-    <!-- Hero -->
-    <section class="hero">
-      <div class="container hero-inner">
-        <p class="eyebrow">Call of Duty: Black Ops 1 &middot; Plutonium T5</p>
-        <h1 class="hero-title"><span class="hero-title-top">Black Ops</span>GUNFIGHT</h1>
-        <p class="hero-sub">
-          Round-based. One life. A shared random loadout every round.
-          No killstreaks, no health regen, no second chances &mdash; just the gunfight.
-        </p>
-        <div class="hero-actions">
-          <a class="btn btn-primary" href="#install">Install &amp; join</a>
-          <a class="btn btn-ghost" href="https://discord.gg/blackops" target="_blank" rel="noopener">Join the Discord</a>
-        </div>
-        <p class="hero-note">Free &middot; open source &middot; runs on the Plutonium BO1 client</p>
+    <header class="hero">
+      <h1 class="title">Black Ops Gunfight</h1>
+      <p class="sub">Call of Duty: Black Ops 1 &middot; Plutonium</p>
+      <div class="links">
+        <a class="btn btn-primary" href="https://discord.gg/blackops" target="_blank" rel="noopener">Discord</a>
+        <a class="btn btn-ghost" href="https://github.com/KL9modz/BO1-Gunfight" target="_blank" rel="noopener">GitHub</a>
       </div>
+    </header>
+
+    <section class="how">
+      <h2>How to play</h2>
+      <ol class="steps">
+        <li>
+          <span class="n">1</span>
+          <p>Download <a href="https://plutonium.pw" target="_blank" rel="noopener">Plutonium</a>.</p>
+        </li>
+        <li>
+          <span class="n">2</span>
+          <p>Download Black Ops 1 &mdash; from <a href="https://store.steampowered.com/app/42740/" target="_blank" rel="noopener">Steam</a>, or our <a href="https://discord.gg/blackops" target="_blank" rel="noopener">Discord</a>.</p>
+        </li>
+        <li>
+          <span class="n">3</span>
+          <p>Launch Black Ops with Plutonium. Look for <strong>Gunfight</strong> in the server browser.</p>
+        </li>
+      </ol>
     </section>
 
-    <!-- Features -->
-    <section id="features" class="section">
-      <div class="container">
-        <h2 class="section-title">What makes it Gunfight</h2>
-        <div class="grid features">
-          <article class="card">
-            <h3>One life per round</h3>
-            <p>No respawns. Last team standing takes the round, then the killcam rolls.</p>
-          </article>
-          <article class="card">
-            <h3>Shared random loadout</h3>
-            <p>Everyone gets the same primary, secondary, and equipment each round. The rotation rerolls on a timer &mdash; pure skill, no class grinding.</p>
-          </article>
-          <article class="card">
-            <h3>First to 6 rounds</h3>
-            <p>Win the round, win the match. Sides switch partway through. Draw rounds don't count toward the limit.</p>
-          </article>
-          <article class="card">
-            <h3>Overtime zone</h3>
-            <p>Tied on a timer expiry? Health decides it &mdash; or a capture zone settles overtime when it's close.</p>
-          </article>
-          <article class="card">
-            <h3>No killstreaks, no regen</h3>
-            <p>No streaks, no perks shown pre-round, no health regeneration, no weapon drops. Clean, fair fights.</p>
-          </article>
-          <article class="card">
-            <h3>Auto map scaling</h3>
-            <p>Small lobbies get tight, curated gunfight spawns; 4v4 and up open the whole map automatically.</p>
-          </article>
-        </div>
-      </div>
-    </section>
+    <p class="made">Made by <strong>KL9</strong></p>
 
-    <!-- How to play -->
-    <section id="how" class="section section-alt">
-      <div class="container">
-        <h2 class="section-title">How a match plays out</h2>
-        <ol class="steps">
-          <li><span class="step-n">1</span><div><h3>Spawn with the round's loadout</h3><p>Both teams get the same weapons. Your loadout slides in on the HUD at the start of each round.</p></div></li>
-          <li><span class="step-n">2</span><div><h3>Wipe the other team</h3><p>One life each. Eliminate everyone on the enemy team to win the round before the clock runs out.</p></div></li>
-          <li><span class="step-n">3</span><div><h3>Beat the clock</h3><p>If time expires, the team with more total health wins. If it's tied, overtime decides it.</p></div></li>
-          <li><span class="step-n">4</span><div><h3>First to six wins</h3><p>Take six rounds to win the match. Sides swap so nobody's stuck on the bad spawn.</p></div></li>
-        </ol>
-        <p class="section-more"><a class="link" href="https://github.com/KL9modz/BO1-Gunfight/blob/main/docs/GAMEPLAY.md" target="_blank" rel="noopener">Read the complete ruleset &rarr;</a></p>
-      </div>
-    </section>
-
-    <!-- Install & join -->
-    <section id="install" class="section">
-      <div class="container">
-        <h2 class="section-title">Install &amp; join</h2>
-        <p class="section-lead">
-          Plutonium has <strong>no automatic mod download</strong> &mdash; every player installs the mod locally and must run
-          the <strong>same version as the server</strong>. It takes about a minute.
-        </p>
-        <div class="grid install">
-          <article class="card step-card">
-            <div class="step-n">1</div>
-            <h3>Get Plutonium + BO1</h3>
-            <p>Install the Plutonium launcher and have legitimate Black Ops 1 game files. See the official setup guide.</p>
-            <a class="link" href="https://plutonium.pw/docs/getting-started/" target="_blank" rel="noopener">plutonium.pw setup &rarr;</a>
-          </article>
-          <article class="card step-card">
-            <div class="step-n">2</div>
-            <h3>Download the mod</h3>
-            <p>Grab the latest <code>mp_gunfight</code> package (<strong>v0.5.2</strong>) from the GitHub releases page.</p>
-            <a class="link" href="https://github.com/KL9modz/BO1-Gunfight/releases" target="_blank" rel="noopener">Latest release &rarr;</a>
-          </article>
-          <article class="card step-card">
-            <div class="step-n">3</div>
-            <h3>Drop it in your mods folder</h3>
-            <p>Extract so the folder lands at:</p>
-            <pre class="path"><code>%LOCALAPPDATA%\Plutonium\storage\t5\mods\mp_gunfight</code></pre>
-            <p class="muted">The folder must stay named <code>mp_gunfight</code>.</p>
-          </article>
-          <article class="card step-card">
-            <div class="step-n">4</div>
-            <h3>Load it and join</h3>
-            <p>Launch BO1 multiplayer, open the <strong>Mods</strong> menu and load <strong>mp_gunfight</strong>, then find the server in the <strong>server browser</strong>.</p>
-            <p class="muted">T5 has no direct IP connect &mdash; join from the browser list.</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <!-- Setup tutorial -->
-    <section id="setup" class="section section-alt">
-      <div class="container">
-        <h2 class="section-title">Recommended setup</h2>
-        <p class="section-lead">
-          Optional client tweaks that make BO1 feel a lot better. Open the in-game console with
-          <kbd>~</kbd> and paste these in.
-        </p>
-        <div class="grid setup">
-          <article class="card">
-            <h3>Fix aiming while sprinting</h3>
-            <p>
-              Stock BO1 won't let you aim down sights while the sprint key is held &mdash; you have to
-              release sprint first. This one bind clears sprint the instant you ADS, so you can aim
-              without letting go:
-            </p>
-            <pre class="cmd"><code>bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"</code></pre>
-            <p class="muted">
-              Forces hold-to-ADS (not toggle). If aiming ever stops working after a restart, reopen the
-              console and run <code>exec autoexec</code> &mdash; Plutonium doesn't auto-run it.
-            </p>
-          </article>
-          <article class="card">
-            <h3>Widen your FOV</h3>
-            <p>The default field of view is cramped at 65. Open it up for better awareness:</p>
-            <pre class="cmd"><code>cg_fov 80</code></pre>
-            <p class="muted">Set it once in the console; it sticks across sessions.</p>
-          </article>
-          <article class="card">
-            <h3>Graphics &amp; visibility</h3>
-            <p>
-              Crank <strong>Options &rarr; Graphics</strong> to your taste &mdash; texture and model quality
-              cost little on modern hardware.
-            </p>
-            <p class="muted">
-              You don't need to fiddle with gamma or HDR: the mod sets those each round for consistent
-              visibility, so everyone sees the same.
-            </p>
-          </article>
-        </div>
-        <p class="section-more"><a class="link" href="https://github.com/KL9modz/BO1-Gunfight/blob/main/docs/SETUP.md" target="_blank" rel="noopener">Full setup guide &rarr;</a></p>
-      </div>
-    </section>
-
-    <!-- Server -->
-    <section id="server" class="section">
-      <div class="container">
-        <h2 class="section-title">The server</h2>
-        <div class="server-card card">
-          <dl class="server-info">
-            <div><dt>Name in browser</dt><dd>Gunfight</dd></div>
-            <div><dt>Game</dt><dd>Black Ops 1 (Plutonium T5)</dd></div>
-            <div><dt>Mode</dt><dd>Gunfight</dd></div>
-            <div><dt>Region</dt><dd>Seattle, US</dd></div>
-            <div><dt>How to join</dt><dd>Load the mod, then pick <strong>Gunfight</strong> from the in-game server browser</dd></div>
-          </dl>
-          <p class="muted">
-            Make sure your installed mod version matches the server's, or the gametype and HUD won't load correctly.
-          </p>
-        </div>
-      </div>
-    </section>
-
-    <!-- Media / screenshots -->
-    <section id="media" class="section section-alt">
-      <div class="container">
-        <h2 class="section-title">Screenshots</h2>
-        <p class="section-lead">In-game shots from the server &mdash; more on the way.</p>
-        <div class="grid gallery">
-          <!-- Drop images into assets/ and replace a tile's contents with
-               <img src="assets/shot-1.jpg" alt="..." loading="lazy"> -->
-          <figure class="shot"><span>Coming soon</span></figure>
-          <figure class="shot"><span>Coming soon</span></figure>
-          <figure class="shot"><span>Coming soon</span></figure>
-          <figure class="shot"><span>Coming soon</span></figure>
-          <figure class="shot"><span>Coming soon</span></figure>
-          <figure class="shot"><span>Coming soon</span></figure>
-        </div>
-      </div>
-    </section>
-
-    <!-- Community -->
-    <section id="community" class="community">
-      <div class="container community-inner">
-        <h2>Join the community</h2>
-        <p>Find matches, report issues, and hang out with other players.</p>
-        <div class="community-actions">
-          <a class="btn btn-primary" href="https://discord.gg/blackops" target="_blank" rel="noopener">Join the Discord</a>
-          <a class="btn btn-ghost" href="https://github.com/KL9modz/BO1-Gunfight" target="_blank" rel="noopener">GitHub</a>
-        </div>
-      </div>
-    </section>
   </main>
-
-  <footer class="site-footer">
-    <div class="container footer-inner">
-      <span>&copy; <span id="year">2026</span> Black Ops Gunfight &middot; gunfight.us</span>
-      <nav class="footer-links">
-        <a href="https://github.com/KL9modz/BO1-Gunfight" target="_blank" rel="noopener">GitHub</a>
-        <a href="https://github.com/KL9modz/BO1-Gunfight/blob/main/docs/GAMEPLAY.md" target="_blank" rel="noopener">Docs</a>
-        <a href="https://github.com/KL9modz/BO1-Gunfight/releases" target="_blank" rel="noopener">Download</a>
-        <a href="https://discord.gg/blackops" target="_blank" rel="noopener">Discord</a>
-        <a href="https://plutonium.pw" target="_blank" rel="noopener">Plutonium</a>
-      </nav>
-    </div>
-  </footer>
-
-  <script src="script.js"></script>
 </body>
 </html>
