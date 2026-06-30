@@ -16,7 +16,7 @@ $ErrorActionPreference = "Stop"
 # branch and the Release zip carry the SAME content (branch = browsable + clonable,
 # zip = download). 'main' keeps everything; this script never modifies it.
 #
-# What ships: mod.ff + the gameplay GSC under maps/ + README.md + docs/ (GAMEPLAY.md, SETUP.md).
+# What ships: mod.ff + the gameplay GSC under maps/ + README.md + docs/ (SETUP.md).
 # What is dropped: the dev files below, and any dev wiring wrapped in markers:
 #     // #strip-begin ... // #strip-end
 # (markers are inert // comments on main, so the dev build is unaffected).
@@ -167,16 +167,16 @@ function Build-Staging {
     # No mod.csv: it's a build-time zone-source manifest (linker/mod tools), not
     # read by Plutonium at runtime. Runtime needs only mod.ff + the GSC.
 
-    # -- Player-facing docs: GAMEPLAY + SETUP ---------------------------------
+    # -- Player-facing docs: SETUP -------------------------------------------
     # REFERENCE.md / DEV.md stay main-only; rewrite their inbound links (and the
     # ops docs) in the staged copies to main-branch GitHub URLs so nothing 404s.
-    # GAMEPLAY<->SETUP and ../README.md links stay local (both docs + the
-    # generated README ship, so they resolve inside the release).
+    # SETUP<->../README.md links stay local (the doc + the generated README
+    # ship, so they resolve inside the release).
     $mainBlob = "https://github.com/KL9modz/BO1-Gunfight/blob/main"
     $stageDocs = Join-Path $StageMod "docs"
     New-Item -ItemType Directory -Force -Path $stageDocs | Out-Null
     $docCount = 0
-    foreach ($d in @("GAMEPLAY.md", "SETUP.md")) {
+    foreach ($d in @("SETUP.md")) {
         $src = Join-Path $ModRoot "docs\$d"
         if (!(Test-Path -LiteralPath $src)) { Write-Warning "release doc missing: docs\$d"; continue }
         $c = [System.IO.File]::ReadAllText($src)
@@ -229,12 +229,9 @@ Full walkthrough (graphics, FOV, the aim-while-sprinting fix, troubleshooting): 
 
 One life per round, a shared random loadout, first to 6 round wins, sides switch partway, and overtime decides ties. No killstreaks, no health regen, no perks shown pre-round.
 
-Complete ruleset: **[docs/GAMEPLAY.md](docs/GAMEPLAY.md)**.
-
 ## More
 
 - **Setup guide:** [docs/SETUP.md](docs/SETUP.md)
-- **Gameplay & rules:** [docs/GAMEPLAY.md](docs/GAMEPLAY.md)
 - **Technical reference:** [REFERENCE.md (on main)](https://github.com/KL9modz/BO1-Gunfight/blob/main/docs/REFERENCE.md)
 - **Developer guide:** [DEV.md (on main)](https://github.com/KL9modz/BO1-Gunfight/blob/main/docs/DEV.md)
 - **Full source & development:** the [`main`](https://github.com/KL9modz/BO1-Gunfight/tree/main) branch

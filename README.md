@@ -13,7 +13,7 @@ One life per round. A shared random loadout every round. No killstreaks, no heal
 [![Discord](https://img.shields.io/badge/Discord-join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/blackops)
 [![Website](https://img.shields.io/badge/web-gunfight.us-2ea44f)](https://gunfight.us)
 
-[Play](#-quick-start) · [How it plays](docs/GAMEPLAY.md) · [Setup guide](docs/SETUP.md) · [Discord](https://discord.gg/blackops) · [Download](https://github.com/KL9modz/BO1-Gunfight/releases)
+[Play](#-quick-start) · [Features](#features) · [Setup guide](docs/SETUP.md) · [Discord](https://discord.gg/blackops) · [Download](https://github.com/KL9modz/BO1-Gunfight/releases)
 
 </div>
 
@@ -42,7 +42,7 @@ Made by **KL9**. Come play and talk shop on **[Discord](https://discord.gg/black
 - Loadout rotation and side switching — every **2 rounds** by default.
 - Round timer, overtime timer, and capture time.
 
-Full ruleset and every tunable → **[docs/GAMEPLAY.md](docs/GAMEPLAY.md)** · **[docs/REFERENCE.md](docs/REFERENCE.md)**.
+Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFERENCE.md)**.
 
 ---
 
@@ -51,7 +51,6 @@ Full ruleset and every tunable → **[docs/GAMEPLAY.md](docs/GAMEPLAY.md)** · *
 | Doc | What's in it |
 |---|---|
 | **[docs/SETUP.md](docs/SETUP.md)** | Install Black Ops 1 + Plutonium, install the mod, recommended graphics/FOV/ADS settings, and how to connect. |
-| **[docs/GAMEPLAY.md](docs/GAMEPLAY.md)** | The rules and everything that *defines* Gunfight — rounds, win conditions, loadouts, overtime, team-size modes. |
 | **[docs/REFERENCE.md](docs/REFERENCE.md)** | The full technical reference — every gameplay function, every dvar/variable, and how each system works. |
 | **[docs/DEV.md](docs/DEV.md)** | For contributors — building `mod.ff`, the RCON tools, bots, debug tooling, and the branch/release model. |
 | Self-hosting | Running your own server: **[VPS_DEPLOY.md](VPS_DEPLOY.md)** + **[VPS_HARDENING.md](VPS_HARDENING.md)**. |

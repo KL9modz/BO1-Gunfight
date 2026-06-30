@@ -102,7 +102,6 @@ Max out **Options > Graphics** to your taste - texture and model quality cost li
 
 ## See also
 
-- [Gameplay](GAMEPLAY.md) - how a match plays out.
 - [Reference](REFERENCE.md) - dvars and tunables.
 - [Dev](DEV.md) - building and contributing.
 - [VPS deployment](../VPS_DEPLOY.md) and [VPS hardening](../VPS_HARDENING.md) - running your own server.
