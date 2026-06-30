@@ -1,17 +1,14 @@
 menufile,ui_mp/hud_gf.txt
 rawfile,maps/mp/gametypes/_gametypes.txt
 rawfile,maps/mp/gametypes/gf.txt
-rawfile,maps/mp/gametypes/gf.gsc
-rawfile,maps/mp/gametypes/_gf_locations.gsc
-rawfile,maps/mp/gametypes/_gf_rounds.gsc
-rawfile,maps/mp/gametypes/_gf_loadouts.gsc
-rawfile,maps/mp/gametypes/_gf_hud.gsc
-rawfile,maps/mp/gametypes/_gf_debug.gsc
-rawfile,maps/mp/gametypes/_gf_wager_zones.gsc
-rawfile,maps/mp/gametypes/_bot.gsc
-rawfile,maps/mp/bots/_bot_loadout.gsc
-rawfile,maps/mp/bots/_bot_script.gsc
-rawfile,maps/mp/bots/_bot_utility.gsc
 fx,misc/fx_ui_flagbase_gf_white
 stringtable,mp/gametypesTable.csv
 localize,gf
+# GSC is intentionally NOT baked into the zone. Plutonium loads .gsc as loose
+# rawfiles from the mod folder at runtime; the server + the release zip both ship
+# the loose .gsc, and a client never needs gametype GSC (gameplay is server-side -
+# a mod-less client still plays). Baking the UNSTRIPPED gf.gsc into mod.ff put a
+# dangling `#include _gf_bridge` in the zone, which crashed FastDL clients (they
+# get only mod.ff, with no loose gf.gsc to shadow the embedded one). Keeping GSC
+# out of the zone also keeps dev code (_gf_debug/_bot/sv_cheats block) out of the
+# public mod.ff. Do NOT re-add `rawfile,...*.gsc` lines here.
