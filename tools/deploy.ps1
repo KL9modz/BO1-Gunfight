@@ -260,13 +260,19 @@ function Restart-Server {
         return
     }
     Write-Host "Restarting game server (the restart-loop bat relaunches it under gfsvc)..."
-    & taskkill /IM "plutonium-bootstrapper-win32.exe" /F > $null 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "Bootstrapper killed; restart loop will bring it back up."
+    # Use Get-Process/Stop-Process, NOT taskkill: under $ErrorActionPreference='Stop'
+    # taskkill's stderr ("process not found", emitted when the server is already
+    # down) is promoted to a terminating NativeCommandError and aborts the deploy
+    # before it finishes. Get-Process -ErrorAction SilentlyContinue is clean.
+    $boot = Get-Process -Name "plutonium-bootstrapper-win32" -ErrorAction SilentlyContinue
+    if ($boot) {
+        $boot | Stop-Process -Force
+        Write-Host "Bootstrapper killed; the restart-loop bat will bring it back up."
     } else {
-        Write-Host "Bootstrapper was not running (nothing to kill) - start it manually if needed."
+        Write-Host "Bootstrapper was NOT running - the game server is DOWN." -ForegroundColor Yellow
+        Write-Host "Start it manually (your server start .bat). The restart loop only" -ForegroundColor Yellow
+        Write-Host "relaunches after a kill; it cannot start a fully-stopped server." -ForegroundColor Yellow
     }
-    $global:LASTEXITCODE = 0
 }
 
 function Deploy-Mod {
