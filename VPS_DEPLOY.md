@@ -264,10 +264,14 @@ password in a password manager so identity survives a rebuild.
 
 After the box is set up (Phases 1-10), routine mod **and** website updates go through git
 instead of zip-upload-and-extract. The laptop pushes to GitHub; the VPS pulls and a small
-`tools\deploy.ps1` copies into the two live locations. Git is **outbound HTTPS** from the
+`.\tools\deploy.ps1` copies into the two live locations. Git is **outbound HTTPS** from the
 VPS, so this opens **no new inbound ports** - the default-deny firewall (Phase 10 #4) is
 unchanged. The website source now lives in the repo at `site\wwwroot\`, so it is version-
 controlled and editable like any other file (Claude edits it directly).
+
+> **Windows PowerShell note:** run repo scripts with a leading `.\` (e.g. `.\tools\deploy.ps1`,
+> `.\tools\vps_setup.ps1`). Without it, PowerShell treats `tools\...` as a module-qualified
+> command and fails with "the module 'tools' could not be loaded."
 
 ### One-time setup on the VPS
 1. Install **Git for Windows**. (Optional: GitHub CLI.)
@@ -289,7 +293,7 @@ controlled and editable like any other file (Claude edits it directly).
 # Laptop:
 tools\push_all.ps1 "web: <what changed>"
 # VPS (RDP), in C:\gfdeploy\BO1-Gunfight:
-tools\deploy.ps1 -Web          # add -DryRun first to preview
+.\tools\deploy.ps1 -Web          # add -DryRun first to preview
 ```
 Mirrors `site\wwwroot\` -> `C:\inetpub\wwwroot`. Secret-scans first and **refuses to publish**
 if it finds an RCON password / secret. The VPS-owned hardened `web.config` (Phase 10) is
@@ -305,7 +309,7 @@ tools\build_ff.ps1                            # only if mod.ff-affecting files c
 tools\package_release.ps1 <ver> -PublishBranch  # force-push mod.ff + GSC to the release branch
 tools\push_all.ps1 "deploy: <what changed>"     # push main
 # VPS (RDP), in C:\gfdeploy\BO1-Gunfight:
-tools\deploy.ps1 -Mod          # pulls main + release mod.ff, mirrors to the mod folder, restarts
+.\tools\deploy.ps1 -Mod          # pulls main + release mod.ff, mirrors to the mod folder, restarts
 ```
 `deploy.ps1 -Mod` never touches `dedicated.cfg` (it lives in `storage\t5\`, not the mod folder,
 and is the sole owner of `rcon_password`). Players still install the matching public package
@@ -313,9 +317,9 @@ themselves - T5 has no client mod download (Phase 8) - so re-cut it with
 `package_release.ps1 <ver> -Publish` when `mod.ff` changes.
 
 ### Rollback
-- Bad web deploy: `git reset --hard <good-sha>` then `tools\deploy.ps1 -Web`.
+- Bad web deploy: `git reset --hard <good-sha>` then `.\tools\deploy.ps1 -Web`.
 - Bad mod deploy: re-run `package_release.ps1` from the previous good commit and
-  `tools\deploy.ps1 -Mod`, or restore the Contabo snapshot.
+  `.\tools\deploy.ps1 -Mod`, or restore the Contabo snapshot.
 
 > The RCON admin panel (`tools\rcon\`) is part of the mod tree, stays bound to `127.0.0.1:3000`,
 > and is **never** part of the website deploy. The public site is `site\wwwroot\` only.

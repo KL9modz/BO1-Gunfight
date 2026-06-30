@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 # READ-ONLY VPS readiness check. Run ONCE on the VPS after cloning, from inside
 # the clone:
 #       cd C:\gfdeploy\BO1-Gunfight
-#       tools\vps_setup.ps1
+#       .\tools\vps_setup.ps1   (the leading .\ is required by Windows PowerShell)
 #
 # It changes nothing. It verifies git + the clone, locates the live Plutonium
 # mod folder and the IIS site path (so account naming doesn't matter), confirms
@@ -79,15 +79,15 @@ try {
 
 Section "Ready-to-go deploy commands"
 Write-Host "WEBSITE (no restart):"
-Write-Host "  tools\deploy.ps1 -Web -DryRun        # preview what would change"
-Write-Host "  tools\deploy.ps1 -Web                # publish (git pull + mirror to wwwroot)"
+Write-Host "  .\tools\deploy.ps1 -Web -DryRun        # preview what would change"
+Write-Host "  .\tools\deploy.ps1 -Web                # publish (git pull + mirror to wwwroot)"
 Write-Host ""
 Write-Host "MOD (restarts the server). Run as the server account, or pass -ModDest:"
 if ($modHits.Count -gt 0 -and ($modHits -notcontains $cur)) {
-    Write-Host ("  tools\deploy.ps1 -Mod -ModDest `"{0}`"" -f $modHits[0])
+    Write-Host ("  .\tools\deploy.ps1 -Mod -ModDest `"{0}`"" -f $modHits[0])
     Write-Host "  (the mod folder isn't under THIS account's profile, so -ModDest is required here)"
 } else {
-    Write-Host "  tools\deploy.ps1 -Mod"
+    Write-Host "  .\tools\deploy.ps1 -Mod"
 }
 
 if ($WebDryRun) {

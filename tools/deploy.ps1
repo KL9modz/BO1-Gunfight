@@ -18,11 +18,11 @@ $ErrorActionPreference = "Stop"
 # the VPS (e.g. C:\gfdeploy\BO1-Gunfight). The laptop pushes; this pulls and
 # copies into the two live locations.
 #
-#   tools\deploy.ps1 -Web              # mirror site\wwwroot -> IIS wwwroot (no restart)
-#   tools\deploy.ps1 -Mod              # pull GSC + release mod.ff -> Plutonium mods, restart
-#   tools\deploy.ps1 -Mod -Web         # both
-#   tools\deploy.ps1 -Web -DryRun      # show what robocopy WOULD do (no changes)
-#   tools\deploy.ps1 -Mod -NoRestart   # copy mod files but leave the server running
+#   .\tools\deploy.ps1 -Web              # mirror site\wwwroot -> IIS wwwroot (no restart)
+#   .\tools\deploy.ps1 -Mod              # pull GSC + release mod.ff -> Plutonium mods, restart
+#   .\tools\deploy.ps1 -Mod -Web         # both
+#   .\tools\deploy.ps1 -Web -DryRun      # show what robocopy WOULD do (no changes)
+#   .\tools\deploy.ps1 -Mod -NoRestart   # copy mod files but leave the server running
 #
 # Run as the SAME account that runs the game server (gfsvc) so $env:LOCALAPPDATA
 # resolves to that profile's Plutonium storage. If you run it as a different
@@ -223,9 +223,9 @@ function Deploy-Mod {
 
 if (!$Mod -and !$Web) {
     Write-Host "Nothing to do. Pass -Mod and/or -Web."
-    Write-Host "  tools\deploy.ps1 -Web      # publish the website (no restart)"
-    Write-Host "  tools\deploy.ps1 -Mod      # deploy the mod + restart the server"
-    Write-Host "  tools\deploy.ps1 -Mod -Web # both"
+    Write-Host "  .\tools\deploy.ps1 -Web      # publish the website (no restart)"
+    Write-Host "  .\tools\deploy.ps1 -Mod      # deploy the mod + restart the server"
+    Write-Host "  .\tools\deploy.ps1 -Mod -Web # both"
     Write-Host "  add -DryRun to preview, -NoPull to skip git pull, -NoRestart to keep the server up"
     return
 }
