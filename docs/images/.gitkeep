@@ -1,0 +1,6 @@
+# Images for the README and docs/ pages (banner, logo, screenshots).
+# These render on GitHub but are NOT deployed to gunfight.us.
+# Website images go in site/wwwroot/assets/ instead.
+#
+# Suggested: banner.png (README header), logo.png, screenshots/*.jpg
+# Reference them from docs with relative paths, e.g. ![banner](docs/images/banner.png)
