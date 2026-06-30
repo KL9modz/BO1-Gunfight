@@ -113,8 +113,10 @@ function parseStatusText(text) {
 }
 
 function parseDvarValue(text, dvarName) {
-  // Matches: "g_gametype" is "gf"  OR  g_gametype is gf
-  const m = text.match(new RegExp('"?' + dvarName + '"?\\s+is\\s+"?([^"\\n]+)"?'));
+  // Matches T5 Plutonium "g_gametype" is: "gf"  AND the older  g_gametype is gf
+  // form. The ':' after "is" is the key — T5 (r5328) prints `is:`, so the colon
+  // must be optional or the whole read returns null (blank scoreboard/gametype).
+  const m = text.match(new RegExp('"?' + dvarName + '"?\\s+is:?\\s+"?([^"\\n]+)"?'));
   return m ? m[1].trim() : null;
 }
 
@@ -148,7 +150,7 @@ function parseGfState(stateStr) {
     round:      parseInt(parts[2]) || 1,
     aliveAllies:parseInt(parts[3]) || 0,
     aliveAxis:  parseInt(parts[4]) || 0,
-    gametype:   parts[5] || '',
+    gametype:   (parts[5] || '').replace(/\^\d/g, ''),   // strip color codes (gf^7 -> gf)
   };
 }
 
