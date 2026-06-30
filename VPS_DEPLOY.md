@@ -281,10 +281,13 @@ controlled and editable like any other file (Claude edits it directly).
 3. Clone once to a neutral path, **as the `gfsvc` account** (so `$env:LOCALAPPDATA` resolves
    to the server's Plutonium storage):
    ```powershell
-   git clone https://github.com/KL9modz/BO1-Gunfight.git C:\gfdeploy\BO1-Gunfight
+   git clone -b main https://github.com/KL9modz/BO1-Gunfight.git C:\gfdeploy\BO1-Gunfight
    ```
-   The clone tracks `main`; `deploy.ps1 -Mod` fetches `mod.ff` from the `release` branch on
-   demand (it is a gitignored binary on `main`).
+   **Use `-b main`.** The GitHub *default* branch is `release` (the minimal public snapshot with
+   NO `tools/` or `site/`), so a plain `git clone` lands there and the deploy scripts are missing.
+   The deploy clone must be on `main`; on an existing clone, switch with `git checkout main`.
+   `deploy.ps1 -Mod` then fetches `mod.ff` from the `release` branch on demand (it is a gitignored
+   binary on `main`).
 4. Confirm `gfsvc` has write access to `C:\inetpub\wwwroot` and the Plutonium mods path (grant
    ACLs if needed).
 
