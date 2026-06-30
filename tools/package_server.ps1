@@ -13,12 +13,17 @@ $ErrorActionPreference = "Stop"
 
 # Build a PRIVATE VPS deployment bundle (NOT for public release):
 #   t5/
-#     mods/mp_gunfight/   full mod (mod.ff + mod.csv + ALL gameplay GSC,
-#                         including _gf_bridge for RCON and _bot - the server
-#                         keeps the dev tools; bare-bones is only the player zip)
+#     mods/mp_gunfight/   COMPLETE mirror of the 'main' branch: every git-tracked
+#                         file (all gameplay + dev GSC, mod.csv, the UI/strings/csv
+#                         source, gf.cfg, notes/, tools/ incl. the RCON panel +
+#                         wager catalogs, .claude/, README, ...) PLUS the compiled
+#                         mod.ff (a gitignored build output the runtime needs).
+#                         This is the whole point of the server bundle vs release:
+#                         release ships a stripped, comment-free public subset; the
+#                         server gets EVERYTHING from main.
 #     dedicated.cfg       your server config (CONTAINS rcon_password unless -SanitizeConfig)
-#     gamesettings/gf.cfg production gametype cfg (spawn recorder disabled)
-#     tools/rcon/         optional web RCON panel (-IncludeRconTool)
+#     tools/rcon/         optional top-level copy of the web RCON panel (-IncludeRconTool;
+#                         the panel also lives inside the mod folder now via the full tree)
 #   DEPLOY.txt            where each file goes on the VPS + required edits
 #
 # Output: tools\dist\mp_gunfight-server-<version>.zip  (gitignored)
@@ -55,7 +60,6 @@ function New-RconPassword {
 $ModRoot = $WorkspaceRoot                                   # repo root IS the mod folder
 $T5Root = (Resolve-Path (Join-Path $WorkspaceRoot "..\..")).Path  # storage\t5
 $ModFf = Join-Path $ModRoot "mod.ff"
-$ModCsv = Join-Path $ModRoot "mod.csv"
 $DedCfg = Join-Path $T5Root "dedicated.cfg"
 $DistDir = Join-Path $WorkspaceRoot "tools\dist"
 $StageRoot = Join-Path $DistDir "server-stage"
@@ -82,15 +86,43 @@ if (Test-Path -LiteralPath $StageRoot) { Remove-Item -Recurse -Force -LiteralPat
 $StageMod = Join-Path $StageRoot "t5\mods\$ModName"
 New-Item -ItemType Directory -Force -Path $StageMod | Out-Null
 
-# -- Full mod: mod.ff + mod.csv + every .gsc under maps\ (dev tools INCLUDED) --
+# -- Full mod: mod.ff + EVERYTHING tracked on 'main' (complete source tree) -----
+# Unlike the release zip (a stripped public subset), the server bundle mirrors the
+# entire 'main' branch. We enumerate via `git ls-files` so the file set IS "main"
+# by definition: it auto-excludes gitignored junk (tools/dist, logs, raw/ FX
+# source, dedicated.cfg, ...) and needs no hand-maintained include list. Files are
+# copied from the live work tree, so uncommitted local edits ship too. mod.ff is
+# gitignored (build output) so it is added explicitly -- the runtime needs it.
 Copy-Into $ModFf (Join-Path $StageMod "mod.ff")
-Copy-Into $ModCsv (Join-Path $StageMod "mod.csv")
-$gsc = Get-ChildItem -Recurse -File -LiteralPath (Join-Path $ModRoot "maps") -Filter *.gsc
-foreach ($f in $gsc) {
-    $rel = $f.FullName.Substring($ModRoot.Length).TrimStart('\', '/')
-    Copy-Into $f.FullName (Join-Path $StageMod $rel)
+
+$tracked = @(& git -C $ModRoot -c core.quotepath=false ls-files) | Where-Object { $_ -ne "" }
+if ($LASTEXITCODE -ne 0) { throw "git ls-files failed (is '$ModRoot' a git work tree?)" }
+if ($tracked.Count -eq 0) { throw "git ls-files returned no files; refusing to build an empty server bundle." }
+$copied = 0
+$skipped = 0
+foreach ($rel in $tracked) {
+    $win = $rel -replace '/', '\'
+    $src = Join-Path $ModRoot $win
+    if (!(Test-Path -LiteralPath $src)) { $skipped++; continue }   # tracked but absent in work tree
+    Copy-Into $src (Join-Path $StageMod $win)
+    $copied++
 }
-Write-Host "  + mod.ff, mod.csv, $($gsc.Count) GSC file(s) (full set, dev tools included)"
+$skipNote = ""
+if ($skipped -gt 0) { $skipNote = " ($skipped tracked path(s) absent in work tree, skipped)" }
+Write-Host "  + mod.ff + $copied tracked file(s) from main (complete source tree)$skipNote"
+
+# -- Safety guard: no committed secret in the staged GSC ----------------------
+# gf.gsc/any .gsc must NEVER hardcode an rcon_password: dedicated.cfg is the sole owner on the
+# VPS. A setDvar("rcon_password","<nonempty>") in a staged script would silently override the
+# cfg every map_restart with a value that is committed (public) in git. Fail the build if found.
+$staged = Get-ChildItem -Recurse -File -LiteralPath $StageMod -Filter *.gsc
+foreach ($g in $staged) {
+    $txt = [System.IO.File]::ReadAllText($g.FullName)
+    if ($txt -match 'setDvar\s*\(\s*"rcon_password"\s*,\s*"[^"]+"\s*\)') {
+        throw "SECURITY: staged $($g.FullName) hardcodes an rcon_password. Remove it from GSC (dedicated.cfg owns it) before bundling."
+    }
+}
+Write-Host "  + secret guard: no hardcoded rcon_password in staged GSC"
 
 # -- dedicated.cfg (rotate / blank / pass through the rcon_password) -----------
 # Rotation rewrites ONLY the bundled copy; the source dedicated.cfg is the template

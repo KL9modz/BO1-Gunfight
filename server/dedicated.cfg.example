@@ -32,7 +32,7 @@ set g_password ""                                   // Password Protected Game. 
 set party_minplayers "2"                            // Pre-Match Lobby (2 = public; set to 1 for solo local testing)
 set scr_xpscale "1"                                 // Round end XP multiplicator (score * scr_xpscale = xp)
 set scr_wagerbet "100"                              // How much it would cost to connect to a wager gamemode. 
-set sv_disableClientConsole "0"                     // Enable or Disable players ability to access server commands
+set sv_disableClientConsole "1"                     // 1 = block players opening the in-game console (shrinks client cheat/tweak surface on a public lobby)
 set sv_doubleCoDPoints "1"                          // Earn double CoD Points for finished matches?
 set sv_floodProtect "4"                             // Chat Spam Protection.(Set this to 20 if you are using a RCon tool)
 set sv_kickBanTime "300"                            // Kick Ban Duration. Time before player can re-join the server after getting kicked.
@@ -47,7 +47,7 @@ set sv_timeout "15"                                 // Timeout time period. You 
 set sv_voice "1"                                    // Allow Voice Chat
 set sv_voicequality "9"                             // Voice Quality, 9 for high, 1 for low. More bandwidth better quality.
 set g_voiceChatTalkingDuration "500"                // Duration you can chat.
-set voice_deadChat "1"                              // Enable/Disable voice over IP chat when a player is dead.
+set voice_deadChat "0"                              // 0 = eliminated players can't talk (no live-callout leak in one-life rounds).
 set voice_global "0"                                // Enable/Disable the use of in-game voice over IP.
 set sv_sayName "Console"                            // The name of your server in the text chat, default is "console"
 //set _Website "https://yourwebsite.org"            // Website (Mainly used by IW4MAdmin and certain online lists)

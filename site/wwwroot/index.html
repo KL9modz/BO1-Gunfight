@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BO1 Gunfight - Black Ops 1 Plutonium Game Mode</title>
+  <meta name="description" content="Gunfight for Call of Duty: Black Ops 1 on Plutonium T5. Round-based, one life, shared random loadouts. Install the mod and join the server." />
+  <meta name="theme-color" content="#0d0f12" />
+
+  <!-- Open Graph / social preview -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="BO1 Gunfight" />
+  <meta property="og:description" content="Round-based, one life, shared random loadouts. A Gunfight game mode for Black Ops 1 on Plutonium." />
+  <meta property="og:url" content="https://gunfight.us/" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav container">
+      <a class="brand" href="#top">
+        <span class="brand-mark">GF</span>
+        <span class="brand-text">BO1&nbsp;Gunfight</span>
+      </a>
+      <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="nav-links">
+        <li><a href="#how">How to play</a></li>
+        <li><a href="#install">Install &amp; join</a></li>
+        <li><a href="#server">Server</a></li>
+        <li><a href="#features">Features</a></li>
+        <li><a class="nav-cta" href="https://github.com/KL9modz/BO1-Gunfight/releases" target="_blank" rel="noopener">Download</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="top">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="container hero-inner">
+        <p class="eyebrow">Call of Duty: Black Ops 1 &middot; Plutonium T5</p>
+        <h1 class="hero-title">GUNFIGHT</h1>
+        <p class="hero-sub">
+          Round-based. One life. A shared random loadout every round.
+          No killstreaks, no health regen, no second chances &mdash; just the gunfight.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#install">Install &amp; join</a>
+          <a class="btn btn-ghost" href="https://github.com/KL9modz/BO1-Gunfight" target="_blank" rel="noopener">View on GitHub</a>
+        </div>
+        <p class="hero-note">Free &middot; open source &middot; runs on the Plutonium BO1 client</p>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="section">
+      <div class="container">
+        <h2 class="section-title">What makes it Gunfight</h2>
+        <div class="grid features">
+          <article class="card">
+            <h3>One life per round</h3>
+            <p>No respawns. Last team standing takes the round, then the killcam rolls.</p>
+          </article>
+          <article class="card">
+            <h3>Shared random loadout</h3>
+            <p>Everyone gets the same primary, secondary, and equipment each round. The rotation rerolls on a timer &mdash; pure skill, no class grinding.</p>
+          </article>
+          <article class="card">
+            <h3>First to 6 rounds</h3>
+            <p>Win the round, win the match. Sides switch partway through. Draw rounds don't count toward the limit.</p>
+          </article>
+          <article class="card">
+            <h3>Overtime zone</h3>
+            <p>Tied on a timer expiry? Health decides it &mdash; or a capture zone settles overtime when it's close.</p>
+          </article>
+          <article class="card">
+            <h3>No killstreaks, no regen</h3>
+            <p>No streaks, no perks shown pre-round, no health regeneration, no weapon drops. Clean, fair fights.</p>
+          </article>
+          <article class="card">
+            <h3>Auto map scaling</h3>
+            <p>Small lobbies get tight, curated gunfight spawns; 4v4 and up open the whole map automatically.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- How to play -->
+    <section id="how" class="section section-alt">
+      <div class="container">
+        <h2 class="section-title">How a match plays out</h2>
+        <ol class="steps">
+          <li><span class="step-n">1</span><div><h3>Spawn with the round's loadout</h3><p>Both teams get the same weapons. Your loadout slides in on the HUD at the start of each round.</p></div></li>
+          <li><span class="step-n">2</span><div><h3>Wipe the other team</h3><p>One life each. Eliminate everyone on the enemy team to win the round before the clock runs out.</p></div></li>
+          <li><span class="step-n">3</span><div><h3>Beat the clock</h3><p>If time expires, the team with more total health wins. If it's tied, overtime decides it.</p></div></li>
+          <li><span class="step-n">4</span><div><h3>First to six wins</h3><p>Take six rounds to win the match. Sides swap so nobody's stuck on the bad spawn.</p></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- Install & join -->
+    <section id="install" class="section">
+      <div class="container">
+        <h2 class="section-title">Install &amp; join</h2>
+        <p class="section-lead">
+          Plutonium has <strong>no automatic mod download</strong> &mdash; every player installs the mod locally and must run
+          the <strong>same version as the server</strong>. It takes about a minute.
+        </p>
+        <div class="grid install">
+          <article class="card step-card">
+            <div class="step-n">1</div>
+            <h3>Get Plutonium + BO1</h3>
+            <p>Install the Plutonium launcher and have legitimate Black Ops 1 game files. See the official setup guide.</p>
+            <a class="link" href="https://plutonium.pw/docs/getting-started/" target="_blank" rel="noopener">plutonium.pw setup &rarr;</a>
+          </article>
+          <article class="card step-card">
+            <div class="step-n">2</div>
+            <h3>Download the mod</h3>
+            <p>Grab the latest <code>mp_gunfight</code> package from the GitHub releases page.</p>
+            <a class="link" href="https://github.com/KL9modz/BO1-Gunfight/releases" target="_blank" rel="noopener">Latest release &rarr;</a>
+          </article>
+          <article class="card step-card">
+            <div class="step-n">3</div>
+            <h3>Drop it in your mods folder</h3>
+            <p>Extract so the folder lands at:</p>
+            <pre class="path"><code>%LOCALAPPDATA%\Plutonium\storage\t5\mods\mp_gunfight</code></pre>
+            <p class="muted">The folder must stay named <code>mp_gunfight</code>.</p>
+          </article>
+          <article class="card step-card">
+            <div class="step-n">4</div>
+            <h3>Load it and join</h3>
+            <p>Launch BO1 multiplayer, open the <strong>Mods</strong> menu and load <strong>mp_gunfight</strong>, then find the server in the <strong>server browser</strong>.</p>
+            <p class="muted">T5 has no direct IP connect &mdash; join from the browser list.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Server -->
+    <section id="server" class="section section-alt">
+      <div class="container">
+        <h2 class="section-title">The server</h2>
+        <div class="server-card card">
+          <dl class="server-info">
+            <div><dt>Name</dt><dd>BO1 Gunfight</dd></div>
+            <div><dt>Game</dt><dd>Black Ops 1 (Plutonium T5)</dd></div>
+            <div><dt>Mode</dt><dd>Gunfight</dd></div>
+            <div><dt>Region</dt><dd>Seattle, US</dd></div>
+            <div><dt>How to join</dt><dd>Load the mod, then pick it from the in-game server browser</dd></div>
+          </dl>
+          <p class="muted">
+            Make sure your installed mod version matches the server's, or the gametype and HUD won't load correctly.
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <span>&copy; <span id="year">2026</span> gunfight.us</span>
+      <nav class="footer-links">
+        <a href="https://github.com/KL9modz/BO1-Gunfight" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/KL9modz/BO1-Gunfight/releases" target="_blank" rel="noopener">Download</a>
+        <a href="https://plutonium.pw" target="_blank" rel="noopener">Plutonium</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

@@ -38,6 +38,9 @@ LANG_ENGLISH        "Eliminate enemies to win the round.\n6 rounds to win. Rando
 REFERENCE           GAMETYPE_DESC_SCORE
 LANG_ENGLISH        "Eliminate enemies to win the round.\n&&1 rounds to win. Random loadouts.\nNo respawns. No health regen."
 
+REFERENCE           GAMETYPE_HINT
+LANG_ENGLISH        "Eliminate the enemy team to win the round."
+
 REFERENCE           GUN_DESC
 LANG_ENGLISH        "Gun Game. Get a kill with each weapon to advance. First player to finish the full weapon sequence wins."
 

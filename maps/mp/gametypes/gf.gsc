@@ -216,16 +216,18 @@ onStartGameType()
     // grant specialty_fastweaponswitch (gf_giveCustomLoadout no longer adds it). To speed up swaps,
     // an admin enables Fast Weapon Switch in the RCON Perks tab (-> gf_perk_on), then tunes the
     // "Weapon Switch Speed" slider; without the perk the multiplier dvar is inert.
-    // #strip-begin - dev cheats + RCON/join password for LOCAL listen-server testing only.
-    // package_release.ps1 strips this whole block from public builds. On the dedicated VPS
-    // this block is gone, so dedicated.cfg is the sole owner of rcon_password/g_password/
-    // sv_cheats. The value below is a DEV-ONLY throwaway and is intentionally DIFFERENT from
-    // the real VPS password (which lives only in dedicated.cfg, never in git) — so it stays
-    // harmless even if `main` is public on GitHub. Rotate the VPS password in dedicated.cfg,
-    // NOT here. This value only takes effect on a listen server (where dedicated.cfg isn't read).
-    setDvar( "sv_cheats", "1" );
-    setDvar( "rcon_password", "aBHguGlfMQA9NcqEO1YJ5WKm" );   // dev/listen-server only — NOT the VPS password
-    setDvar( "g_password", "" );
+    // #strip-begin - dev cheats for LOCAL listen-server testing only.
+    // Guarded by `dedicated == 0` (0 = listen server; 1/2 = dedicated) so the ENGINE itself
+    // blocks this on any dedicated server (the VPS), independent of the build pipeline. The
+    // strip markers additionally remove it from the public release build. dedicated.cfg is the
+    // SOLE owner of rcon_password / g_password / sv_cheats on the VPS. NO password is set here
+    // (never commit a secret): for local RCON-panel testing, set `rcon_password` yourself in a
+    // gitignored local cfg or the listen-server console.
+    if ( getDvarInt( "dedicated" ) == 0 )
+    {
+        setDvar( "sv_cheats", "1" );
+        setDvar( "g_password", "" );
+    }
     // #strip-end
 
     dvar = "scr_" + level.gameType + "_visualtweaks";
@@ -303,8 +305,8 @@ onStartGameType()
     maps\mp\gametypes\_globallogic_ui::setObjectiveText( "axis",   &"GF_GAMETYPE_DESC" );
     maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "allies", &"GF_GAMETYPE_DESC_SCORE" );  // &&1 = scorelimit (the splash passes it; needs a token or it appends the number)
     maps\mp\gametypes\_globallogic_ui::setObjectiveScoreText( "axis",   &"GF_GAMETYPE_DESC_SCORE" );
-    maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "allies", &"GF_GAMETYPE_DESC" );
-    maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "axis",   &"GF_GAMETYPE_DESC" );
+    maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "allies", &"GF_GAMETYPE_HINT" );  // single-line: decode FX (setCOD7DecodeFX) collapses \n during scramble, so a multi-line hint overflows
+    maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "axis",   &"GF_GAMETYPE_HINT" );
 
     maps\mp\gametypes\_rank::registerScoreInfo( "win",      5   ); 
     maps\mp\gametypes\_rank::registerScoreInfo( "loss",     1   );

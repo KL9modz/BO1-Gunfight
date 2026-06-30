@@ -25,6 +25,7 @@ Instalation
 Screenshots 
 More details (every function, dvar)
 Server info 
+Game tutorial: graphics, FOV, ADS
 
 - Organize repo — DONE:
 `release` branch (GitHub default) + Release zip now carry the SAME minimal content (mod.ff + gameplay GSC + README), via tools/package_release.ps1 (see "Release & Distribution")
@@ -381,8 +382,21 @@ After the markers are removed, `package_release.ps1`'s `Strip-Comments` strips A
 ### Scripts (`tools/`, ASCII-only so Windows PowerShell 5.1 parses them)
 - **`build_ff.ps1`** — build `mod.ff` (stages both zones, cleans `raw/`). Always build via this.
 - **`package_release.ps1 [ver] [-PublishBranch] [-Publish] [-SkipBuild] [-KeepComments]`** — bare-bones zip; `-PublishBranch` force-pushes the `release` snapshot; `-Publish` cuts the GitHub Release (tags `release` via `--target`). Staged GSC is marker-stripped AND comment-stripped (see "Comment stripping"); `-KeepComments` keeps comments in the public copy.
-- **`package_server.ps1 [ver] [-RotateRcon] [-SanitizeConfig] [-IncludeRconTool]`** — **PRIVATE** VPS bundle: full mod + `dedicated.cfg` (carries `rcon_password` — never publish) + production `gamesettings`-less setup + `DEPLOY.txt`. Extract into the Plutonium `t5/` storage dir. `-RotateRcon` injects a fresh cryptographically-random `rcon_password` into the bundled cfg **only** (source cfg untouched) and prints it to the console — so the live password is never the one in git history; deploy the bundle, then paste the printed value into your RCON client. Takes precedence over `-SanitizeConfig`.
+- **`package_server.ps1 [ver] [-RotateRcon] [-SanitizeConfig] [-IncludeRconTool]`** — **PRIVATE** VPS bundle. The mod folder is a **complete mirror of `main`** (every `git ls-files` path — all gameplay + dev GSC, `mod.csv`, the UI/strings/csv source, `gf.cfg`, `notes/`, `tools/` incl. the RCON panel, `.claude/`, README, ...) **plus the compiled `mod.ff`** (gitignored, added explicitly). This is the deliberate inverse of `package_release.ps1`, which ships only a stripped public subset — the server gets *everything from main*. The file set is git-driven, so gitignored junk (`tools/dist`, logs, `raw/`, the real `dedicated.cfg`) is auto-excluded and there is no hand-maintained include list to keep in sync. Bundle also carries `dedicated.cfg` (carries `rcon_password` — never publish) + `DEPLOY.txt`. Extract into the Plutonium `t5/` storage dir. `-RotateRcon` injects a fresh cryptographically-random `rcon_password` into the bundled cfg **only** (source cfg untouched) and prints it to the console — so the live password is never the one in git history; deploy the bundle, then paste the printed value into your RCON client. Takes precedence over `-SanitizeConfig`.
 - **`push_all.ps1 ["msg"]`** — stage/commit/push the current branch.
+- **`deploy.ps1 [-Mod] [-Web] [-DryRun] [-NoPull] [-NoRestart] [-ModDest ..] [-WebDest ..]`** —
+  **runs ON the VPS**, inside the deploy clone (e.g. `C:\gfdeploy\BO1-Gunfight`), as the `gfsvc`
+  account. The git-pull deploy applier (full flow in `VPS_DEPLOY.md` Phase 11). `-Web` git-pulls,
+  secret-scans `site/wwwroot/` (hard-fails on `rcon_password` / the leaked literal / secret-
+  assignment patterns), then robocopy `/MIR`s it into `C:\inetpub\wwwroot` — preserving the
+  VPS-owned hardened `web.config` (excluded from the mirror unless the repo tracks one); no
+  restart. `-Mod` git-pulls `main`, checks `mod.ff` out of the `release` branch (it is a gitignored
+  binary on `main`), mirrors the tracked tree + `mod.ff` into the Plutonium mods folder, then
+  restarts the server (`taskkill` the bootstrapper → the restart-loop bat relaunches it under
+  gfsvc). Never touches the live `dedicated.cfg` (it lives in `storage\t5\`, not the mod folder).
+  Refuses the mod mirror if `-ModDest` doesn't contain `mp_gunfight` (anti-typo guard). `-DryRun`
+  passes robocopy `/L` to preview. This is the **inverse direction** of the packagers: they build
+  artifacts; `deploy.ps1` applies a git-pulled checkout in place on the box.
 
 ---
 
@@ -415,7 +429,11 @@ mp_gunfight/  (GitHub: KL9modz/BO1-Gunfight)
     _bot.gsc             (dev only)  <- bot integration        (stripped from public)
   maps/mp/bots/          (dev only)  <- vendored bot framework: _bot_loadout/_bot_script/_bot_utility
   raw/fx/misc/*.efx                  <- custom overtime apron FX (white halo; gold/red use stock FX)
-  tools/                 (dev only)  <- build_ff.ps1, package_release.ps1, package_server.ps1, push_all.ps1
+  site/wwwroot/                      <- PUBLIC website source (gunfight.us); static HTML/CSS/JS,
+                                        mirrored to IIS by tools/deploy.ps1 -Web. NOT the RCON panel.
+  tools/                 (dev only)  <- build_ff.ps1, package_release.ps1, package_server.ps1,
+                                        push_all.ps1, deploy.ps1 (VPS-side git-pull applier)
+  tools/rcon/            (dev only)  <- PRIVATE loopback-only RCON admin panel (never web-deployed)
 ```
 
 > Entry point is `gf.gsc::main()` (NOT `mp_gunfight.gsc` — that file does not exist). There
