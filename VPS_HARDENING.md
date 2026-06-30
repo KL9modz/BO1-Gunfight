@@ -9,6 +9,33 @@ adversarially-reviewed analysis). Every apply-to-production command below was ch
 > the same VPS as the BO1 game server**. The page itself is low-risk; the real exposure is the
 > box's remote-management surface. So this runbook is mostly about the VPS, not the HTML.
 
+> **OS confirmed: Windows Server 2019 Datacenter (build 17763)** — *not* 2025 as an earlier note
+> said. Consequences baked into this runbook: TLS 1.3 is **unsupported** on 2019 (skip it; keep
+> 1.2 top), and `AllowAdministratorLockout` **does not exist** on 2019 (P1.3's optional part is N/A).
+
+## ✅ As-applied status (worked through interactively 2026-06-29)
+| Item | Status | Notes |
+|---|---|---|
+| RCON tool hardening (`tools/rcon/server.js`) | ✅ done | committed `af1707b`: CORS wildcard dropped, loopback Host/Origin guard, body cap, savecfg path pinned + sanitized. Panel password un-hardcoded. |
+| **P0.2 RDP → scoped to admin IP** (`76.167.246.191`) | ✅ done | rule `RDP-AdminOnly-In`; broad built-in allows disabled. Used a **15-min scheduled auto-rollback task** as the safety net (re-enables broad RDP if the scoped rule is wrong) — see pattern below. |
+| **P1.1 WinRM 5986 → closed** | ✅ done | service stopped+disabled, `WinRM-HTTPS-Block-In` rule, built-in WinRM allows disabled. Verified externally OPEN→closed. Leftover `0.0.0.0:5986` http.sys sslcert is inert (optional `netsh http delete sslcert ipport=0.0.0.0:5986`). |
+| P1.2 NLA | ✅ done | `UserAuthentication=1`. `SecurityLayer` was already `2` (TLS-only) and working — left as-is. |
+| P1.3 Account lockout | ✅ done | threshold 10 / 15 / 15. Built-in Administrator exempt on 2019 (auto-logon safe). |
+| **P1.4 IIS web.config** | ✅ done + externally verified | Installed **URL Rewrite 2.1**. Deployed a **merged** `C:\inetpub\wwwroot\web.config` that KEEPS the FastDL MIME maps, turns **directoryBrowse off** (was on), and adds HTTP→HTTPS redirect + HSTS(300, HTTPS-only) + CSP + X-Frame/X-CTO/Referrer/Permissions + `removeServerHeader` + GET/HEAD-only verbs. `.bak` saved alongside. |
+| P1.6 Cert auto-renewal | ✅ confirmed | win-acme task `Ready`, `C:\win-acme\wacs.exe --renew`; cert in **WebHosting** store bound to :443; issued today so the pipeline demonstrably works. |
+| P2.1 CAA | ✅ done | `0 issue "letsencrypt.org"` (issuewild/iodef skipped). |
+| P2.3 DNSSEC | ✅ done | GoDaddy-managed; DS (2, algo 13) at `.us`, 4 DNSKEYs, queries validate (`AD:true`). **If NS ever change, disable DNSSEC first.** |
+| P2.2 SPF + DMARC | ✅ done | `v=spf1 -all`; DMARC `p=reject; sp=reject; adkim=s; aspf=s`. No MX. |
+| **P1.5 disable TLS 1.0/1.1** | ⬜ remaining | only step needing a **reboot** (game-server downtime + manual bat relaunch). |
+| Registrar lock + 2FA | ⬜ confirm in portal | `.us` RDAP wouldn't answer remotely — verify GoDaddy Domain lock = ON + 2FA on account & Gmail. |
+
+> **Auto-rollback firewall pattern (used for P0.2, reuse for any remote firewall change):** before
+> disabling broad allows, register a SYSTEM scheduled task that re-enables them in ~15 min, so a bad
+> rule self-heals even without VNC. Confirm the scoped rule works via a fresh connection, THEN
+> `Unregister-ScheduledTask` to cancel the rollback. (Windows Firewall gotcha: an explicit **Block**
+> beats a narrower **Allow**, so scope with an Allow + disable the broad allows — never add a
+> "block all others" rule, it matches your own IP too.)
+
 ## Out-of-band safety net (read first)
 Every firewall/TLS/RDP change below can, if mistyped, drop your RDP session. Your recovery path
 is the **Contabo VNC console `144.126.146.144:63019`** — it bypasses Windows Firewall and Schannel
