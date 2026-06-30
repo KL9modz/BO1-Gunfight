@@ -25,8 +25,6 @@ One life per round. A shared random loadout every round. No killstreaks, no heal
 
 Made by **KL9**. Come play and talk shop on **[Discord](https://discord.gg/blackops)**.
 
-> **Heads-up for players:** Plutonium has **no automatic mod download**. Everyone — players *and* the server — installs the mod locally and must run the **same version**. It's a one-minute setup → **[Setup guide](docs/SETUP.md)**.
-
 ---
 
 ## Features
