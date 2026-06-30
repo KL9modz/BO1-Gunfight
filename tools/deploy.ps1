@@ -113,8 +113,25 @@ function Update-Repo {
         Write-Host "Skipping pull (-NoPull)."
         return
     }
+    $before = (& git -C $RepoRoot rev-parse HEAD 2>$null)
     Write-Host "Pulling latest..."
     Invoke-Git @("pull", "--ff-only") | ForEach-Object { Write-Host "  $_" }
+    $after = (& git -C $RepoRoot rev-parse HEAD 2>$null)
+
+    # Self-update trap: PowerShell parsed THIS script into memory before the pull.
+    # If the pull just changed deploy.ps1, the running process is still the OLD code
+    # (stale functions + line numbers). Stop now so the user re-runs the new version
+    # instead of executing a half-old script. Re-run with -NoPull to use the on-disk
+    # copy directly without pulling again.
+    if ($before -and $after -and ($before -ne $after)) {
+        $changed = Invoke-Git @("diff", "--name-only", "$before..$after")
+        if ($changed -contains "tools/deploy.ps1") {
+            Write-Host ""
+            Write-Host "deploy.ps1 was updated by this pull - re-run the SAME command so the" -ForegroundColor Yellow
+            Write-Host "NEW version executes (this run is still the old in-memory copy)." -ForegroundColor Yellow
+            exit 0
+        }
+    }
 }
 
 function Find-WebSecrets {
