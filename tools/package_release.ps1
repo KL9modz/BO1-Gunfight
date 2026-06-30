@@ -225,10 +225,6 @@ Plutonium has **no automatic mod download** - every player (and the server) inst
 
 Full walkthrough (graphics, FOV, the aim-while-sprinting fix, troubleshooting): **[docs/SETUP.md](docs/SETUP.md)**.
 
-## How it plays
-
-One life per round, a shared random loadout, first to 6 round wins, sides switch partway, and overtime decides ties. No killstreaks, no health regen, no perks shown pre-round.
-
 ## More
 
 - **Setup guide:** [docs/SETUP.md](docs/SETUP.md)
