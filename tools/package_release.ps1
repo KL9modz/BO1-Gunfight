@@ -16,7 +16,7 @@ $ErrorActionPreference = "Stop"
 # branch and the Release zip carry the SAME content (branch = browsable + clonable,
 # zip = download). 'main' keeps everything; this script never modifies it.
 #
-# What ships: mod.ff + the gameplay GSC under maps/ + README.md.
+# What ships: mod.ff + the gameplay GSC under maps/ + README.md + docs/ (GAMEPLAY.md, SETUP.md).
 # What is dropped: the dev files below, and any dev wiring wrapped in markers:
 #     // #strip-begin ... // #strip-end
 # (markers are inert // comments on main, so the dev build is unaffected).
@@ -167,40 +167,87 @@ function Build-Staging {
     # No mod.csv: it's a build-time zone-source manifest (linker/mod tools), not
     # read by Plutonium at runtime. Runtime needs only mod.ff + the GSC.
 
+    # -- Player-facing docs: GAMEPLAY + SETUP ---------------------------------
+    # REFERENCE.md / DEV.md stay main-only; rewrite their inbound links (and the
+    # ops docs) in the staged copies to main-branch GitHub URLs so nothing 404s.
+    # GAMEPLAY<->SETUP and ../README.md links stay local (both docs + the
+    # generated README ship, so they resolve inside the release).
+    $mainBlob = "https://github.com/KL9modz/BO1-Gunfight/blob/main"
+    $stageDocs = Join-Path $StageMod "docs"
+    New-Item -ItemType Directory -Force -Path $stageDocs | Out-Null
+    $docCount = 0
+    foreach ($d in @("GAMEPLAY.md", "SETUP.md")) {
+        $src = Join-Path $ModRoot "docs\$d"
+        if (!(Test-Path -LiteralPath $src)) { Write-Warning "release doc missing: docs\$d"; continue }
+        $c = [System.IO.File]::ReadAllText($src)
+        $c = $c -replace '\]\(REFERENCE\.md', "](${mainBlob}/docs/REFERENCE.md"
+        $c = $c -replace '\]\(DEV\.md', "](${mainBlob}/docs/DEV.md"
+        $c = $c -replace '\]\(\.\./VPS_DEPLOY\.md', "](${mainBlob}/VPS_DEPLOY.md"
+        $c = $c -replace '\]\(\.\./VPS_HARDENING\.md', "](${mainBlob}/VPS_HARDENING.md"
+        [System.IO.File]::WriteAllText((Join-Path $stageDocs $d), $c, $Utf8NoBom)
+        $docCount++
+    }
+
+    # The 'release' branch is the GitHub DEFAULT branch, so this README is the
+    # repo's public landing page - keep it player-facing and on-brand.
     $readme = @'
-# mp_gunfight
+<div align="center">
 
-Gunfight gametype for **Call of Duty: Black Ops 1** (Plutonium T5) - one life per
-round, shared random loadouts, six rounds to win the match.
+# Black Ops Gunfight
 
-**Version __VERSION__**
+**Round-based, one-life Gunfight for Call of Duty: Black Ops 1 - on Plutonium T5.**
 
-## Install (required for every player AND the server)
+One life per round. A shared random loadout every round. No killstreaks, no health regen, no second chances - just the gunfight.
 
-Plutonium's T5 client cannot download mods from a server, so everyone joining must
-install the mod locally. Without it you get no HUD, blank text, and missing effects.
+![Version](https://img.shields.io/badge/version-__VERSION__-ff7a1a)
+[![Discord](https://img.shields.io/badge/Discord-join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/blackops)
+[![Website](https://img.shields.io/badge/web-gunfight.us-2ea44f)](https://gunfight.us)
 
-1. Open your Plutonium storage mods folder: `%localappdata%\Plutonium\storage\t5\mods\`
-2. Extract so the path is `...\storage\t5\mods\mp_gunfight\mod.ff`
-3. In the Plutonium console (or your server config):
+</div>
 
-       loadMod mp_gunfight
-       map_restart
+---
 
-4. Start a match:
+## About
 
-       g_gametype gf
-       map mp_havoc
+**Black Ops Gunfight** is a custom multiplayer game mode for **Call of Duty: Black Ops 1**, running on the **Plutonium T5** client. Two teams, **one life each per round**, and the **same randomized loadout** for everyone - rounds are won by gunskill, not classes or streaks. First team to **6 rounds** wins.
 
-## Source
+Made by **KL9**. Come play on **[Discord](https://discord.gg/blackops)**.
 
-Full source and development are on the
-[`main`](https://github.com/KL9modz/BO1-Gunfight/tree/main) branch.
+## Install & play
+
+Plutonium has **no automatic mod download** - every player (and the server) installs the mod locally and must run the **same version**, or you get no HUD, text, or effects.
+
+1. Download `mp_gunfight` from [Releases](https://github.com/KL9modz/BO1-Gunfight/releases).
+2. Extract so the folder is `%localappdata%\Plutonium\storage\t5\mods\mp_gunfight` (keep the name).
+3. Launch Black Ops 1 multiplayer -> **Mods** -> load **mp_gunfight** -> **Server Browser** -> join **Gunfight**.
+
+> T5 has no direct IP connect - find the server in the in-game browser by name. Your version must match the server's.
+
+Full walkthrough (graphics, FOV, the aim-while-sprinting fix, troubleshooting): **[docs/SETUP.md](docs/SETUP.md)**.
+
+## How it plays
+
+One life per round, a shared random loadout, first to 6 round wins, sides switch partway, and overtime decides ties. No killstreaks, no health regen, no perks shown pre-round.
+
+Complete ruleset: **[docs/GAMEPLAY.md](docs/GAMEPLAY.md)**.
+
+## More
+
+- **Setup guide:** [docs/SETUP.md](docs/SETUP.md)
+- **Gameplay & rules:** [docs/GAMEPLAY.md](docs/GAMEPLAY.md)
+- **Technical reference:** [REFERENCE.md (on main)](https://github.com/KL9modz/BO1-Gunfight/blob/main/docs/REFERENCE.md)
+- **Developer guide:** [DEV.md (on main)](https://github.com/KL9modz/BO1-Gunfight/blob/main/docs/DEV.md)
+- **Full source & development:** the [`main`](https://github.com/KL9modz/BO1-Gunfight/tree/main) branch
+- **Discord:** https://discord.gg/blackops   |   **Website:** https://gunfight.us
+
+---
+
+<sub>Version __VERSION__. Black Ops Gunfight is a fan-made, non-commercial game mode, not affiliated with or endorsed by Activision or Treyarch. Requires a legitimate copy of Call of Duty: Black Ops and the Plutonium client.</sub>
 '@ -replace '__VERSION__', $Version
     [System.IO.File]::WriteAllText((Join-Path $StageMod "README.md"), $readme, $Utf8NoBom)
 
     $commentNote = if ($KeepComments) { "comments kept" } else { "comments stripped" }
-    Write-Host ("  staged {0} gameplay GSC file(s); excluded {1} dev file(s); {2}" -f $n, $DevFiles.Count, $commentNote)
+    Write-Host ("  staged {0} gameplay GSC file(s) + {1} doc(s); excluded {2} dev file(s); {3}" -f $n, $docCount, $DevFiles.Count, $commentNote)
 }
 
 # -- Resolve paths ------------------------------------------------------------
