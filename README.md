@@ -13,8 +13,6 @@ Made by **KL9**. Join us on **[Discord](https://discord.gg/blackops)**.
 [![Discord](https://img.shields.io/badge/Discord-join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/blackops)
 [![Website](https://img.shields.io/badge/web-gunfight.us-2ea44f)](https://gunfight.us)
 
-[Play](#-quick-start) · [Features](#features) · [Setup guide](docs/SETUP.md) · [Discord](https://discord.gg/blackops) · [Download](https://github.com/KL9modz/BO1-Gunfight/releases)
-
 </div>
 
 ---
@@ -42,7 +40,6 @@ Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFER
 
 | Doc | What's in it |
 |---|---|
-| **[docs/SETUP.md](docs/SETUP.md)** | Install Black Ops 1 + Plutonium, join the server (the mod auto-downloads), recommended graphics/FOV/ADS settings, and the manual-install fallback. |
 | **[docs/REFERENCE.md](docs/REFERENCE.md)** | The full technical reference — every gameplay function, every dvar/variable, and how each system works. |
 | **[docs/DEV.md](docs/DEV.md)** | For contributors — building `mod.ff`, the RCON tools, bots, debug tooling, and the branch/release model. |
 | Self-hosting | Running your own server: **[VPS_DEPLOY.md](VPS_DEPLOY.md)** + **[VPS_HARDENING.md](VPS_HARDENING.md)**. |
@@ -56,45 +53,7 @@ You need a legitimate copy of **Black Ops 1** and the **Plutonium** launcher —
 1. **Install Plutonium** and Black Ops 1 — see the [official guide](https://plutonium.pw/docs/getting-started/).
 2. **Launch & join:** start BO1 multiplayer through Plutonium → open the **Server Browser** → join **`Gunfight`**. Plutonium pulls the mod from the server (FastDL) on connect — no manual install.
 
-> T5 has no direct IP connect — find the server in the in-game **browser** by its name. Keep your **Plutonium launcher updated** so its build matches the server's (FastDL ships the mod, not the engine). Prefer a manual install? The [Setup guide](docs/SETUP.md) covers the fallback.
-
-Full walkthrough with graphics and aim tips → **[docs/SETUP.md](docs/SETUP.md)**.
-
----
-
-## For developers
-
-The repo root **is** the mod folder — it lives at `%LOCALAPPDATA%\Plutonium\storage\t5\mods\mp_gunfight\`.
-
-```
-mp_gunfight/  (GitHub: KL9modz/BO1-Gunfight)
-  maps/mp/gametypes/
-    gf.gsc              entry point: main(), callbacks, precache, spawn pipeline
-    _gf_rounds.gsc      round lifecycle, overtime, damage/score, team-size mode
-    _gf_loadouts.gsc    loadout pool, shuffle, give, camo randomizer
-    _gf_hud.gsc         health panel + loadout overview + score popup (menu-driven)
-    _gf_locations.gsc   per-map curated spawns + overtime flag points
-    _gf_wager_zones.gsc wager compass material + map-specific zone helpers
-    _gf_debug/_gf_bridge/_bot.gsc   (dev-only; stripped from public release)
-  ui_mp/                menu-layer HUD (hud_gf.txt + hud_gf_health.menu)
-  localizedstrings/     localized UI strings (gf.str)
-  mp/gametypesTable.csv registers the 'gf' gametype in the UI
-  site/wwwroot/         public website source (gunfight.us)
-  tools/                build + packaging + deploy + RCON tooling
-  docs/                 this documentation set
-```
-
-- **Build `mod.ff`:** `.\tools\build_ff.ps1` (see [docs/DEV.md](docs/DEV.md) for the full pipeline).
-- **Load in-game:** `loadMod mp_gunfight` in the Plutonium console, then `map_restart`. The folder **must** be prefixed `mp_` to appear in the in-game Mods menu.
-- **Full technical reference:** [docs/REFERENCE.md](docs/REFERENCE.md) · **contributor guide:** [docs/DEV.md](docs/DEV.md).
-
-> A fresh `git clone` lands on the **`release`** branch (the minimal public snapshot). Run `git checkout main` for the full source + tooling.
-
----
-
-## Self-hosting
-
-Want to run your own Black Ops Gunfight server? The full runbook is in **[VPS_DEPLOY.md](VPS_DEPLOY.md)** (setup, launch, firewall, distribution) and **[VPS_HARDENING.md](VPS_HARDENING.md)** (security). Note that, because clients must install the mod manually, a public server also needs to hand players the matching mod package.
+> T5 has no direct IP connect — find the server in the in-game **browser** by its name. Keep your **Plutonium launcher updated** so its build matches the server's (FastDL ships the mod, not the engine).
 
 ---
 

@@ -16,7 +16,7 @@ $ErrorActionPreference = "Stop"
 # branch and the Release zip carry the SAME content (branch = browsable + clonable,
 # zip = download). 'main' keeps everything; this script never modifies it.
 #
-# What ships: mod.ff + the gameplay GSC under maps/ + README.md + docs/ (SETUP.md).
+# What ships: mod.ff + the gameplay GSC under maps/ + a generated README.md.
 # What is dropped: the dev files below, and any dev wiring wrapped in markers:
 #     // #strip-begin ... // #strip-end
 # (markers are inert // comments on main, so the dev build is unaffected).
@@ -167,26 +167,9 @@ function Build-Staging {
     # No mod.csv: it's a build-time zone-source manifest (linker/mod tools), not
     # read by Plutonium at runtime. Runtime needs only mod.ff + the GSC.
 
-    # -- Player-facing docs: SETUP -------------------------------------------
-    # REFERENCE.md / DEV.md stay main-only; rewrite their inbound links (and the
-    # ops docs) in the staged copies to main-branch GitHub URLs so nothing 404s.
-    # SETUP<->../README.md links stay local (the doc + the generated README
-    # ship, so they resolve inside the release).
-    $mainBlob = "https://github.com/KL9modz/BO1-Gunfight/blob/main"
-    $stageDocs = Join-Path $StageMod "docs"
-    New-Item -ItemType Directory -Force -Path $stageDocs | Out-Null
+    # No separate player docs ship anymore - the generated README below is the
+    # release's only doc (REFERENCE.md / DEV.md stay main-only).
     $docCount = 0
-    foreach ($d in @("SETUP.md")) {
-        $src = Join-Path $ModRoot "docs\$d"
-        if (!(Test-Path -LiteralPath $src)) { Write-Warning "release doc missing: docs\$d"; continue }
-        $c = [System.IO.File]::ReadAllText($src)
-        $c = $c -replace '\]\(REFERENCE\.md', "](${mainBlob}/docs/REFERENCE.md"
-        $c = $c -replace '\]\(DEV\.md', "](${mainBlob}/docs/DEV.md"
-        $c = $c -replace '\]\(\.\./VPS_DEPLOY\.md', "](${mainBlob}/VPS_DEPLOY.md"
-        $c = $c -replace '\]\(\.\./VPS_HARDENING\.md', "](${mainBlob}/VPS_HARDENING.md"
-        [System.IO.File]::WriteAllText((Join-Path $stageDocs $d), $c, $Utf8NoBom)
-        $docCount++
-    }
 
     # The 'release' branch is the GitHub DEFAULT branch, so this README is the
     # repo's public landing page - keep it player-facing and on-brand.
@@ -222,11 +205,8 @@ Plutonium **downloads the mod automatically** when you connect - so just launch 
 
 > T5 has no direct IP connect - find the server in the in-game browser by name. Keep your Plutonium launcher updated so its build matches the server's (FastDL ships the mod, not the engine). Prefer a manual install? Extract a [release](https://github.com/KL9modz/BO1-Gunfight/releases) into `%localappdata%\Plutonium\storage\t5\mods\mp_gunfight` and load it from the Mods menu.
 
-Full walkthrough (graphics, FOV, the aim-while-sprinting fix, troubleshooting): **[docs/SETUP.md](docs/SETUP.md)**.
-
 ## More
 
-- **Setup guide:** [docs/SETUP.md](docs/SETUP.md)
 - **Technical reference:** [REFERENCE.md (on main)](https://github.com/KL9modz/BO1-Gunfight/blob/main/docs/REFERENCE.md)
 - **Developer guide:** [DEV.md (on main)](https://github.com/KL9modz/BO1-Gunfight/blob/main/docs/DEV.md)
 - **Full source & development:** the [`main`](https://github.com/KL9modz/BO1-Gunfight/tree/main) branch
