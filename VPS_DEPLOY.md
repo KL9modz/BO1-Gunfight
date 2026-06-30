@@ -224,11 +224,42 @@ The server advertises exactly **1 file** for our mod: `mod.ff` (confirmed in `co
 - **Optional slim-down:** delete everything in the game's `main\` except `iw_00.iwd` and
   `server.cfg` -> ~3 GB instead of ~11 GB and faster map loads. Do this only AFTER the
   server runs cleanly.
-- **Update the mod:** the recommended path is now **git-pull deploys** (Phase 11) - no
-  zip upload. The legacy manual path still works: rebuild -> `package_server.ps1 <newver>`
-  -> upload -> extract over the old folder -> restart the bat.
+- **Update the mod:** use git-pull deploys (`deploy.ps1`, Phase 11) - see **Updating the mod**
+  below for the per-change-type flow and the FastDL sync rule. (Legacy zip path still works:
+  `package_server.ps1 <newver>` -> upload -> extract over the old folder -> restart the bat.)
 - **Rotate RCON later:** re-run `package_server.ps1 -RotateRcon`, redeploy the cfg.
 - **Backups:** take a Contabo snapshot once it works so you can roll back.
+
+### Updating the mod (and how clients get it)
+
+Two kinds of change propagate very differently. Both go out with `deploy.ps1 -Mod` (run inside
+the deploy clone, Phase 11).
+
+**Gameplay logic (the `.gsc` files - loadouts, rounds, spawns, damage, HUD-driving code):**
+server-side only. Plutonium runs `.gsc` as loose rawfiles and the client never needs them (a
+mod-less client still plays). Push to `main`, `deploy.ps1 -Mod`, the server restarts on the new
+logic -> **every player gets it on their next round/join with zero client action.**
+
+**Client assets baked into `mod.ff` (HUD menu layout, localized strings, FX, the gametype card):**
+these live in the zone, so the client needs the new `mod.ff`:
+1. Rebuild the zone: `tools\build_ff.ps1`
+2. Republish the release branch (FastDL pulls `mod.ff` from there):
+   `tools\package_release.ps1 <ver> -PublishBranch`
+3. On the VPS: `deploy.ps1 -Mod` - mirrors the new `mod.ff` to the server folder AND the FastDL
+   web root in one step.
+
+Connecting clients then **auto-download the new `mod.ff` on their next join**. The check is
+**content/checksum based**, so a byte change (same filename) forces a re-fetch - there is no
+silent "keeps the old one" state. (Verified against Plutonium admin reports + the client's own
+join handshake; the exact wire format is closed-source, but the behavior is firmly established.)
+
+> **THE RULE: the server's `mod.ff` and the FastDL-hosted `mod.ff` must be byte-identical.**
+> `deploy.ps1 -Mod` updates both together, so follow it and you're safe. If they ever drift (e.g.
+> you hand-edit one), clients do NOT silently run stale - they get a **blocking `invalid file`
+> error and can't join** until the two match again. Loud failure, never silent drift.
+
+**Not covered by FastDL:** the Plutonium engine build. When Plutonium itself updates, players must
+update their launcher to match the server's build - FastDL ships the mod, never the engine.
 
 ## Phase 10 - Security hardening (REQUIRED before/while public)
 
