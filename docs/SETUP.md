@@ -1,10 +1,10 @@
 # Setup & Connect
 
-How to install Black Ops Gunfight, load it on the Plutonium BO1 client, and join the server.
+How to join Black Ops Gunfight on the Plutonium BO1 client (plus the manual-install fallback).
 
 *Part of the [Black Ops Gunfight](../README.md) documentation.*
 
-> **Read this first.** Plutonium has **no automatic mod download**. Every player installs the mod locally, and your installed version must be the **same version as the server** (currently `0.5.2`). A mismatched or missing mod gives an `Invalid download response received from the server` error on join.
+> **You don't need to install the mod by hand.** Plutonium **downloads the server's mod to you automatically** when you connect (via the server's FastDL). All you need is Black Ops 1, the Plutonium launcher, and an up-to-date launcher build. A manual install is still available as a [fallback](#manual-install-fallback).
 
 ## Requirements
 
@@ -13,47 +13,19 @@ How to install Black Ops Gunfight, load it on the Plutonium BO1 client, and join
 
 Black Ops Gunfight runs on the Plutonium **T5** (Black Ops 1) client. It is free and open source.
 
-## Step 1 - Download Black Ops Gunfight
-
-Grab the latest `mp_gunfight` package from the GitHub releases page:
-
-<https://github.com/KL9modz/BO1-Gunfight/releases>
-
-Download the release archive (the zip) for version `0.5.2`.
-
-## Step 2 - Install it in your mods folder
-
-Extract the archive so the mod folder lands **exactly** here:
-
-```
-%LOCALAPPDATA%\Plutonium\storage\t5\mods\mp_gunfight
-```
-
-Tips:
-
-- Paste `%LOCALAPPDATA%\Plutonium\storage\t5\mods\` into the Windows Explorer address bar to jump straight to the `mods` folder, then extract the zip into it.
-- The folder **must stay named `mp_gunfight`**. If your zip extracts to something like `mp_gunfight-0.5.2`, rename it to `mp_gunfight`.
-- When you're done, `gf.gsc` should be at `...\storage\t5\mods\mp_gunfight\maps\mp\gametypes\gf.gsc`. If you see a `mp_gunfight\mp_gunfight\` double-nested folder, move the inner one up a level.
-
-### Version matching (important)
-
-T5's client cannot download mods from the server, so installing once is not "set and forget":
-
-- Your installed mod version must **match the server's**. If the server updates, download the matching release and replace your `mp_gunfight` folder.
-- Keep the **Plutonium launcher up to date** as well - just run the launcher so it pulls the current build. A stale client against a freshly-installed server can fail the mod handshake.
-
-If either is out of date you'll get `Invalid download response received from the server` when you try to join.
-
-## Step 3 - Load the mod and join
+## Step 1 - Launch and join
 
 1. Launch **Black Ops 1** through the Plutonium launcher and go to **Multiplayer**.
-2. From the main menu, open the **Mods** menu and load **`mp_gunfight`**.
-3. Wait for the yellow confirmation message **"Mod loaded from mods/mp_gunfight"**. Merely having the folder present is not enough - the mod must actually be loaded.
-4. Go to the **Server Browser** and join the server named **`Gunfight`**.
+2. Open the **Server Browser** and join the server named **`Gunfight`**.
+3. On connect, Plutonium downloads the mod from the server and loads it for you - there's no Mods-menu step. The **first** join may take a moment while `mod.ff` downloads.
 
 > T5 has **no direct IP connect**. You cannot `connect <ip>:port` to a remote server - you must find and join it through the in-game **Server Browser** by its name.
 
-## Step 4 - Recommended settings
+### Keep your launcher updated
+
+FastDL ships the **mod**, not the Plutonium **engine**. So keep the **Plutonium launcher up to date** - just run the launcher so it pulls the current build. A client engine build that's behind the server's can fail the join handshake even though the mod itself downloads fine.
+
+## Step 2 - Recommended settings
 
 These are optional client tweaks that make BO1 feel a lot better. Open the in-game console with the **`~`** (tilde) key and paste each command in.
 
@@ -90,14 +62,31 @@ Set it once in the console; it sticks across sessions.
 
 Max out **Options > Graphics** to your taste - texture and model quality cost little on modern hardware. You **don't** need to touch gamma or HDR: the mod sets those each round so everyone gets consistent visibility.
 
+## Manual install (fallback)
+
+Auto-download is the normal path, but you can install the mod by hand if you prefer (or to pre-stage it):
+
+1. Grab the latest `mp_gunfight` package from the [releases page](https://github.com/KL9modz/BO1-Gunfight/releases).
+2. Extract the archive so the mod folder lands **exactly** here:
+
+   ```
+   %LOCALAPPDATA%\Plutonium\storage\t5\mods\mp_gunfight
+   ```
+
+   - The folder **must stay named `mp_gunfight`**. If your zip extracts to something like `mp_gunfight-0.5.2`, rename it to `mp_gunfight`.
+   - When you're done, `gf.gsc` should be at `...\storage\t5\mods\mp_gunfight\maps\mp\gametypes\gf.gsc`. If you see a `mp_gunfight\mp_gunfight\` double-nested folder, move the inner one up a level.
+3. Launch BO1 multiplayer -> open the **Mods** menu -> load **`mp_gunfight`** (wait for the yellow **"Mod loaded from mods/mp_gunfight"** message) -> **Server Browser** -> join **`Gunfight`**.
+
+A hand-installed `mod.ff` has to be **byte-identical** to the server's. If yours has drifted, the server's copy simply downloads over it on connect - so when in doubt, just let auto-download handle it.
+
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| Mod won't load / no **"Mod loaded from mods/mp_gunfight"** message | Confirm the folder is exactly `%LOCALAPPDATA%\Plutonium\storage\t5\mods\mp_gunfight` (named `mp_gunfight`, not double-nested). Re-extract the release if files are missing. |
-| Can't find the server in the browser | Make sure you **loaded** the mod first (Step 3), not just installed it. The server name is `Gunfight`. T5 has no direct IP connect - it only appears in the in-game Server Browser. |
-| `Invalid download response received from the server` on join | Version mismatch or missing mod. Install the **same release version as the server** (`0.5.2`) and update the **Plutonium launcher** to the current build, then reload the mod. |
-| No HUD, blank menu text, or missing effects after joining | The mod isn't installed/loaded on your client. Plutonium does not send mods to clients - install and load `mp_gunfight` locally (Steps 1-3). |
+| Stuck or errored on join while the mod downloads | Make sure your **Plutonium launcher is up to date** (run the launcher to pull the current build), then retry. The engine build must match the server's even though the mod auto-downloads. |
+| Can't find the server in the browser | The server name is `Gunfight`. T5 has no direct IP connect - it only appears in the in-game Server Browser. |
+| `Invalid download response received from the server` on join | A server-side FastDL issue or an out-of-date launcher. Update the **Plutonium launcher** first; if it persists, the server's download host may be down - report it on [Discord](https://discord.gg/blackops). |
+| No HUD, blank menu text, or missing effects after joining | The mod didn't load. Rejoin so it re-downloads, or install `mp_gunfight` manually (see [Manual install](#manual-install-fallback)) and load it from the Mods menu. |
 | Can't ADS while sprinting, or aiming stopped after a restart | Apply the sprint/ADS bind above, then run `exec autoexec` in the console. |
 
 ## See also

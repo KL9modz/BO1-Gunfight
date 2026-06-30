@@ -42,7 +42,7 @@ Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFER
 
 | Doc | What's in it |
 |---|---|
-| **[docs/SETUP.md](docs/SETUP.md)** | Install Black Ops 1 + Plutonium, install the mod, recommended graphics/FOV/ADS settings, and how to connect. |
+| **[docs/SETUP.md](docs/SETUP.md)** | Install Black Ops 1 + Plutonium, join the server (the mod auto-downloads), recommended graphics/FOV/ADS settings, and the manual-install fallback. |
 | **[docs/REFERENCE.md](docs/REFERENCE.md)** | The full technical reference — every gameplay function, every dvar/variable, and how each system works. |
 | **[docs/DEV.md](docs/DEV.md)** | For contributors — building `mod.ff`, the RCON tools, bots, debug tooling, and the branch/release model. |
 | Self-hosting | Running your own server: **[VPS_DEPLOY.md](VPS_DEPLOY.md)** + **[VPS_HARDENING.md](VPS_HARDENING.md)**. |
@@ -51,18 +51,12 @@ Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFER
 
 ## 🎮 Quick start
 
-You need a legitimate copy of **Black Ops 1** and the **Plutonium** launcher.
+You need a legitimate copy of **Black Ops 1** and the **Plutonium** launcher — that's it. The mod **downloads automatically** when you connect.
 
 1. **Install Plutonium** and Black Ops 1 — see the [official guide](https://plutonium.pw/docs/getting-started/).
-2. **Download the mod** from [Releases](https://github.com/KL9modz/BO1-Gunfight/releases).
-3. **Extract it** so the folder lands at:
-   ```
-   %LOCALAPPDATA%\Plutonium\storage\t5\mods\mp_gunfight
-   ```
-   (the folder must stay named `mp_gunfight`).
-4. **Load & join:** launch BO1 multiplayer → **Mods** menu → load **mp_gunfight** → **Server Browser** → join **`Gunfight`**.
+2. **Launch & join:** start BO1 multiplayer through Plutonium → open the **Server Browser** → join **`Gunfight`**. Plutonium pulls the mod from the server (FastDL) on connect — no manual install.
 
-> T5 has no direct IP connect — find the server in the in-game **browser** by its name. Your installed version must **match the server's**, or the gametype/HUD won't load.
+> T5 has no direct IP connect — find the server in the in-game **browser** by its name. Keep your **Plutonium launcher updated** so its build matches the server's (FastDL ships the mod, not the engine). Prefer a manual install? The [Setup guide](docs/SETUP.md) covers the fallback.
 
 Full walkthrough with graphics and aim tips → **[docs/SETUP.md](docs/SETUP.md)**.
 

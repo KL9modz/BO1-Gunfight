@@ -358,7 +358,7 @@ Currently set to `playlist_tdm`. Change and rebuild mod.ff to update.
 
 > Deployment infra (set up 2026-06-15). Scripts live in `tools/`; their output goes to gitignored `tools/dist/`.
 
-**Plutonium T5 has NO client-side mod download.** Every player *and* the server must install the mod locally — a joiner without it gets no HUD, blank localized text, and missing FX (gameplay GSC still runs server-side). A public server therefore needs a manual distribution step; there is no in-engine way around it. This is the whole reason the player package exists.
+**Plutonium T5 DOES download the server's mod to clients on join — via FastDL (`sv_wwwBaseURL`).** Set up correctly, a joiner auto-fetches `mod.ff` from the server's download host and loads it — no manual install. (The old "NO client-side mod download" claim was a misconfiguration, **corrected 2026-06-29**; see `VPS_DEPLOY.md` for the FastDL setup and the Plutonium-staff confirmation.) Two caveats remain: FastDL ships only the **mod**, not the Plutonium **engine** build, so players keep their launcher updated to match the server; and the server's `mod.ff` and the FastDL-hosted `mod.ff` must be byte-identical (`deploy.ps1 -Mod` updates both together). Manual install still works as a fallback, so the public player package stays useful for that and for offline/local use.
 
 ### Two outputs, one minimal public profile
 | Output | Content | Built by |

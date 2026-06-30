@@ -214,8 +214,9 @@ $rconStep
   3. party_minplayers "2"   - "1" is only for solo testing.
   4. g_log "logs/games_mp.log" - use a forward slash on a Linux VPS.
 
-REMEMBER: Plutonium's T5 client cannot download mods from a server. Every player
-must install the player package locally to join. This bundle is the SERVER side.
+REMEMBER: with FastDL (sv_wwwBaseURL) configured, Plutonium's T5 client
+auto-downloads the server's mod.ff on join - players install nothing. This
+bundle is the SERVER side; keep the FastDL-served mod.ff byte-identical to it.
 
 Base server files (Black Ops 1 game files + Plutonium server binaries) are
 obtained ON the VPS per the Plutonium docs - they are NOT in this bundle.

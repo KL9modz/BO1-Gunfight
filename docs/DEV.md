@@ -200,7 +200,7 @@ The VPS uses a **git-pull deploy model**. The full runbook is in [../VPS_DEPLOY.
 
 `deploy.ps1 -Mod` mirrors the tracked tree and pulls `mod.ff` off the `release` branch (it is gitignored on `main`), then restarts the server by killing the bootstrapper (the restart loop relaunches it). Guardrails: it never touches `dedicated.cfg` (which lives in `storage\t5\`, outside the mod folder, and owns `rcon_password`); `-Web` refuses to publish if a secret-looking pattern is found anywhere under `site\wwwroot`; and the private `tools/rcon/` panel is part of the mod tree, never copied to the public site.
 
-> Reminder: Plutonium T5 has **no client-side mod download**. Deploying the mod to the server is only half the job — every player must install the matching public package locally to join. Re-cut it with `package_release.ps1 -Publish`.
+> Reminder: with FastDL (`sv_wwwBaseURL`) configured, Plutonium T5 **auto-downloads the server's `mod.ff` to clients on join** — so once the server and its FastDL host carry the new build, players get it automatically (no manual install). `deploy.ps1 -Mod` updates both together. The public package is the manual fallback / offline copy — re-cut it with `package_release.ps1 -Publish`.
 
 ---
 
