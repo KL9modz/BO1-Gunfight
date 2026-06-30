@@ -186,11 +186,14 @@ The server advertises exactly **1 file** for our mod: `mod.ff` (confirmed in `co
 20. **Set the base URL in `dedicated.cfg`** (the VPS-local one in `storage\t5\`, the sole owner of
     `rcon_password` - never published), then restart the server:
     ```cfg
-    set sv_wwwBaseURL "http://gunfight.us/"
+    set sv_wwwBaseURL "https://gunfight.us/"
     ```
     Trailing slash. The URL must point at the dir that *contains* `mods\`, NOT at `mods\` itself.
+    **Use `https://`, not `http://`:** the hardened IIS 301-redirects http->https (verified), and
+    the FastDL client may not follow the redirect - https serves `mod.ff` directly (valid cert, 200).
     After restart, confirm the startup console dump shows a **non-empty** `sv_wwwBaseURL` (the
-    old failure was it staying `""`).
+    old failure was it staying `""`). If https downloads fail, fall back to **HFS on a separate
+    plain-HTTP port** (`http://gunfight.us:<port>/`) - it dodges both the redirect and the MIME map.
 
 ### Every deploy (automatic)
 

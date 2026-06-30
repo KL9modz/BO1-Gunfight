@@ -35,10 +35,12 @@ $ErrorActionPreference = "Stop"
 # FastDL (client auto-download): -Mod also copies the release mod.ff to
 #   <WebDest>\mods\<ModName>\mod.ff  so connecting clients download it over HTTP.
 # Two ONE-TIME VPS prereqs deploy.ps1 does NOT do (they live outside the repo):
-#   1. dedicated.cfg:  set sv_wwwBaseURL "http://gunfight.us/"   (latches at start;
+#   1. dedicated.cfg:  set sv_wwwBaseURL "https://gunfight.us/"  (latches at start;
 #      must be in the cfg before launch, NOT set over RCON). Verify the startup
 #      dump shows a non-empty value - an empty sv_wwwBaseURL is why the client got
 #      "Invalid download response" before (it had no URL to fetch from).
+#      Use https:// (NOT http://): the hardened IIS 301-redirects http->https, and
+#      the client may not follow the redirect. https serves the file directly.
 #   2. IIS must serve the .ff MIME type, else IIS 404s mod.ff. One-time:
 #      %windir%\system32\inetsrv\appcmd set config /section:staticContent ^
 #        /+"[fileExtension='.ff',mimeType='application/octet-stream']"
