@@ -167,16 +167,27 @@ function Build-Staging {
     # No mod.csv: it's a build-time zone-source manifest (linker/mod tools), not
     # read by Plutonium at runtime. Runtime needs only mod.ff + the GSC.
 
-    # No separate player docs ship anymore - the generated README below is the
-    # release's only doc (REFERENCE.md / DEV.md stay main-only).
-    $docCount = 0
+    # Ship the Getting Started guide at the release ROOT (linked from the README).
+    # It's authored under docs/ on main; here we relocate it to root and fix its
+    # relative links: the parent README link -> sibling, and doc-relative image
+    # paths -> absolute main-branch raw URLs. The image binaries are NOT shipped
+    # (keeps the release minimal); they still render on the 'release' branch via
+    # raw.githubusercontent, and the guide's text stands alone in the offline zip.
+    $mainRaw = "https://raw.githubusercontent.com/KL9modz/BO1-Gunfight/main"
+    $gs = [System.IO.File]::ReadAllText((Join-Path $ModRoot "docs\GETTING_STARTED.md"))
+    $gs = $gs -replace '\]\(\.\./README\.md\)', '](README.md)'
+    $gs = $gs -replace '\]\(images/getting-started/', "](${mainRaw}/docs/images/getting-started/"
+    [System.IO.File]::WriteAllText((Join-Path $StageMod "GETTING_STARTED.md"), $gs, $Utf8NoBom)
+    $docCount = 1
 
-    # The 'release' branch is the GitHub DEFAULT branch, so its README is the
-    # repo's public landing page. Derive it from main's README.md verbatim so the
-    # two never drift - only rewrite relative docs/ links to absolute main-branch
-    # URLs (docs/ is not shipped on the release branch) and stamp the version badge.
+    # The 'release' branch is the GitHub DEFAULT branch, so its README is the repo's
+    # public landing page. Derive it from main's README.md verbatim so the two never
+    # drift - stamp the version badge, point the Getting Started link at the root copy
+    # shipped above, and rewrite any OTHER relative docs/ links to absolute main-branch
+    # URLs (the rest of docs/ - REFERENCE.md / DEV.md - is not shipped on 'release').
     $mainBlob = "https://github.com/KL9modz/BO1-Gunfight/blob/main"
     $readme = [System.IO.File]::ReadAllText((Join-Path $ModRoot "README.md"))
+    $readme = $readme -replace '\]\(docs/GETTING_STARTED\.md\)', '](GETTING_STARTED.md)'
     $readme = $readme -replace '\]\(docs/', "](${mainBlob}/docs/"
     $readme = $readme -replace 'version-[^-)]+-ff7a1a', "version-$Version-ff7a1a"
     [System.IO.File]::WriteAllText((Join-Path $StageMod "README.md"), $readme, $Utf8NoBom)
