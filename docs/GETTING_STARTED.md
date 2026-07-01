@@ -116,7 +116,7 @@ bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"
 
 Now you can **ADS without releasing Sprint.** What it does: aiming (`+speed_throw`) also clears the sprint input (`-breath_sprint`) so the engine stops blocking your aim. The trailing `-sprint` is a required no-op - it absorbs the key event so the sprint release actually fires.
 
-The game sometimes strips custom `MOUSE2` binds on restart. If ADS goes dead, just **re-paste the line**. Keeping it in `autoexec.cfg` and running `exec autoexec` re-applies it in one step.
+The game sometimes strips custom `MOUSE2` binds on restart. If ADS goes dead, just **re-paste the line**.
 
 ---
 
