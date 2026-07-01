@@ -43,6 +43,8 @@ Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFER
 
 You need a copy of **Black Ops 1** from [Steam](https://store.steampowered.com/app/42700/Call_of_Duty_Black_Ops/) or from our [Discord](https://discord.gg/blackops). The mod **downloads automatically** when you connect: Plutonium pulls it from the server (FastDL), so there's no manual install. T5 has no direct IP connect — find the server in the in-game **browser** by its name, and keep your **Plutonium launcher updated** so its build matches the server's.
 
+**New to Plutonium?** The full walkthrough — install, recommended settings, the aim-down-sights fix, and joining the server → **[Getting Started](docs/GETTING_STARTED.md)**.
+
 ---
 
 ## Links

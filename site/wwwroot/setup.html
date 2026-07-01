@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Getting Started &mdash; Black Ops Gunfight</title>
+  <meta name="description" content="Install Plutonium and Black Ops 1, dial in the recommended settings, fix aim-down-sights, and join the Gunfight server." />
+  <meta name="theme-color" content="#0d0f12" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="Getting Started &mdash; Black Ops Gunfight" />
+  <meta property="og:description" content="Install, recommended settings, the ADS fix, and how to join the Gunfight server." />
+  <meta property="og:url" content="https://gunfight.us/setup.html" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ff7a1a'/%3E%3Ctext x='16' y='22' font-family='Segoe UI,Arial' font-size='15' font-weight='800' text-anchor='middle' fill='%231a1106'%3EGF%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="wrap wrap-doc">
+
+    <header class="hero">
+      <p class="eyebrow"><a href="/">&larr; Black Ops Gunfight</a></p>
+      <h1 class="title">Getting Started</h1>
+      <p class="sub">Install &middot; settings &middot; joining the server</p>
+    </header>
+
+    <p class="lead">Black Ops Gunfight runs on the <a href="https://plutonium.pw/" target="_blank" rel="noopener">Plutonium</a> T5 client for Call of Duty: Black Ops 1 (PC only). You need a copy of the game &mdash; from <a href="https://store.steampowered.com/app/42700/Call_of_Duty_Black_Ops/" target="_blank" rel="noopener">Steam</a> or our <a href="https://discord.gg/blackops" target="_blank" rel="noopener">Discord</a>.</p>
+
+    <nav class="toc" aria-label="Contents">
+      <h2>On this page</h2>
+      <ol>
+        <li><a href="#install">Install Plutonium &amp; Black Ops 1</a></li>
+        <li><a href="#settings">Recommended settings</a></li>
+        <li><a href="#ads">Fix aim-down-sights (the sprint bug)</a></li>
+        <li><a href="#join">Find &amp; join Gunfight</a></li>
+        <li><a href="#trouble">Troubleshooting</a></li>
+      </ol>
+    </nav>
+
+    <!-- 1. INSTALL -->
+    <section class="doc" id="install">
+      <h2 class="sec">1. Install Plutonium &amp; Black Ops 1</h2>
+      <p>Plutonium is a free community client that runs Black Ops 1 online. Full official walkthrough: <a href="https://plutonium.pw/docs/install/#t5-black-ops-1" target="_blank" rel="noopener">plutonium.pw/docs/install</a>.</p>
+      <ol class="steps">
+        <li><span class="n">1</span><p><strong>Download the launcher.</strong> Get <code>plutonium.exe</code> from <a href="https://plutonium.pw/" target="_blank" rel="noopener">plutonium.pw</a>. Save it anywhere convenient &mdash; your Desktop or the game folder both work.</p></li>
+        <li><span class="n">2</span><p><strong>Run it.</strong> If Windows SmartScreen shows <em>&ldquo;Windows protected your PC&rdquo;</em>, click <strong>More info &rarr; Run anyway</strong>. The launcher then installs its client files.</p></li>
+        <li><span class="n">3</span><p><strong>Log in.</strong> Sign in with your Plutonium forum account. Don&rsquo;t have one? Create a free account at <a href="https://forum.plutonium.pw/register" target="_blank" rel="noopener">forum.plutonium.pw/register</a>, then log in.</p></li>
+        <li><span class="n">4</span><p><strong>Point it at Black Ops.</strong> Select the <strong>Black Ops</strong> tab, click <strong>SETUP</strong>, and choose your Black Ops game folder. A Steam copy is usually at <code>C:\Program Files (x86)\Steam\steamapps\common\Call of Duty Black Ops</code> (in Steam: right-click the game &rarr; <strong>Manage &rarr; Browse local files</strong>). If you got the game from Discord, pick the unzipped Black Ops folder instead.</p></li>
+        <li><span class="n">5</span><p><strong>Launch.</strong> Press <strong>PLAY</strong>. That&rsquo;s it &mdash; you&rsquo;re in.</p></li>
+      </ol>
+      <div class="note">
+        <p><strong>Re-selecting the folder later:</strong> use <strong>Game Settings</strong> (next to the <strong>PLAY</strong> button), not SETUP.</p>
+        <p><strong>&ldquo;Invalid Game Path&rdquo; error?</strong> The folder you picked isn&rsquo;t a valid Black Ops install (wrong folder, or missing/renamed game files). Re-select the correct <code>Call of Duty Black Ops</code> folder via <strong>Game Settings</strong>.</p>
+      </div>
+      <!-- image slot: assets/getting-started/01-launcher-setup.png (Plutonium launcher: Black Ops tab -> SETUP -> folder picker) -->
+    </section>
+
+    <!-- 2. SETTINGS -->
+    <section class="doc" id="settings">
+      <h2 class="sec">2. Recommended settings</h2>
+      <p>Black Ops is old, but it hasn&rsquo;t been optimised for modern hardware &mdash; a few tweaks make it look sharp and play fast. Set these from the in-game <strong>Options</strong> menu. Each one also has a <strong>console command</strong> (see <a href="#console">how to open the console</a>) if you&rsquo;d rather paste it.</p>
+
+      <h3>Graphics</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Setting</th><th>Recommended</th><th>Console command</th></tr></thead>
+          <tbody>
+            <tr><td>Video mode (resolution)</td><td>Highest your display supports (e.g. 2560&times;1440 for 1440p)</td><td><em>menu &mdash; Video Mode</em></td></tr>
+            <tr><td>Aspect ratio</td><td>Auto</td><td><em>menu</em></td></tr>
+            <tr><td>Screen refresh rate</td><td>Highest (e.g. 144 / 240)</td><td><em>menu &mdash; Refresh Rate</em></td></tr>
+            <tr><td>Fullscreen</td><td>Yes</td><td><code>r_fullscreen 1</code></td></tr>
+            <tr><td>No border (borderless)</td><td>Yes</td><td><em>Plutonium menu / launcher</em></td></tr>
+            <tr><td>Sync every frame (V-Sync)</td><td><strong>No</strong> (unless you have no G-Sync/FreeSync)</td><td><code>r_vsync 0</code></td></tr>
+            <tr><td>Anti-Aliasing</td><td>8&times;</td><td><code>r_aasamples 8</code></td></tr>
+            <tr><td>Anisotropic filtering</td><td>16 (max)</td><td><code>r_texFilterAnisoMin 16</code></td></tr>
+            <tr><td>Texture filtering</td><td>Trilinear</td><td><code>r_texFilterMipMode "Force Trilinear"</code></td></tr>
+            <tr><td>Texture quality</td><td>Extra</td><td><code>r_picmip 0</code></td></tr>
+            <tr><td>Shader warming</td><td>Yes</td><td><code>r_shaderWarming 1</code></td></tr>
+            <tr><td>Shadows</td><td>Yes</td><td><code>sm_enable 1</code></td></tr>
+            <tr><td>Bullet impacts</td><td>Yes</td><td><code>fx_marks 1</code></td></tr>
+            <tr><td>Field of view</td><td>Wide &mdash; raise to taste (~80+)</td><td><code>cg_fov_default 80</code></td></tr>
+            <tr><td>Brightness</td><td>Not too high (~1.05)</td><td><code>r_gamma 1.05</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note">
+        <p><strong>Field of view &mdash; go wide.</strong> Two settings stack: <strong>Field of view</strong> (Graphics) sets the base, and <strong>FOV scale</strong> (Game tab) multiplies it &mdash; raise both to taste, higher = more peripheral vision. A base around <strong>78&ndash;80</strong> with <strong>FOV scale ~1.05</strong> gives a modern, wide view (the number shown climbs into the high-80s once the scale is applied). Console: <code>cg_fov_default 80</code> for the base &mdash; some Plutonium builds allow up to ~90; FOV scale is set from the in-game <strong>Game</strong> tab.</p>
+        <p><strong>Applying video dvars from console:</strong> resolution, fullscreen, anti-aliasing, aniso, and texture quality need a <code>vid_restart</code> (or the menu&rsquo;s <strong>Apply</strong> button) to take effect. FOV, brightness, HUD, shadows, and bullet impacts apply live.</p>
+      </div>
+
+      <figure class="shot"><img src="assets/getting-started/graphics.png" alt="Recommended in-game Graphics settings" loading="lazy" /><figcaption>Graphics settings &mdash; Settings &rarr; Graphics.</figcaption></figure>
+
+      <h3>Game</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Setting</th><th>Recommended</th><th>Console command</th></tr></thead>
+          <tbody>
+            <tr><td>Draw HUD</td><td>Yes</td><td><code>hud_enable 1</code></td></tr>
+            <tr><td>FOV scale</td><td>~1.05 (wider still)</td><td><em>Plutonium menu / launcher</em></td></tr>
+            <tr><td>Max FPS</td><td>Match or just under your refresh (e.g. 237 for a 240&nbsp;Hz display), or uncapped</td><td><code>com_maxfps 237</code> <em>(0 = unlimited)</em></td></tr>
+            <tr><td>Reduce engine sleeps</td><td>Yes (smoother frametimes)</td><td><em>Plutonium menu / launcher</em></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <figure class="shot"><img src="assets/getting-started/game-settings.png" alt="Recommended in-game Game settings" loading="lazy" /><figcaption>Game settings &mdash; Settings &rarr; Game.</figcaption></figure>
+
+      <h3>Multiplayer</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Setting</th><th>Recommended</th><th>Console command</th></tr></thead>
+          <tbody>
+            <tr><td>Allow downloading</td><td>Yes <em>(needed to auto-download the mod)</em></td><td><code>cl_allowdownload 1</code></td></tr>
+            <tr><td>Disable emblems</td><td>No</td><td><em>menu</em></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note">
+        <p><strong>Allow downloading must be on.</strong> It lets Plutonium fetch the Gunfight mod from the server automatically when you join (FastDL) &mdash; no manual install. If you ever see a <code>cl_allowdownload disabled</code> error, open the console and run <code>cl_allowdownload 1</code>.</p>
+      </div>
+
+      <h3>Controller</h3>
+      <ul>
+        <li><strong>Controls &rarr; Gamepad &rarr; Yes</strong> to enable controller support.</li>
+        <li>If the game still doesn&rsquo;t see your controller, use <a href="https://ds4-windows.com/" target="_blank" rel="noopener">DS4Windows</a> to present it as an Xbox controller.</li>
+      </ul>
+
+      <h3 id="console">How to open the console</h3>
+      <p>Press the <code>~</code> key (tilde / grave, top-left under <strong>Esc</strong>) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press <code>~</code> again. Type a command and hit <strong>Enter</strong>.</p>
+      <p>To make settings stick, you can also paste the console lines into <code>%localappdata%\Plutonium\storage\t5\players\autoexec.cfg</code> and run <code>exec autoexec</code> in the console once per session (Plutonium does not auto-run it).</p>
+    </section>
+
+    <!-- 3. ADS FIX -->
+    <section class="doc" id="ads">
+      <h2 class="sec">3. Fix aim-down-sights (the sprint bug)</h2>
+      <p>Black Ops 1 has a long-standing quirk: <strong>you can&rsquo;t aim down sights while the Sprint key (Shift) is held.</strong> Normally you have to fully release Shift before you can aim &mdash; which loses gunfights. One console command fixes it.</p>
+      <p>Open the console (<code>~</code>) and paste:</p>
+      <pre class="cmd"><code>bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"</code></pre>
+      <p>Now you can <strong>ADS without releasing Sprint.</strong> What it does: aiming (<code>+speed_throw</code>) also clears the sprint input (<code>-breath_sprint</code>) so the engine stops blocking your aim. The trailing <code>-sprint</code> is a required no-op &mdash; it absorbs the key event so the sprint release actually fires. (Drop it and the two-token version silently fails.)</p>
+      <p><strong>Good to know:</strong></p>
+      <ul>
+        <li>This forces <strong>Hold-ADS</strong> (not toggle) &mdash; hold right-click to aim, regardless of your toggle-ADS menu setting.</li>
+        <li>Tapping Shift <em>while already aiming</em> will drop you out of ADS. Minor, and a fair trade for being able to aim out of a sprint.</li>
+        <li>The game sometimes strips custom <code>MOUSE2</code> binds on restart. If ADS goes dead, just <strong>re-paste the line</strong>. Keeping it in <code>autoexec.cfg</code> and running <code>exec autoexec</code> re-applies it in one step.</li>
+        <li>It&rsquo;s a <strong>client-side keybind</strong> &mdash; each player sets it on their own machine; it can&rsquo;t be pushed by the server.</li>
+      </ul>
+    </section>
+
+    <!-- 4. JOIN -->
+    <section class="doc" id="join">
+      <h2 class="sec">4. Find &amp; join Gunfight</h2>
+      <p>Black Ops 1 has <strong>no direct IP connect</strong> &mdash; you join through the in-game <strong>Server Browser</strong> (it uses Plutonium&rsquo;s backend session IDs, not IPs).</p>
+      <ol class="steps">
+        <li><span class="n">1</span><p>Launch the game via the Plutonium launcher (<strong>PLAY</strong>) and reach the multiplayer main menu.</p></li>
+        <li><span class="n">2</span><p>Open the <strong>Server Browser</strong>.</p></li>
+        <li><span class="n">3</span><p><strong>Reset the filters</strong> and click <strong>Refresh</strong> so every server shows (modded servers are hidden by default filters).</p></li>
+        <li><span class="n">4</span><p>On the <strong>Ranked</strong> tab, find <strong>Gunfight | gunfight.us</strong> (mode <strong>GF</strong>) and join. The mod <strong>downloads automatically</strong> on connect (FastDL) &mdash; no manual install needed.</p></li>
+      </ol>
+      <div class="note">
+        <p>Keep your <strong>Plutonium launcher updated</strong> so its build matches the server&rsquo;s &mdash; FastDL ships the <em>mod</em>, not the engine build. Questions? Join our <a href="https://discord.gg/blackops" target="_blank" rel="noopener">Discord</a>.</p>
+      </div>
+
+      <figure class="shot"><img src="assets/getting-started/server-browser.png" alt="The Server Browser with Gunfight | gunfight.us in the Ranked tab" loading="lazy" /><figcaption>The Server Browser &mdash; look for <strong>Gunfight | gunfight.us</strong> (mode GF) on the <strong>Ranked</strong> tab.</figcaption></figure>
+    </section>
+
+    <!-- 5. TROUBLESHOOTING -->
+    <section class="doc" id="trouble">
+      <h2 class="sec">5. Troubleshooting</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Problem</th><th>Fix</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Can&rsquo;t aim down sights</strong> while holding Sprint</td><td>Paste the ADS bind from <a href="#ads">section 3</a>.</td></tr>
+            <tr><td><strong>ADS stopped working</strong> after a restart</td><td>Re-paste the <code>bind MOUSE2 ...</code> line, or run <code>exec autoexec</code>.</td></tr>
+            <tr><td><strong>&ldquo;Invalid Game Path&rdquo;</strong> in the launcher</td><td>Re-select the correct <code>Call of Duty Black Ops</code> folder via <strong>Game Settings</strong>.</td></tr>
+            <tr><td><strong>Gunfight isn&rsquo;t in the server list</strong></td><td>Reset all filters, click <strong>Refresh</strong>, and check the <strong>Ranked</strong> tab for <code>Gunfight | gunfight.us</code>.</td></tr>
+            <tr><td><code>cl_allowdownload disabled</code> on join</td><td>Open the console and run <code>cl_allowdownload 1</code>, then rejoin.</td></tr>
+            <tr><td><strong>Joined but no custom HUD / mode looks wrong</strong></td><td>Your Plutonium build is out of date &mdash; update the launcher to match the server, then rejoin.</td></tr>
+            <tr><td><strong>Console won&rsquo;t open</strong> with <code>~</code></td><td>Enable the console in the Plutonium launcher/in-game options, then press <code>~</code> again.</td></tr>
+            <tr><td><strong>Controller not detected</strong></td><td>Enable <strong>Controls &rarr; Gamepad &rarr; Yes</strong>; if needed, run <a href="https://ds4-windows.com/" target="_blank" rel="noopener">DS4Windows</a>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <p class="made">Made by <strong>KL9</strong> &middot; <a href="https://discord.gg/blackops" target="_blank" rel="noopener">Discord</a> &middot; <a href="https://github.com/KL9modz/BO1-Gunfight" target="_blank" rel="noopener">GitHub</a></p>
+
+  </main>
+</body>
+</html>
