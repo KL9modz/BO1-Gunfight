@@ -190,14 +190,12 @@ Made by **KL9**. Join us on **[Discord](https://discord.gg/blackops)**.
 
 ---
 
-## Install & play
+## How To Play
 
-Plutonium **downloads the mod automatically** when you connect - so just launch Black Ops 1 through Plutonium, open the **Server Browser**, and join **Gunfight**. No manual install needed.
+1. **Install [Plutonium](https://plutonium.pw/)** and Black Ops 1 — see the [official guide](https://plutonium.pw/docs/getting-started/).
+2. **Launch & join:** start BO1 multiplayer through Plutonium → open the **Server Browser** → join **`Gunfight`**.
 
-1. Install Plutonium and Black Ops 1 - see <https://plutonium.pw/docs/getting-started/>.
-2. Launch BO1 multiplayer -> **Server Browser** -> join **Gunfight**. The mod downloads from the server on connect.
-
-> T5 has no direct IP connect - find the server in the in-game browser by name. Keep your Plutonium launcher updated so its build matches the server's (FastDL ships the mod, not the engine). Prefer a manual install? Extract a [release](https://github.com/KL9modz/BO1-Gunfight/releases) into `%localappdata%\Plutonium\storage\t5\mods\mp_gunfight` and load it from the Mods menu.
+You need a copy of **Black Ops 1** from [Steam](https://store.steampowered.com/app/42700/Call_of_Duty_Black_Ops/) or from our [Discord](https://discord.gg/blackops). The mod **downloads automatically** when you connect: Plutonium pulls it from the server (FastDL), so there's no manual install. T5 has no direct IP connect — find the server in the in-game **browser** by its name, and keep your **Plutonium launcher updated** so its build matches the server's.
 
 ## More
 

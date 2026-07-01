@@ -38,12 +38,10 @@ Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFER
 
 ## How To Play
 
-You need a legitimate copy of **Black Ops 1** and the **Plutonium** launcher — that's it. The mod **downloads automatically** when you connect.
+1. **Install [Plutonium](https://plutonium.pw/)** and Black Ops 1 — see the [official guide](https://plutonium.pw/docs/getting-started/).
+2. **Launch & join:** start BO1 multiplayer through Plutonium → open the **Server Browser** → join **`Gunfight`**.
 
-1. **Install Plutonium** and Black Ops 1 — see the [official guide](https://plutonium.pw/docs/getting-started/).
-2. **Launch & join:** start BO1 multiplayer through Plutonium → open the **Server Browser** → join **`Gunfight`**. Plutonium pulls the mod from the server (FastDL) on connect — no manual install.
-
-> T5 has no direct IP connect — find the server in the in-game **browser** by its name. Keep your **Plutonium launcher updated** so its build matches the server's (FastDL ships the mod, not the engine).
+You need a copy of **Black Ops 1** from [Steam](https://store.steampowered.com/app/42700/Call_of_Duty_Black_Ops/) or from our [Discord](https://discord.gg/blackops). The mod **downloads automatically** when you connect: Plutonium pulls it from the server (FastDL), so there's no manual install. T5 has no direct IP connect — find the server in the in-game **browser** by its name, and keep your **Plutonium launcher updated** so its build matches the server's.
 
 ---
 
