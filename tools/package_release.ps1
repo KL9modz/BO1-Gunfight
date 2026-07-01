@@ -171,43 +171,14 @@ function Build-Staging {
     # release's only doc (REFERENCE.md / DEV.md stay main-only).
     $docCount = 0
 
-    # The 'release' branch is the GitHub DEFAULT branch, so this README is the
-    # repo's public landing page - keep it player-facing and on-brand.
-    $readme = @'
-<div align="center">
-
-# Black Ops Gunfight
-
-**Black Ops Gunfight** brings the authentic **Gunfight** game mode to **Call of Duty: Black Ops 1** on **Plutonium T5** for PC. Two teams face off using a **shared loadout** that **rotates every other round**. **No health regeneration, no custom loadouts, no killstreaks.** If time expires, capture the **overtime flag** to secure the round. Otherwise, the team with the **most remaining health** wins the round. The first team to win **6 rounds** wins the match.
-
-Made by **KL9**. Join us on **[Discord](https://discord.gg/blackops)**.
-
-![Version](https://img.shields.io/badge/version-__VERSION__-ff7a1a)
-[![Discord](https://img.shields.io/badge/Discord-join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/blackops)
-[![Website](https://img.shields.io/badge/web-gunfight.us-2ea44f)](https://gunfight.us)
-
-</div>
-
----
-
-## How To Play
-
-1. **Install [Plutonium](https://plutonium.pw/)** and Black Ops 1 — see the [official guide](https://plutonium.pw/docs/install/#t5-black-ops-1).
-2. **Launch & join:** start BO1 multiplayer through Plutonium → open the **Server Browser** → join **`Gunfight`**.
-
-You need a copy of **Black Ops 1** from [Steam](https://store.steampowered.com/app/42700/Call_of_Duty_Black_Ops/) or from our [Discord](https://discord.gg/blackops). The mod **downloads automatically** when you connect: Plutonium pulls it from the server (FastDL), so there's no manual install. T5 has no direct IP connect — find the server in the in-game **browser** by its name, and keep your **Plutonium launcher updated** so its build matches the server's.
-
-## More
-
-- **Technical reference:** [REFERENCE.md (on main)](https://github.com/KL9modz/BO1-Gunfight/blob/main/docs/REFERENCE.md)
-- **Developer guide:** [DEV.md (on main)](https://github.com/KL9modz/BO1-Gunfight/blob/main/docs/DEV.md)
-- **Full source & development:** the [`main`](https://github.com/KL9modz/BO1-Gunfight/tree/main) branch
-- **Discord:** https://discord.gg/blackops   |   **Website:** https://gunfight.us
-
----
-
-<sub>Version __VERSION__. Black Ops Gunfight is a fan-made, non-commercial game mode, not affiliated with or endorsed by Activision or Treyarch. Requires a legitimate copy of Call of Duty: Black Ops and the Plutonium client.</sub>
-'@ -replace '__VERSION__', $Version
+    # The 'release' branch is the GitHub DEFAULT branch, so its README is the
+    # repo's public landing page. Derive it from main's README.md verbatim so the
+    # two never drift - only rewrite relative docs/ links to absolute main-branch
+    # URLs (docs/ is not shipped on the release branch) and stamp the version badge.
+    $mainBlob = "https://github.com/KL9modz/BO1-Gunfight/blob/main"
+    $readme = [System.IO.File]::ReadAllText((Join-Path $ModRoot "README.md"))
+    $readme = $readme -replace '\]\(docs/', "](${mainBlob}/docs/"
+    $readme = $readme -replace 'version-[^-)]+-ff7a1a', "version-$Version-ff7a1a"
     [System.IO.File]::WriteAllText((Join-Path $StageMod "README.md"), $readme, $Utf8NoBom)
 
     $commentNote = if ($KeepComments) { "comments kept" } else { "comments stripped" }
