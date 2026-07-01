@@ -36,16 +36,6 @@ Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFER
 
 ---
 
-## Documentation
-
-| Doc | What's in it |
-|---|---|
-| **[docs/REFERENCE.md](docs/REFERENCE.md)** | The full technical reference — every gameplay function, every dvar/variable, and how each system works. |
-| **[docs/DEV.md](docs/DEV.md)** | For contributors — building `mod.ff`, the RCON tools, bots, debug tooling, and the branch/release model. |
-| Self-hosting | Running your own server: **[VPS_DEPLOY.md](VPS_DEPLOY.md)** + **[VPS_HARDENING.md](VPS_HARDENING.md)**. |
-
----
-
 ## 🎮 Quick start
 
 You need a legitimate copy of **Black Ops 1** and the **Plutonium** launcher — that's it. The mod **downloads automatically** when you connect.
