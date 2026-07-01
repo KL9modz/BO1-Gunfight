@@ -31,7 +31,6 @@
       <ol>
         <li><a href="#install">Install Plutonium &amp; Black Ops 1</a></li>
         <li><a href="#settings">Recommended settings</a></li>
-        <li><a href="#ads">Sprint/ADS key improvement</a></li>
         <li><a href="#join">Find &amp; join Gunfight</a></li>
         <li><a href="#trouble">Troubleshooting</a></li>
       </ol>
@@ -95,7 +94,7 @@
       <p>To work out your total FOV, multiply <code>cg_fov</code> by <code>cg_fovScale</code> &mdash; for a standard <strong>80 FOV</strong>, use <code>cg_fov 65</code> and <code>cg_fovScale 1.32</code>. Expect to experiment with values to find what feels comfortable.</p>
 
       <h3 id="console">How to open the console</h3>
-      <p>Press the <code>~</code> key (tilde / grave, top-left under <strong>Esc</strong>) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press <code>~</code> again. Type a command and hit <strong>Enter</strong> &mdash; you&rsquo;ll need it for the <a href="#ads">Sprint/ADS key improvement</a> below.</p>
+      <p>Press the <code>~</code> key (tilde / grave, top-left under <strong>Esc</strong>) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press <code>~</code> again. Type a command and hit <strong>Enter</strong> &mdash; you&rsquo;ll need it for the <a href="#ads">Sprint/ADS improvement</a> below.</p>
 
       <h3>Game</h3>
       <div class="table-wrap">
@@ -130,11 +129,8 @@
         <li><strong>Controls &rarr; Gamepad &rarr; Yes</strong> to enable controller support.</li>
         <li>If you are using a PlayStation controller, use <a href="https://ds4-windows.com/" target="_blank" rel="noopener">DS4Windows</a> to present it as an Xbox controller.</li>
       </ul>
-    </section>
 
-    <!-- 3. ADS FIX -->
-    <section class="doc" id="ads">
-      <h2 class="sec">3. Sprint/ADS key improvement</h2>
+      <h3 id="ads">Mouse &amp; Keyboard: Sprint/ADS improvement</h3>
       <p>Black Ops 1 has a long-standing quirk: <strong>you can&rsquo;t aim down sights while the Sprint key (Shift) is held.</strong> Normally you have to fully release Shift before you can aim &mdash; which loses gunfights. One console command fixes it.</p>
       <p>Open the console (<code>~</code>) and paste:</p>
       <pre class="cmd"><code>bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"</code></pre>
@@ -142,9 +138,9 @@
       <p>The game sometimes strips custom <code>MOUSE2</code> binds on restart. If ADS goes dead, just <strong>re-paste the line</strong>.</p>
     </section>
 
-    <!-- 4. JOIN -->
+    <!-- 3. JOIN -->
     <section class="doc" id="join">
-      <h2 class="sec">4. Find &amp; join Gunfight</h2>
+      <h2 class="sec">3. Find &amp; join Gunfight</h2>
       <p>Black Ops Gunfight is a ranked server. Join through the in-game <strong>Server Browser</strong>.</p>
       <ol class="steps">
         <li><span class="n">1</span><p>Launch the game via the Plutonium launcher.</p></li>
@@ -159,14 +155,14 @@
       <figure class="shot"><img src="assets/getting-started/server-browser.png" alt="The Server Browser with Gunfight | gunfight.us in the Ranked tab" loading="lazy" /><figcaption>The Server Browser &mdash; look for <strong>Gunfight | gunfight.us</strong> (mode GF) on the <strong>Ranked</strong> tab.</figcaption></figure>
     </section>
 
-    <!-- 5. TROUBLESHOOTING -->
+    <!-- 4. TROUBLESHOOTING -->
     <section class="doc" id="trouble">
-      <h2 class="sec">5. Troubleshooting</h2>
+      <h2 class="sec">4. Troubleshooting</h2>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Problem</th><th>Fix</th></tr></thead>
           <tbody>
-            <tr><td><strong>Can&rsquo;t aim down sights</strong> while holding Sprint</td><td>Paste the ADS bind from <a href="#ads">section 3</a>.</td></tr>
+            <tr><td><strong>Can&rsquo;t aim down sights</strong> while holding Sprint</td><td>Paste the ADS bind from the <a href="#ads">Sprint/ADS improvement</a> section.</td></tr>
             <tr><td><strong>ADS stopped working</strong> after a restart</td><td>Re-paste the <code>bind MOUSE2 ...</code> line.</td></tr>
             <tr><td><strong>&ldquo;Invalid Game Path&rdquo;</strong> in the launcher</td><td>Re-select the correct <code>Call of Duty Black Ops</code> folder via <strong>Game Settings</strong>.</td></tr>
             <tr><td><strong>Gunfight isn&rsquo;t in the server list</strong></td><td>Reset all filters, click <strong>Refresh</strong>, and check the <strong>Ranked</strong> tab for <code>Gunfight | gunfight.us</code>.</td></tr>

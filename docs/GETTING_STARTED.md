@@ -7,9 +7,8 @@ Everything a new player needs: install Plutonium and Black Ops 1, dial in the re
 ## Contents
 - [1. Install Plutonium & Black Ops 1](#1-install-plutonium--black-ops-1)
 - [2. Recommended settings](#2-recommended-settings)
-- [3. Sprint/ADS key improvement](#3-sprintads-key-improvement)
-- [4. Find & join Gunfight](#4-find--join-gunfight)
-- [5. Troubleshooting](#5-troubleshooting)
+- [3. Find & join Gunfight](#3-find--join-gunfight)
+- [4. Troubleshooting](#4-troubleshooting)
 
 ---
 
@@ -75,7 +74,7 @@ To work out your total FOV, multiply `cg_fov` by `cg_fovScale` - for a standard 
 
 ### How to open the console
 
-Press the **`~`** key (tilde / grave, top-left under **Esc**) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press `~` again. Type a command and hit **Enter** - you'll need it for the [Sprint/ADS key improvement](#3-sprintads-key-improvement) below.
+Press the **`~`** key (tilde / grave, top-left under **Esc**) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press `~` again. Type a command and hit **Enter** - you'll need it for the [Sprint/ADS improvement](#mouse--keyboard-sprintads-improvement) below.
 
 ### Game
 
@@ -102,9 +101,7 @@ Press the **`~`** key (tilde / grave, top-left under **Esc**) to open the Pluton
 - **Controls -> Gamepad -> Yes** to enable controller support.
 - If you are using a PlayStation controller, use **[DS4Windows](https://ds4-windows.com/)** to present it as an Xbox controller.
 
----
-
-## 3. Sprint/ADS key improvement
+### Mouse & Keyboard: Sprint/ADS improvement
 
 Black Ops 1 has a long-standing quirk: **you can't aim down sights while the Sprint key (Shift) is held.** Normally you have to fully release Shift before you can aim - which loses gunfights. One console command fixes it.
 
@@ -120,7 +117,7 @@ The game sometimes strips custom `MOUSE2` binds on restart. If ADS goes dead, ju
 
 ---
 
-## 4. Find & join Gunfight
+## 3. Find & join Gunfight
 
 Black Ops Gunfight is a ranked server. Join through the in-game **Server Browser**.
 
@@ -136,11 +133,11 @@ Black Ops Gunfight is a ranked server. Join through the in-game **Server Browser
 
 ---
 
-## 5. Troubleshooting
+## 4. Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| **Can't aim down sights** while holding Sprint | Paste the ADS bind from [section 3](#3-sprintads-key-improvement). |
+| **Can't aim down sights** while holding Sprint | Paste the ADS bind from the [Sprint/ADS improvement](#mouse--keyboard-sprintads-improvement) section. |
 | **ADS stopped working** after a restart | Re-paste the `bind MOUSE2 ...` line. |
 | **"Invalid Game Path"** in the launcher | Re-select the correct `Call of Duty Black Ops` folder via **Game Settings**. |
 | **Gunfight isn't in the server list** | Reset all filters, click **Refresh**, and check the **Ranked** tab for `Gunfight | gunfight.us`. |
