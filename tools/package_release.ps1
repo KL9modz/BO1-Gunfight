@@ -178,9 +178,9 @@ function Build-Staging {
 
 # Black Ops Gunfight
 
-**Round-based, one-life Gunfight for Call of Duty: Black Ops 1 - on Plutonium T5.**
+**Black Ops Gunfight** brings the authentic **Gunfight** game mode to **Call of Duty: Black Ops 1** on **Plutonium T5** for PC. Two teams face off using a **shared loadout** that **rotates every other round**. **No health regeneration, no custom loadouts, no killstreaks.** If time expires, capture the **overtime flag** to secure the round. Otherwise, the team with the **most remaining health** wins the round. The first team to win **6 rounds** wins the match.
 
-One life per round. A shared random loadout every round. No killstreaks, no health regen, no second chances - just the gunfight.
+Made by **KL9**. Join us on **[Discord](https://discord.gg/blackops)**.
 
 ![Version](https://img.shields.io/badge/version-__VERSION__-ff7a1a)
 [![Discord](https://img.shields.io/badge/Discord-join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/blackops)
@@ -189,12 +189,6 @@ One life per round. A shared random loadout every round. No killstreaks, no heal
 </div>
 
 ---
-
-## About
-
-**Black Ops Gunfight** is a custom multiplayer game mode for **Call of Duty: Black Ops 1**, running on the **Plutonium T5** client. Two teams, **one life each per round**, and the **same randomized loadout** for everyone - rounds are won by gunskill, not classes or streaks. First team to **6 rounds** wins.
-
-Made by **KL9**. Come play on **[Discord](https://discord.gg/blackops)**.
 
 ## Install & play
 
