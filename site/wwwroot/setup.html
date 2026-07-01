@@ -56,34 +56,33 @@
     <!-- 2. SETTINGS -->
     <section class="doc" id="settings">
       <h2 class="sec">2. Recommended settings</h2>
-      <p>Black Ops is old, but it hasn&rsquo;t been optimised for modern hardware &mdash; a few tweaks make it look sharp and play fast. Set these from the in-game <strong>Options</strong> menu. Each one also has a <strong>console command</strong> (see <a href="#console">how to open the console</a>) if you&rsquo;d rather paste it.</p>
+      <p>Black Ops is old, but it hasn&rsquo;t been optimised for modern hardware &mdash; a few tweaks make it look sharp and play fast. Set these from the in-game <strong>Options</strong> menu.</p>
 
       <h3>Graphics</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Setting</th><th>Recommended</th><th>Console command</th></tr></thead>
+          <thead><tr><th>Setting</th><th>Recommended</th></tr></thead>
           <tbody>
-            <tr><td>Video mode (resolution)</td><td>Highest your display supports (e.g. 2560&times;1440 for 1440p)</td><td><em>menu &mdash; Video Mode</em></td></tr>
-            <tr><td>Aspect ratio</td><td>Auto</td><td><em>menu</em></td></tr>
-            <tr><td>Screen refresh rate</td><td>Highest (e.g. 144 / 240)</td><td><em>menu &mdash; Refresh Rate</em></td></tr>
-            <tr><td>Fullscreen</td><td>Yes</td><td><code>r_fullscreen 1</code></td></tr>
-            <tr><td>No border (borderless)</td><td>Yes</td><td><em>Plutonium menu / launcher</em></td></tr>
-            <tr><td>Sync every frame (V-Sync)</td><td><strong>No</strong> (unless you have no G-Sync/FreeSync)</td><td><code>r_vsync 0</code></td></tr>
-            <tr><td>Anti-Aliasing</td><td>8&times;</td><td><code>r_aasamples 8</code></td></tr>
-            <tr><td>Anisotropic filtering</td><td>16 (max)</td><td><code>r_texFilterAnisoMin 16</code></td></tr>
-            <tr><td>Texture filtering</td><td>Trilinear</td><td><code>r_texFilterMipMode "Force Trilinear"</code></td></tr>
-            <tr><td>Texture quality</td><td>Extra</td><td><code>r_picmip 0</code></td></tr>
-            <tr><td>Shader warming</td><td>Yes</td><td><code>r_shaderWarming 1</code></td></tr>
-            <tr><td>Shadows</td><td>Yes</td><td><code>sm_enable 1</code></td></tr>
-            <tr><td>Bullet impacts</td><td>Yes</td><td><code>fx_marks 1</code></td></tr>
-            <tr><td>Field of view</td><td>Wide &mdash; raise to taste (~80+)</td><td><code>cg_fov_default 80</code></td></tr>
-            <tr><td>Brightness</td><td>Not too high (~1.05)</td><td><code>r_gamma 1.05</code></td></tr>
+            <tr><td>Video mode (resolution)</td><td><strong>Highest your display supports</strong> (e.g. 2560&times;1440 for 1440p)</td></tr>
+            <tr><td>Aspect ratio</td><td><strong>Auto</strong></td></tr>
+            <tr><td>Screen refresh rate</td><td><strong>Highest</strong> (e.g. 144 / 240)</td></tr>
+            <tr><td>Fullscreen</td><td><strong>Yes or No</strong></td></tr>
+            <tr><td>No border (borderless)</td><td><strong>Yes</strong></td></tr>
+            <tr><td>Sync every frame (V-Sync)</td><td><strong>No</strong> (unless you have no G-Sync/FreeSync)</td></tr>
+            <tr><td>Anti-Aliasing</td><td><strong>8&times;</strong></td></tr>
+            <tr><td>Anisotropic filtering</td><td><strong>16 (max)</strong></td></tr>
+            <tr><td>Texture filtering</td><td><strong>Trilinear</strong></td></tr>
+            <tr><td>Texture quality</td><td><strong>Extra</strong></td></tr>
+            <tr><td>Shader warming</td><td><strong>Yes</strong></td></tr>
+            <tr><td>Shadows</td><td><strong>Yes</strong></td></tr>
+            <tr><td>Bullet impacts</td><td><strong>Yes</strong></td></tr>
+            <tr><td>Field of view</td><td><strong>Max</strong></td></tr>
+            <tr><td>Brightness</td><td><strong>Not too high</strong></td></tr>
           </tbody>
         </table>
       </div>
       <div class="note">
-        <p><strong>Field of view &mdash; go wide.</strong> Two settings stack: <strong>Field of view</strong> (Graphics) sets the base, and <strong>FOV scale</strong> (Game tab) multiplies it &mdash; raise both to taste, higher = more peripheral vision. A base around <strong>78&ndash;80</strong> with <strong>FOV scale ~1.05</strong> gives a modern, wide view (the number shown climbs into the high-80s once the scale is applied). Console: <code>cg_fov_default 80</code> for the base &mdash; some Plutonium builds allow up to ~90; FOV scale is set from the in-game <strong>Game</strong> tab.</p>
-        <p><strong>Applying video dvars from console:</strong> resolution, fullscreen, anti-aliasing, aniso, and texture quality need a <code>vid_restart</code> (or the menu&rsquo;s <strong>Apply</strong> button) to take effect. FOV, brightness, HUD, shadows, and bullet impacts apply live.</p>
+        <p><strong>Field of view &mdash; go wide.</strong> Two settings stack: <strong>Field of view</strong> (Graphics) sets the base, and <strong>FOV scale</strong> (Game tab) multiplies it &mdash; raise both to taste, higher = more peripheral vision. Maxing the Field of view slider with <strong>FOV scale ~1.05</strong> gives a modern, wide view (the displayed number climbs into the high-80s once the scale is applied).</p>
       </div>
 
       <figure class="shot"><img src="assets/getting-started/graphics.png" alt="Recommended in-game Graphics settings" loading="lazy" /><figcaption>Graphics settings &mdash; Settings &rarr; Graphics.</figcaption></figure>
@@ -91,12 +90,12 @@
       <h3>Game</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Setting</th><th>Recommended</th><th>Console command</th></tr></thead>
+          <thead><tr><th>Setting</th><th>Recommended</th></tr></thead>
           <tbody>
-            <tr><td>Draw HUD</td><td>Yes</td><td><code>hud_enable 1</code></td></tr>
-            <tr><td>FOV scale</td><td>~1.05 (wider still)</td><td><em>Plutonium menu / launcher</em></td></tr>
-            <tr><td>Max FPS</td><td>Match or just under your refresh (e.g. 237 for a 240&nbsp;Hz display), or uncapped</td><td><code>com_maxfps 237</code> <em>(0 = unlimited)</em></td></tr>
-            <tr><td>Reduce engine sleeps</td><td>Yes (smoother frametimes)</td><td><em>Plutonium menu / launcher</em></td></tr>
+            <tr><td>Draw HUD</td><td><strong>Yes</strong></td></tr>
+            <tr><td>FOV scale</td><td><strong>~1.05</strong> (wider still)</td></tr>
+            <tr><td>Max FPS</td><td><strong>Match or just under your refresh</strong> (e.g. 237 for a 240&nbsp;Hz display), or uncapped</td></tr>
+            <tr><td>Reduce engine sleeps</td><td><strong>Yes</strong> (smoother frametimes)</td></tr>
           </tbody>
         </table>
       </div>
@@ -106,10 +105,10 @@
       <h3>Multiplayer</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Setting</th><th>Recommended</th><th>Console command</th></tr></thead>
+          <thead><tr><th>Setting</th><th>Recommended</th></tr></thead>
           <tbody>
-            <tr><td>Allow downloading</td><td>Yes <em>(needed to auto-download the mod)</em></td><td><code>cl_allowdownload 1</code></td></tr>
-            <tr><td>Disable emblems</td><td>No</td><td><em>menu</em></td></tr>
+            <tr><td>Allow downloading</td><td><strong>Yes</strong> <em>(needed to auto-download the mod)</em></td></tr>
+            <tr><td>Disable emblems</td><td><strong>No</strong></td></tr>
           </tbody>
         </table>
       </div>
@@ -124,8 +123,8 @@
       </ul>
 
       <h3 id="console">How to open the console</h3>
-      <p>Press the <code>~</code> key (tilde / grave, top-left under <strong>Esc</strong>) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press <code>~</code> again. Type a command and hit <strong>Enter</strong>.</p>
-      <p>To make settings stick, you can also paste the console lines into <code>%localappdata%\Plutonium\storage\t5\players\autoexec.cfg</code> and run <code>exec autoexec</code> in the console once per session (Plutonium does not auto-run it).</p>
+      <p>Press the <code>~</code> key (tilde / grave, top-left under <strong>Esc</strong>) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press <code>~</code> again. Type a command and hit <strong>Enter</strong> &mdash; you&rsquo;ll need it for the <a href="#ads">aim-down-sights fix</a> below.</p>
+      <p>To make a console command stick, paste it into <code>%localappdata%\Plutonium\storage\t5\players\autoexec.cfg</code> and run <code>exec autoexec</code> in the console once per session (Plutonium does not auto-run it).</p>
     </section>
 
     <!-- 3. ADS FIX -->

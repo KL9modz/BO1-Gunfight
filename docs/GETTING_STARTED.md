@@ -37,53 +37,51 @@ Plutonium is a free community client that runs Black Ops 1 online. Full official
 
 ## 2. Recommended settings
 
-Black Ops is old, but it hasn't been optimised for modern hardware - so a few tweaks make it look sharp and play fast. Set these from the in-game **Options** menu. Every setting below also has a **console command** (see [How to open the console](#how-to-open-the-console)) if you'd rather paste them.
+Black Ops is old, but it hasn't been optimised for modern hardware - so a few tweaks make it look sharp and play fast. Set these from the in-game **Options** menu.
 
 ### Graphics
 
-| Setting | Recommended | Console command |
-|---|---|---|
-| Video mode (resolution) | Highest your display supports (e.g. `2560x1440` for 1440p) | *(menu - Video Mode)* |
-| Aspect ratio | Auto | *(menu)* |
-| Screen refresh rate | Highest (e.g. 144 / 240) | *(menu - Refresh Rate)* |
-| Fullscreen | Yes | `r_fullscreen 1` |
-| No border (borderless) | Yes | *(Plutonium menu / launcher)* |
-| Sync every frame (V-Sync) | **No** (unless you have no G-Sync/FreeSync) | `r_vsync 0` |
-| Anti-Aliasing | 8x | `r_aasamples 8` |
-| Anisotropic filtering | 16 (max) | `r_texFilterAnisoMin 16` |
-| Texture filtering | Trilinear | `r_texFilterMipMode "Force Trilinear"` |
-| Texture quality | Extra | `r_picmip 0` |
-| Shader warming | Yes | `r_shaderWarming 1` |
-| Shadows | Yes | `sm_enable 1` |
-| Bullet impacts | Yes | `fx_marks 1` |
-| Field of view | Wide - raise to taste (~80+) | `cg_fov_default 80` |
-| Brightness | Not too high (~1.05) | `r_gamma 1.05` |
+| Setting | Recommended |
+|---|---|
+| Video mode (resolution) | **Highest your display supports** (e.g. `2560x1440` for 1440p) |
+| Aspect ratio | **Auto** |
+| Screen refresh rate | **Highest** (e.g. 144 / 240) |
+| Fullscreen | **Yes or No** |
+| No border (borderless) | **Yes** |
+| Sync every frame (V-Sync) | **No** (unless you have no G-Sync/FreeSync) |
+| Anti-Aliasing | **8x** |
+| Anisotropic filtering | **16 (max)** |
+| Texture filtering | **Trilinear** |
+| Texture quality | **Extra** |
+| Shader warming | **Yes** |
+| Shadows | **Yes** |
+| Bullet impacts | **Yes** |
+| Field of view | **Max** |
+| Brightness | **Not too high** |
 
-> **Field of view - go wide.** Two settings stack: **Field of view** (Graphics) sets the base, and **FOV scale** (Game tab) multiplies it - raise both to taste, higher = more peripheral vision. A base around **78-80** with **FOV scale ~1.05** gives a modern, wide view (the number shown climbs into the high-80s once the scale is applied). Console: `cg_fov_default 80` for the base - some Plutonium builds allow up to ~90; FOV scale is set from the in-game **Game** tab.
->
-> **Applying video dvars from console:** resolution, fullscreen, anti-aliasing, aniso, and texture quality need a **`vid_restart`** (or the menu's **Apply** button) to take effect. FOV, brightness, HUD, shadows, and bullet impacts apply live.
+> **Field of view - go wide.** Two settings stack: **Field of view** (Graphics) sets the base, and **FOV scale** (Game tab) multiplies it - raise both to taste, higher = more peripheral vision. Maxing the Field of view slider with **FOV scale ~1.05** gives a modern, wide view (the displayed number climbs into the high-80s once the scale is applied).
 
 ![Recommended in-game Graphics settings](images/getting-started/graphics.png)
 *In-game Graphics settings - Settings -> Graphics.*
 
 ### Game
 
-| Setting | Recommended | Console command |
-|---|---|---|
-| Draw HUD | Yes | `hud_enable 1` |
-| FOV scale | ~1.05 (wider still) | *(Plutonium menu / launcher)* |
-| Max FPS | Match or just under your refresh (e.g. 237 for a 240 Hz display), or uncapped | `com_maxfps 237` *(`0` = unlimited)* |
-| Reduce engine sleeps | Yes (smoother frametimes) | *(Plutonium menu / launcher)* |
+| Setting | Recommended |
+|---|---|
+| Draw HUD | **Yes** |
+| FOV scale | **~1.05** (wider still) |
+| Max FPS | **Match or just under your refresh** (e.g. 237 for a 240 Hz display), or uncapped |
+| Reduce engine sleeps | **Yes** (smoother frametimes) |
 
 ![Recommended in-game Game settings](images/getting-started/game-settings.png)
 *Game settings - Settings -> Game.*
 
 ### Multiplayer
 
-| Setting | Recommended | Console command |
-|---|---|---|
-| Allow downloading | Yes *(needed to auto-download the mod)* | `cl_allowdownload 1` |
-| Disable emblems | No | *(menu)* |
+| Setting | Recommended |
+|---|---|
+| Allow downloading | **Yes** *(needed to auto-download the mod)* |
+| Disable emblems | **No** |
 
 > **Allow downloading must be on.** It lets Plutonium fetch the Gunfight mod from the server automatically when you join (FastDL) - no manual install. If you ever see a `cl_allowdownload disabled` error, open the console and run `cl_allowdownload 1`.
 
@@ -94,9 +92,9 @@ Black Ops is old, but it hasn't been optimised for modern hardware - so a few tw
 
 ### How to open the console
 
-Press the **`~`** key (tilde / grave, top-left under **Esc**) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press `~` again. Type a command and hit **Enter**.
+Press the **`~`** key (tilde / grave, top-left under **Esc**) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press `~` again. Type a command and hit **Enter** - you'll need it for the [aim-down-sights fix](#3-fix-aim-down-sights-the-sprint-bug) below.
 
-To make settings stick, you can also paste the console lines into a config file at
+To make a console command stick, paste it into a config file at
 `%localappdata%\Plutonium\storage\t5\players\autoexec.cfg`
 and run `exec autoexec` in the console once per session (Plutonium does not auto-run it).
 
