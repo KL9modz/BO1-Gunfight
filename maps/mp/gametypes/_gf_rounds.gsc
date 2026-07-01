@@ -360,8 +360,14 @@ gf_roundClock()
             return;
         }
 
-        gf_updateRoundGameEndTime();
-        gf_updateRoundWarning();
+        // While admin-paused, skip the HUD push + warning tick so the setGameEndTime(0)
+        // from gf_pauseMatch stays sticky (a re-push would re-arm the on-screen clock)
+        // and no countdown beep fires on a frozen clock — same guard as gf_overtimeClock.
+        if ( !isDefined( level.gf_roundPaused ) || !level.gf_roundPaused )
+        {
+            gf_updateRoundGameEndTime();
+            gf_updateRoundWarning();
+        }
 
         wait 0.1;
     }
@@ -461,26 +467,23 @@ gf_cleanupRoundTimerState()
 // per-bot bot_watch_stop_move loop pins velocity/origin when it's 0.
 gf_pauseMatch()
 {
+    // Freeze whichever mod clock is live. Overtime routes through the capture
+    // pause-depth counter (gf_pauseOvertimeForCapture) so an admin pause composes
+    // with an in-progress zone capture — the OT clock only resumes once BOTH
+    // release it. The round clock has no such counter, so it uses a simple flag.
     if ( isDefined( level.gf_overtimeActive ) && level.gf_overtimeActive )
-    {
-        if ( !isDefined( level.gf_overtimePaused ) || !level.gf_overtimePaused )
-        {
-            gf_syncOvertimeRemaining();
-            level.gf_overtimePaused = true;
-            setGameEndTime( 0 );   // hide the clock while paused (matches capture pause)
-        }
-    }
+        gf_pauseOvertimeForCapture();
     else if ( isDefined( level.gf_roundClockRunning ) && level.gf_roundClockRunning )
     {
         if ( !isDefined( level.gf_roundPaused ) || !level.gf_roundPaused )
         {
             gf_syncRoundRemaining();
             level.gf_roundPaused = true;
-            setGameEndTime( 0 );
+            setGameEndTime( 0 );   // hide the clock while paused (matches capture pause)
         }
     }
 
-    setDvar( "bots_play_move", 0 );   // framework freezes every bot in place
+    setDvar( "bots_play_move", 0 );   // framework's bot_watch_stop_move pins every bot in place
 
     players = level.players;
     for ( i = 0; i < players.size; i++ )
@@ -489,32 +492,32 @@ gf_pauseMatch()
 
 gf_resumeMatch()
 {
-    // Reset each clock's reference time BEFORE unpausing so the paused interval is
-    // discarded (no catch-up jump), exactly like gf_resumeOvertimeForCapture.
     if ( isDefined( level.gf_overtimeActive ) && level.gf_overtimeActive )
-    {
-        if ( isDefined( level.gf_overtimePaused ) && level.gf_overtimePaused )
-        {
-            level.gf_overtimePaused   = false;
-            level.gf_overtimeLastTime = gettime();
-            gf_updateOvertimeGameEndTime();
-        }
-    }
+        gf_resumeOvertimeForCapture();
     else if ( isDefined( level.gf_roundClockRunning ) && level.gf_roundClockRunning )
     {
         if ( isDefined( level.gf_roundPaused ) && level.gf_roundPaused )
         {
-            level.gf_roundPaused   = false;
+            // Reset the reference time BEFORE clearing the flag so the paused interval
+            // is discarded (no catch-up jump), like gf_resumeOvertimeForCapture.
             level.gf_roundLastTime = gettime();
+            level.gf_roundPaused   = false;
             gf_updateRoundGameEndTime();
         }
     }
 
-    setDvar( "bots_play_move", 1 );   // release bots
+    setDvar( "bots_play_move", 1 );
 
+    // bots_play_move=1 stops bot_watch_stop_move from re-pinning, but the last-spawned
+    // botStopMove(true) loop only ends on this notify (or death/disconnect) — without it
+    // a bot that was mid-navigation stays frozen in place for the rest of the round.
     players = level.players;
     for ( i = 0; i < players.size; i++ )
+    {
         players[i] freezeControls( false );
+        if ( isDefined( players[i].pers["isBot"] ) && players[i].pers["isBot"] )
+            players[i] notify( "botStopMove" );
+    }
 }
 
 // ─── Round End ─────────────────────────────────────────────────────────────
