@@ -255,6 +255,9 @@ th {
 tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
 td code { white-space: nowrap; }
 
+/* recommended values pop in theme orange (settings tables only) */
+table.settings tbody strong { color: var(--accent); }
+
 /* screenshots */
 figure.shot { margin: 6px 0 20px; }
 figure.shot img {
