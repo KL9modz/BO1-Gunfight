@@ -1,6 +1,9 @@
 ﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 ---
 ### TODO
+- the mod hangs on first download
+- client join notifications
+- server advertisements 
 - Refine loadouts
 - Adjust spawns & flags
 - Setup a modded T5 Plutonium server on a VPS
@@ -13,7 +16,20 @@
   hide the engine timer (`setGameEndTime 0`), and route the OT countdown through the same element
   so round + OT share one style. Moderate work, not a threshold tweak.
 
+BOT BUGS
+- bot fill issues
+- bots soemtimes die on spawn
+
+BUGS
+- sometimes spawn facing wrong direction
+- unkown command cd
+- pause match not fully working on server
+
 DONE:
+- Server player limit + team-size caps set: `sv_maxclients 10` (launch bat) = 8 playing + 2
+  spectator headroom; `scr_team_maxsize 4` (4v4, overflow -> spectator) in `dedicated.cfg`.
+  Spatial mode now flips small->large on TOTAL in-match players via `scr_gf_largemode_minplayers`
+  (default 7: 0-6 small, 7+ large), replacing the old per-team "both teams 4+" rule.
 - 30s warning replaced by a mod-owned live-round clock (`gf_startRoundClock` etc. in
   `_gf_rounds.gsc`): native `timeLimitClock` is silenced via `pauseTimer()`, so the stock
   time-out sequence (announcer + TIME_OUT music + 30s beeps + the 1-min/12s client cues) no
@@ -81,16 +97,16 @@ Fix ADS: `exec autoexec`
 
 ## Team-Size Mode (Large vs Small)
 
-Gunfight runs two spatial modes depending on team size, selected by
+Gunfight runs two spatial modes depending on the total in-match player count, selected by
 `scr_<gametype>_teamspawnmode` = `auto` (default) | `large` | `small`. Resolved every round
 in `onStartGameType` -> `gf_resolveTeamMode()` (`_gf_rounds.gsc`); the result lives in
 `level.gf_largeMode` (wiped + re-derived each `map_restart`).
 
-- **small** (default below 4v4): curated, clustered gunfight spawns from `_gf_locations.gsc`
+- **small** (default at 6 or fewer total players): curated, clustered gunfight spawns from `_gf_locations.gsc`
   (fall back to `mp_wager_spawn`, then `mp_tdm_spawn`). The baked wager blockers
   (`gun/oic/hlnd/shrp`) are KEPT in the `_gameobjects` allow-list to shrink the play space, the
   wager compass material is applied, and overtime uses the curated OT flag spot.
-- **large** (auto when BOTH teams have 4+): full-map `mp_tdm_spawn` pool. Wager blockers are
+- **large** (auto at 7+ total players, allies+axis): full-map `mp_tdm_spawn` pool. Wager blockers are
   OMITTED so `_gameobjects::main` deletes them and the whole map opens up; overtime uses the
   native Domination B flag (`dom` is always kept in the allow-list so that flag survives).
 
@@ -122,7 +138,8 @@ persists through `map_restart`.
 | `gf_capture_time` | 3 | OT zone hold-to-capture seconds, SMALL |
 | `gf_capture_time_large` | 5 | OT zone hold-to-capture seconds, LARGE |
 | `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (see Team-Size Mode) |
-| `scr_team_maxsize` | 0 | `>0` caps players/team; overflow is sent to spectator on spawn (`gf_playerSpawnedCB`) |
+| `scr_gf_largemode_minplayers` | 7 | Total in-match players (allies+axis) at/above which `auto` mode uses LARGE spawns; below it, SMALL. `0-6` small, `7+` large. Clamped 2-12 |
+| `scr_team_maxsize` | 0 (shipped cfg sets **4**) | `>0` caps players/team; overflow is sent to spectator on spawn (`gf_playerSpawnedCB`). `dedicated.cfg` ships `4` (4v4); `sv_maxclients` 10 = 8 play + 2 spectator |
 | `perk_weapSwitchMultiplier` | (engine default) | Engine weapon-swap speed (lower = faster); gated by `specialty_fastweaponswitch`, which is **OFF by default** (no longer in the base loadout). NOT forced by the mod — stock by default. To use it: enable Fast Weapon Switch via the RCON Perks tab (`gf_perk_on`), then tune the slider; inert until the perk is on |
 | `gf_perk_on` / `gf_perk_off` | "" | Comma-separated perk override lists (RCON-managed) applied AFTER the base perk set in `gf_giveCustomLoadout` |
 

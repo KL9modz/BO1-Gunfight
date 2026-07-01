@@ -77,8 +77,9 @@ gf_nativePrematchTicker()
 // read level.gf_largeMode.
 //
 // scr_<gametype>_teamspawnmode: auto (default) | large | small. "auto" goes
-// large only when BOTH teams have 4+ players; a forced value pins the mode for
-// admins/RCON/testing.
+// large once the TOTAL in-match player count (allies + axis) reaches
+// scr_gf_largemode_minplayers (default 7 -> 0-6 players small, 7+ large); a
+// forced value pins the mode for admins/RCON/testing.
 //
 // onStartGameType (where this runs) snapshots the roster BEFORE bots/late
 // joiners connect — _bot::init() is threaded at the end of onStartGameType — so
@@ -117,7 +118,7 @@ gf_resolveTeamMode()
     // level.playerCount is engine-maintained (_globallogic::updateTeamStatus) and initialized
     // in _globallogic::init(), so it's safe to read here. This is only the first-setup fallback;
     // once a round activates, gf_updateAutoTeamMode persists the decision in game[].
-    level.gf_largeMode = ( level.playerCount["allies"] >= 4 && level.playerCount["axis"] >= 4 );
+    level.gf_largeMode = ( ( level.playerCount["allies"] + level.playerCount["axis"] ) >= gf_largeModeThreshold() );
 }
 
 // Captures the live team sizes once the round is active and everyone (incl.
@@ -128,7 +129,15 @@ gf_updateAutoTeamMode()
     if ( GetDvar( "scr_" + level.gameType + "_teamspawnmode" ) != "auto" )
         return;
 
-    game["gf_autoLargeMode"] = ( level.playerCount["allies"] >= 4 && level.playerCount["axis"] >= 4 );
+    game["gf_autoLargeMode"] = ( ( level.playerCount["allies"] + level.playerCount["axis"] ) >= gf_largeModeThreshold() );
+}
+
+// Total in-match players (allies + axis) at or above which auto-mode selects
+// LARGE (full-map) spawns; below it, SMALL (curated). Tunable via
+// scr_gf_largemode_minplayers (default 7 -> 0-6 small, 7+ large; clamp 2-12).
+gf_largeModeThreshold()
+{
+    return int( gf_cfgFloat( "scr_gf_largemode_minplayers", 7, 2, 12 ) );
 }
 
 // ─── Player Lifecycle ──────────────────────────────────────────────────────
@@ -307,6 +316,7 @@ gf_startRoundClock()
     level.gf_roundLastTick     = undefined;
     level.gf_roundWarned       = false;
     level.gf_roundClockRunning = true;
+    level.gf_roundPaused       = false;
     level.timeLimitOverride    = true;
 
     if ( isDefined( level.gf_roundTickObject ) )
@@ -365,6 +375,11 @@ gf_syncRoundRemaining()
     now = gettime();
     elapsed = now - level.gf_roundLastTime;
     level.gf_roundLastTime = now;
+
+    // While admin-paused (RCON bridge), advance the reference time but hold the
+    // remaining ms — same freeze the OT clock does via level.gf_overtimePaused.
+    if ( isDefined( level.gf_roundPaused ) && level.gf_roundPaused )
+        return;
 
     if ( elapsed > 0 )
         level.gf_roundRemaining -= elapsed;
@@ -430,6 +445,76 @@ gf_cleanupRoundTimerState()
         level.gf_roundTickObject delete();
         level.gf_roundTickObject = undefined;
     }
+}
+
+// ─── Admin Match Pause (RCON bridge) ───────────────────────────────────────
+// The live round timer is now mod-owned (gf_roundClock / gf_syncRoundRemaining),
+// so the stock pauseTimer() the bridge used to call no longer freezes the visible
+// clock — it only sets level.timerStopped, which we already hold true all round
+// (and flipping it back via resumeTimer would re-arm the native "time running out"
+// VO/music/beeps we deliberately suppress). Instead the bridge delegates here:
+// we freeze whichever mod clock is live (overtime takes priority over the round
+// clock, matching gf_onTimeLimit), freeze human controls, and freeze bots.
+//
+// Bots ignore freezeControls (they're server-driven by the vendored framework,
+// not client input), so we toggle the framework's own bots_play_move dvar — its
+// per-bot bot_watch_stop_move loop pins velocity/origin when it's 0.
+gf_pauseMatch()
+{
+    if ( isDefined( level.gf_overtimeActive ) && level.gf_overtimeActive )
+    {
+        if ( !isDefined( level.gf_overtimePaused ) || !level.gf_overtimePaused )
+        {
+            gf_syncOvertimeRemaining();
+            level.gf_overtimePaused = true;
+            setGameEndTime( 0 );   // hide the clock while paused (matches capture pause)
+        }
+    }
+    else if ( isDefined( level.gf_roundClockRunning ) && level.gf_roundClockRunning )
+    {
+        if ( !isDefined( level.gf_roundPaused ) || !level.gf_roundPaused )
+        {
+            gf_syncRoundRemaining();
+            level.gf_roundPaused = true;
+            setGameEndTime( 0 );
+        }
+    }
+
+    setDvar( "bots_play_move", 0 );   // framework freezes every bot in place
+
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+        players[i] freezeControls( true );
+}
+
+gf_resumeMatch()
+{
+    // Reset each clock's reference time BEFORE unpausing so the paused interval is
+    // discarded (no catch-up jump), exactly like gf_resumeOvertimeForCapture.
+    if ( isDefined( level.gf_overtimeActive ) && level.gf_overtimeActive )
+    {
+        if ( isDefined( level.gf_overtimePaused ) && level.gf_overtimePaused )
+        {
+            level.gf_overtimePaused   = false;
+            level.gf_overtimeLastTime = gettime();
+            gf_updateOvertimeGameEndTime();
+        }
+    }
+    else if ( isDefined( level.gf_roundClockRunning ) && level.gf_roundClockRunning )
+    {
+        if ( isDefined( level.gf_roundPaused ) && level.gf_roundPaused )
+        {
+            level.gf_roundPaused   = false;
+            level.gf_roundLastTime = gettime();
+            gf_updateRoundGameEndTime();
+        }
+    }
+
+    setDvar( "bots_play_move", 1 );   // release bots
+
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+        players[i] freezeControls( false );
 }
 
 // ─── Round End ─────────────────────────────────────────────────────────────

@@ -41,6 +41,7 @@
 
 #include maps\mp\_utility;
 #include maps\mp\gametypes\_globallogic_utils;
+#include maps\mp\gametypes\_gf_rounds;
 
 gf_bridgeInit()
 {
@@ -175,14 +176,16 @@ gf_bridgeDispatch( cmd )
 
 // --- Pause / Resume ----------------------------------------------------------
 
+// Delegates to the mod-owned clock in _gf_rounds. The visible round timer is no
+// longer the native one, so bare pauseTimer()/resumeTimer() here would (a) fail to
+// freeze the HUD clock and (b) resume would re-arm the native "time running out"
+// VO/music/beeps the mod suppresses. gf_pauseMatch/gf_resumeMatch freeze the live
+// clock (round or overtime), human controls, AND bots (which ignore freezeControls).
 gf_bridgePause()
 {
     if ( level.gf_paused ) return;
     level.gf_paused = true;
-    maps\mp\gametypes\_globallogic_utils::pauseTimer();
-    players = level.players;
-    for ( i = 0; i < players.size; i++ )
-        players[i] freezeControls( true );
+    maps\mp\gametypes\_gf_rounds::gf_pauseMatch();
     iPrintLnBold( "^3-- MATCH PAUSED --" );
 }
 
@@ -190,10 +193,7 @@ gf_bridgeResume()
 {
     if ( !level.gf_paused ) return;
     level.gf_paused = false;
-    maps\mp\gametypes\_globallogic_utils::resumeTimer();
-    players = level.players;
-    for ( i = 0; i < players.size; i++ )
-        players[i] freezeControls( false );
+    maps\mp\gametypes\_gf_rounds::gf_resumeMatch();
     iPrintLnBold( "^2-- MATCH RESUMED --" );
 }
 

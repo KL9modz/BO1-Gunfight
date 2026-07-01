@@ -30,6 +30,8 @@ set g_allowvote "0"                                 // Allow Vote.
 set g_inactivity "190"                              // Enable or Disable auto kick feature for idle/AFK players.
 set g_password ""                                   // Password Protected Game. Leave blank if you want players to join.
 set party_minplayers "2"                            // Pre-Match Lobby (2 = public; set to 1 for solo local testing)
+set scr_team_maxsize "4"                            // Gunfight: max players per team (4v4). Overflow past this is sent to spectator on spawn. sv_maxclients (launch bat) = 10 -> 8 play + 2 spectator/headroom.
+//set scr_gf_largemode_minplayers "7"               // Total in-match players (allies+axis) at/above which spawns switch to LARGE (full-map). Default 7: 0-6 small, 7+ large.
 set scr_xpscale "1"                                 // Round end XP multiplicator (score * scr_xpscale = xp)
 set scr_wagerbet "100"                              // How much it would cost to connect to a wager gamemode. 
 set sv_disableClientConsole "1"                     // 1 = block players opening the in-game console (shrinks client cheat/tweak surface on a public lobby)
@@ -76,7 +78,7 @@ set bg_viewBobAmplitudeBase "0.3"                   // Reduced head-bob while mo
 set g_logSync 1                                     // 0 only flush on game end, 1 flush when buffer full. (Keep this at 1 if you plan on using a 3rd party admin tool)
 set g_log "logs\games_mp.log"                       // IMPORTANT! Make sure the filename is unique for each server you clone!
 set rcon_password ""                                // RemoteCONtrol password. SET A STRONG UNIQUE VALUE before going live (or use tools/package_server.ps1 -RotateRcon). !!Do NOT skip if you plan on using a 3rd party admin tool such as B3 or IW4m-Admin!!
-set rcon_rate_limit "500"                           // Rate limit RCon; limit is per IP; range is 0 to 10 000; value is in milliseconds. Lower this if you use IW4mA's Game Interface.
+set rcon_rate_limit "500"                           // Rate limit RCon, per IP, range 0 to 10 000, in milliseconds. Lower this if you use IW4mA's Game Interface.
 set rcon_prints "0"                                 // Show rcon activity on the server console? (1 = Yes, 0 = No)
 set rcon_localhost_bypass "0"                       // Does localhost rcon traffic bypass rate limits and whitelist checks? (1 = Yes, 0 = No)
 set con_displayRconOutput "0"                       // Print the output of commands run via rcon?
