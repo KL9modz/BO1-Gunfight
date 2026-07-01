@@ -31,7 +31,7 @@
       <ol>
         <li><a href="#install">Install Plutonium &amp; Black Ops 1</a></li>
         <li><a href="#settings">Recommended settings</a></li>
-        <li><a href="#ads">Fix aim-down-sights (the sprint bug)</a></li>
+        <li><a href="#ads">Sprint/ADS key improvement</a></li>
         <li><a href="#join">Find &amp; join Gunfight</a></li>
         <li><a href="#trouble">Troubleshooting</a></li>
       </ol>
@@ -45,7 +45,7 @@
         <li><span class="n">1</span><p><strong>Download the launcher.</strong> Get <code>plutonium.exe</code> from <a href="https://plutonium.pw/" target="_blank" rel="noopener">plutonium.pw</a>. Save it anywhere convenient &mdash; your Desktop or the game folder both work.</p></li>
         <li><span class="n">2</span><p><strong>Run it.</strong> If Windows SmartScreen shows <em>&ldquo;Windows protected your PC&rdquo;</em>, click <strong>More info &rarr; Run anyway</strong>. The launcher then installs its client files.</p></li>
         <li><span class="n">3</span><p><strong>Log in.</strong> Sign in with your Plutonium forum account. Don&rsquo;t have one? Create a free account at <a href="https://forum.plutonium.pw/register" target="_blank" rel="noopener">forum.plutonium.pw/register</a>, then log in.</p></li>
-        <li><span class="n">4</span><p><strong>Point it at Black Ops.</strong> Select the <strong>Black Ops</strong> tab, click <strong>SETUP</strong>, and choose your Black Ops game folder. A Steam copy is usually at <code>C:\Program Files (x86)\Steam\steamapps\common\Call of Duty Black Ops</code> (in Steam: right-click the game &rarr; <strong>Manage &rarr; Browse local files</strong>). If you got the game from Discord, pick the unzipped Black Ops folder instead.</p></li>
+        <li><span class="n">4</span><p><strong>Point it at Black Ops.</strong> Select the <strong>Black Ops T5 Multiplayer</strong> tab, click <strong>SETUP</strong>, and choose your Black Ops game folder. A Steam copy is usually at <code>C:\Program Files (x86)\Steam\steamapps\common\Call of Duty Black Ops</code> (in Steam: right-click the game &rarr; <strong>Manage &rarr; Browse local files</strong>). If you downloaded the game from elsewhere (such as our Discord), pick the unzipped Black Ops folder instead.</p></li>
         <li><span class="n">5</span><p><strong>Launch.</strong> Press <strong>PLAY</strong>. That&rsquo;s it &mdash; you&rsquo;re in.</p></li>
       </ol>
       <div class="note">
@@ -58,19 +58,18 @@
     <!-- 2. SETTINGS -->
     <section class="doc" id="settings">
       <h2 class="sec">2. Recommended settings</h2>
-      <p>Black Ops is old, but it hasn&rsquo;t been optimised for modern hardware &mdash; a few tweaks make it look sharp and play fast. Set these from the in-game <strong>Options</strong> menu.</p>
+      <p>Black Ops is old, but with Plutonium it can be optimized for modern systems. Here are a few critical tweaks to get the game looking sharp and running fast.</p>
 
       <h3>Graphics</h3>
       <div class="table-wrap">
         <table class="settings">
           <thead><tr><th>Setting</th><th>Recommended</th></tr></thead>
           <tbody>
-            <tr><td>Video mode (resolution)</td><td><strong>Highest your display supports</strong> (e.g. 2560&times;1440 for 1440p)</td></tr>
+            <tr><td>Video mode (resolution)</td><td><strong>Highest your display supports</strong> (e.g. 2560&times;1440 for 2K)</td></tr>
             <tr><td>Aspect ratio</td><td><strong>Auto</strong></td></tr>
             <tr><td>Screen refresh rate</td><td><strong>Highest</strong> (e.g. 144 / 240)</td></tr>
-            <tr><td>Fullscreen</td><td><strong>Yes or No</strong></td></tr>
-            <tr><td>No border (borderless)</td><td><strong>Yes</strong></td></tr>
-            <tr><td>Sync every frame (V-Sync)</td><td><strong>No</strong> (unless you have no G-Sync/FreeSync)</td></tr>
+            <tr><td>No border (borderless fullscreen window)</td><td><strong>Yes</strong></td></tr>
+            <tr><td>Sync every frame (V-Sync)</td><td><strong>No</strong> (unless you don&rsquo;t have G-Sync)</td></tr>
             <tr><td>Anti-Aliasing</td><td><strong>8&times;</strong></td></tr>
             <tr><td>Anisotropic filtering</td><td><strong>16 (max)</strong></td></tr>
             <tr><td>Texture filtering</td><td><strong>Trilinear</strong></td></tr>
@@ -78,16 +77,22 @@
             <tr><td>Shader warming</td><td><strong>Yes</strong></td></tr>
             <tr><td>Shadows</td><td><strong>Yes</strong></td></tr>
             <tr><td>Bullet impacts</td><td><strong>Yes</strong></td></tr>
-            <tr><td>Field of view</td><td><strong>Max</strong></td></tr>
+            <tr><td>Field of view</td><td><strong>(see below)</strong></td></tr>
             <tr><td>Brightness</td><td><strong>Not too high</strong></td></tr>
           </tbody>
         </table>
       </div>
-      <div class="note">
-        <p><strong>Field of view &mdash; go wide.</strong> Two settings stack: <strong>Field of view</strong> (Graphics) sets the base, and <strong>FOV scale</strong> (Game tab) multiplies it &mdash; raise both to taste, higher = more peripheral vision. Maxing the Field of view slider with <strong>FOV scale ~1.05</strong> gives a modern, wide view (the displayed number climbs into the high-80s once the scale is applied).</p>
-      </div>
-
       <figure class="shot"><img src="assets/getting-started/graphics.png" alt="Recommended in-game Graphics settings" loading="lazy" /><figcaption>Graphics settings &mdash; Settings &rarr; Graphics.</figcaption></figure>
+
+      <h3>Field of view (FOV)</h3>
+      <p>The in-game <strong>Field of view</strong> slider maxes out at <strong>80</strong>, but Plutonium lets you push wider by combining it with <strong>FOV scale</strong> (Game tab). Your true FOV is <code>cg_fov</code> &times; <code>cg_fovScale</code>, so any scale above 1 takes you past 80. If you don&rsquo;t want to use this system, just leave <strong>FOV scale</strong> at <strong>1</strong>.</p>
+      <p><strong>FOV scale also drives your aim-down-sights (ADS) sensitivity.</strong> Plutonium reworked how <code>cg_fov</code> and <code>cg_fovScale</code> behave: the vanilla game slows your sensitivity when you aim down sights, but Plutonium now bases it on your FOV scale instead. A few examples (each totalling 90 FOV):</p>
+      <ul>
+        <li><code>cg_fov 90</code> + <code>cg_fovScale 1</code> = 90 FOV. Only your hipfire FOV changes; sensitivity still differs when you zoom in, because the ADS FOV is lower.</li>
+        <li><code>cg_fov 40</code> + <code>cg_fovScale 2.25</code> = 90 FOV. Your ADS FOV matches your hipfire FOV &mdash; more situational awareness at the cost of less zoom detail &mdash; so sensitivity is the <strong>same</strong> hipfiring and aiming.</li>
+        <li><code>cg_fov 70</code> + <code>cg_fovScale 1.3</code> = 90 FOV. ADS is slightly zoomed in versus hipfire, and sensitivity is faster than vanilla because of the higher total FOV.</li>
+      </ul>
+      <p>To work out your total FOV, multiply <code>cg_fov</code> by <code>cg_fovScale</code> &mdash; for a standard <strong>80 FOV</strong>, use <code>cg_fov 65</code> and <code>cg_fovScale 1.32</code>. Expect to experiment with values to find what feels comfortable.</p>
 
       <h3>Game</h3>
       <div class="table-wrap">
@@ -95,7 +100,7 @@
           <thead><tr><th>Setting</th><th>Recommended</th></tr></thead>
           <tbody>
             <tr><td>Draw HUD</td><td><strong>Yes</strong></td></tr>
-            <tr><td>FOV scale</td><td><strong>~1.05</strong> (wider still)</td></tr>
+            <tr><td>FOV scale</td><td><strong>(see below)</strong></td></tr>
             <tr><td>Max FPS</td><td><strong>Match or just under your refresh</strong> (e.g. 237 for a 240&nbsp;Hz display), or uncapped</td></tr>
             <tr><td>Reduce engine sleeps</td><td><strong>Yes</strong> (smoother frametimes)</td></tr>
           </tbody>
@@ -110,50 +115,43 @@
           <thead><tr><th>Setting</th><th>Recommended</th></tr></thead>
           <tbody>
             <tr><td>Allow downloading</td><td><strong>Yes</strong> <em>(needed to auto-download the mod)</em></td></tr>
-            <tr><td>Disable emblems</td><td><strong>No</strong></td></tr>
           </tbody>
         </table>
       </div>
       <div class="note">
-        <p><strong>Allow downloading must be on.</strong> It lets Plutonium fetch the Gunfight mod from the server automatically when you join (FastDL) &mdash; no manual install. If you ever see a <code>cl_allowdownload disabled</code> error, open the console and run <code>cl_allowdownload 1</code>.</p>
+        <p><strong>Allow downloading must be on.</strong> It lets Plutonium fetch the Gunfight mod from the server automatically when you join (FastDL) &mdash; no manual install.</p>
       </div>
 
       <h3>Controller</h3>
       <ul>
         <li><strong>Controls &rarr; Gamepad &rarr; Yes</strong> to enable controller support.</li>
-        <li>If the game still doesn&rsquo;t see your controller, use <a href="https://ds4-windows.com/" target="_blank" rel="noopener">DS4Windows</a> to present it as an Xbox controller.</li>
+        <li>If you are using a PlayStation controller, use <a href="https://ds4-windows.com/" target="_blank" rel="noopener">DS4Windows</a> to present it as an Xbox controller.</li>
       </ul>
 
       <h3 id="console">How to open the console</h3>
-      <p>Press the <code>~</code> key (tilde / grave, top-left under <strong>Esc</strong>) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press <code>~</code> again. Type a command and hit <strong>Enter</strong> &mdash; you&rsquo;ll need it for the <a href="#ads">aim-down-sights fix</a> below.</p>
+      <p>Press the <code>~</code> key (tilde / grave, top-left under <strong>Esc</strong>) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press <code>~</code> again. Type a command and hit <strong>Enter</strong> &mdash; you&rsquo;ll need it for the <a href="#ads">Sprint/ADS key improvement</a> below.</p>
       <p>To make a console command stick, paste it into <code>%localappdata%\Plutonium\storage\t5\players\autoexec.cfg</code> and run <code>exec autoexec</code> in the console once per session (Plutonium does not auto-run it).</p>
     </section>
 
     <!-- 3. ADS FIX -->
     <section class="doc" id="ads">
-      <h2 class="sec">3. Fix aim-down-sights (the sprint bug)</h2>
+      <h2 class="sec">3. Sprint/ADS key improvement</h2>
       <p>Black Ops 1 has a long-standing quirk: <strong>you can&rsquo;t aim down sights while the Sprint key (Shift) is held.</strong> Normally you have to fully release Shift before you can aim &mdash; which loses gunfights. One console command fixes it.</p>
       <p>Open the console (<code>~</code>) and paste:</p>
       <pre class="cmd"><code>bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"</code></pre>
-      <p>Now you can <strong>ADS without releasing Sprint.</strong> What it does: aiming (<code>+speed_throw</code>) also clears the sprint input (<code>-breath_sprint</code>) so the engine stops blocking your aim. The trailing <code>-sprint</code> is a required no-op &mdash; it absorbs the key event so the sprint release actually fires. (Drop it and the two-token version silently fails.)</p>
-      <p><strong>Good to know:</strong></p>
-      <ul>
-        <li>This forces <strong>Hold-ADS</strong> (not toggle) &mdash; hold right-click to aim, regardless of your toggle-ADS menu setting.</li>
-        <li>Tapping Shift <em>while already aiming</em> will drop you out of ADS. Minor, and a fair trade for being able to aim out of a sprint.</li>
-        <li>The game sometimes strips custom <code>MOUSE2</code> binds on restart. If ADS goes dead, just <strong>re-paste the line</strong>. Keeping it in <code>autoexec.cfg</code> and running <code>exec autoexec</code> re-applies it in one step.</li>
-        <li>It&rsquo;s a <strong>client-side keybind</strong> &mdash; each player sets it on their own machine; it can&rsquo;t be pushed by the server.</li>
-      </ul>
+      <p>Now you can <strong>ADS without releasing Sprint.</strong> What it does: aiming (<code>+speed_throw</code>) also clears the sprint input (<code>-breath_sprint</code>) so the engine stops blocking your aim. The trailing <code>-sprint</code> is a required no-op &mdash; it absorbs the key event so the sprint release actually fires.</p>
+      <p>The game sometimes strips custom <code>MOUSE2</code> binds on restart. If ADS goes dead, just <strong>re-paste the line</strong>. Keeping it in <code>autoexec.cfg</code> and running <code>exec autoexec</code> re-applies it in one step.</p>
     </section>
 
     <!-- 4. JOIN -->
     <section class="doc" id="join">
       <h2 class="sec">4. Find &amp; join Gunfight</h2>
-      <p>Black Ops 1 has <strong>no direct IP connect</strong> &mdash; you join through the in-game <strong>Server Browser</strong> (it uses Plutonium&rsquo;s backend session IDs, not IPs).</p>
+      <p>Black Ops Gunfight is a ranked server. Join through the in-game <strong>Server Browser</strong>.</p>
       <ol class="steps">
-        <li><span class="n">1</span><p>Launch the game via the Plutonium launcher (<strong>PLAY</strong>) and reach the multiplayer main menu.</p></li>
-        <li><span class="n">2</span><p>Open the <strong>Server Browser</strong>.</p></li>
+        <li><span class="n">1</span><p>Launch the game via the Plutonium launcher.</p></li>
+        <li><span class="n">2</span><p>Open the <strong>Server Browser</strong> under <strong>PLAY</strong>.</p></li>
         <li><span class="n">3</span><p><strong>Reset the filters</strong> and click <strong>Refresh</strong> so every server shows (modded servers are hidden by default filters).</p></li>
-        <li><span class="n">4</span><p>On the <strong>Ranked</strong> tab, find <strong>Gunfight | gunfight.us</strong> (mode <strong>GF</strong>) and join. The mod <strong>downloads automatically</strong> on connect (FastDL) &mdash; no manual install needed.</p></li>
+        <li><span class="n">4</span><p>On the <strong>Ranked</strong> tab, find <strong>Gunfight | gunfight.us</strong> (mode <strong>GF</strong>) and join. The mod <strong>downloads automatically</strong> on connect (FastDL) &mdash; no manual install needed. This might take a minute to load on the first try.</p></li>
       </ol>
       <div class="note">
         <p>Keep your <strong>Plutonium launcher updated</strong> so its build matches the server&rsquo;s &mdash; FastDL ships the <em>mod</em>, not the engine build. Questions? Join our <a href="https://discord.gg/blackops" target="_blank" rel="noopener">Discord</a>.</p>
@@ -170,12 +168,10 @@
           <thead><tr><th>Problem</th><th>Fix</th></tr></thead>
           <tbody>
             <tr><td><strong>Can&rsquo;t aim down sights</strong> while holding Sprint</td><td>Paste the ADS bind from <a href="#ads">section 3</a>.</td></tr>
-            <tr><td><strong>ADS stopped working</strong> after a restart</td><td>Re-paste the <code>bind MOUSE2 ...</code> line, or run <code>exec autoexec</code>.</td></tr>
+            <tr><td><strong>ADS stopped working</strong> after a restart</td><td>Re-paste the <code>bind MOUSE2 ...</code> line.</td></tr>
             <tr><td><strong>&ldquo;Invalid Game Path&rdquo;</strong> in the launcher</td><td>Re-select the correct <code>Call of Duty Black Ops</code> folder via <strong>Game Settings</strong>.</td></tr>
             <tr><td><strong>Gunfight isn&rsquo;t in the server list</strong></td><td>Reset all filters, click <strong>Refresh</strong>, and check the <strong>Ranked</strong> tab for <code>Gunfight | gunfight.us</code>.</td></tr>
-            <tr><td><code>cl_allowdownload disabled</code> on join</td><td>Open the console and run <code>cl_allowdownload 1</code>, then rejoin.</td></tr>
-            <tr><td><strong>Joined but no custom HUD / mode looks wrong</strong></td><td>Your Plutonium build is out of date &mdash; update the launcher to match the server, then rejoin.</td></tr>
-            <tr><td><strong>Console won&rsquo;t open</strong> with <code>~</code></td><td>Enable the console in the Plutonium launcher/in-game options, then press <code>~</code> again.</td></tr>
+            <tr><td><strong>Error connecting to the server</strong></td><td>Make sure your Plutonium client is up to date, then rejoin.</td></tr>
             <tr><td><strong>Controller not detected</strong></td><td>Enable <strong>Controls &rarr; Gamepad &rarr; Yes</strong>; if needed, run <a href="https://ds4-windows.com/" target="_blank" rel="noopener">DS4Windows</a>.</td></tr>
           </tbody>
         </table>

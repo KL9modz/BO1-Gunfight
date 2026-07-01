@@ -7,7 +7,7 @@ Everything a new player needs: install Plutonium and Black Ops 1, dial in the re
 ## Contents
 - [1. Install Plutonium & Black Ops 1](#1-install-plutonium--black-ops-1)
 - [2. Recommended settings](#2-recommended-settings)
-- [3. Fix aim-down-sights (the sprint bug)](#3-fix-aim-down-sights-the-sprint-bug)
+- [3. Sprint/ADS key improvement](#3-sprintads-key-improvement)
 - [4. Find & join Gunfight](#4-find--join-gunfight)
 - [5. Troubleshooting](#5-troubleshooting)
 
@@ -20,11 +20,11 @@ Plutonium is a free community client that runs Black Ops 1 online. Full official
 1. **Download the launcher.** Get `plutonium.exe` from **[plutonium.pw](https://plutonium.pw/)**. You can save it anywhere convenient - your Desktop or the game folder both work.
 2. **Run it.** If Windows SmartScreen shows *"Windows protected your PC"*, click **More info -> Run anyway**. The launcher then installs its client files.
 3. **Log in.** Sign in with your Plutonium forum account. Don't have one? Create a free account at **[forum.plutonium.pw/register](https://forum.plutonium.pw/register)**, then log in.
-4. **Point it at Black Ops.** Select the **Black Ops** tab, click **SETUP**, and choose your Black Ops game folder. A Steam copy is usually at:
+4. **Point it at Black Ops.** Select the **Black Ops T5 Multiplayer** tab, click **SETUP**, and choose your Black Ops game folder. A Steam copy is usually at:
    ```
    C:\Program Files (x86)\Steam\steamapps\common\Call of Duty Black Ops
    ```
-   (In Steam: right-click the game -> **Manage -> Browse local files**.) If you got the game from our Discord, select the unzipped Black Ops folder instead.
+   (In Steam: right-click the game -> **Manage -> Browse local files**.) If you downloaded the game from elsewhere (such as our Discord), select the unzipped Black Ops folder instead.
 5. **Launch.** Press **PLAY**. That's it - you're in.
 
 > **Re-selecting the folder later:** use **Game Settings** (next to the **PLAY** button), not SETUP.
@@ -37,18 +37,17 @@ Plutonium is a free community client that runs Black Ops 1 online. Full official
 
 ## 2. Recommended settings
 
-Black Ops is old, but it hasn't been optimised for modern hardware - so a few tweaks make it look sharp and play fast. Set these from the in-game **Options** menu.
+Black Ops is old, but with Plutonium it can be optimized for modern systems. Here are a few critical tweaks to get the game looking sharp and running fast.
 
 ### Graphics
 
 | Setting | Recommended |
 |---|---|
-| Video mode (resolution) | **Highest your display supports** (e.g. `2560x1440` for 1440p) |
+| Video mode (resolution) | **Highest your display supports** (e.g. `2560x1440` for 2K) |
 | Aspect ratio | **Auto** |
 | Screen refresh rate | **Highest** (e.g. 144 / 240) |
-| Fullscreen | **Yes or No** |
-| No border (borderless) | **Yes** |
-| Sync every frame (V-Sync) | **No** (unless you have no G-Sync/FreeSync) |
+| No border (borderless fullscreen window) | **Yes** |
+| Sync every frame (V-Sync) | **No** (unless you don't have G-Sync) |
 | Anti-Aliasing | **8x** |
 | Anisotropic filtering | **16 (max)** |
 | Texture filtering | **Trilinear** |
@@ -56,20 +55,30 @@ Black Ops is old, but it hasn't been optimised for modern hardware - so a few tw
 | Shader warming | **Yes** |
 | Shadows | **Yes** |
 | Bullet impacts | **Yes** |
-| Field of view | **Max** |
+| Field of view | **(see below)** |
 | Brightness | **Not too high** |
-
-> **Field of view - go wide.** Two settings stack: **Field of view** (Graphics) sets the base, and **FOV scale** (Game tab) multiplies it - raise both to taste, higher = more peripheral vision. Maxing the Field of view slider with **FOV scale ~1.05** gives a modern, wide view (the displayed number climbs into the high-80s once the scale is applied).
 
 ![Recommended in-game Graphics settings](images/getting-started/graphics.png)
 *In-game Graphics settings - Settings -> Graphics.*
+
+### Field of view (FOV)
+
+The in-game **Field of view** slider maxes out at **80**, but Plutonium lets you push wider by combining it with **FOV scale** (Game tab). Your true FOV is `cg_fov` x `cg_fovScale`, so any scale above 1 takes you past 80. If you don't want to use this system, just leave **FOV scale** at **1**.
+
+**FOV scale also drives your aim-down-sights (ADS) sensitivity.** Plutonium reworked how `cg_fov` and `cg_fovScale` behave: the vanilla game slows your sensitivity when you aim down sights, but Plutonium now bases it on your FOV scale instead. A few examples (each totalling 90 FOV):
+
+- `cg_fov 90` + `cg_fovScale 1` = 90 FOV. Only your hipfire FOV changes; sensitivity still differs when you zoom in, because the ADS FOV is lower.
+- `cg_fov 40` + `cg_fovScale 2.25` = 90 FOV. Your ADS FOV matches your hipfire FOV - more situational awareness at the cost of less zoom detail - so sensitivity is the **same** hipfiring and aiming.
+- `cg_fov 70` + `cg_fovScale 1.3` = 90 FOV. ADS is slightly zoomed in versus hipfire, and sensitivity is faster than vanilla because of the higher total FOV.
+
+To work out your total FOV, multiply `cg_fov` by `cg_fovScale` - for a standard **80 FOV**, use `cg_fov 65` and `cg_fovScale 1.32`. Expect to experiment with values to find what feels comfortable.
 
 ### Game
 
 | Setting | Recommended |
 |---|---|
 | Draw HUD | **Yes** |
-| FOV scale | **~1.05** (wider still) |
+| FOV scale | **(see below)** |
 | Max FPS | **Match or just under your refresh** (e.g. 237 for a 240 Hz display), or uncapped |
 | Reduce engine sleeps | **Yes** (smoother frametimes) |
 
@@ -81,18 +90,17 @@ Black Ops is old, but it hasn't been optimised for modern hardware - so a few tw
 | Setting | Recommended |
 |---|---|
 | Allow downloading | **Yes** *(needed to auto-download the mod)* |
-| Disable emblems | **No** |
 
-> **Allow downloading must be on.** It lets Plutonium fetch the Gunfight mod from the server automatically when you join (FastDL) - no manual install. If you ever see a `cl_allowdownload disabled` error, open the console and run `cl_allowdownload 1`.
+> **Allow downloading must be on.** It lets Plutonium fetch the Gunfight mod from the server automatically when you join (FastDL) - no manual install.
 
 ### Controller
 
 - **Controls -> Gamepad -> Yes** to enable controller support.
-- If the game still doesn't see your controller, use **[DS4Windows](https://ds4-windows.com/)** to present it as an Xbox controller.
+- If you are using a PlayStation controller, use **[DS4Windows](https://ds4-windows.com/)** to present it as an Xbox controller.
 
 ### How to open the console
 
-Press the **`~`** key (tilde / grave, top-left under **Esc**) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press `~` again. Type a command and hit **Enter** - you'll need it for the [aim-down-sights fix](#3-fix-aim-down-sights-the-sprint-bug) below.
+Press the **`~`** key (tilde / grave, top-left under **Esc**) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press `~` again. Type a command and hit **Enter** - you'll need it for the [Sprint/ADS key improvement](#3-sprintads-key-improvement) below.
 
 To make a console command stick, paste it into a config file at
 `%localappdata%\Plutonium\storage\t5\players\autoexec.cfg`
@@ -100,7 +108,7 @@ and run `exec autoexec` in the console once per session (Plutonium does not auto
 
 ---
 
-## 3. Fix aim-down-sights (the sprint bug)
+## 3. Sprint/ADS key improvement
 
 Black Ops 1 has a long-standing quirk: **you can't aim down sights while the Sprint key (Shift) is held.** Normally you have to fully release Shift before you can aim - which loses gunfights. One console command fixes it.
 
@@ -110,24 +118,20 @@ Open the console (**`~`**) and paste:
 bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"
 ```
 
-Now you can **ADS without releasing Sprint.** What it does: aiming (`+speed_throw`) also clears the sprint input (`-breath_sprint`) so the engine stops blocking your aim. The trailing `-sprint` is a required no-op - it absorbs the key event so the sprint release actually fires. (Drop it and the two-token version silently fails.)
+Now you can **ADS without releasing Sprint.** What it does: aiming (`+speed_throw`) also clears the sprint input (`-breath_sprint`) so the engine stops blocking your aim. The trailing `-sprint` is a required no-op - it absorbs the key event so the sprint release actually fires.
 
-**Good to know:**
-- This forces **Hold-ADS** (not toggle) - hold right-click to aim, regardless of your toggle-ADS menu setting.
-- Tapping Shift *while already aiming* will drop you out of ADS. Minor, and a fair trade for being able to aim out of a sprint.
-- The game sometimes strips custom `MOUSE2` binds on restart. If ADS goes dead, just **re-paste the line**. Keeping it in `autoexec.cfg` (above) and running `exec autoexec` re-applies it in one step.
-- It's a **client-side keybind** - each player sets it on their own machine; it can't be pushed by the server.
+The game sometimes strips custom `MOUSE2` binds on restart. If ADS goes dead, just **re-paste the line**. Keeping it in `autoexec.cfg` (above) and running `exec autoexec` re-applies it in one step.
 
 ---
 
 ## 4. Find & join Gunfight
 
-Black Ops 1 has **no direct IP connect** - you join through the in-game **Server Browser** (it uses Plutonium's backend session IDs, not IPs).
+Black Ops Gunfight is a ranked server. Join through the in-game **Server Browser**.
 
-1. Launch the game via the Plutonium launcher (**PLAY**) and reach the multiplayer main menu.
-2. Open the **Server Browser**.
+1. Launch the game via the Plutonium launcher.
+2. Open the **Server Browser** under **PLAY**.
 3. **Reset the filters** and click **Refresh** so every server shows (modded servers are hidden by default filters).
-4. On the **Ranked** tab, find **`Gunfight | gunfight.us`** (mode **GF**) and join. The mod **downloads automatically** on connect (FastDL) - no manual install needed.
+4. On the **Ranked** tab, find **`Gunfight | gunfight.us`** (mode **GF**) and join. The mod **downloads automatically** on connect (FastDL) - no manual install needed. This might take a minute to load on the first try.
 
 > Keep your **Plutonium launcher updated** so its build matches the server's - FastDL ships the *mod*, not the engine build. More at **[gunfight.us](https://gunfight.us)** and our **[Discord](https://discord.gg/blackops)**.
 
@@ -140,13 +144,11 @@ Black Ops 1 has **no direct IP connect** - you join through the in-game **Server
 
 | Problem | Fix |
 |---|---|
-| **Can't aim down sights** while holding Sprint | Paste the ADS bind from [section 3](#3-fix-aim-down-sights-the-sprint-bug). |
-| **ADS stopped working** after a restart | Re-paste the `bind MOUSE2 ...` line, or run `exec autoexec`. |
+| **Can't aim down sights** while holding Sprint | Paste the ADS bind from [section 3](#3-sprintads-key-improvement). |
+| **ADS stopped working** after a restart | Re-paste the `bind MOUSE2 ...` line. |
 | **"Invalid Game Path"** in the launcher | Re-select the correct `Call of Duty Black Ops` folder via **Game Settings**. |
 | **Gunfight isn't in the server list** | Reset all filters, click **Refresh**, and check the **Ranked** tab for `Gunfight | gunfight.us`. |
-| **`cl_allowdownload disabled`** on join | Open the console and run `cl_allowdownload 1`, then rejoin. |
-| **Joined but no custom HUD / mode looks wrong** | Your Plutonium build is out of date - update the launcher to match the server, then rejoin. |
-| **Console won't open** with `~` | Enable the console in the Plutonium launcher/in-game options, then press `~` again. |
+| **Error connecting to the server** | Make sure your Plutonium client is up to date, then rejoin. |
 | **Controller not detected** | Enable **Controls -> Gamepad -> Yes**; if needed, run **[DS4Windows](https://ds4-windows.com/)**. |
 
 ---
