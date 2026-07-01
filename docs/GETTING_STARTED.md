@@ -77,10 +77,6 @@ To work out your total FOV, multiply `cg_fov` by `cg_fovScale` - for a standard 
 
 Press the **`~`** key (tilde / grave, top-left under **Esc**) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press `~` again. Type a command and hit **Enter** - you'll need it for the [Sprint/ADS key improvement](#3-sprintads-key-improvement) below.
 
-To make a console command stick, paste it into a config file at
-`%localappdata%\Plutonium\storage\t5\players\autoexec.cfg`
-and run `exec autoexec` in the console once per session (Plutonium does not auto-run it).
-
 ### Game
 
 | Setting | Recommended |
@@ -120,7 +116,7 @@ bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"
 
 Now you can **ADS without releasing Sprint.** What it does: aiming (`+speed_throw`) also clears the sprint input (`-breath_sprint`) so the engine stops blocking your aim. The trailing `-sprint` is a required no-op - it absorbs the key event so the sprint release actually fires.
 
-The game sometimes strips custom `MOUSE2` binds on restart. If ADS goes dead, just **re-paste the line**. Keeping it in `autoexec.cfg` (above) and running `exec autoexec` re-applies it in one step.
+The game sometimes strips custom `MOUSE2` binds on restart. If ADS goes dead, just **re-paste the line**. Keeping it in `autoexec.cfg` and running `exec autoexec` re-applies it in one step.
 
 ---
 
