@@ -1,7 +1,6 @@
 <div align="center">
 
-<!-- Banner image goes here once ready: docs/images/banner.png
-![Black Ops Gunfight](docs/images/banner.png) -->
+<img src="https://raw.githubusercontent.com/KL9modz/BO1-Gunfight/main/site/wwwroot/assets/banner.jpg" alt="Black Ops Gunfight" width="820" />
 
 # Black Ops Gunfight
 
@@ -33,6 +32,20 @@ Made by **KL9**. Join us on **[Discord](https://discord.gg/blackops)**.
 - Round timer, overtime timer, and capture time.
 
 Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFERENCE.md)**.
+
+---
+
+## Screenshots
+
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/KL9modz/BO1-Gunfight/main/site/wwwroot/assets/gameplay.jpg" alt="A live Gunfight round — dual Pythons and the team-health HUD" width="820" />
+
+<br /><br />
+
+<img src="https://raw.githubusercontent.com/KL9modz/BO1-Gunfight/main/site/wwwroot/assets/health-hud.png" alt="Team-health HUD" width="300" />&nbsp;&nbsp;<img src="https://raw.githubusercontent.com/KL9modz/BO1-Gunfight/main/site/wwwroot/assets/loadout.png" alt="Shared loadout" width="300" />
+
+</div>
 
 ---
 
