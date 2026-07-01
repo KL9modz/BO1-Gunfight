@@ -43,7 +43,7 @@ Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFER
 
 <br /><br />
 
-<img src="https://raw.githubusercontent.com/KL9modz/BO1-Gunfight/main/site/wwwroot/assets/health-hud.png" alt="Team-health HUD" width="300" />&nbsp;&nbsp;<img src="https://raw.githubusercontent.com/KL9modz/BO1-Gunfight/main/site/wwwroot/assets/loadout.png" alt="Shared loadout" width="300" />
+<img src="https://raw.githubusercontent.com/KL9modz/BO1-Gunfight/main/site/wwwroot/assets/health-hud-crop.png" alt="Team-health HUD" width="300" />&nbsp;&nbsp;<img src="https://raw.githubusercontent.com/KL9modz/BO1-Gunfight/main/site/wwwroot/assets/loadout-crop.png" alt="Shared loadout" width="300" />
 
 </div>
 
