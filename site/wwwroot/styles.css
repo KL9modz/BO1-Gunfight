@@ -328,16 +328,24 @@ a:hover { color: var(--accent); text-decoration: underline; text-underline-offse
 }
 .fineprint a { color: var(--accent-2); }
 
-/* screenshot gallery (landing In-game section) */
+/* landing screenshots (caption-less, inside the About card) */
+.shot-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 34px -20px rgba(0,0,0,0.8);
+}
+.about-copy + .shot-img { margin-top: 18px; }
 .gallery {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin: 2px 0 0;
+  gap: 14px;
+  margin-top: 14px;
+  align-items: start;
 }
-.gallery figure.shot { margin: 0; }
-.card > figure.shot:last-child { margin-bottom: 0; }
-.card > .lead + figure.shot { margin-top: 18px; }
+.gallery .shot-img { border-radius: var(--radius-sm); }
 
 /* ============================================================
    Footer  (shared)
