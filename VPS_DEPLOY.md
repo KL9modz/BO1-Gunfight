@@ -385,6 +385,14 @@ if it finds an RCON password / secret. The VPS-owned hardened `web.config` (Phas
 preserved (excluded from the mirror unless you deliberately track one), and the Let's Encrypt
 `.well-known` challenge dir is never purged. IIS serves the new files immediately - just hard-refresh.
 
+> **Cache-bust `styles.css` on every CSS change.** The hardened `web.config` sets a long
+> cache lifetime on static assets, and the stylesheet URL is fixed, so browsers keep serving the
+> OLD `styles.css` against freshly-served HTML (symptom: new text shows but the gallery images
+> misalign / the footer disclaimer isn't centered). Fix: whenever `styles.css` changes, bump the
+> `?v=N` query on its `<link>` in BOTH `site/wwwroot/index.html` and `setup.html` (currently
+> `styles.css?v=2` -> `?v=3` -> ...). The new URL forces a fresh download for every visitor on
+> their next load - no hard-refresh needed.
+
 ### Deploy a MOD change (restarts the server)
 ```powershell
 # Laptop:
