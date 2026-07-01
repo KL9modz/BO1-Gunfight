@@ -36,7 +36,7 @@ Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFER
 
 ---
 
-## 🎮 Quick start
+## How To Play
 
 You need a legitimate copy of **Black Ops 1** and the **Plutonium** launcher — that's it. The mod **downloads automatically** when you connect.
 
