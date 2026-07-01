@@ -85,7 +85,7 @@
       <figure class="shot"><img src="assets/getting-started/graphics.png" alt="Recommended in-game Graphics settings" loading="lazy" /><figcaption>Graphics settings &mdash; Settings &rarr; Graphics.</figcaption></figure>
 
       <h3>Field of view (FOV)</h3>
-      <p>The in-game <strong>Field of view</strong> slider maxes out at <strong>80</strong>, but Plutonium lets you push wider by combining it with <strong>FOV scale</strong> (Game tab). Your true FOV is <code>cg_fov</code> &times; <code>cg_fovScale</code>, so any scale above 1 takes you past 80. If you don&rsquo;t want to use this system, just leave <strong>FOV scale</strong> at <strong>1</strong>.</p>
+      <p>The in-game <strong>Field of view</strong> slider maxes out at <strong>80</strong>, but Plutonium lets you push wider by combining it with <strong>FOV scale</strong> (Game tab). Your true FOV is <code>cg_fov</code> &times; <code>cg_fovScale</code>, so any scale above 1 takes you past 80. Set both from the in-game <strong>Options</strong> menu (Field of view on the Graphics tab, FOV scale on the Game tab), or type them straight into the console as <code>cg_fov</code> and <code>cg_fovScale</code>. If you don&rsquo;t want to use this system, just leave <strong>FOV scale</strong> at <strong>1</strong>.</p>
       <p><strong>FOV scale also drives your aim-down-sights (ADS) sensitivity.</strong> Plutonium reworked how <code>cg_fov</code> and <code>cg_fovScale</code> behave: the vanilla game slows your sensitivity when you aim down sights, but Plutonium now bases it on your FOV scale instead. A few examples (each totalling 90 FOV):</p>
       <ul>
         <li><code>cg_fov 90</code> + <code>cg_fovScale 1</code> = 90 FOV. Only your hipfire FOV changes; sensitivity still differs when you zoom in, because the ADS FOV is lower.</li>
@@ -94,14 +94,18 @@
       </ul>
       <p>To work out your total FOV, multiply <code>cg_fov</code> by <code>cg_fovScale</code> &mdash; for a standard <strong>80 FOV</strong>, use <code>cg_fov 65</code> and <code>cg_fovScale 1.32</code>. Expect to experiment with values to find what feels comfortable.</p>
 
+      <h3 id="console">How to open the console</h3>
+      <p>Press the <code>~</code> key (tilde / grave, top-left under <strong>Esc</strong>) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press <code>~</code> again. Type a command and hit <strong>Enter</strong> &mdash; you&rsquo;ll need it for the <a href="#ads">Sprint/ADS key improvement</a> below.</p>
+      <p>To make a console command stick, paste it into <code>%localappdata%\Plutonium\storage\t5\players\autoexec.cfg</code> and run <code>exec autoexec</code> in the console once per session (Plutonium does not auto-run it).</p>
+
       <h3>Game</h3>
       <div class="table-wrap">
         <table class="settings">
           <thead><tr><th>Setting</th><th>Recommended</th></tr></thead>
           <tbody>
             <tr><td>Draw HUD</td><td><strong>Yes</strong></td></tr>
-            <tr><td>FOV scale</td><td><strong>(see below)</strong></td></tr>
-            <tr><td>Max FPS</td><td><strong>Match or just under your refresh</strong> (e.g. 237 for a 240&nbsp;Hz display), or uncapped</td></tr>
+            <tr><td>FOV scale</td><td><strong>(see above)</strong></td></tr>
+            <tr><td>Max FPS</td><td><strong>Highest</strong> (e.g. 144 / 240)</td></tr>
             <tr><td>Reduce engine sleeps</td><td><strong>Yes</strong> (smoother frametimes)</td></tr>
           </tbody>
         </table>
@@ -127,10 +131,6 @@
         <li><strong>Controls &rarr; Gamepad &rarr; Yes</strong> to enable controller support.</li>
         <li>If you are using a PlayStation controller, use <a href="https://ds4-windows.com/" target="_blank" rel="noopener">DS4Windows</a> to present it as an Xbox controller.</li>
       </ul>
-
-      <h3 id="console">How to open the console</h3>
-      <p>Press the <code>~</code> key (tilde / grave, top-left under <strong>Esc</strong>) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press <code>~</code> again. Type a command and hit <strong>Enter</strong> &mdash; you&rsquo;ll need it for the <a href="#ads">Sprint/ADS key improvement</a> below.</p>
-      <p>To make a console command stick, paste it into <code>%localappdata%\Plutonium\storage\t5\players\autoexec.cfg</code> and run <code>exec autoexec</code> in the console once per session (Plutonium does not auto-run it).</p>
     </section>
 
     <!-- 3. ADS FIX -->

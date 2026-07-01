@@ -63,7 +63,7 @@ Black Ops is old, but with Plutonium it can be optimized for modern systems. Her
 
 ### Field of view (FOV)
 
-The in-game **Field of view** slider maxes out at **80**, but Plutonium lets you push wider by combining it with **FOV scale** (Game tab). Your true FOV is `cg_fov` x `cg_fovScale`, so any scale above 1 takes you past 80. If you don't want to use this system, just leave **FOV scale** at **1**.
+The in-game **Field of view** slider maxes out at **80**, but Plutonium lets you push wider by combining it with **FOV scale** (Game tab). Your true FOV is `cg_fov` x `cg_fovScale`, so any scale above 1 takes you past 80. Set both from the in-game **Options** menu (Field of view on the Graphics tab, FOV scale on the Game tab), or type them straight into the console as `cg_fov` and `cg_fovScale`. If you don't want to use this system, just leave **FOV scale** at **1**.
 
 **FOV scale also drives your aim-down-sights (ADS) sensitivity.** Plutonium reworked how `cg_fov` and `cg_fovScale` behave: the vanilla game slows your sensitivity when you aim down sights, but Plutonium now bases it on your FOV scale instead. A few examples (each totalling 90 FOV):
 
@@ -73,13 +73,21 @@ The in-game **Field of view** slider maxes out at **80**, but Plutonium lets you
 
 To work out your total FOV, multiply `cg_fov` by `cg_fovScale` - for a standard **80 FOV**, use `cg_fov 65` and `cg_fovScale 1.32`. Expect to experiment with values to find what feels comfortable.
 
+### How to open the console
+
+Press the **`~`** key (tilde / grave, top-left under **Esc**) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press `~` again. Type a command and hit **Enter** - you'll need it for the [Sprint/ADS key improvement](#3-sprintads-key-improvement) below.
+
+To make a console command stick, paste it into a config file at
+`%localappdata%\Plutonium\storage\t5\players\autoexec.cfg`
+and run `exec autoexec` in the console once per session (Plutonium does not auto-run it).
+
 ### Game
 
 | Setting | Recommended |
 |---|---|
 | Draw HUD | **Yes** |
-| FOV scale | **(see below)** |
-| Max FPS | **Match or just under your refresh** (e.g. 237 for a 240 Hz display), or uncapped |
+| FOV scale | **(see above)** |
+| Max FPS | **Highest** (e.g. 144 / 240) |
 | Reduce engine sleeps | **Yes** (smoother frametimes) |
 
 ![Recommended in-game Game settings](images/getting-started/game-settings.png)
@@ -97,14 +105,6 @@ To work out your total FOV, multiply `cg_fov` by `cg_fovScale` - for a standard 
 
 - **Controls -> Gamepad -> Yes** to enable controller support.
 - If you are using a PlayStation controller, use **[DS4Windows](https://ds4-windows.com/)** to present it as an Xbox controller.
-
-### How to open the console
-
-Press the **`~`** key (tilde / grave, top-left under **Esc**) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press `~` again. Type a command and hit **Enter** - you'll need it for the [Sprint/ADS key improvement](#3-sprintads-key-improvement) below.
-
-To make a console command stick, paste it into a config file at
-`%localappdata%\Plutonium\storage\t5\players\autoexec.cfg`
-and run `exec autoexec` in the console once per session (Plutonium does not auto-run it).
 
 ---
 
