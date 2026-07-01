@@ -84,7 +84,7 @@ Press the **`~`** key (tilde / grave, top-left under **Esc**) to open the Pluton
 | Draw HUD | **Yes** |
 | FOV scale | **(see above)** |
 | Max FPS | **Highest** (e.g. 144 / 240) |
-| Reduce engine sleeps | **Yes** (smoother frametimes) |
+| Reduce engine sleeps | **Yes** |
 
 ![Recommended in-game Game settings](images/getting-started/game-settings.png)
 *Game settings - Settings -> Game.*
