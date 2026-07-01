@@ -1,159 +1,388 @@
-/* Gunfight - gunfight.us
-   Simple single static page. No external dependencies (CSP-friendly, fast). */
+/* Black Ops Gunfight - gunfight.us  ::  "Evolved Dark" (+ HUD touches)
+   Shared by index.html (landing) and setup.html (Getting Started guide).
+   Self-contained: no external requests, no web fonts (CSP-friendly, fast). */
 
 :root {
-  --bg:        #0d0f12;
-  --edge:      #232932;
+  --bg:        #0b0d10;   /* deepened base for gradient headroom */
+  --bg-2:      #101319;   /* gradient midtone */
+  --surface:   #14181f;   /* card fill */
+  --surface-2: #171c24;   /* card fill (hover / raised) */
+  --code-bg:   #12161c;   /* inline + block code fill */
+  --edge:      #232932;   /* hairline border */
+  --edge-2:    #2c343f;   /* brighter hairline (hover) */
   --text:      #e7eaee;
   --muted:     #9aa3ad;
   --accent:    #ff7a1a;   /* gunfight orange */
-  --accent-2:  #ffb066;
+  --accent-2:  #ffb066;   /* soft orange (links / hover) */
+  --accent-ink:#1a1106;   /* ink on orange fill */
+  --glow:      rgba(255, 122, 26, 0.42);
+  --radius:    14px;
+  --radius-sm: 10px;
+  --font: "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, "Courier New", monospace;
 }
 
 * { box-sizing: border-box; }
 
+html { -webkit-text-size-adjust: 100%; }
+
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--bg);
   color: var(--text);
-  font-family: "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  /* Depth: vertical gradient base + a faint warm bloom up top */
+  background:
+    radial-gradient(1100px 620px at 50% -12%, rgba(255,122,26,0.10), rgba(255,122,26,0) 60%),
+    linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 34%, var(--bg) 100%);
+  background-attachment: fixed;
   display: grid;
-  place-items: center;
+  place-items: start center;
 }
 
-a { color: var(--accent-2); text-decoration: none; }
-a:hover { color: var(--accent); text-decoration: underline; }
+/* subtle top-edge accent line across the whole page */
+body::before {
+  content: "";
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent) 45%, var(--accent-2) 55%, transparent);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 10;
+}
+
+a { color: var(--accent-2); text-decoration: none; transition: color .15s ease; }
+a:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 
 .wrap {
   width: 100%;
-  max-width: 520px;
-  padding: 56px 24px;
+  max-width: 600px;
+  padding: 72px 24px 56px;
+}
+.wrap-doc { max-width: 860px; }
+
+/* ============================================================
+   Hero  (shared by both pages)
+   ============================================================ */
+/* cinematic banner panel (Black Ops key art + dark scrim), shared by both pages */
+.hero {
+  position: relative;
+  text-align: center;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  overflow: hidden;
+  padding: 46px 26px 40px;
+  background:
+    linear-gradient(180deg, rgba(11,13,16,0.52) 0%, rgba(11,13,16,0.78) 60%, rgba(11,13,16,0.95) 100%),
+    #0b0d10 url("assets/banner.jpg") center 24% / cover no-repeat;
+  box-shadow: 0 18px 46px -22px rgba(0,0,0,0.9);
 }
 
-/* ---- Hero ---- */
-.hero { text-align: center; }
+/* faint orange glow bloom behind the title */
+.hero::before {
+  content: "";
+  position: absolute;
+  top: 40px; left: 50%;
+  width: 380px; height: 230px;
+  transform: translateX(-50%);
+  background: radial-gradient(closest-side, var(--glow), rgba(255,122,26,0) 72%);
+  filter: blur(10px);
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* OPS emblem logo mark (transparent PNG with baked glow) */
+.badge {
+  position: relative; z-index: 1;
+  display: block;
+  width: 92px; height: 92px;
+  margin: 0 auto 8px;
+  object-fit: contain;
+  filter: drop-shadow(0 3px 16px rgba(255,122,26,0.5));
+}
+
+/* monospace HUD-style status chip (brand/platform tag, not live telemetry) */
+.chip {
+  position: relative; z-index: 1;
+  display: inline-flex; align-items: center; gap: 8px;
+  margin: 0 0 18px;
+  padding: 5px 13px 5px 11px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.02);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+.dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255,122,26,0.18), 0 0 8px rgba(255,122,26,0.6);
+}
+
 .title {
+  position: relative; z-index: 1;
   margin: 0;
-  font-size: clamp(2rem, 7vw, 3.2rem);
+  font-size: clamp(2.3rem, 8vw, 3.6rem);
   font-weight: 800;
   letter-spacing: 0.5px;
-  line-height: 1.1;
+  line-height: 1.06;
+  color: #fff;
+  text-shadow: 0 0 34px rgba(255,122,26,0.30);
+}
+.title .accent {
   color: var(--accent);
+  text-shadow: 0 0 34px rgba(255,122,26,0.55);
 }
 .sub {
-  margin: 10px 0 0;
+  position: relative; z-index: 1;
+  margin: 14px 0 0;
   color: var(--muted);
-  font-size: 0.95rem;
+  font-size: 0.98rem;
+  letter-spacing: 0.2px;
 }
+
+/* back-link eyebrow on the doc page */
+.eyebrow { position: relative; z-index: 1; margin: 0 0 10px; font-size: 0.9rem; }
+.eyebrow a { color: var(--muted); font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.4px; }
+.eyebrow a:hover { color: var(--accent); text-decoration: none; }
+
 .links {
+  position: relative; z-index: 1;
   display: flex;
   gap: 12px;
   justify-content: center;
   flex-wrap: wrap;
-  margin-top: 24px;
+  margin-top: 30px;
 }
 
-/* ---- Buttons ---- */
+/* ============================================================
+   Buttons
+   ============================================================ */
 .btn {
-  display: inline-block;
-  padding: 10px 26px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 0.98rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 24px;
+  border-radius: var(--radius-sm);
+  font-weight: 650;
+  font-size: 0.97rem;
+  border: 1px solid transparent;
+  transition: transform .15s ease, box-shadow .2s ease,
+              background-color .2s ease, border-color .2s ease, color .2s ease;
 }
-.btn-primary { background: var(--accent); color: #1a1106; }
-.btn-primary:hover { background: var(--accent-2); color: #1a1106; text-decoration: none; }
-.btn-ghost { border: 1px solid var(--edge); color: var(--text); }
-.btn-ghost:hover { border-color: var(--accent); color: var(--text); text-decoration: none; }
+.btn:hover { text-decoration: none; transform: translateY(-2px); }
+.btn:active { transform: translateY(0); }
+.btn svg { width: 16px; height: 16px; display: block; }
+.btn img.ico { width: 17px; height: 17px; object-fit: contain; display: block; }
+/* the GitHub mark ships black-on-transparent -> flip to white for the dark ghost button */
+.btn img.gh { filter: invert(1); }
 
-/* ---- About ---- */
-.about { margin-top: 48px; }
-.about p {
-  margin: 0;
-  color: var(--text);
-  font-size: 0.98rem;
+.btn-primary {
+  background: linear-gradient(180deg, #ff8c33, var(--accent));
+  color: var(--accent-ink);
+  box-shadow: 0 6px 18px -6px rgba(255,122,26,0.55),
+              inset 0 1px 0 rgba(255,255,255,0.22);
+}
+.btn-primary:hover {
+  background: linear-gradient(180deg, #ff9a47, #ff8524);
+  box-shadow: 0 10px 30px -6px var(--glow),
+              inset 0 1px 0 rgba(255,255,255,0.28);
+  color: var(--accent-ink);
 }
 
-/* ---- How to play ---- */
-.how { margin-top: 48px; }
-.how .lead {
-  margin: 0 0 22px;
+.btn-ghost {
+  border-color: var(--edge);
   color: var(--text);
+  background: rgba(255,255,255,0.015);
 }
-.how h3 {
-  margin: 0 0 14px;
-  font-size: 0.78rem;
+.btn-ghost:hover {
+  border-color: var(--accent);
+  color: #fff;
+  background: rgba(255,122,26,0.07);
+  box-shadow: 0 6px 18px -8px rgba(0,0,0,0.6);
+}
+
+/* ============================================================
+   Kicker  (HUD-style numbered section headings, shared)
+   "01 //  ABOUT ----------------------------------"
+   ============================================================ */
+.kicker {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 0 16px;
+  font-size: 0.76rem;
   font-weight: 700;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 1.2px;
+  letter-spacing: 1.6px;
 }
-.about h2,
-.how h2 {
-  margin: 0 0 18px;
-  font-size: 0.85rem;
+.kicker .num {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+  text-shadow: 0 0 12px rgba(255,122,26,0.45);
+}
+.kicker::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: linear-gradient(90deg, var(--edge), transparent);
+}
+
+/* ============================================================
+   Card  (content surfaces, shared)
+   ============================================================ */
+.card {
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0) 40%),
+    var(--surface);
+  padding: 24px 26px;
+  box-shadow: 0 12px 34px -18px rgba(0,0,0,0.75);
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.card:hover {
+  border-color: var(--edge-2);
+  box-shadow: 0 18px 46px -18px rgba(0,0,0,0.85);
+}
+.stack { margin-top: 46px; }
+.stack:first-of-type { margin-top: 52px; }
+
+/* ============================================================
+   Landing content  (index.html)
+   ============================================================ */
+.about-copy { margin: 0; color: var(--text); font-size: 1rem; }
+.about-copy b { color: var(--accent-2); font-weight: 650; }
+
+.card .lead { margin: 0; color: var(--text); font-size: 1rem; }
+.pill {
+  background: rgba(255,122,26,0.10);
+  border: 1px solid rgba(255,122,26,0.28);
+  color: var(--accent-2);
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.subhead {
+  margin: 24px 0 14px;
+  font-size: 0.72rem;
   font-weight: 700;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 1.5px;
-  text-align: center;
+  letter-spacing: 1.4px;
 }
+
 .steps {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
-.steps li { display: flex; gap: 13px; align-items: baseline; }
+.steps li {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.012);
+  transition: border-color .18s ease, background-color .18s ease, transform .18s ease;
+}
+.steps li:hover {
+  border-color: var(--edge-2);
+  background: rgba(255,122,26,0.045);
+  transform: translateX(2px);
+}
 .steps p { margin: 0; }
 .n {
   flex: 0 0 auto;
-  min-width: 14px;
+  display: grid; place-items: center;
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  background: rgba(255,122,26,0.12);
+  border: 1px solid rgba(255,122,26,0.3);
   color: var(--accent);
-  font-weight: 800;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 0.9rem;
 }
 
-/* ---- Footer ---- */
+.fineprint {
+  margin: 22px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--edge);
+  color: var(--muted);
+  font-size: 0.94rem;
+}
+.fineprint a { color: var(--accent-2); }
+
+/* screenshot gallery (landing In-game section) */
+.gallery {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 2px 0 0;
+}
+.gallery figure.shot { margin: 0; }
+.card > figure.shot:last-child { margin-bottom: 0; }
+.card > .lead + figure.shot { margin-top: 18px; }
+
+/* ============================================================
+   Footer  (shared)
+   ============================================================ */
 .made {
-  margin: 40px 0 0;
+  margin: 46px 0 0;
   text-align: center;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.84rem;
   letter-spacing: 1px;
 }
 .made strong { color: var(--text); }
+.made .sep { color: var(--edge-2); margin: 0 8px; }
 
-@media (max-width: 480px) {
-  .wrap { padding: 44px 18px; }
+/* ============================================================
+   Accessibility
+   ============================================================ */
+a:focus-visible, .btn:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
 }
 
 /* ============================================================
-   Getting Started / doc page (setup.html)
+   Getting Started / doc page  (setup.html)
    ============================================================ */
-
-.wrap-doc { max-width: 860px; }
-
-.eyebrow { margin: 0 0 8px; font-size: 0.9rem; }
-.eyebrow a { color: var(--muted); }
-.eyebrow a:hover { color: var(--accent); text-decoration: none; }
-
-/* lead paragraph under the hero */
-.lead {
+.wrap-doc .lead {
   margin: 34px 0 0;
   color: var(--text);
   font-size: 1.02rem;
 }
 
-/* table of contents */
+/* table of contents -> card */
 .toc {
   margin: 30px 0 0;
   border: 1px solid var(--edge);
-  border-radius: 10px;
-  padding: 16px 22px;
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0) 40%),
+    var(--surface);
+  padding: 18px 24px;
+  box-shadow: 0 12px 34px -18px rgba(0,0,0,0.75);
 }
 .toc h2 {
   margin: 0 0 10px;
@@ -169,13 +398,24 @@ a:hover { color: var(--accent); text-decoration: underline; }
 /* content sections */
 .doc { margin-top: 44px; }
 .doc .sec {
+  position: relative;
   margin: 0 0 16px;
-  padding-bottom: 10px;
+  padding: 0 0 10px 15px;
   border-bottom: 1px solid var(--edge);
   font-size: 1.35rem;
   font-weight: 800;
   color: var(--accent);
   letter-spacing: 0.3px;
+  text-shadow: 0 0 22px rgba(255,122,26,0.28);
+}
+/* HUD accent bar to the left of each section heading */
+.doc .sec::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 2px; bottom: 12px;
+  width: 3px; border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(255,122,26,0.55);
 }
 .doc h3 {
   margin: 26px 0 10px;
@@ -191,23 +431,24 @@ a:hover { color: var(--accent); text-decoration: underline; }
 
 /* inline + block code */
 code {
-  background: #171b21;
+  background: var(--code-bg);
   border: 1px solid var(--edge);
   border-radius: 5px;
   padding: 1px 6px;
-  font-family: "Cascadia Code", Consolas, "Courier New", monospace;
+  font-family: var(--mono);
   font-size: 0.86em;
   color: var(--accent-2);
   overflow-wrap: anywhere;
 }
 pre.cmd {
   margin: 0 0 16px;
-  background: #171b21;
+  background: var(--code-bg);
   border: 1px solid var(--edge);
   border-left: 3px solid var(--accent);
   border-radius: 8px;
   padding: 14px 16px;
   overflow-x: auto;
+  box-shadow: 0 12px 34px -20px rgba(0,0,0,0.8);
 }
 pre.cmd code {
   background: none;
@@ -233,7 +474,13 @@ pre.cmd code {
 .note strong { color: var(--accent-2); }
 
 /* tables */
-.table-wrap { overflow-x: auto; margin: 0 0 16px; }
+.table-wrap {
+  overflow-x: auto;
+  margin: 0 0 16px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
 table {
   border-collapse: collapse;
   width: 100%;
@@ -241,22 +488,22 @@ table {
 }
 th, td {
   text-align: left;
-  padding: 8px 12px;
+  padding: 9px 14px;
   border-bottom: 1px solid var(--edge);
   vertical-align: top;
 }
+tr:last-child td { border-bottom: 0; }
 th {
   color: var(--muted);
   font-weight: 700;
   font-size: 0.76rem;
   text-transform: uppercase;
   letter-spacing: 0.6px;
+  background: rgba(255,255,255,0.02);
 }
-tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
+tbody tr { transition: background-color .15s ease; }
+tbody tr:hover { background: rgba(255,122,26,0.04); }
 td code { white-space: nowrap; }
-
-/* recommended values pop in theme orange (settings tables only) */
-table.settings tbody strong { color: var(--accent); }
 
 /* screenshots */
 figure.shot { margin: 6px 0 20px; }
@@ -265,10 +512,24 @@ figure.shot img {
   width: 100%;
   height: auto;
   border: 1px solid var(--edge);
-  border-radius: 8px;
+  border-radius: var(--radius);
+  box-shadow: 0 12px 34px -20px rgba(0,0,0,0.8);
 }
 figure.shot figcaption {
   margin-top: 8px;
   font-size: 0.85rem;
   color: var(--muted);
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 520px) {
+  .wrap { padding: 56px 16px 44px; }
+  .hero { padding: 36px 18px 32px; }
+  .badge { width: 78px; height: 78px; }
+  .card { padding: 20px 18px; }
+  .btn { flex: 1 1 auto; justify-content: center; }
+  .links { gap: 10px; }
+  .gallery { grid-template-columns: 1fr; gap: 14px; }
 }
