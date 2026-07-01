@@ -260,8 +260,14 @@ a:hover { color: var(--accent); text-decoration: underline; text-underline-offse
 /* ============================================================
    Landing content  (index.html)
    ============================================================ */
-.about-copy { margin: 0; color: var(--text); font-size: 1rem; }
+.about-copy { margin: 0; color: var(--text); font-size: 1rem; text-align: justify; text-justify: inter-word; }
 .about-copy b { color: var(--accent-2); font-weight: 650; }
+.about-copy + .about-copy { margin-top: 14px; }
+/* body segments: justify EVERY line (incl. the last) and keep them tight */
+.about-tight { text-align-last: justify; }
+.about-tight + .about-tight { margin-top: 0; }
+/* ...but let the very last line sit natural (not stretched) */
+.about-last { text-align-last: auto; }
 
 .card .lead { margin: 0; color: var(--text); font-size: 1rem; }
 .pill {
@@ -345,7 +351,13 @@ a:hover { color: var(--accent); text-decoration: underline; text-underline-offse
   margin-top: 14px;
   align-items: start;
 }
-.gallery .shot-img { border-radius: var(--radius-sm); }
+/* both tiles crop to one uniform size, content centered */
+.gallery .shot-img {
+  border-radius: var(--radius-sm);
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  object-position: center;
+}
 
 /* ============================================================
    Footer  (shared)
@@ -357,8 +369,18 @@ a:hover { color: var(--accent); text-decoration: underline; text-underline-offse
   font-size: 0.84rem;
   letter-spacing: 1px;
 }
-.made strong { color: var(--text); }
+.made strong { color: var(--accent); }
 .made .sep { color: var(--edge-2); margin: 0 8px; }
+
+/* fine-print legal disclaimer */
+.legal {
+  margin: 14px auto 0;
+  max-width: 620px;
+  text-align: center;
+  color: #5f6873;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
 
 /* ============================================================
    Accessibility
