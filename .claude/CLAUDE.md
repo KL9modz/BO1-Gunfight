@@ -24,6 +24,7 @@ BUGS
 - sometimes spawn facing wrong direction
 - unkown command cd
 - pause match not fully working on server
+- match starts before all players spawned
 
 DONE:
 - Server player limit + team-size caps set: `sv_maxclients 10` (launch bat) = 8 playing + 2
