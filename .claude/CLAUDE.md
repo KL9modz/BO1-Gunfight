@@ -9,6 +9,7 @@
 - Setup a modded T5 Plutonium server on a VPS
 - ship weapon files: ads fov/move speed
 - custom camos
+- add credit to Plutonium/bots, etc
 - Custom round-timer HUD: the stock game timer turns orange + shows tenths in the final 30s, which
   is hardcoded in the engine CG layer (NOT GSC-tunable — no dvar/property/hook; `setGameEndTime`
   only feeds it the end time). To trigger that at 10s instead, draw our OWN top-center timer fed by

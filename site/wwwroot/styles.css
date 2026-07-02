@@ -334,6 +334,24 @@ a:hover { color: var(--accent); text-decoration: underline; text-underline-offse
 }
 .fineprint a { color: var(--accent-2); }
 
+/* Getting Started call-to-action (below the How-to-play steps) */
+.guide-cta {
+  margin: 24px 0 0;
+  padding-top: 22px;
+  border-top: 1px solid var(--edge);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+.guide-cta-text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.96rem;
+}
+.guide-cta .btn { font-size: 1.02rem; padding: 13px 30px; }
+
 /* landing screenshots (caption-less, inside the About card) */
 .shot-img {
   display: block;
