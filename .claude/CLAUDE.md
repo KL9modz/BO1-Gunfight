@@ -20,7 +20,6 @@
 - server advertisements 
 - Refine loadouts
 - Adjust spawns & flags
-- Setup a modded T5 Plutonium server on a VPS
 - ship weapon files: ads fov/move speed
 - custom camos
 - add credit to Plutonium/bots, etc
@@ -30,6 +29,11 @@
   the existing `gf_roundRemaining` clock (MM:SS white normally, switch to S.T + orange at <=10s),
   hide the engine timer (`setGameEndTime 0`), and route the OT countdown through the same element
   so round + OT share one style. Moderate work, not a threshold tweak.
+
+BOT BUGS
+- I have touble spawning bots to start the match since they dont always make it before the prematch
+they soemtime spawn in the wrong areas. my guess is we shouldnt be using any TDM spawn logic for small map mode
+- sometimes on the VPS when u get a kill the bonus XP for a medel such as first blood is shown instead of our +1 elimination 
 
 BUGS
 - pause match not fully working on server ("clock kept running" — likely fixed locally by
@@ -680,6 +684,8 @@ The cap is **global across ALL hudelem types** (our stuff + stock ammo/compass H
 - **Team health panel** (2026-06-15) — bg fade + 8 skulls + 2 bars + 2 numbers. Dvars: `ui_gf_panel_x/y` (anchor), `ui_gf_hp_alpha` (reveal fade), `ui_gf_rN_hp/_fw/_cnt/_alive` (row N=0 friendly/1 enemy), `ui_gf_skull_mat`/`ui_gf_fade_mat` (material names). GSC `gf_pushHealthRow`/`gf_setRowDvar`. Skulls = alive(team-colour)+dead(white) itemDef per slot (forecolor R/G/B isn't exp-drivable, only A). Materials MUST be dynamic `exp material(dvarString())` — static `background "hud_..."` makes the linker try to bundle the .iwi (missing → build error).
 - **Self health bar** (`ui_gf_self_*`), **Loadout overview** (`ui_gf_lo_*`), **Team-panel border** (`ui_gf_panel_*`).
 - **Kill popup** "Elimination"/"Assist" — reuses the ENGINE's score popup element `self.hud_rankscroreupdate` (`NewScoreHudElem`, created by `_rank` at spawn) for the exact stock yellow look (font/glow/fontPulse); `gf_showScorePopup` `setText`'s it. Still counts in the global cap, but there's room now that the panel is off the pool. (Dormant `ui_gf_popup_*` menu items remain from an earlier attempt — unused.)
+
+- **Stock "+N" XP popups suppressed via `self.enableText = false` per spawn** (gf_playerSpawnedCB, added 2026-07-01) - the stock gate on `_rank::giveRankXP`'s popup push to the SHARED `hud_rankscroreupdate` element; `_persistence` re-sets it true on every connect/map_restart, hence per-spawn. Needed because medals (First Blood), challenges, and stat milestones pass EXPLICIT XP values that bypass our zeroed kill/assist score info - a ranked-server-only symptom (giveRankXP early-returns unranked), where they raced/replaced our Elimination/Assist popup. XP itself still accrues (incRankXP precedes the gate).
 
 `gf_debug_hud_pool` overlay shows `DRAWN: N/17` (now ~0 for mod HUD). Menu *structure* changes need a `mod.ff` rebuild; dvar values/positions are GSC-tunable (no rebuild). **Always build with `tools/build_ff.ps1`** (stages both zones + cleans `raw/`); a leftover staged `.menu` in `raw/` double-loads and kills the gametype UI. See memory `settext-configstring-exhaustion` + `build-stage-transitive-menu`.
 

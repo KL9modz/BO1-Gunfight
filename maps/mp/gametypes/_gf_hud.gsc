@@ -604,8 +604,11 @@ gf_destroyLoadoutHUD()
 // yellow score popup EXACTLY — same font / scale / glow / fontPulse — AND renders at any lobby size:
 // NewScoreHudElem is a dedicated score-element pool, NOT the newClientHudElem pool with the ~17
 // per-player DRAWN render cap (our old lazily-created client hudelem hit that cap and vanished as the
-// lobby grew). The mod sets score with the popup suppressed (zeroed kill/assist values + a no-popup
-// score setter), so the stock rank popup never fires on its own — the element is free to reuse.
+// lobby grew). The stock rank popup is kept off this element by self.enableText = false (set every
+// spawn in gf_playerSpawnedCB) — the stock gate on _rank::giveRankXP's popup push. The zeroed
+// kill/assist score info + the no-popup score setter alone were NOT enough: medals (First Blood),
+// challenges, and stat milestones pass explicit XP values that bypassed the zeroing on ranked servers
+// and raced/replaced our popup. With the gate off, the element is free to reuse.
 // popupType: 2 = elimination, 1 = assist. pri keeps Elimination from being stomped by Assist.
 // SIZE knob: gf_popupSize() (resting fontscale). It's applied via baseFontScale/maxFontScale, NOT
 // .fontscale — fontPulse (_hud.gsc) always animates the element back to baseFontScale, so a plain

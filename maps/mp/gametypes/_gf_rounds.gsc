@@ -146,6 +146,17 @@ gf_playerSpawnedCB()
 {
     level notify( "spawned_player" );
 
+    // Silence the stock "+N" XP popups. _rank::giveRankXP pushes them onto the SAME
+    // element our Elimination/Assist popup reuses (self.hud_rankscroreupdate), gated
+    // only by self.enableText — the stock per-player "XP text" preference, re-set true
+    // by _persistence on every connect (so every map_restart), hence per-spawn here.
+    // Our zeroed kill/assist score info already silences those types, but medals
+    // (First Blood etc.), challenges, and stat milestones pass EXPLICIT XP values that
+    // bypass the zeroing — on a ranked server they raced our popup and sometimes
+    // replaced it. XP itself still accrues (incRankXP runs before the gate); only the
+    // engine's popup text is suppressed.
+    self.enableText = false;
+
     // If scr_team_maxsize > 0, redirect to spectator when the team is already full.
     // The notify above still fires so SD and round logic don't stall.
     maxTeam = getDvarInt( "scr_team_maxsize" );
