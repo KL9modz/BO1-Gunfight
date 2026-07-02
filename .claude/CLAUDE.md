@@ -41,12 +41,17 @@ DONE:
 - "Match starts before all players spawned" + "bot fill issues" + "bots die on spawn" — FIXED
   2026-07-01 (pending in-game verify), one root cause: nothing ever waited for the roster.
   (1) `gf_tryActivateRound` now polls after `prematch_over` until every teamed player has
-  `hasSpawned` (bounded 8s), THEN closes grace early (+ stock-mirrored `updateTeamStatus` pass so a
-  during-wait wipe is noticed) and starts the round clock; `gf_updateAutoTeamMode()` moved after the
-  poll (was captured 0.2s after the FIRST spawn → undercounted bot fill, poisoned next round's
-  small/large mode). `level.gracePeriod` restored 3 -> 15 (stock) as the ceiling — the "3" was
-  justified by a `!gf_roundActive` damage gate that NEVER EXISTED; the early-close keeps rounds
-  ending promptly. (2) Bot fill now beats the prematch: `bot_wait_for_host` skips the 10s
+  `hasSpawned` (bounded 8s), THEN closes grace early via `gf_closeGraceEarly` (3s floor after
+  prematch_over — the join slack team-select idlers had under the old grace=3, they're invisible
+  to the poll; + stock-mirrored `updateTeamStatus` pass so a during-wait wipe is noticed) and
+  starts the round clock; `pauseTimer()` + the grenade-dud disable now happen BEFORE the hold
+  (verifier catch: the unpaused stock `timeLimitClock` starts inside the 40-60s
+  `match_ending_soon` band on a 45s round → premature last-round winning/losing VO; and pausing
+  freezes `getTimePassed()` → duds), with `setGameEndTime(0)` hiding the native clock during a
+  real hold. `gf_updateAutoTeamMode()` moved after the poll (was captured 0.2s after the FIRST
+  spawn → undercounted bot fill, poisoned next round's small/large mode). `level.gracePeriod`
+  restored 3 -> 15 (stock) as the ceiling — the "3" was justified by a `!gf_roundActive` damage
+  gate that NEVER EXISTED. (2) Bot fill now beats the prematch: `bot_wait_for_host` skips the 10s
   host-wait on dedis (no host ever exists → pure wasted prematch), and `addBots` batches the whole
   fill deficit per pass instead of 1 bot/1.7s. (3) `gf_getCustomSpawnPoint` gained the stock
   `positionWouldTelefrag` scan — the bare round-robin cursor could wrap onto point 0 and telefrag

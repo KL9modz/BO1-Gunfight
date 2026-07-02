@@ -229,6 +229,13 @@ _timeout( delay )
 */
 bot_wait_for_host()
 {
+	// Dedicated servers never have a host player: GetHostPlayer() stays undefined, so
+	// this loop deterministically burns the full bots_main_waitForHostTime (10s) of the
+	// 15s round-1 prematch and the bot fill loses the race to prematch_over (bots that
+	// connect late spectate the whole first round). Skip straight to the fill on a dedi.
+	if(getDvarInt("dedicated") >= 1)
+		return;
+
 	host = undefined;
 
 	while (!isDefined(level) || !isDefined(level.players))

@@ -622,7 +622,7 @@ addBots()
 			amount += spec;
 			
 		if(amount < fillAmount)
-			setDvar("bots_manage_add", 1);
+			setDvar("bots_manage_add", fillAmount - amount);//whole deficit in one batch (0.25s/bot); one-per-1.5s-pass lost the round-1 prematch race
 		else if(amount > fillAmount && getDvarInt("bots_manage_fill_kick"))
 		{
 			tempBot = PickRandom(getBotArray());

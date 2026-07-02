@@ -254,12 +254,17 @@ onStartGameType()
         setDvar( "ui_timelimit", level.timelimit ); // keep the HUD clock in sync
     }
 
-    // Stock sets level.gracePeriod = 15 (numLives branch) before onStartGameType, and
-    // _globallogic::updateGameEvents() suppresses onDeadEvent while inGracePeriod — so an
-    // early-round team wipe can't end the round until grace expires (the "few seconds with
-    // everyone dead" symptom). Shorten it; early-round PvP is already gated by the round-start
-    // freeze + !gf_roundActive in the damage handler, so we don't need stock grace protection.
-    level.gracePeriod = 3;
+    // Stock sets level.gracePeriod = 15 (numLives branch). Grace does two jobs in a
+    // one-life mode: (1) _globallogic_spawn::maySpawn only admits a FIRST spawn while
+    // inGracePeriod is true — anyone landing later (bot fill, slow loaders) spectates
+    // the whole round; and (2) _globallogic::updateGameEvents suppresses onDeadEvent
+    // while it's true, so a wipe can't end the round mid-spawn-wave. This used to be
+    // shortened to 3 on the (false) assumption that PvP was gated by !gf_roundActive
+    // in the damage handler — no such gate exists — which silently locked round-1 bot
+    // fill and slow loaders out of the match. Keep the stock ceiling; gf_tryActivateRound
+    // closes grace EARLY (the moment every teamed player has spawned, bounded at 8s)
+    // so the "everyone dead but round can't end" window never outlives the spawn wave.
+    level.gracePeriod = 15;
 
     // Per-round prematch via the engine's native countdown. The engine zeroes level.prematchPeriod
     // every round (Callback_StartGameType) and only refills it once per match, so we set it HERE

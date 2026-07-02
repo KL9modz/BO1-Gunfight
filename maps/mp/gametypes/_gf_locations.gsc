@@ -744,10 +744,23 @@ gf_getCustomSpawnPoint( team )
         return undefined;
 
     spawns = set[team];
-    index = level.gf_customSpawnCursor[team] % spawns.size;
+    start = level.gf_customSpawnCursor[team];
     level.gf_customSpawnCursor[team]++;
 
-    return spawns[index];
+    // Spawning onto an occupied point kills the occupant in this engine, which is why
+    // stock _spawnlogic runs positionWouldTelefrag() in every selection path. The bare
+    // round-robin cursor could wrap onto point 0 during round-start churn (overflow
+    // spawns diverted to spectator, team-move respawns) — where the round's first
+    // spawner is still standing frozen in prematch — and telefrag them. Scan forward
+    // for the first free point; fall back to the raw cursor point if all are occupied.
+    for ( offset = 0; offset < spawns.size; offset++ )
+    {
+        candidate = spawns[ ( start + offset ) % spawns.size ];
+        if ( !positionWouldTelefrag( candidate["origin"] ) )
+            return candidate;
+    }
+
+    return spawns[ start % spawns.size ];
 }
 
 gf_normalizeCustomSpawnLocations()

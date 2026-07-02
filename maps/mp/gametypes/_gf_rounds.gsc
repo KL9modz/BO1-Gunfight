@@ -258,7 +258,7 @@ gf_tryActivateRound()
     level.gf_activatingRound = true;
     level endon( "game_ended" );
 
-    // 0.2s dedup: let all players finish spawning before opening the round
+    // 0.2s dedup so a single activation thread wins the spawn burst.
     wait 0.2;
 
     if ( level.gf_roundActive )
@@ -273,10 +273,6 @@ gf_tryActivateRound()
     level.gf_warnedLastPlayer = [];
     gf_forceHealthHUDUpdate();
 
-    // Roster is now settled (post 0.2s wait, all spawned) — capture the auto
-    // team-size decision for the next round's setup.
-    gf_updateAutoTeamMode();
-
     // The engine's native per-round prematch (set up in onStartGameType via level.prematchPeriod)
     // owns the countdown, player freeze, intro VO, objective hint, and timer-hide. We reach here
     // ~0.2s INTO it (players spawn frozen during the prematch, and that first spawn is what
@@ -287,10 +283,86 @@ gf_tryActivateRound()
     if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
         level waittill( "prematch_over" );
 
+    // Silence the native timeLimitClock across the (usually zero-length) hold below —
+    // it starts at prematch_over and on a 45s round timeLeftInt begins inside the stock
+    // 40-60s match_ending_soon band, which would set xblive_matchEndingSoon and fire the
+    // last-round winning/losing VO at ROUND START during a real hold. Pausing here (same
+    // frame position the old code paused from, via gf_startRoundClock) also freezes
+    // getTimePassed() at ~0, so disable the stock grenade-dud window now too or grenades
+    // thrown during the hold fire as duds (same interaction gf_startRoundClock handles).
+    maps\mp\gametypes\_globallogic_utils::pauseTimer();
+    level.grenadeLauncherDudTime = -1;
+    level.thrownGrenadeDudTime   = -1;
+
+    // Hold the round clock until every teamed player has actually spawned. The engine
+    // never waits for the roster itself — startGame()'s waitForPlayers() is an empty
+    // stub and prematch_over is pure wall clock — so round-1 bot fill and slow loaders
+    // land after it. Bounded so a stuck client can't stall the match.
+    graceFloor = gettime() + 3000;
+    deadline   = gettime() + 8000;
+    if ( !gf_allTeamedPlayersSpawned() )
+    {
+        setGameEndTime( 0 );   // hide the native clock while holding (it would count down, then snap back to full)
+        while ( gettime() < deadline && !gf_allTeamedPlayersSpawned() )
+            wait 0.1;
+    }
+
+    // Close grace early — the moment the roster is in — instead of at the stock 15s
+    // mark, but never before 3s after prematch_over: a human still sitting in
+    // team-select is invisible to the spawn poll (no pers["team"] yet), and 3s is the
+    // join slack the old gracePeriod=3 gave them. Threaded so the round clock below
+    // starts immediately either way.
+    level thread gf_closeGraceEarly( graceFloor );
+
+    // Capture the auto team-size decision from the now-settled roster for the next
+    // round's setup. (Doing this before the spawn wait undercounted round-1 bot fill
+    // and poisoned game["gf_autoLargeMode"] for round 2.)
+    gf_updateAutoTeamMode();
+
     // Take over the live-round timer. This silences the native 30s "time running out" sequence
     // (announcer + TIME_OUT music + beeps) and drives our own countdown instead: VO at 15s, beeps
     // in the final 10s, no music.
     gf_startRoundClock();
+}
+
+// Closes the grace period once floorTime has passed. Closing grace reopens
+// onDeadEvent (a wipe can end the round again) and shuts maySpawn's first-spawn
+// window. Mirror stock gracePeriod()'s close with an updateTeamStatus pass so a
+// wipe that happened WHILE grace was open is still noticed (updateGameEvents only
+// re-runs on team-status ticks). The stock gracePeriod() thread still runs its own
+// idempotent close at the full 15s as a backstop.
+gf_closeGraceEarly( floorTime )
+{
+    level endon( "game_ended" );
+
+    while ( gettime() < floorTime )
+        wait 0.1;
+
+    level.inGracePeriod = false;
+    level thread maps\mp\gametypes\_globallogic::updateTeamStatus();
+}
+
+// True once every connected player on a playing team has completed a spawn this round
+// (stock self.hasSpawned: reset false in Callback_PlayerConnect — which re-runs for
+// every client on the between-round map_restart — and set true in spawnPlayer).
+// Spectators and players still in team-select don't count: they can't spawn into this
+// round, so they must not hold the clock hostage.
+gf_allTeamedPlayersSpawned()
+{
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        player = players[i];
+
+        team = player.pers["team"];
+        if ( !isDefined( team ) || ( team != "allies" && team != "axis" ) )
+            continue;
+
+        if ( !isDefined( player.hasSpawned ) || !player.hasSpawned )
+            return false;
+    }
+
+    return true;
 }
 
 // ─── Live-Round Clock ──────────────────────────────────────────────────────
