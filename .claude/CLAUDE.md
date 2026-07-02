@@ -1,7 +1,10 @@
 ﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 ---
 ### TODO
-- the mod hangs on first download
+- the mod hangs on first download (symptom pinned 2026-07-01: every player, FIRST join only — black
+  screen for several minutes as the download finishes; waiting it out OR restarting the client both
+  work, and after that first success joins are clean. Client-side mod-load/cache behavior suspected;
+  research why + whether the server can mitigate)
 - client join notifications
 - server advertisements 
 - Refine loadouts
@@ -22,12 +25,24 @@ BOT BUGS
 - bots soemtimes die on spawn
 
 BUGS
-- sometimes spawn facing wrong direction
-- unkown command cd
-- pause match not fully working on server
+- pause match not fully working on server ("clock kept running" — likely fixed locally by
+  3514844/c7e1329; VPS probably running pre-fix code. `deploy.ps1 -Mod`, then retest. Residual gaps
+  either way: pausing during the between-round countdown doesn't freeze the upcoming round clock,
+  and a pause never survives `map_restart` (`level.gf_paused` is level.*))
 - match starts before all players spawned
 
 DONE:
+- Spawn facing wrong direction — FIXED 2026-07-01 (pending in-game verify): small mode now
+  short-circuits `onSpawnPlayerUnified` -> `onSpawnPlayer` (gf.gsc), so late/async spawns (bot fill,
+  late joiners, 60s forceSpawn) always use curated fight-facing points instead of falling through to
+  the stock scored `mp_tdm_spawn` pool once `useStartSpawns` flips false (same exemption stock SD
+  gets in `_spawning`). BONUS fix found during verification: the curated-spawn branch now sets
+  `self.lastSpawnTime`/`self.lastSpawnPoint` — stock `_globallogic_player.gsc:783` does UNGUARDED
+  arithmetic on them (grenade spawn-protection), and undefined aborted the damage callback, silently
+  VOIDING grenade-classed damage against curated-spawned players all round.
+- "unkown command cd" — resolved 2026-07-01: never the mod (no stufftext/sendServerCommand anywhere);
+  stray console paste client-side. The related cfg `;`-inside-comment parse errors in dedicated.cfg
+  were fixed separately on the box.
 - Server player limit + team-size caps set: `sv_maxclients 10` (launch bat) = 8 playing + 2
   spectator headroom; `scr_team_maxsize 4` (4v4, overflow -> spectator) in `dedicated.cfg`.
   Spatial mode now flips small->large on TOTAL in-match players via `scr_gf_largemode_minplayers`

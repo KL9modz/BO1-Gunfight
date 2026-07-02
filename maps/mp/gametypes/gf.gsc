@@ -452,6 +452,17 @@ onSpawnPlayer( teamOverride )
         customSpawn = gf_getCustomSpawnPoint( spawnTeam );
         if ( isDefined( customSpawn ) )
         {
+            // Stock Callback_PlayerDamage does UNGUARDED arithmetic on these two
+            // fields for grenade/gas spawn-protection (_globallogic_player.gsc:783:
+            // self.lastSpawnTime + 3500, self.lastSpawnPoint.origin). The stock
+            // _spawnlogic selectors set them in finalizeSpawnpointChoice, but the
+            // curated path bypasses those — leaving them undefined aborts the damage
+            // callback and silently voids grenade damage against curated-spawned
+            // players. Set them the way finalizeSpawnpointChoice does; a script_origin
+            // stands in for the spawnpoint entity (map_restart reaps it each round).
+            self.lastSpawnTime  = getTime();
+            self.lastSpawnPoint = spawn( "script_origin", customSpawn["origin"] );
+
             self spawn( customSpawn["origin"], customSpawn["angles"], "gf" );
             return;
         }
@@ -483,6 +494,19 @@ onSpawnPlayerUnified()
 
     if ( level.useStartSpawns && !level.inGracePeriod )
         level.useStartSpawns = false;
+
+    // Small mode: ALWAYS spawn via our curated fight-facing points. The stock
+    // unified path only routes to onSpawnPlayer while useStartSpawns is true;
+    // once it flips false (first enemy damage), late/async spawns (bot fill,
+    // late joiners, 60s forceSpawn) fall through to the generic scored
+    // mp_tdm_spawn pool and face the wrong way. One life per round means those
+    // are the only mid-round spawns, so short-circuit instead. Large mode keeps
+    // the stock unified system (full-map pool benefits from spawn scoring).
+    if ( !level.gf_largeMode )
+    {
+        self onSpawnPlayer();
+        return;
+    }
 
     maps\mp\gametypes\_spawning::onSpawnPlayer_Unified();
 }
