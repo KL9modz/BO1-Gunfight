@@ -1,6 +1,7 @@
 ﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 ---
 ### TODO
+- support 30 FPS Server tick rate
 - the mod hangs on first download — ROOT CAUSE FOUND 2026-07-01 (client-engine-side, can't be fully
   fixed server-side): after the first-time FastDL download the Plutonium client does an in-place
   engine rebuild with NO loading UI — unloads ALL fastfiles, DESTROYS + recreates the D3D window
@@ -17,6 +18,7 @@
   (c) staff-endorsed unstick trick if a player reports a hard hang: type vid_restart in the
   Plutonium bootstrapper console window
 - client join notifications
+- edit gamemode to Gunfight not GF?
 - server advertisements 
 - Refine loadouts
 - Adjust spawns & flags
@@ -81,12 +83,6 @@ DONE:
   longer fires. We drive the HUD via `setGameEndTime` and play our own warning: `timesup` VO at
   15s remaining (no music), countdown beeps in the final 10s only. Verify the VO wording in-game.
 
-- Update release branch readme:
-Instalation
-Screenshots 
-More details (every function, dvar)
-Server info 
-Game tutorial: graphics, FOV, ADS
 
 - Organize repo — DONE:
 `release` branch (GitHub default) + Release zip now carry the SAME minimal content (mod.ff + gameplay GSC + README), via tools/package_release.ps1 (see "Release & Distribution")
