@@ -1,0 +1,12 @@
+// mod UI menu defs — intentionally empty.
+//
+// The engine hard-looks-up the menufile asset "ui_mp/mod.txt" on every mod load;
+// when it is absent the DB layer BLOCKS waiting for the missing asset during the
+// first-join mod switch (measured in console.log: 'Waited 4597 msec for missing
+// asset "ui_mp/mod.txt"'). Shipping this empty stub removes that stall.
+//
+// Our real HUD menus load via hud_gf.txt — do NOT loadMenu anything here
+// (double-registering a .menu kills ALL gametypes; see CLAUDE.md "menufile
+// double-load pitfall").
+{
+}

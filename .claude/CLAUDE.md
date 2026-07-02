@@ -1,10 +1,21 @@
 ﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 ---
 ### TODO
-- the mod hangs on first download (symptom pinned 2026-07-01: every player, FIRST join only — black
-  screen for several minutes as the download finishes; waiting it out OR restarting the client both
-  work, and after that first success joins are clean. Client-side mod-load/cache behavior suspected;
-  research why + whether the server can mitigate)
+- the mod hangs on first download — ROOT CAUSE FOUND 2026-07-01 (client-engine-side, can't be fully
+  fixed server-side): after the first-time FastDL download the Plutonium client does an in-place
+  engine rebuild with NO loading UI — unloads ALL fastfiles, DESTROYS + recreates the D3D window
+  (that blank window IS the black screen), reloads ~180MB of zones + mod.ff, re-execs configs, and
+  re-syncs Demonware stats. Once per client: later joins take the fast "[mod dl] mod already
+  downloaded" path (proven in local console_mp.log). Mitigations DONE: (1) mod.ff now ships an
+  empty ui_mp/mod.txt stub — the engine hard-looks it up on every mod load and BLOCKED a measured
+  4.6s when missing ("Waited 4597 msec for missing asset"); (2) site + GETTING_STARTED now set the
+  expectation (black screen = normal, wait it out, restart as fallback). REMAINING: (a) verify
+  in-game that the new mod.ff with the empty mod.txt doesn't break the gametype UI (menufile
+  pitfall class) BEFORE deploying; (b) on the VPS check console_mp.log says "found 1 files required
+  for mod download" — the deployed folder mirrors main and .csv/.gsc are downloadable extensions,
+  so if it advertises >1 file while IIS hosts only mod.ff, first joiners grind 404 retries;
+  (c) staff-endorsed unstick trick if a player reports a hard hang: type vid_restart in the
+  Plutonium bootstrapper console window
 - client join notifications
 - server advertisements 
 - Refine loadouts
@@ -20,18 +31,26 @@
   hide the engine timer (`setGameEndTime 0`), and route the OT countdown through the same element
   so round + OT share one style. Moderate work, not a threshold tweak.
 
-BOT BUGS
-- bot fill issues
-- bots soemtimes die on spawn
-
 BUGS
 - pause match not fully working on server ("clock kept running" — likely fixed locally by
   3514844/c7e1329; VPS probably running pre-fix code. `deploy.ps1 -Mod`, then retest. Residual gaps
   either way: pausing during the between-round countdown doesn't freeze the upcoming round clock,
   and a pause never survives `map_restart` (`level.gf_paused` is level.*))
-- match starts before all players spawned
 
 DONE:
+- "Match starts before all players spawned" + "bot fill issues" + "bots die on spawn" — FIXED
+  2026-07-01 (pending in-game verify), one root cause: nothing ever waited for the roster.
+  (1) `gf_tryActivateRound` now polls after `prematch_over` until every teamed player has
+  `hasSpawned` (bounded 8s), THEN closes grace early (+ stock-mirrored `updateTeamStatus` pass so a
+  during-wait wipe is noticed) and starts the round clock; `gf_updateAutoTeamMode()` moved after the
+  poll (was captured 0.2s after the FIRST spawn → undercounted bot fill, poisoned next round's
+  small/large mode). `level.gracePeriod` restored 3 -> 15 (stock) as the ceiling — the "3" was
+  justified by a `!gf_roundActive` damage gate that NEVER EXISTED; the early-close keeps rounds
+  ending promptly. (2) Bot fill now beats the prematch: `bot_wait_for_host` skips the 10s
+  host-wait on dedis (no host ever exists → pure wasted prematch), and `addBots` batches the whole
+  fill deficit per pass instead of 1 bot/1.7s. (3) `gf_getCustomSpawnPoint` gained the stock
+  `positionWouldTelefrag` scan — the bare round-robin cursor could wrap onto point 0 and telefrag
+  the round's first spawner standing frozen in prematch.
 - Spawn facing wrong direction — FIXED 2026-07-01 (pending in-game verify): small mode now
   short-circuits `onSpawnPlayerUnified` -> `onSpawnPlayer` (gf.gsc), so late/async spawns (bot fill,
   late joiners, 60s forceSpawn) always use curated fight-facing points instead of falling through to
@@ -1349,8 +1368,11 @@ gf_overtimeCountdown()
 > **The live (non-OT) round timer is ALSO mod-owned now (added 2026-06-18).**
 > `gf_startRoundClock` / `gf_roundClock` / `gf_syncRoundRemaining` / `gf_updateRoundWarning` in
 > `_gf_rounds.gsc` mirror the OT clock for the main round. `gf_tryActivateRound` calls
-> `gf_startRoundClock()` once the round goes live (round 1 directly; rounds > 0 after the start
-> countdown). It `pauseTimer()`s — which gates off the stock `_globallogic::timeLimitClock` warning
+> `gf_startRoundClock()` once the round goes live — uniform every round: after `prematch_over`,
+> then a bounded (8s) wait until every teamed player has spawned (`gf_allTeamedPlayersSpawned`),
+> at which point grace is closed early (stock `level.gracePeriod` stays 15 as the ceiling; see
+> the roster-gated activation in `gf_tryActivateRound`, added 2026-07-01).
+> It `pauseTimer()`s — which gates off the stock `_globallogic::timeLimitClock` warning
 > loop (`if ( !level.timerStopped && level.timeLimit )`) so NONE of the native time-out sequence fires
 > (no announcer, no `TIME_OUT` music, no 30s/12s/1-min beeps or client cues) — sets
 > `level.timeLimitOverride = true` (own expiry via `gf_onTimeLimit`), and drives the HUD via

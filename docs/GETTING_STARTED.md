@@ -124,7 +124,9 @@ Black Ops Gunfight is a ranked server. Join through the in-game **Server Browser
 1. Launch the game via the Plutonium launcher.
 2. Open the **Server Browser** under **PLAY**.
 3. **Reset the filters** and click **Refresh** so every server shows (modded servers are hidden by default filters).
-4. On the **Ranked** tab, find **`Gunfight | gunfight.us`** (mode **GF**) and join. The mod **downloads automatically** on connect (FastDL) - no manual install needed. This might take a minute to load on the first try.
+4. On the **Ranked** tab, find **`Gunfight | gunfight.us`** (mode **GF**) and join. The mod **downloads automatically** on connect (FastDL) - no manual install needed.
+
+> **First join only:** after the download finishes, the game rebuilds itself around the mod and your screen may go **black for a few minutes**. This is normal - let it finish and it will drop you into the match. Still black after ~5 minutes? Close the game and rejoin: the mod is already downloaded, so the second join is quick. Every join after that is instant.
 
 > Keep your **Plutonium launcher updated** so its build matches the server's - FastDL ships the *mod*, not the engine build. More at **[gunfight.us](https://gunfight.us)** and our **[Discord](https://discord.gg/blackops)**.
 
@@ -141,6 +143,7 @@ Black Ops Gunfight is a ranked server. Join through the in-game **Server Browser
 | **ADS stopped working** after a restart | Re-paste the `bind MOUSE2 ...` line. |
 | **"Invalid Game Path"** in the launcher | Re-select the correct `Call of Duty Black Ops` folder via **Game Settings**. |
 | **Gunfight isn't in the server list** | Reset all filters, click **Refresh**, and check the **Ranked** tab for `Gunfight | gunfight.us`. |
+| **Black screen after the mod downloads** (first join) | Normal on the very first join - the game is rebuilding itself around the mod. Give it a few minutes and it drops you into the match. Still black after ~5 minutes? Close the game and rejoin - the second join is quick. |
 | **Error connecting to the server** | Make sure your Plutonium client is up to date, then rejoin. |
 | **Controller not detected** | Enable **Controls -> Gamepad -> Yes**; if needed, run **[DS4Windows](https://ds4-windows.com/)**. |
 
