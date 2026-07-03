@@ -21,6 +21,9 @@ zone/
 # Join notifier — real config carries the secret ntfy topic (acts like a password)
 tools/notify/config.json
 
+# RCON panel — real rcon_password store (per-profile). Never commit; template is .example
+tools/rcon/secrets.local.json
+
 # Local-only reference/server files
 dedicated.cfg
 dedicated_sp.cfg

@@ -1,0 +1,48 @@
+#!/bin/sh
+# GF pre-commit secret guard — blocks committing rcon passwords, join passwords,
+# the Plutonium server key, or the gitignored secret stores. Tracked so it travels
+# with the repo; enabled per-clone via:  git config core.hooksPath tools/hooks
+#
+# Bypass (only if you are SURE a match is a false positive):  git commit --no-verify
+
+fail=0
+note() { echo "  pre-commit: $1" >&2; fail=1; }
+
+# 1) Never allow the secret stores / live cfg to be committed, even with `git add -f`.
+for p in $(git diff --cached --name-only); do
+  case "$p" in
+    *secrets.local.json)            note "refusing to commit secret store: $p" ;;
+    tools/notify/config.json)       note "refusing to commit notifier secret: $p" ;;
+    dedicated.cfg|*/dedicated.cfg)  note "refusing to commit live server cfg: $p" ;;
+  esac
+done
+
+# 2) Scan ADDED lines of the staged diff for secret literals. Only added ('+') lines,
+#    excluding this hook + any .example template (they carry the patterns as docs).
+added=$(git diff --cached -U0 --no-color -- . ':(exclude)tools/hooks/pre-commit' ':(exclude)*.example' \
+        | grep '^+' | grep -v '^+++')
+
+# rcon_password / g_password ASSIGNED a NON-EMPTY quoted value (blank "" and prose are allowed).
+#   cfg form :  set rcon_password "value"
+#   gsc form :  setDvar( "rcon_password", "value" )
+pw_cfg='(^|[^A-Za-z0-9_])(rcon_password|g_password)[[:space:]]+"[^"]+"'
+pw_dvar='"(rcon_password|g_password)"[[:space:]]*,[[:space:]]*"[^"]+"'
+if printf '%s\n' "$added" | grep -Eiq -e "$pw_cfg" -e "$pw_dvar"; then
+  note "a non-empty rcon_password/g_password value is staged:"
+  printf '%s\n' "$added" | grep -Ein -e "$pw_cfg" -e "$pw_dvar" >&2
+fi
+
+# Plutonium server key / any long key token:  key<sep><20+ char token>
+key_re='key["'"'"'= ]+[A-Za-z0-9+/=_-]{20,}'
+if printf '%s\n' "$added" | grep -Eiq "$key_re"; then
+  note "a long key-like token is staged (Plutonium server key?):"
+  printf '%s\n' "$added" | grep -Ein "$key_re" >&2
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo "" >&2
+  echo "  Commit blocked to keep secrets out of git. Fix the lines above," >&2
+  echo "  or bypass with:  git commit --no-verify  (only if truly a false positive)." >&2
+  exit 1
+fi
+exit 0

@@ -31,7 +31,7 @@ header{display:flex;align-items:center;gap:10px;padding:7px 14px;background:var(
 .conn-row{display:flex;gap:6px;flex:1;align-items:center}
 input,select{background:var(--bg);border:1px solid var(--bd);color:var(--tx);border-radius:var(--r);padding:5px 8px;font:13px var(--fn);outline:none}
 input:focus,select:focus{border-color:var(--ac)}
-#iHost{width:110px}#iPort{width:70px}#iPass{width:135px}
+#iProfile{width:130px}#iHost{width:110px}#iPort{width:70px}#iPass{width:135px}
 .bdg{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid;white-space:nowrap}
 .bdg.off{color:var(--dm);border-color:var(--bd)}.bdg.on{color:var(--ok);border-color:var(--ok)}.bdg.err{color:var(--ng);border-color:var(--ng)}
 .bdg.mode-ded{color:var(--ac);border-color:var(--ac)}.bdg.mode-listen{color:var(--wn);border-color:var(--wn)}
@@ -306,9 +306,10 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     <div id="logoPicker"></div>
   </div>
   <div class="conn-row">
-    <input id="iHost" type="text" placeholder="Host" value="127.0.0.1">
-    <input id="iPort" type="number" placeholder="Port" value="28960">
-    <input id="iPass" type="password" placeholder="rcon_password" value="">
+    <select id="iProfile" data-tip="Saved server profiles. Each remembers its own host, port and rcon_password.&#10;Switch here to jump between the local listen server and the VPS." onchange="switchProfile()"></select>
+    <input id="iHost" type="text" placeholder="Host" value="127.0.0.1" onchange="captureToProfile()">
+    <input id="iPort" type="number" placeholder="Port" value="28960" onchange="captureToProfile()">
+    <input id="iPass" type="password" placeholder="rcon_password" value="" onchange="captureToProfile()">
     <button id="cBtn" onclick="doConn()">Connect</button>
   </div>
   <span id="badge" class="bdg off">● Disconnected</span>
@@ -555,45 +556,42 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
   </div>
 
   <div class="block" data-eff="live" data-per="client">
-    <div class="btitle">VISUAL TWEAKS  <span style="font-weight:400;font-size:10px;color:var(--dm)">setClientDvar -- all players via bridge</span></div>
-    <div class="slider-row" data-tip="r_gamma&#10;Screen brightness multiplier. Default: 1.1 | setClientDvar all players">
-      <span class="slbl" style="min-width:130px">Gamma</span>
-      <input type="range" id="sGamma" min="0.5" max="3" step="0.05" value="1.1" oninput="sv('sGamma','vGamma')" onchange="visBridge('visgamma_','vGamma')" class="ctrl">
-      <input type="number" id="vGamma" class="num ctrl" value="1.1" step="0.05" oninput="su('vGamma','sGamma',0.5,3)">
-      <button class="b-gh b-sm ctrl" onclick="visBridge('visgamma_','vGamma')">Set</button>
-      <button class="b-gh b-sm ctrl" onclick="visReset('visgamma_',1.1,'vGamma','sGamma')">&#x21BA;</button>
+    <div class="btitle">VISUAL TWEAKS  <span style="font-weight:400;font-size:10px;color:var(--dm)">stock by default -- a set value persists (re-applied every spawn)</span></div>
+    <div class="srow" data-tip="Players keep their OWN video settings until you set a slider here.&#10;Setting a value stores it in a gf_vis_* server dvar and pushes it to everyone; the mod then re-applies it on every spawn until you reset it to stock.&#10;The old Gamma slider was removed: r_gamma is a SAVED client dvar and Plutonium blocks servers from writing those (the push never applied). Use Ambient / Grid Intensity for brightness.">
+      <span class="slbl" style="color:var(--dm)">Nothing is pushed until a value is set</span><span style="flex:1"></span>
+      <span class="shint">gf_vis_*</span>
     </div>
-    <div class="slider-row" data-tip="r_lightTweakAmbient&#10;Minimum scene fill light. 0 = dark shadows, 2 = fully lit. Default: 0.1">
+    <div class="slider-row" data-tip="r_lightTweakAmbient&#10;Minimum scene fill light. 0 = dark shadows, 2 = fully lit. Engine default: 0 (stock).&#10;&#x21BA; resets to stock (stops the per-spawn push).">
       <span class="slbl" style="min-width:130px">Ambient Light</span>
-      <input type="range" id="sAmb" min="0" max="2" step="0.05" value="0.1" oninput="sv('sAmb','vAmb')" onchange="visBridge('visambient_','vAmb')" class="ctrl">
-      <input type="number" id="vAmb" class="num ctrl" value="0.1" step="0.05" oninput="su('vAmb','sAmb',0,2)">
+      <input type="range" id="sAmb" min="0" max="2" step="0.05" value="0" oninput="sv('sAmb','vAmb')" onchange="visBridge('visambient_','vAmb')" class="ctrl">
+      <input type="number" id="vAmb" class="num ctrl" value="0" step="0.05" oninput="su('vAmb','sAmb',0,2)">
       <button class="b-gh b-sm ctrl" onclick="visBridge('visambient_','vAmb')">Set</button>
-      <button class="b-gh b-sm ctrl" onclick="visReset('visambient_',0.1,'vAmb','sAmb')">&#x21BA;</button>
+      <button class="b-gh b-sm ctrl" onclick="visReset('visambient_',0,'vAmb','sAmb')">&#x21BA;</button>
     </div>
-    <div class="slider-row" data-tip="r_lightGridIntensity&#10;Light probe / irradiance intensity multiplier. Default: 1.1">
+    <div class="slider-row" data-tip="r_lightGridIntensity&#10;Light probe / irradiance intensity multiplier. Engine default: 1 (stock).&#10;&#x21BA; resets to stock (stops the per-spawn push).">
       <span class="slbl" style="min-width:130px">Grid Intensity</span>
-      <input type="range" id="sGridI" min="0" max="3" step="0.05" value="1.1" oninput="sv('sGridI','vGridI')" onchange="visBridge('visgridint_','vGridI')" class="ctrl">
-      <input type="number" id="vGridI" class="num ctrl" value="1.1" step="0.05" oninput="su('vGridI','sGridI',0,3)">
+      <input type="range" id="sGridI" min="0" max="3" step="0.05" value="1" oninput="sv('sGridI','vGridI')" onchange="visBridge('visgridint_','vGridI')" class="ctrl">
+      <input type="number" id="vGridI" class="num ctrl" value="1" step="0.05" oninput="su('vGridI','sGridI',0,3)">
       <button class="b-gh b-sm ctrl" onclick="visBridge('visgridint_','vGridI')">Set</button>
-      <button class="b-gh b-sm ctrl" onclick="visReset('visgridint_',1.1,'vGridI','sGridI')">&#x21BA;</button>
+      <button class="b-gh b-sm ctrl" onclick="visReset('visgridint_',1,'vGridI','sGridI')">&#x21BA;</button>
     </div>
-    <div class="slider-row" data-tip="r_lightGridContrast&#10;Light grid contrast. Domain: -1..1. Default: 1">
+    <div class="slider-row" data-tip="r_lightGridContrast&#10;Light grid contrast. Domain: -1..1. Engine default: 0 (stock).&#10;&#x21BA; resets to stock (stops the per-spawn push).">
       <span class="slbl" style="min-width:130px">Grid Contrast</span>
-      <input type="range" id="sGridC" min="-1" max="1" step="0.05" value="1" oninput="sv('sGridC','vGridC')" onchange="visBridge('visgridcon_','vGridC')" class="ctrl">
-      <input type="number" id="vGridC" class="num ctrl" value="1" step="0.05" oninput="su('vGridC','sGridC',-1,1)">
+      <input type="range" id="sGridC" min="-1" max="1" step="0.05" value="0" oninput="sv('sGridC','vGridC')" onchange="visBridge('visgridcon_','vGridC')" class="ctrl">
+      <input type="number" id="vGridC" class="num ctrl" value="0" step="0.05" oninput="su('vGridC','sGridC',-1,1)">
       <button class="b-gh b-sm ctrl" onclick="visBridge('visgridcon_','vGridC')">Set</button>
-      <button class="b-gh b-sm ctrl" onclick="visReset('visgridcon_',1,'vGridC','sGridC')">&#x21BA;</button>
+      <button class="b-gh b-sm ctrl" onclick="visReset('visgridcon_',0,'vGridC','sGridC')">&#x21BA;</button>
     </div>
-    <div class="srow" data-tip="r_fog&#10;Enable/disable distance fog. setClientDvar all players">
+    <div class="srow" data-tip="r_fog&#10;Enable/disable distance fog. Engine default: on (stock).&#10;Toggling persists (re-applied every spawn) until Reset All.">
       <span class="slbl">Fog</span><span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbFog" checked onchange="bridge('visfog_'+(cbFog.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
     </div>
-    <div class="srow" data-tip="r_fullHDRrendering&#10;High dynamic range tonemapping. Default: 1 (on). setClientDvar all players">
+    <div class="srow" data-tip="r_fullHDRrendering&#10;High dynamic range tonemapping. Engine default: 1 (on, stock).&#10;Toggling persists (re-applied every spawn) until Reset All.">
       <span class="slbl">Full HDR Rendering</span><span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbHDR" checked onchange="bridge('vishdr_'+(cbHDR.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
     </div>
     <div class="row" style="margin-top:6px">
-      <button class="b-gh ctrl" data-tip="Resets all visual dvars to defaults via bridge&#10;r_gamma 1.1 · r_lightTweakAmbient 0.1 · r_lightGridIntensity 1.1&#10;r_lightGridContrast 1 · r_fog 1 · r_fullHDRrendering 1" onclick="visResetAll()">&#x21BA; Reset All Visuals</button>
+      <button class="b-gh ctrl" data-tip="Bridge: visreset&#10;Clears ALL gf_vis_* tweaks (stops every per-spawn push), pushes engine defaults to players currently in the session, and restores the map's default vision set.&#10;Ambient 0 · Grid Intensity 1 · Grid Contrast 0 · Fog on · HDR on · Vision normal" onclick="visResetAll()">&#x21BA; Reset All Visuals (stock)</button>
     </div>
   </div>
 
@@ -620,14 +618,18 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
 
   <div class="block" data-eff="live" data-per="transient">
     <div class="btitle">VISION FX  <span style="font-weight:400;font-size:10px;color:var(--dm)">VisionSetNaked / setClientDvar — all players via bridge</span></div>
-    <div class="srow" data-tip="VisionSetNaked per player (bridge: vision_&lt;set&gt;)&#10;cheat_* sets are always loaded; Normal restores the map default vision">
+    <div class="srow" data-tip="VisionSetNaked, all players (bridge: vision_&lt;set&gt;)&#10;All sets are in common_vision.csv so they apply on every map. PERSISTS across rounds (gf_vis_vision, re-applied each round) until Normal or Reset All Visuals.&#10;There is NO true colour-invert in T5 (the r_film* path can't negate RGB) — 'Enhance' is what the old Invert/Night actually did (a contrast pop).">
       <span class="slbl">Vision Set</span>
       <div class="row" style="gap:4px;flex-wrap:wrap;justify-content:flex-end;flex:1">
-        <button class="b-gh b-sm ctrl" onclick="bridge('vision_normal')">Normal</button>
-        <button class="b-gh b-sm ctrl" onclick="bridge('vision_bw')">B&amp;W</button>
-        <button class="b-gh b-sm ctrl" onclick="bridge('vision_contrast')">Contrast</button>
-        <button class="b-gh b-sm ctrl" onclick="bridge('vision_invert')">Inverted</button>
-        <button class="b-gh b-sm ctrl" onclick="bridge('vision_night')">Night Vision</button>
+        <button class="b-gh b-sm ctrl" onclick="bridge('vision_normal')" title="Restore the map's default vision">Normal</button>
+        <button class="b-gh b-sm ctrl" onclick="bridge('vision_enhance')" title="default_night — crisp contrast pop (what old Invert/Night really did)">Enhance</button>
+        <button class="b-gh b-sm ctrl" onclick="bridge('vision_bw')" title="cheat_bw — pure grayscale">B&amp;W</button>
+        <button class="b-gh b-sm ctrl" onclick="bridge('vision_berserk')" title="berserker — warm, high contrast (1.5)">Berserk</button>
+        <button class="b-gh b-sm ctrl" onclick="bridge('vision_thermal')" title="infrared — dark desaturated night/thermal">Thermal</button>
+        <button class="b-gh b-sm ctrl" onclick="bridge('vision_hotsnow')" title="infrared_snow — bright grayscale thermal">Hot Snow</button>
+        <button class="b-gh b-sm ctrl" onclick="bridge('vision_nuke')" title="mp_nuked — warm hazy">Nuke</button>
+        <button class="b-gh b-sm ctrl" onclick="bridge('vision_film')" title="flashpoint — warm cinematic / sepia">Film</button>
+        <button class="b-gh b-sm ctrl" onclick="bridge('vision_bleak')" title="wmd — cold desaturated">Bleak</button>
       </div>
     </div>
     <div class="srow" data-tip="cg_thirdPerson&#10;Third-person camera for all players. setClientDvar via bridge: thirdperson_1/0">
@@ -921,17 +923,85 @@ async function saveBlockToCfg(btn){
 // ─── State ───────────────────────────────────────────────────────────────────
 let live=false, paused=false, mapQueue=[], autoQ=false, hist=[], histI=-1, lastMap=null;
 
-// ─── Persistence ────────────────────────────────────────────────────────────
-function loadCfg(){
-  try{const s=JSON.parse(localStorage.getItem('gf_rcon')||'{}');
-    if(s.host)g('iHost').value=s.host;
-    if(s.port)g('iPort').value=s.port;
-    if(s.pass)g('iPass').value=s.pass;
-  }catch(_){}}
-function saveCfg(){
-  localStorage.setItem('gf_rcon',JSON.stringify({
-    host:g('iHost').value.trim(),port:g('iPort').value.trim(),pass:g('iPass').value
-  }));}
+// ─── Persistence (server profiles) ────────────────────────────────────────────
+// Each profile remembers its host/port in localStorage; the rcon_password lives in the
+// GITIGNORED secrets.local.json on the server side (keyed by profile name) and is fetched
+// over the loopback API — so a password NEVER sits in localStorage or in any tracked file.
+// Switch between the local listen server and the VPS with the dropdown.
+let _profiles=[], _activeProfile=0, _secrets={};
+function defaultProfiles(){return[
+  {name:'Local (listen)',host:'127.0.0.1',   port:'28960'},
+  {name:'VPS',           host:'94.72.121.4',port:'28960'},
+];}
+function loadProfiles(){
+  try{
+    const raw=JSON.parse(localStorage.getItem('gf_rcon_profiles')||'null');
+    if(raw&&Array.isArray(raw.profiles)&&raw.profiles.length){
+      _profiles=raw.profiles; _activeProfile=raw.active||0;
+    }else{
+      _profiles=defaultProfiles();
+      // migrate host/port from the legacy single-server blob into the Local profile
+      const old=JSON.parse(localStorage.getItem('gf_rcon')||'{}');
+      if(old&&old.host){_profiles[0]={name:'Local (listen)',host:old.host,port:old.port||'28960'};}
+      _activeProfile=0;
+    }
+  }catch(_){_profiles=defaultProfiles();_activeProfile=0;}
+  if(_activeProfile>=_profiles.length)_activeProfile=0;
+  _profiles.forEach(p=>{delete p.pass;});   // passwords never live in localStorage
+  // backfill canonical host/port for built-in profiles if a stale entry lost them
+  const canon={}; defaultProfiles().forEach(d=>canon[d.name]=d);
+  _profiles.forEach(p=>{ const d=canon[p.name]; if(d){ if(!p.host)p.host=d.host; if(!p.port)p.port=d.port; } });
+}
+function persistProfiles(){
+  // store name/host/port only — the secret is in secrets.local.json, not here
+  const clean=_profiles.map(p=>({name:p.name,host:p.host,port:p.port}));
+  localStorage.setItem('gf_rcon_profiles',JSON.stringify({profiles:clean,active:_activeProfile}));
+}
+function renderProfiles(){
+  const sel=g('iProfile');
+  sel.innerHTML=_profiles.map((p,i)=>`<option value="${i}"${i===_activeProfile?' selected':''}>${p.name}</option>`).join('');
+}
+function fillFromProfile(){
+  const p=_profiles[_activeProfile]||{};
+  g('iHost').value=p.host||'';g('iPort').value=p.port||'28960';
+  g('iPass').value=(_secrets[p.name]!=null?_secrets[p.name]:'');
+}
+// server-side secrets store (gitignored) ──────────────────────────────
+async function fetchSecrets(){
+  try{const r=await (await fetch(API+'/secrets')).json();return (r&&r.ok&&r.profiles)||{};}catch(_){return {};}
+}
+async function saveSecret(name,pass){
+  try{await fetch(API+'/secrets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,pass})});}catch(_){}
+}
+// Copy the current input fields back into the active profile (called on connect / field edit).
+// host/port → localStorage; rcon_password → gitignored secrets.local.json (never localStorage).
+function captureToProfile(){
+  const p=_profiles[_activeProfile]; if(!p)return;
+  p.host=g('iHost').value.trim();p.port=g('iPort').value.trim();
+  persistProfiles();
+  const pass=g('iPass').value;
+  _secrets[p.name]=pass;
+  saveSecret(p.name,pass);
+}
+function switchProfile(){
+  captureToProfile();                       // save edits to the profile we're leaving
+  _activeProfile=parseInt(g('iProfile').value)||0;
+  fillFromProfile();
+  persistProfiles();
+  if(live)disconnect();                      // switching servers drops the current connection
+}
+async function loadCfg(){
+  loadProfiles(); renderProfiles(); fillFromProfile();   // host/port immediately
+  _secrets=await fetchSecrets();
+  // one-time migration: move any legacy localStorage password into the secrets file
+  try{
+    const old=JSON.parse(localStorage.getItem('gf_rcon')||'{}');
+    if(old&&old.pass&&_secrets['Local (listen)']==null){_secrets['Local (listen)']=old.pass;await saveSecret('Local (listen)',old.pass);}
+    if(old&&(old.host||old.pass))localStorage.removeItem('gf_rcon');
+  }catch(_){}
+  fillFromProfile();                                     // now with the password
+}
+function saveCfg(){ captureToProfile(); }
 function conn(){return{host:g('iHost').value.trim()||'127.0.0.1',port:parseInt(g('iPort').value)||28960,password:g('iPass').value}}
 
 // ─── API ────────────────────────────────────────────────────────────────────
@@ -963,7 +1033,7 @@ async function doConn(){
   const btn=g('cBtn');btn.disabled=true;btn.textContent='…';
   try{
     const d=await fetchStatus();
-    if(d.ok){setLive(true);tick(d);actLog('Connected to '+conn().host,'ok');reqNotifyPerm();readServerDvars();readMatchDvars();}
+    if(d.ok){setLive(true);tick(d);actLog('Connected to '+((_profiles[_activeProfile]||{}).name||conn().host)+' ('+conn().host+')','ok');reqNotifyPerm();readServerDvars();readMatchDvars();}
     else{toast('Failed: '+d.error,'err');setLive(false);}
   }catch(e){toast('Error: '+e.message,'err');setLive(false);}
   btn.disabled=false;
@@ -1419,26 +1489,19 @@ async function visBridge(prefix,vid){
   if(ok) actLog(prefix.replace('_','')+'='+v,'ok');
 }
 async function visReset(prefix,def,vid,sid){
+  // "stock" clears the gf_vis_* persistence server-side and one-shots the engine
+  // default to players in the session; def is that engine default (for the UI).
   g(vid).value=def;if(sid)g(sid).value=def;
-  await bridge(prefix+def);
-  actLog(prefix.replace('_','')+'='+def,'ok');
+  await bridge(prefix+'stock');
+  actLog(prefix.replace('_','')+'=stock','ok');
 }
 async function visResetAll(){
-  const cmds=[
-    'set gf_cmd visfog_1',
-    'set gf_cmd visambient_0.1',
-    'set gf_cmd visgridint_1.1',
-    'set gf_cmd visgridcon_1',
-    'set gf_cmd visgamma_1.1',
-    'set gf_cmd vishdr_1',
-  ];
-  for(const c of cmds){await rcon(c);await new Promise(r=>setTimeout(r,120));}
-  g('sGamma').value=g('vGamma').value=1.1;
-  g('sAmb').value=g('vAmb').value=0.1;
-  g('sGridI').value=g('vGridI').value=1.1;
-  g('sGridC').value=g('vGridC').value=1;
+  const ok=await bridge('visreset');
+  g('sAmb').value=g('vAmb').value=0;
+  g('sGridI').value=g('vGridI').value=1;
+  g('sGridC').value=g('vGridC').value=0;
   g('cbFog').checked=true;g('cbHDR').checked=true;
-  actLog('Visuals reset to defaults','ok');toast('Visuals reset','ok');
+  if(ok){actLog('Visuals reset to stock','ok');toast('Visuals reset to stock','ok');}
 }
 async function toggleFallDmg(){
   const on=g('cbFall').checked;
@@ -1748,12 +1811,13 @@ const GT_SECTIONS = {
     { n:'scr_gf_timelimit_large',     lbl:'Round Time — Large (min)', type:'num', def:'1.5',  tip:'scr_gf_timelimit_large\nRound time for LARGE mode (7+ players).' },
     { n:'scr_gf_match_prematch_seconds', lbl:'Prematch (s)',          type:'num', def:'15', tip:'scr_gf_match_prematch_seconds\nIntro countdown before the first round of the match (MATCH STARTING IN). Clamped 2-30.' },
     { n:'scr_gf_prematch_seconds',    lbl:'Preround (s)',             type:'num', def:'7',  tip:'scr_gf_prematch_seconds\nCountdown before each later round (ROUND BEGINS IN). Clamped 2-20.' },
+    { n:'scr_gf_roster_wait',         lbl:'Roster Wait (s, 0=no cap)', type:'num', def:'15', tip:'scr_gf_roster_wait\nMax seconds the round clock waits after the countdown for every teamed player to finish spawning (slow loaders, round-1 bot fill).\n0 = no cap: wait until everyone is in (a stuck client would only be released when the match ends). Clamped 0-120.' },
+    { n:'scr_gf_min_players',         lbl:'Min Players to Start',      type:'num', def:'1',  tip:'scr_gf_min_players\nHold the FIRST round until at least this many HUMAN players are on a team (bots do not count). Match-start only — once the match is live it never re-holds, even if players leave.\nEveryone is frozen and damage is voided during the hold, so nobody dies into a not-yet-live round. 1 = effectively off. Clamped 1-8.' },
     { n:'scr_gf_overtimelimit',       lbl:'OT Duration — Small (s)',  type:'num', def:'15',   tip:'scr_gf_overtimelimit\nOT countdown for SMALL mode. Pauses while contested.' },
     { n:'scr_gf_overtimelimit_large', lbl:'OT Duration — Large (s)',  type:'num', def:'30',   tip:'scr_gf_overtimelimit_large\nOT countdown for LARGE mode. Pauses while contested.' },
     { n:'scr_gf_numlives',            lbl:'Lives / Round',            type:'num', def:'1',    tip:'scr_gf_numlives\nLives per player per round.' },
     { n:'gf_capture_time',            lbl:'OT Capture — Small (s)',   type:'num', def:'3',    tip:'gf_capture_time\nSeconds to capture the OT zone in SMALL mode.' },
     { n:'gf_capture_time_large',      lbl:'OT Capture — Large (s)',   type:'num', def:'5',    tip:'gf_capture_time_large\nSeconds to capture the OT zone in LARGE mode.' },
-    { n:'scr_gf_visualtweaks',        lbl:'Force Video Tweaks',       type:'tog', def:'1',    tip:'scr_gf_visualtweaks\n1 = force video dvars (r_gamma, HDR, lightgrid) on every spawn, overriding each player video setting. 0 = leave player video alone.' },
   ],
   tdm: [
     { n:'scr_tdm_scorelimit', lbl:'Score Limit', type:'num', def:'17500', tip:'scr_tdm_scorelimit\nTeam score needed to win.' },

@@ -230,10 +230,6 @@ onStartGameType()
     }
     // #strip-end
 
-    dvar = "scr_" + level.gameType + "_visualtweaks";
-    if ( GetDvar( dvar ) == "" )
-        setDvar( dvar, 1 );
-
     setDvar( "scr_player_healthregentime", "0" );
     level.killstreaksenabled             = 0;
     level.healthRegenDisabled            = true;

@@ -1,6 +1,17 @@
 ﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 ---
 ### TODO
+unknown cmd cd
+night and invert look better
+more ammo
+match starts too early
+manage teams
+widen the spawns
+support 6v6
+show feature we support every map
+fable website design
+
+
 - support 30 FPS Server tick rate (sv_fps 30) — investigated 2026-07-02. WHY IT'S NOT JUST A DVAR:
   T5/CoD scales GSC `wait` by 20/sv_fps, so at sv_fps 30 every wait-driven timer runs ~1.5x fast
   (0.667x real duration). Our round/OT clocks are IMMUNE (gettime()-delta anchored + setGameEndTime,
@@ -201,6 +212,8 @@ persists through `map_restart`.
 | `gf_capture_time_large` | 5 | OT zone hold-to-capture seconds, LARGE |
 | `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (see Team-Size Mode) |
 | `scr_gf_largemode_minplayers` | 7 | Total in-match players (allies+axis) at/above which `auto` mode uses LARGE spawns; below it, SMALL. `0-6` small, `7+` large. Clamped 2-12 |
+| `scr_gf_roster_wait` | 15 | Max seconds `gf_tryActivateRound` holds the round clock after `prematch_over` waiting for every teamed player to finish spawning (slow loaders / round-1 bot fill). **`0` = no cap** (wait until all in; only `game_ended` releases a stuck client). Clamped 0-120. Live-tunable (re-read each round). Replaced the old hard-coded 8s bound |
+| `scr_gf_min_players` | 1 | **Min HUMANS-to-start gate** (`gf_waitForMinPlayers`, `_gf_rounds.gsc`). Holds the match's FIRST round (`game["roundsplayed"]==0` only) until at least this many *human* players are on a team — bots (`pers["isBot"]`) don't count, so bot-fill can't satisfy it. During the hold everyone is frozen (`freeze_player_controls`) and **all damage is voided** via the `level.gf_waitingForPlayers` guard in `gf_onPlayerDamage` (so no one dies into a not-yet-live round → instant-wipe). Match-start only: never re-holds mid-match if a player leaves. `1` = effectively off. Clamped 1-8. Distinct from `scr_gf_roster_wait` (that waits for the present roster to *spawn in*; this waits for enough humans to *exist*) |
 | `scr_team_maxsize` | 0 (shipped cfg sets **4**) | `>0` caps players/team; overflow is sent to spectator on spawn (`gf_playerSpawnedCB`). `dedicated.cfg` ships `4` (4v4); `sv_maxclients` 10 = 8 play + 2 spectator |
 | `perk_weapSwitchMultiplier` | (engine default) | Engine weapon-swap speed (lower = faster); gated by `specialty_fastweaponswitch`, which is **OFF by default** (no longer in the base loadout). NOT forced by the mod — stock by default. To use it: enable Fast Weapon Switch via the RCON Perks tab (`gf_perk_on`), then tune the slider; inert until the perk is on |
 | `gf_perk_on` / `gf_perk_off` | "" | Comma-separated perk override lists (RCON-managed) applied AFTER the base perk set in `gf_giveCustomLoadout` |
@@ -211,9 +224,14 @@ persists through `map_restart`.
 **Dev/debug dvars** (callers are strip-wrapped, so only active on `main`): `gf_debug_spawns`,
 `gf_debug_hud_pool`, `gf_debug_elem_probe`.
 
-> Note: `gf_playerSpawnedCB` also force-pushes client video dvars on every spawn
-> (`r_gamma 1.1`, `r_fullHDRrendering 1`, lightgrid/ambient tweaks) — this overrides each
-> player's own video settings. Intentional "visual tweaks"; gate behind a dvar if that's unwanted.
+> Note: video tweaks are STOCK by default (rebuilt 2026-07-03). `gf_playerSpawnedCB` calls
+> `gf_applyVisTweaks()` (humans only), which pushes ONLY the `gf_vis_*` dvars that are non-empty
+> (`gf_vis_ambient/gridint/gridcon/hdr/fog` → `r_lightTweakAmbient`/`r_lightGridIntensity`/
+> `r_lightGridContrast`/`r_fullHDRrendering`/`r_fog`). The RCON Visuals sliders persist values into
+> those dvars via the bridge (`vis<key>_<value>`; value `stock` clears one, `visreset` clears all).
+> The old `scr_gf_visualtweaks` force-push (r_gamma 1.1 etc. every spawn) was removed: `r_gamma` is
+> a SAVED client dvar Plutonium blocks servers from writing, and the per-spawn stock-dvar writes
+> were the prime suspect for the client "unknown cmd cd" spam.
 
 ---
 
@@ -430,6 +448,35 @@ Available values: `playlist_tdm`, `playlist_ffa`, `playlist_search_destroy`, `pl
 Currently set to `playlist_tdm`. Change and rebuild mod.ff to update.
 
 **menufile double-load pitfall** â€” If a `.menu` file is already referenced by a `loadMenu` directive inside another `menufile` (e.g. `hud_gf.txt` loads `hud_gf_health.menu`), do NOT also list it as a separate `menufile` entry in `mod.csv`. The engine registers the menu name twice, which crashes the menu system and makes **all gametypes disappear** from the UI â€” a symptom that looks completely unrelated to the duplicate. Rule: each `.menu` file appears in `mod.csv` exactly once, either as a direct `menufile` OR via a txt loader, never both.
+
+---
+
+## Secrets Handling (RCON password, join password, Plutonium server key)
+
+Secrets never live in a tracked file. Three layers keep them out of git:
+
+1. **Gitignored stores (the values live here, per machine):**
+   - **VPS `rcon_password` / `g_password`** → `dedicated.cfg` (gitignored; sole owner on the box).
+   - **RCON panel `rcon_password`** → `tools/rcon/secrets.local.json` (gitignored) — a
+     `{ "profiles": { "<profile name>": "<rcon_password>" } }` map keyed by the panel's server-dropdown
+     name. `server.js` reads/writes it over the loopback-only API (`GET`/`POST /api/secrets`); the panel
+     never stores a password in browser localStorage (only host/port land there, in `gf_rcon_profiles`).
+     Type the password into the panel once and it saves to this file. Template: `secrets.local.json.example`.
+     Keep `rcon_password` ≤23 chars (Plutonium silently ignores longer — see memory `rcon-tool-vps-connect-23char-cap`).
+   - **Plutonium server key** → VPS launch config only; it's a platform-issued token (NOT a value you pick),
+     so don't reuse it as the RCON password and never put it on a command line (that's how it leaked 2026-07-02).
+
+2. **`.gitignore`** blocks `tools/rcon/secrets.local.json`, `tools/notify/config.json`, `dedicated.cfg`.
+
+3. **Pre-commit guard** `tools/hooks/pre-commit` (tracked). Enabled per-clone with
+   `git config core.hooksPath tools/hooks` — **run this once after a fresh clone.** It refuses to commit the
+   secret stores (even `git add -f`) and scans staged added-lines for a non-empty `rcon_password`/`g_password`
+   value (cfg `set x "v"` and gsc `setDvar("x","v")` forms) or a long `key <token>`. Blank `""` and prose
+   mentions are allowed. Bypass a genuine false positive with `git commit --no-verify`.
+
+> History is already public: the old RCON password (commit `43f79da`) and the exposed server key were
+> leaked before this setup existed — **rotate both once** (VPS `dedicated.cfg` + platform serverkey page).
+> The layers above only prevent *future* leaks; they can't un-leak the old values.
 
 ---
 

@@ -25,6 +25,11 @@ const PUBLIC_DIR   = path.join(__dirname, 'public');
 // dedicated.cfg lives at storage/t5/dedicated.cfg; this file is at
 // storage/t5/mods/mp_gunfight/tools/rcon/server.js → four levels up.
 const CFG_PATH     = path.resolve(__dirname, '..', '..', '..', '..', 'dedicated.cfg');
+// Per-profile rcon_password lives HERE, next to server.js, and is GITIGNORED — it never
+// enters the repo. Shape: { "profiles": { "<profile name>": "<rcon_password>" } }. The panel
+// reads/writes it over the loopback-only API so passwords never sit in browser localStorage
+// or in any tracked file. See secrets.local.json.example.
+const SECRETS_PATH = path.join(__dirname, 'secrets.local.json');
 
 // ─── RCON UDP ─────────────────────────────────────────────────────────────────
 
@@ -247,6 +252,28 @@ function upsertCfg(text, dvars, eol) {
   return { text: lines.join(eol), updated, added };
 }
 
+// ─── Secrets (gitignored rcon_password store) ─────────────────────────────────
+// A profile-name → rcon_password map kept OUT of git in secrets.local.json. Missing
+// file / bad JSON is not an error — a fresh clone just has no saved passwords yet.
+function loadSecrets() {
+  try {
+    const obj = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf8'));
+    if (obj && obj.profiles && typeof obj.profiles === 'object') return obj.profiles;
+  } catch (_) {}
+  return {};
+}
+function saveSecret(name, pass) {
+  let obj = { profiles: {} };
+  try {
+    const cur = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf8'));
+    if (cur && typeof cur === 'object') obj = cur;
+  } catch (_) {}
+  if (!obj.profiles || typeof obj.profiles !== 'object') obj.profiles = {};
+  if (pass === '') delete obj.profiles[name];   // don't persist blank entries
+  else obj.profiles[name] = pass;
+  fs.writeFileSync(SECRETS_PATH, JSON.stringify(obj, null, 2) + '\n');
+}
+
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
 function readBody(req, maxBytes = 262144) {
@@ -392,6 +419,22 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       return sendJson(res, { ok: false, error: err.message });
     }
+  }
+
+  // ── GET /api/secrets ── profile-name → rcon_password map from the gitignored file
+  if (req.method === 'GET' && pathname === '/api/secrets') {
+    return sendJson(res, { ok: true, profiles: loadSecrets() });
+  }
+
+  // ── POST /api/secrets ── upsert one profile's password into the gitignored file
+  if (req.method === 'POST' && pathname === '/api/secrets') {
+    let body;
+    try { body = JSON.parse(await readBody(req)); } catch (_) { return sendJson(res, { ok: false, error: 'Bad JSON' }, 400); }
+    const name = String(body.name == null ? '' : body.name).slice(0, 64).trim();
+    if (!name) return sendJson(res, { ok: false, error: 'Missing profile name' }, 400);
+    const pass = String(body.pass == null ? '' : body.pass).slice(0, 256);
+    try { saveSecret(name, pass); return sendJson(res, { ok: true }); }
+    catch (err) { return sendJson(res, { ok: false, error: err.message }); }
   }
 
   // ── POST /api/batch ──

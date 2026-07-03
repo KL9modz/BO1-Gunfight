@@ -222,15 +222,15 @@ gf_playerSpawnedCB()
         level thread gf_startHealthHUD();
     }
     gf_queueHealthHUDUpdate();
-    // Forced video tweaks, gated by scr_gf_visualtweaks (0 = leave the player's own video alone).
-    if ( getDvarInt( "scr_gf_visualtweaks" ) )
-    {
-        self setClientDvar( "r_lightTweakAmbient",  "0.1" );
-        self setClientDvar( "r_lightGridIntensity", "1.1" );
-        self setClientDvar( "r_lightGridContrast",  "1"   );   // domain is -1..1; 1.1 is rejected by the engine
-        self setClientDvar( "r_gamma",              "1.1" );
-        self setClientDvar( "r_fullHDRrendering",   "1"   );
-    }
+    // Video tweaks: STOCK by default — nothing is pushed unless a gf_vis_* dvar has
+    // been set (the RCON Visuals sliders persist into them via the bridge), so
+    // players keep their own video settings out of the box. Replaces the old
+    // scr_gf_visualtweaks force-push (hardcoded r_gamma 1.1 etc. every spawn):
+    // r_gamma is a SAVED client dvar Plutonium blocks servers from writing, and the
+    // per-spawn stock-dvar writes were the prime suspect for the client-side
+    // "unknown cmd cd" spam. Humans only — bots have no renderer.
+    if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+        self gf_applyVisTweaks();
     self thread gf_onSpawned();
 
     // Drive the entire per-player health panel in the PLAYER's own context (create +
@@ -260,6 +260,51 @@ gf_playerSpawnedCB()
 }
 
 
+// ─── Video tweaks (RCON-tunable, stock by default) ─────────────────────────
+// gf_vis_<key> server dvar -> client video dvar. All default UNSET ("") = the
+// mod never touches that setting. The RCON Visuals sliders write these through
+// the bridge (gf_bridgeVisSet), which both pushes live players AND persists the
+// value here so every later spawn re-applies it. Resetting a slider to "stock"
+// clears the gf_vis_* dvar and one-shots the engine default (gf_visEngineDefault).
+// r_gamma is deliberately NOT in the map: it is a SAVED client dvar and Plutonium
+// blocks servers from writing those (the write never applies).
+
+gf_visTweakMap()
+{
+    m = [];
+    m["gf_vis_ambient"] = "r_lightTweakAmbient";
+    m["gf_vis_gridint"] = "r_lightGridIntensity";
+    m["gf_vis_gridcon"] = "r_lightGridContrast";
+    m["gf_vis_hdr"]     = "r_fullHDRrendering";
+    m["gf_vis_fog"]     = "r_fog";
+    return m;
+}
+
+// Best-known engine defaults, used by the bridge's "stock" reset to visibly undo
+// a tweak on players already in the session (a fresh client is always stock —
+// setClientDvar values are session-only and never saved to the player's config).
+gf_visEngineDefault( clientDvar )
+{
+    if ( clientDvar == "r_lightTweakAmbient"  ) return "0";
+    if ( clientDvar == "r_lightGridIntensity" ) return "1";
+    if ( clientDvar == "r_lightGridContrast"  ) return "0";
+    if ( clientDvar == "r_fullHDRrendering"   ) return "1";
+    if ( clientDvar == "r_fog"                ) return "1";
+    return "";
+}
+
+gf_applyVisTweaks()
+{
+    m = gf_visTweakMap();
+    keys = getArrayKeys( m );
+    for ( i = 0; i < keys.size; i++ )
+    {
+        v = getDvar( keys[i] );
+        if ( v != "" )
+            self setClientDvar( m[keys[i]], v );
+    }
+}
+
 gf_onSpawnSpectator( origin, angles )
 {
     maps\mp\gametypes\_globallogic_defaults::default_onSpawnSpectator( origin, angles );
@@ -279,6 +324,11 @@ gf_onSpawned()
 
     self.gf_assisters = [];
     self.gf_dmgOnTarget = [];
+
+    // If the match-start min-players gate is holding, freeze this fresh spawn
+    // immediately (the gate's 0.5s poll would otherwise let it move briefly).
+    if ( isDefined( level.gf_waitingForPlayers ) && level.gf_waitingForPlayers )
+        self maps\mp\_utility::freeze_player_controls( true );
 
     if ( !level.gf_roundActive )
         level thread gf_tryActivateRound();
@@ -330,16 +380,31 @@ gf_tryActivateRound()
     level.grenadeLauncherDudTime = -1;
     level.thrownGrenadeDudTime   = -1;
 
+    // Match-start min-players gate: hold the FIRST round until at least
+    // scr_gf_min_players HUMANS are on a team (bots don't count — they only pad the
+    // lobby). Match-start only (roundsplayed==0), so a mid-match leaver never re-holds.
+    // During the hold everyone is frozen and gf_onPlayerDamage voids all damage (the
+    // level.gf_waitingForPlayers guard), so no one — human or bot — can die into a
+    // not-yet-live round. Sits BEFORE the roster wait below: this gate needs enough
+    // humans committed to a team; the roster wait then holds for everyone (those humans
+    // + bot fill) to physically finish spawning.
+    gf_waitForMinPlayers();
+
     // Hold the round clock until every teamed player has actually spawned. The engine
     // never waits for the roster itself — startGame()'s waitForPlayers() is an empty
     // stub and prematch_over is pure wall clock — so round-1 bot fill and slow loaders
-    // land after it. Bounded so a stuck client can't stall the match.
+    // land after it. Bounded by scr_gf_roster_wait so a stuck client can't stall the
+    // match — RCON-tunable, and 0 removes the cap entirely (wait forever, only broken
+    // by "game_ended" via the level endon above). Default 15s = a realistic slow-loader
+    // window; the old hard-coded 8s was often too short.
     graceFloor = gettime() + 3000;
-    deadline   = gettime() + 8000;
+    rosterWait = gf_cfgFloat( "scr_gf_roster_wait", 15, 0, 120 );   // seconds; 0 = no cap
+    unbounded  = ( rosterWait <= 0 );
+    deadline   = gettime() + int( rosterWait * 1000 );
     if ( !gf_allTeamedPlayersSpawned() )
     {
         setGameEndTime( 0 );   // hide the native clock while holding (it would count down, then snap back to full)
-        while ( gettime() < deadline && !gf_allTeamedPlayersSpawned() )
+        while ( ( unbounded || gettime() < deadline ) && !gf_allTeamedPlayersSpawned() )
             wait 0.1;
     }
 
@@ -399,6 +464,79 @@ gf_allTeamedPlayersSpawned()
     }
 
     return true;
+}
+
+// ─── Min-Players Gate (match start only) ───────────────────────────────────
+
+// Count of HUMAN players on a playing team. Bots (pers["isBot"], set in
+// _bot::add_bot) are excluded — they only pad the lobby, so they must not
+// satisfy a "wait for real players" gate.
+gf_humanCount()
+{
+    n = 0;
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        team = p.pers["team"];
+        if ( !isDefined( team ) || ( team != "allies" && team != "axis" ) )
+            continue;
+        if ( isDefined( p.pers["isBot"] ) && p.pers["isBot"] )
+            continue;
+        n++;
+    }
+    return n;
+}
+
+// Freeze (or release) every spawned player for the min-players hold. Uses the
+// same freeze the engine/bot script use, so bots halt too; combined with the
+// damage void in gf_onPlayerDamage the held warmup is death-proof.
+gf_setWaitFreeze( frozen )
+{
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( p.sessionstate != "playing" )
+            continue;
+        p maps\mp\_utility::freeze_player_controls( frozen );
+    }
+}
+
+// Hold the match's first round until scr_gf_min_players humans are on a team.
+// See the call site in gf_tryActivateRound for the full rationale.
+gf_waitForMinPlayers()
+{
+    level endon( "game_ended" );
+
+    if ( game["roundsplayed"] != 0 )
+        return;
+
+    minP = int( gf_cfgFloat( "scr_gf_min_players", 1, 1, 8 ) );   // humans; 1 = effectively off
+    if ( gf_humanCount() >= minP )
+        return;
+
+    level.gf_waitingForPlayers = true;
+    setGameEndTime( 0 );   // hide the round clock during the hold
+
+    lastShown = -1;
+    while ( gf_humanCount() < minP )
+    {
+        gf_setWaitFreeze( true );   // re-assert each tick so late joiners/bot fill are caught
+
+        human = gf_humanCount();
+        if ( human != lastShown )
+        {
+            for ( i = 0; i < level.players.size; i++ )
+                level.players[i] iprintlnbold( "Waiting for players... " + human + "/" + minP );
+            lastShown = human;
+        }
+
+        wait 0.5;
+    }
+
+    level.gf_waitingForPlayers = false;
+    gf_setWaitFreeze( false );
 }
 
 // ─── Live-Round Clock ──────────────────────────────────────────────────────
@@ -1497,6 +1635,12 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
 {
     if ( iDamage <= 0 )
         return iDamage;
+
+    // Void all damage while the match-start min-players gate holds — no one, human
+    // or bot, may die into a round that hasn't gone live (they'd be dead at round
+    // start → instant wipe). See gf_waitForMinPlayers.
+    if ( isDefined( level.gf_waitingForPlayers ) && level.gf_waitingForPlayers )
+        return 0;
 
     if ( self.sessionstate == "playing" && isDefined( self.health ) && self.health > 0 )
         gf_queueHealthHUDUpdate();

@@ -24,9 +24,16 @@
 //   pnoclip_<num>      - noclip one player
 //
 // FUN / SILLY (mined from EnCoReV8 + iMCSx mod menus):
-//   vision_<set>       - VisionSetNaked all players: normal/bw/contrast/invert/night
+//   vision_<set>       - VisionSetNaked all players: normal/enhance/bw/berserk/
+//                        thermal/hotsnow/nuke/film/bleak (all in common_vision.csv);
+//                        persists across rounds via gf_vis_vision (re-applied by
+//                        gf_bridgeInit); vision_normal or visreset clears it
 //   thirdperson_1/0    - cg_thirdPerson all players (setClientDvar)
 //   fps_1/0            - cg_drawFPS all players (setClientDvar)
+//   vis<key>_<value>   - video tweak all players (ambient/gridint/gridcon/hdr/fog);
+//                        persists via gf_vis_* (re-applied every spawn); value
+//                        "stock" clears one tweak back to engine default
+//   visreset           - clear ALL gf_vis_* tweaks back to stock
 //   expbullets_on/off  - every shot detonates on impact (trace + RadiusDamage + FX)
 //   longknife_<range>  - aim_automelee_range all players (e.g. 256 on, 64 off)
 //   drunk_on/off       - continuous mild EarthQuake on every player's camera
@@ -65,6 +72,13 @@ gf_bridgeInit()
     level.gf_drunk         = false;
     level.gf_invisible     = false;
     level.gf_defaultVision = getDvar( "mapname" );   // for vision_normal reset
+
+    // Re-apply a persisted vision set (gf_vis_vision) — the between-round
+    // map_restart wiped vision back to the map default. Quiet: no announce
+    // spam each round; the admin heard it when they set it.
+    vkey = getDvar( "gf_vis_vision" );
+    if ( vkey != "" )
+        visionSetNaked( gf_visionSetForKey( vkey ), 0.5 );
 
     level thread gf_bridgeTelemetry();
 
@@ -121,12 +135,16 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "endround_axis"   ) { maps\mp\gametypes\sd::sd_endGame( "axis",   "" ); return; }
 
     // Visual tweaks -- setClientDvar sent to all players
-    // Format: vis<key>_<value>  e.g. visgamma_1.5
+    // Format: vis<key>_<value>  e.g. visambient_0.2
+    // gf_vis_* tweaks persist (re-applied on every spawn by gf_applyVisTweaks);
+    // value "stock" clears one back to engine default. visreset clears them ALL.
+    // visgamma_ was removed: r_gamma is a SAVED client dvar and Plutonium blocks
+    // servers from writing those (the push never applied).
+    if ( cmd == "visreset" ) { gf_bridgeVisReset(); return; }
     if ( isSubStr( cmd, "visfog_"        ) ) { gf_bridgeVisSet( "r_fog",                getSubStr( cmd, 7,  cmd.size ) ); return; }
     if ( isSubStr( cmd, "visambient_"    ) ) { gf_bridgeVisSet( "r_lightTweakAmbient",  getSubStr( cmd, 11, cmd.size ) ); return; }
     if ( isSubStr( cmd, "visgridint_"    ) ) { gf_bridgeVisSet( "r_lightGridIntensity", getSubStr( cmd, 11, cmd.size ) ); return; }
     if ( isSubStr( cmd, "visgridcon_"    ) ) { gf_bridgeVisSet( "r_lightGridContrast",  getSubStr( cmd, 11, cmd.size ) ); return; }
-    if ( isSubStr( cmd, "visgamma_"      ) ) { gf_bridgeVisSet( "r_gamma",              getSubStr( cmd, 9,  cmd.size ) ); return; }
     if ( isSubStr( cmd, "vishdr_"        ) ) { gf_bridgeVisSet( "r_fullHDRrendering",   getSubStr( cmd, 7,  cmd.size ) ); return; }
     if ( isSubStr( cmd, "viscrosshair_"  ) ) { gf_bridgeVisSet( "cg_drawCrosshair",     getSubStr( cmd, 13, cmd.size ) ); return; }
     if ( isSubStr( cmd, "visnames_"      ) ) { gf_bridgeVisSet( "cg_drawCrosshairNames",getSubStr( cmd, 9,  cmd.size ) ); return; }
@@ -356,14 +374,62 @@ gf_bridgeSelfBar( enable )
 }
 
 // --- Visual tweaks -----------------------------------------------------------
-// Pushes a client dvar to every connected player.
+// Pushes a client dvar to every connected player. If the dvar is one of the
+// persistent gf_vis_* tweaks (gf_visTweakMap in _gf_rounds), the value is also
+// stored there so gf_applyVisTweaks re-applies it on every later spawn. The
+// special value "stock" clears the persistence and one-shots the engine default
+// (fresh clients are always stock — setClientDvar values are session-only and
+// never saved to the player's config). Non-mapped dvars (cg_thirdPerson,
+// cg_drawFPS, crosshair toggles, ...) stay one-shot, as before.
 
 gf_bridgeVisSet( dvar, value )
 {
+    m = maps\mp\gametypes\_gf_rounds::gf_visTweakMap();
+    keys = getArrayKeys( m );
+    for ( i = 0; i < keys.size; i++ )
+    {
+        if ( m[keys[i]] != dvar )
+            continue;
+        if ( value == "stock" )
+        {
+            setDvar( keys[i], "" );
+            value = maps\mp\gametypes\_gf_rounds::gf_visEngineDefault( dvar );
+        }
+        else
+            setDvar( keys[i], value );
+        break;
+    }
+
     players = level.players;
     for ( i = 0; i < players.size; i++ )
         players[i] setClientDvar( dvar, value );
     iPrintLnBold( "^3Vis: " + dvar + " = " + value );
+}
+
+// visreset -- return ALL persistent tweaks to stock in one shot: clear every
+// gf_vis_* dvar (future spawns untouched), push engine defaults to the players
+// already in the session, and restore the map's default vision set.
+
+gf_bridgeVisReset()
+{
+    m = maps\mp\gametypes\_gf_rounds::gf_visTweakMap();
+    keys = getArrayKeys( m );
+    players = level.players;
+    for ( i = 0; i < keys.size; i++ )
+    {
+        setDvar( keys[i], "" );
+        def = maps\mp\gametypes\_gf_rounds::gf_visEngineDefault( m[keys[i]] );
+        for ( j = 0; j < players.size; j++ )
+            players[j] setClientDvar( m[keys[i]], def );
+    }
+
+    if ( getDvar( "gf_vis_vision" ) != "" )
+    {
+        setDvar( "gf_vis_vision", "" );
+        visionSetNaked( level.gf_defaultVision, 0.5 );
+    }
+
+    iPrintLnBold( "^7Visuals: stock" );
 }
 
 // --- Health regen ------------------------------------------------------------
@@ -424,18 +490,55 @@ gf_bridgePlayerCmd( action, numStr )
 // BARE (non-method) builtin -- _globallogic/_killcam/_pregame all call it with
 // no entity prefix, and bare = global vision applied to every client. (Calling
 // it as a per-player method `player visionSetNaked()` throws "unknown function"
-// because no method builtin of that name is registered in MP.) We use the
-// cheat_* sets (always loaded) plus the map's default vision for "normal".
+// because no method builtin of that name is registered in MP.)
+//
+// A vision set only APPLIES if it is loaded for the running level. The
+// authoritative loaded-in-every-MP-map list is zone_source/common_vision.csv
+// (verified 2026-07-03) -- every set below is in it, so they all work on any
+// map. Sets NOT in that list silently no-op, which is why the old "contrast"
+// (cheat_bw_contrast) and "night"/"invert" mappings were misleading: cheat_bw_
+// invert and default_night are byte-identical (sat 1, contrast 1.2) and do NOT
+// invert or darken -- they just pop contrast. That look is now honestly named
+// "enhance". A true colour invert is impossible via the r_film* path (no film
+// param negates RGB; no loaded .vision uses negative values).
+//
+// unknown key -> map default (safe restore). "normal" also restores.
+//
+// PERSISTENCE: vision is level state, so the between-round map_restart resets
+// it to the map default. The chosen KEY is persisted in gf_vis_vision and
+// quietly re-applied every round by gf_bridgeInit; "normal" (or visreset)
+// clears it. The key is stored (not the set name) so re-apply always goes
+// through the same honest mapping.
+
+gf_visionSetForKey( vkey )
+{
+    if ( vkey == "enhance"  ) return "default_night";    // sat1/contrast1.2 pop
+    if ( vkey == "bw"       ) return "cheat_bw";         // pure grayscale
+    if ( vkey == "berserk"  ) return "berserker";        // warm, contrast 1.5
+    if ( vkey == "thermal"  ) return "infrared";         // dark desat night/thermal
+    if ( vkey == "hotsnow"  ) return "infrared_snow";    // bright grayscale thermal
+    if ( vkey == "nuke"     ) return "mp_nuked";         // warm hazy
+    if ( vkey == "film"     ) return "flashpoint";       // warm cinematic / sepia
+    if ( vkey == "bleak"    ) return "wmd";              // cold desaturated
+
+    // legacy aliases (old panel keys) -> honest equivalents, so nothing 404s
+    if ( vkey == "contrast" ) return "default_night";
+    if ( vkey == "invert"   ) return "default_night";
+    if ( vkey == "night"    ) return "infrared";
+
+    return level.gf_defaultVision;             // map default (mapname vision)
+}
 
 gf_bridgeVision( vkey )
 {
-    set = level.gf_defaultVision;          // "normal" -> map default
-    if ( vkey == "bw"       ) set = "cheat_bw";
-    if ( vkey == "contrast" ) set = "cheat_bw_contrast";
-    if ( vkey == "invert"   ) set = "cheat_bw_invert";
-    if ( vkey == "night"    ) set = "default_night";
+    set = gf_visionSetForKey( vkey );
 
-    visionSetNaked( set, 0.5 );            // bare = global, all clients
+    if ( set == level.gf_defaultVision )
+        setDvar( "gf_vis_vision", "" );        // normal/unknown -> stop persisting
+    else
+        setDvar( "gf_vis_vision", vkey );
+
+    visionSetNaked( set, 0.5 );                // bare = global, all clients
     iPrintLnBold( "^5Vision: " + vkey );
 }
 
