@@ -73,12 +73,13 @@ gf_bridgeInit()
     level.gf_invisible     = false;
     level.gf_defaultVision = getDvar( "mapname" );   // for vision_normal reset
 
-    // Re-apply a persisted vision set (gf_vis_vision) — the between-round
-    // map_restart wiped vision back to the map default. Quiet: no announce
-    // spam each round; the admin heard it when they set it.
-    vkey = getDvar( "gf_vis_vision" );
-    if ( vkey != "" )
-        visionSetNaked( gf_visionSetForKey( vkey ), 0.5 );
+    // Re-apply a persisted vision set (gf_vis_vision) each round. It CANNOT be
+    // applied here at init: the stock prematch flow stomps vision AFTER
+    // onStartGameType — matchStartTimer forces "mpIntro" for the countdown and
+    // at T-2s blends back to the MAP vision over 3s (_globallogic.gsc:398/424).
+    // So a watcher waits for prematch_over and takes over the tail of that
+    // blend (a newer visionSetNaked call retargets the in-progress lerp).
+    level thread gf_bridgeVisionPersist();
 
     level thread gf_bridgeTelemetry();
 
@@ -505,10 +506,11 @@ gf_bridgePlayerCmd( action, numStr )
 // unknown key -> map default (safe restore). "normal" also restores.
 //
 // PERSISTENCE: vision is level state, so the between-round map_restart resets
-// it to the map default. The chosen KEY is persisted in gf_vis_vision and
-// quietly re-applied every round by gf_bridgeInit; "normal" (or visreset)
-// clears it. The key is stored (not the set name) so re-apply always goes
-// through the same honest mapping.
+// it to the map default — and the stock prematch countdown then forces
+// "mpIntro" + blends back to the map vision. The chosen KEY is persisted in
+// gf_vis_vision and re-applied AFTER each prematch by gf_bridgeVisionPersist
+// (threaded from gf_bridgeInit); "normal" (or visreset) clears it. The key is
+// stored (not the set name) so re-apply always goes through the same mapping.
 
 gf_visionSetForKey( vkey )
 {
@@ -527,6 +529,24 @@ gf_visionSetForKey( vkey )
     if ( vkey == "night"    ) return "infrared";
 
     return level.gf_defaultVision;             // map default (mapname vision)
+}
+
+// Round-start persistence watcher (threaded by gf_bridgeInit). Waits out the
+// stock prematch vision sequence, then quietly re-applies the persisted set.
+// 3.0s transition mirrors the stock T-2s blend it takes over from, so the
+// reveal feels native. Reads the dvar AFTER prematch so a vision set (or
+// vision_normal) issued during the countdown is honored.
+gf_bridgeVisionPersist()
+{
+    level endon( "game_ended" );
+
+    level waittill( "prematch_over" );
+
+    vkey = getDvar( "gf_vis_vision" );
+    if ( vkey == "" )
+        return;
+
+    visionSetNaked( gf_visionSetForKey( vkey ), 3.0 );
 }
 
 gf_bridgeVision( vkey )
