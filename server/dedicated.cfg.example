@@ -27,7 +27,7 @@
 //////////////////////////////////////////////////
 
 set g_allowvote "0"                                 // Allow Vote.
-set g_inactivity "190"                              // Enable or Disable auto kick feature for idle/AFK players.
+set g_inactivity "300"                              // Enable or Disable auto kick feature for idle/AFK players.
 set g_password ""                                   // Password Protected Game. Leave blank if you want players to join.
 set party_minplayers "2"                            // Pre-Match Lobby (2 = public; set to 1 for solo local testing)
 set scr_team_maxsize "4"                            // Gunfight: max players per team (4v4). Overflow past this is sent to spectator on spawn. sv_maxclients (launch bat) = 10 -> 8 play + 2 spectator/headroom.
@@ -269,6 +269,7 @@ set scr_teamup "10"                                 // Seconds players have to t
 set scr_dm_scorelimit "1500"                        // Points needed to win the game.
 set scr_dm_timelimit "10"                           // Duration the game lasts in minutes when the score limit isn't reached.
 set scr_gf_timelimit "0.75"                         // Gunfight SMALL-mode round time in minutes. 0.75 = 45 sec. (Large mode uses scr_gf_timelimit_large.)
+set gf_vis_vision "enhance"                         // Default vision set for every round (enhance = full saturation + contrast 1.2). RCON Vision buttons override live until restart. Comment out for stock map visions. Needs the dev bridge (_gf_bridge) to apply.
 
 //set scr_dm_playerrespawndelay "0"                 // Time in seconds wait to respawn.
 //set scr_dm_waverespawndelay "0"                   // Delay before the first respawn in the first round.
