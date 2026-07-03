@@ -22,6 +22,13 @@
 //   punfreeze_<num>    - unfreeze one player
 //   pperks_<num>       - give perks to one player
 //   pnoclip_<num>      - noclip one player
+//   pteam_<num>_<allies|axis|spec>  - move one player to a team. Applies LIVE only during the
+//                        native prematch countdown (players frozen, round unscored); any other
+//                        time (live round / killcam / min-players hold) it's DEFERRED to the next
+//                        round via pers["gf_pendingTeam"] (survives map_restart) and applied in
+//                        that round's prematch, so a fighting player is never suicided and
+//                        friendly-fire teams are never flipped mid-round. Over-cap moves
+//                        (scr_team_maxsize) are refused with feedback.
 //
 // FUN / SILLY (mined from EnCoReV8 + iMCSx mod menus):
 //   vision_<set>       - VisionSetNaked all players: normal/enhance/bw/berserk/
@@ -42,9 +49,12 @@
 //   tpall              - teleport all players to Player 1 (host/anchor)
 //   saymsg             - iPrintLnBold the contents of dvar gf_say to everyone
 //
-// Telemetry dvar (read-only, updated every 2s):
-//   gf_state -> "allies_wins:axis_wins:round:alive_allies:alive_axis"
-//   e.g.  "3:2:5:2:1"
+// Telemetry dvars (read-only, updated every 2s):
+//   gf_state  -> "allies_wins:axis_wins:round:alive_allies:alive_axis"
+//                e.g.  "3:2:5:2:1"
+//   gf_roster -> "<num>,<team>,<alive>,<pending>;..." per connected player, e.g.
+//                "1,a,1,-;2,x,0,x"  (team/pending code: a=allies x=axis s=spectator -=none;
+//                alive 1/0). Drives the RCON panel's per-player team badges + move buttons.
 
 #include maps\mp\_utility;
 #include maps\mp\gametypes\_globallogic_utils;
@@ -62,6 +72,15 @@ gf_bridgeInit()
         setDvar( "gf_expbullets_radius", "200" );   // RCON Blast Radius slider default
 
     setDvar( "gf_state", "0:0:1:0:0:" + level.gameType );
+    setDvar( "gf_roster", "" );
+
+    // Apply team moves that were queued mid-round (pers["gf_pendingTeam"], the only state that
+    // survives map_restart) at the START of the next round. It CANNOT be a synchronous sweep here:
+    // _spawnlogic::init empties level.players BEFORE onStartGameType, and Callback_PlayerConnect
+    // only repopulates it later (during prematch, behind the engine's per-client "begin"), so at
+    // gf_bridgeInit time level.players is empty. Instead we watch "spawned_player" and apply each
+    // pending move once that player has actually spawned (frozen) in the prematch window.
+    level thread gf_bridgeWatchPendingTeam();
 
     level.gf_paused        = false;
     level.gf_infAmmo       = false;
@@ -117,7 +136,38 @@ gf_bridgeTelemetry()
         if ( isDefined( level.aliveCount["axis"] ) )   aX = level.aliveCount["axis"];
 
         setDvar( "gf_state", wA + ":" + wX + ":" + rn + ":" + aA + ":" + aX + ":" + level.gameType );
+        setDvar( "gf_roster", gf_bridgeRosterString() );
     }
+}
+
+// Per-player roster line for the RCON panel: "<num>,<team>,<alive>,<pending>" joined by
+// ';'. team/pending are single-char codes (a/x/s/-), alive is 1/0. No spaces, so the whole
+// value reads back as one bare rcon token. Keyed by getEntityNumber() to match the panel's
+// status "num" column (the same id the per-player pgod_/pfreeze_/pteam_ commands target).
+gf_bridgeRosterString()
+{
+    s = "";
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( i > 0 )
+            s += ";";
+        alive = "0";
+        if ( isDefined( p.health ) && p.health > 0 )
+            alive = "1";
+        s += p getEntityNumber() + "," + gf_bridgeTeamShort( p.pers["team"] ) + "," + alive + "," + gf_bridgeTeamShort( p.pers["gf_pendingTeam"] );
+    }
+    return s;
+}
+
+gf_bridgeTeamShort( team )
+{
+    if ( !isDefined( team ) )      return "-";
+    if ( team == "allies" )        return "a";
+    if ( team == "axis" )          return "x";
+    if ( team == "spectator" )     return "s";
+    return "-";
 }
 
 // --- Dispatcher --------------------------------------------------------------
@@ -191,6 +241,9 @@ gf_bridgeDispatch( cmd )
     if ( isSubStr( cmd, "pfreeze_"   ) ) { gf_bridgePlayerCmd( "freeze",   getSubStr( cmd, 8,  cmd.size ) ); return; }
     if ( isSubStr( cmd, "punfreeze_" ) ) { gf_bridgePlayerCmd( "unfreeze", getSubStr( cmd, 10, cmd.size ) ); return; }
     if ( isSubStr( cmd, "pperks_"    ) ) { gf_bridgePlayerCmd( "perks",    getSubStr( cmd, 7,  cmd.size ) ); return; }
+
+    // Team move: pteam_<num>_<allies|axis|spec>
+    if ( isSubStr( cmd, "pteam_"     ) ) { gf_bridgeTeamCmd( getSubStr( cmd, 6, cmd.size ) ); return; }
 }
 
 // --- Pause / Resume ----------------------------------------------------------
@@ -452,19 +505,20 @@ gf_bridgeRegen( enable )
 
 // --- Per-player commands -----------------------------------------------------
 
-gf_bridgePlayerCmd( action, numStr )
+// Resolve a connected player by the entity number the RCON panel shows in its status
+// "num" column (same id used by every per-player bridge command). undefined if not found.
+gf_bridgeFindPlayer( pNum )
 {
-    pNum = int( numStr );
-    target = undefined;
     players = level.players;
     for ( i = 0; i < players.size; i++ )
-    {
         if ( players[i] getEntityNumber() == pNum )
-        {
-            target = players[i];
-            break;
-        }
-    }
+            return players[i];
+    return undefined;
+}
+
+gf_bridgePlayerCmd( action, numStr )
+{
+    target = gf_bridgeFindPlayer( int( numStr ) );
     if ( !isDefined( target ) ) return;
 
     name = target.name;
@@ -480,6 +534,172 @@ gf_bridgePlayerCmd( action, numStr )
         target SetPerk( "specialty_bulletaccuracy" );
         iPrintLnBold( "^2Perks: " + name );
     }
+}
+
+// --- Team management ---------------------------------------------------------
+// Move a player between allies / axis / spectator from the RCON panel. The engine's own team
+// switch (level.allies/axis/spectator = the team-menu handlers) SUICIDES a player who is
+// "playing", so it's only clean while a player is frozen and the round is unscored — i.e. the
+// native prematch countdown. A move at any other time (live round, killcam, min-players hold)
+// is DEFERRED via pers["gf_pendingTeam"] (the only state that survives the between-round
+// map_restart) and applied during the NEXT round's prematch by gf_bridgeWatchPendingTeam. We do
+// NOT flip pers["team"] on a live player: gf_onPlayerDamage reads it for friendly-fire, so a
+// mid-round flip would break damage teams. scr_team_maxsize is enforced here (mirroring
+// gf_playerSpawnedCB's overflow rule) so an over-cap move is refused with feedback, not silently
+// bounced to spectator. Moving a bot is allowed.
+
+// arg = "<num>_<allies|axis|spec>"
+gf_bridgeTeamCmd( arg )
+{
+    parts = strTok( arg, "_" );
+    if ( parts.size < 2 )
+        return;
+
+    team = gf_bridgeTeamCode( parts[1] );
+    if ( team == "" )
+        return;
+
+    target = gf_bridgeFindPlayer( int( parts[0] ) );
+    if ( !isDefined( target ) )
+        return;
+
+    name = target.name;
+
+    // Team-size cap (mirror gf_playerSpawnedCB): refuse an over-cap move with feedback instead
+    // of letting the spawn overflow silently dump the player into spectator. Spectator is uncapped.
+    if ( team != "spectator" && gf_bridgeTeamFull( target, team ) )
+    {
+        iPrintLnBold( "^1Team full: " + gf_bridgeTeamLabel( team ) + " (scr_team_maxsize)" );
+        return;
+    }
+
+    if ( gf_bridgeTeamSafeNow() )
+    {
+        target gf_applyTeamMove( team );
+        iPrintLnBold( "^2Team: " + name + " ^7-> " + gf_bridgeTeamLabel( team ) );
+    }
+    else
+    {
+        // Live round / killcam / min-players hold: don't touch the player now (a switch would
+        // suicide them and a pers["team"] flip would break friendly-fire). Queue for next round.
+        target.pers["gf_pendingTeam"] = team;
+        iPrintLnBold( "^3Team: " + name + " ^7-> " + gf_bridgeTeamLabel( team ) + " ^3(next round)" );
+    }
+}
+
+// True if `team` is already at scr_team_maxsize (excluding `target`). Counts by pers["team"] to
+// match gf_playerSpawnedCB's overflow check. maxsize <= 0 means uncapped.
+gf_bridgeTeamFull( target, team )
+{
+    maxTeam = getDvarInt( "scr_team_maxsize" );
+    if ( maxTeam <= 0 )
+        return false;
+    count = 0;
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        if ( players[i] == target )
+            continue;
+        if ( players[i].pers["team"] == team )
+            count++;
+    }
+    return count >= maxTeam;
+}
+
+// A live switch is only clean during the native prematch countdown: players are frozen and the
+// round isn't scored, so the stock switch's suicide/respawn is the harmless warmup team-change.
+// The min-players hold is deliberately EXCLUDED — it enforces a strict "no deaths" invariant that
+// the suicide would violate, so a move during the hold defers to the next round instead.
+gf_bridgeTeamSafeNow()
+{
+    return isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod;
+}
+
+// Apply a team move to self. If the player is already in-world this round (spawned/frozen in
+// prematch), use the full stock switch (respawns them on the new side now). Otherwise a quiet
+// persistent reassign is enough: the round's spawn wave reads pers["team"] and _globallogic_player
+// re-derives self.team from it, so they simply spawn on the new side — no respawn, no double-spawn.
+gf_applyTeamMove( team )
+{
+    if ( self.sessionstate == "playing" )
+    {
+        if      ( team == "allies" ) self [[level.allies]]();
+        else if ( team == "axis"   ) self [[level.axis]]();
+        else                         self [[level.spectator]]();
+    }
+    else
+        self gf_forceTeamQuiet( team );
+}
+
+// The persistent-state half of the stock menuAllies/menuAxis/menuSpectator (minus the suicide +
+// beginClassChoice): set pers["team"]/team/sessionteam and clear the cached class/weapon/model so
+// the next spawn rebuilds them for the new side. Only ever called on a NOT-yet-spawned player
+// (from gf_applyTeamMove's else branch), so touching self.team here can't disturb a live combatant.
+gf_forceTeamQuiet( team )
+{
+    self.pers["team"]       = team;
+    self.team               = team;
+    self.pers["class"]      = undefined;
+    self.class              = undefined;
+    self.pers["weapon"]     = undefined;
+    self.pers["savedmodel"] = undefined;
+    if ( team == "spectator" )
+        self.sessionteam = "spectator";
+    else
+        self.sessionteam = team;
+}
+
+// Watches "spawned_player" (fired by gf_playerSpawnedCB on every spawn) and applies any queued
+// team move once the player exists and has spawned this round. Re-threaded each round from
+// gf_bridgeInit; endon "game_ended" so it dies with the match. This is the deferred-apply engine:
+// it fires during the next round's prematch (when players spawn frozen), which is exactly the safe
+// window for the stock switch. A pending move applied this way clears its flag first, so the
+// switch's respawn (which re-fires "spawned_player") doesn't re-apply it.
+gf_bridgeWatchPendingTeam()
+{
+    level endon( "game_ended" );
+    for ( ;; )
+    {
+        level waittill( "spawned_player" );
+        gf_applyPendingTeamMoves();
+    }
+}
+
+// Apply every queued team move for players that currently exist. Called on each spawn (see
+// gf_bridgeWatchPendingTeam), so it's idempotent: a player with no pending flag is skipped, and
+// the flag is cleared before the move so it runs at most once.
+gf_applyPendingTeamMoves()
+{
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( !isDefined( p.pers["gf_pendingTeam"] ) )
+            continue;
+        team = p.pers["gf_pendingTeam"];
+        p.pers["gf_pendingTeam"] = undefined;   // clear first: the switch below re-fires spawned_player
+        if ( team != "allies" && team != "axis" && team != "spectator" )
+            continue;
+        // Re-check the cap at apply time (roster may have changed since the move was queued).
+        if ( team != "spectator" && gf_bridgeTeamFull( p, team ) )
+            continue;
+        p gf_applyTeamMove( team );
+    }
+}
+
+gf_bridgeTeamCode( s )
+{
+    if ( s == "allies" )                    return "allies";
+    if ( s == "axis" )                      return "axis";
+    if ( s == "spec" || s == "spectator" )  return "spectator";
+    return "";
+}
+
+gf_bridgeTeamLabel( team )
+{
+    if ( team == "allies" ) return "Allies";
+    if ( team == "axis" )   return "Axis";
+    return "Spectator";
 }
 
 // ============================================================================

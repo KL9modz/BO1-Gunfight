@@ -183,7 +183,7 @@ gf_initLoadouts()
         gf_item( "claymore_mp",                "Claymore",       "hud_icon_claymore" ) ); n++;
 
     pool[n] = gf_buildLoadout(
-        gf_item( "mac11_reflex_mp",            "MAC-11",         "menu_mp_weapons_mac11" ),
+        gf_item( "m60_acog_mp",                "M60",            "menu_mp_weapons_m60" ),
         gf_item( "m1911_upgradesight_mp",      "M1911",          "menu_mp_weapons_colt" ),
         gf_item( "satchel_charge_mp",          "C4",             "hud_icon_satchelcharge" ) ); n++;
 
@@ -288,7 +288,7 @@ gf_initLoadouts()
         gf_item( "scrambler_mp",               "Jammer",         "hud_radar_jammer" ) ); n++;
 
     pool[n] = gf_buildLoadout(
-        gf_item( "spectre_mp",                 "Spectre",        "menu_mp_weapons_spectre" ),
+        gf_item( "stoner63_reflex_mp",         "Stoner63",       "menu_mp_weapons_stoner63a" ),
         gf_item( "cz75_auto_mp",               "CZ75",           "menu_mp_weapons_cz75" ),
         gf_item( "acoustic_sensor_mp",         "Motion Sensor",  "hud_acoustic_sensor" ) ); n++;
 
@@ -310,7 +310,7 @@ gf_initLoadouts()
         gf_item( "acoustic_sensor_mp",         "Motion Sensor",  "hud_acoustic_sensor" ) ); n++;
 
     pool[n] = gf_buildLoadout(
-        gf_item( "mac11_rf_mp",                "MAC-11",         "menu_mp_weapons_mac11" ),
+        gf_item( "hk21_reflex_mp",             "HK21",           "menu_mp_weapons_hk21" ),
         gf_item( "cz75_silencer_mp",           "CZ75",           "menu_mp_weapons_cz75" ),
         gf_item( "camera_spike_mp",            "Camera Spike",   "hud_deployable_camera" ) ); n++;
 
@@ -390,8 +390,11 @@ gf_giveCustomLoadout()
     self GiveWeapon( load["secondary"], 0, secCamoOpts );   // own camo roll; only real-base secondaries (e.g. crossbow) display it, neutral pistols/launchers stay stock
     self GiveWeapon( "knife_mp" );
     self switchToWeapon( load["primary"] );
-    // No giveMaxAmmo — GiveWeapon already grants each weapon's default reserve
-    // ammo (realistic amount), not a topped-off max stockpile.
+    // Modest reserve bump (~1 extra magazine, clamped to each weapon's max) — a
+    // little more staying power than GiveWeapon's default, without a topped-off
+    // (Bandolier) max stockpile.
+    self gf_bumpReserveAmmo( load["primary"]   );
+    self gf_bumpReserveAmmo( load["secondary"] );
     self GiveWeapon( load["lethal"] );
     lethalCount = 1;                                 // 1 of each lethal on spawn...
     if ( load["lethal"] == "hatchet_mp" )
@@ -413,6 +416,8 @@ gf_giveCustomLoadout()
     self SetPerk( "specialty_longersprint"      );   // Marathon (no pro specialty exists in T5 source)
     self SetPerk( "specialty_armorvest"         );   // Flak Jacket
     self SetPerk( "specialty_flakjacket"        );   // Flak Jacket Pro — throwback grenades
+    self SetPerk( "specialty_shades"            );   // flashbang resist — _flashgrenades cuts flash duration to 10%
+    self SetPerk( "specialty_stunprotection"    );   // concussion/stun resist — _weapons cuts concussion time to 10%
     // specialty_fastweaponswitch (gates perk_weapSwitchMultiplier) is OFF by default now — stock
     // weapon-swap speed. Admins opt in via the RCON Perks tab (adds it to gf_perk_on below), which
     // both grants the perk and makes the "Weapon Switch Speed" slider take effect.
@@ -446,6 +451,23 @@ gf_applyPerkList( listStr, enable )
         else
             self UnSetPerk( perks[i] );
     }
+}
+
+// Add ~one magazine of reserve above the weapon's GiveWeapon default, clamped to
+// the weapon's max stock. Same native ammo builtins stock uses for the Bandolier
+// perk, but adds a fixed magazine instead of topping off to max — so guns feel a
+// bit less starved without becoming bottomless. No-op past the weapon's cap.
+gf_bumpReserveAmmo( weapon )
+{
+    if ( !isDefined( weapon ) || weapon == "" )
+        return;
+
+    stock   = self GetWeaponAmmoStock( weapon );
+    maxAmmo = WeaponMaxAmmo( weapon );
+    ammo    = stock + weaponClipSize( weapon );   // +1 magazine
+    if ( ammo > maxAmmo )
+        ammo = maxAmmo;
+    self SetWeaponAmmoStock( weapon, ammo );
 }
 
 // Lethal + tactical are NOT passed here — they're assigned in even rotation by

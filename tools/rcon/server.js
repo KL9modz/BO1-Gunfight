@@ -208,6 +208,25 @@ async function readDvars(host, port, password, names) {
   return values;
 }
 
+// Parse the gf_roster telemetry dvar into per-player team/alive/pending.
+// format: "<num>,<team>,<alive>,<pending>;..."  team/pending: a=allies x=axis s=spectator -=none
+function parseGfRoster(str) {
+  const map = { a: 'allies', x: 'axis', s: 'spectator', '-': '' };
+  const out = [];
+  for (const seg of String(str).split(';')) {
+    if (!seg) continue;
+    const f = seg.split(',');
+    if (f.length < 2 || !/^\d+$/.test(f[0])) continue;
+    out.push({
+      num:     parseInt(f[0]),
+      team:    map[f[1]] || '',
+      alive:   f[2] === '1',
+      pending: map[f[3]] || '',
+    });
+  }
+  return out;
+}
+
 function parseGfState(stateStr) {
   // format: "wA:wX:round:aliveA:aliveX:gametype"
   const parts = String(stateStr).split(':');
@@ -272,6 +291,30 @@ function saveSecret(name, pass) {
   if (pass === '') delete obj.profiles[name];   // don't persist blank entries
   else obj.profiles[name] = pass;
   fs.writeFileSync(SECRETS_PATH, JSON.stringify(obj, null, 2) + '\n');
+}
+
+// ─── Geo IP (on-demand city lookup) ───────────────────────────────────────────
+// One outbound HTTP GET to ip-api.com (free, no key). Only fires when the admin clicks
+// "Locate" on a specific player — never automatic/bulk. Built-in http module, 4s timeout.
+function geoLookup(ip) {
+  return new Promise((resolve) => {
+    const url = `http://ip-api.com/json/${ip}?fields=status,message,country,regionName,city,isp,proxy,hosting`;
+    const req2 = http.get(url, (r) => {
+      let data = '';
+      r.on('data', (c) => { data += c; if (data.length > 65536) r.destroy(); });
+      r.on('end', () => {
+        try {
+          const j = JSON.parse(data);
+          if (j.status === 'success')
+            resolve({ ok: true, city: j.city || '', region: j.regionName || '', country: j.country || '', isp: j.isp || '', proxy: !!j.proxy, hosting: !!j.hosting });
+          else
+            resolve({ ok: false, error: j.message || 'lookup failed' });
+        } catch (_) { resolve({ ok: false, error: 'bad geo response' }); }
+      });
+    });
+    req2.setTimeout(4000, () => { req2.destroy(); resolve({ ok: false, error: 'geo timeout' }); });
+    req2.on('error', (e) => resolve({ ok: false, error: e.message }));
+  });
 }
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -370,6 +413,33 @@ const server = http.createServer(async (req, res) => {
       const val  = parseDvarValue(text, 'gf_state');
       const state = val ? parseGfState(val) : null;
       return sendJson(res, { ok: !!state, state });
+    } catch (err) {
+      return sendJson(res, { ok: false, error: err.message });
+    }
+  }
+
+  // ── GET /api/gfroster ── reads gf_roster telemetry dvar (dedicated only; times out on listen)
+  if (req.method === 'GET' && pathname === '/api/gfroster') {
+    const { host = '127.0.0.1', port = '28960', password = '' } = query;
+    try {
+      const buf  = await sendRconQueued(host, parseInt(port), password, 'gf_roster');
+      const text = parseRconResponse(buf);
+      const val  = parseDvarValue(text, 'gf_roster');
+      return sendJson(res, { ok: val !== null, roster: val !== null ? parseGfRoster(val) : [] });
+    } catch (err) {
+      return sendJson(res, { ok: false, error: err.message });
+    }
+  }
+
+  // ── GET /api/geoip ── on-demand city lookup for ONE player IP (right-click "Locate").
+  // Admin-initiated only (never bulk/automatic). Uses ip-api.com free tier (HTTP, no key,
+  // 45 req/min). The player IP already shows in the panel; this just annotates it with a city.
+  if (req.method === 'GET' && pathname === '/api/geoip') {
+    const ip = String(query.ip || '').trim();
+    if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return sendJson(res, { ok: false, error: 'Bad IP' }, 400);
+    try {
+      const geo = await geoLookup(ip);
+      return sendJson(res, geo);
     } catch (err) {
       return sendJson(res, { ok: false, error: err.message });
     }

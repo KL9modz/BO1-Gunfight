@@ -81,6 +81,7 @@ input:focus,select:focus{border-color:var(--ac)}
 .score-team.allies .score-val{color:var(--ok)}
 .score-team.axis .score-val{color:var(--ng)}
 .listen-muted .scoreboard,.listen-muted .score-alive{opacity:.35;pointer-events:none}
+.ded-lockable.ded-locked .ctrl{opacity:.45;pointer-events:none}
 .score-mid{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 4px;color:var(--dm);font-size:11px}
 .score-round{font-size:10px;color:var(--dm);text-align:center;margin-top:6px}
 .score-alive{display:flex;gap:4px;justify-content:center;margin-top:4px;font-size:11px;color:var(--dm)}
@@ -99,6 +100,21 @@ tr:hover td{background:var(--sf2)}
 .real-n{color:var(--ac);font-weight:600}
 .empty td{color:var(--dm);text-align:center;padding:14px;font-style:italic}
 .p-ok{color:var(--ok)}.p-mid{color:var(--wn)}.p-bad{color:var(--ng)}
+/* Team badges (from gf_roster telemetry — dedicated only) */
+.tm{font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:5px;letter-spacing:.04em;vertical-align:middle}
+.tm-a{background:rgba(90,150,255,.14);color:#7ab4ff;border:1px solid rgba(90,150,255,.35)}
+.tm-x{background:rgba(255,90,90,.14);color:#ff8a7a;border:1px solid rgba(255,90,90,.35)}
+.tm-s{background:rgba(150,150,170,.12);color:#a0a0b4;border:1px solid rgba(150,150,170,.3)}
+.tm-pend{color:var(--wn);font-size:9px;margin-left:4px;font-style:italic;white-space:nowrap}
+.ctx-item.cur{opacity:.38;pointer-events:none}
+/* Team group headers in the players table */
+tr.grp td{font-size:10px;font-weight:800;letter-spacing:.1em;padding:5px 8px;background:var(--sf2);border-left:3px solid transparent;border-bottom:1px solid var(--bd)}
+tr.grp:hover td{background:var(--sf2)}
+tr.grp-a td{color:#7ab4ff;border-left-color:#5a96ff}
+tr.grp-x td{color:#ff8a7a;border-left-color:#ff5a5a}
+tr.grp-s td{color:#a0a0b4;border-left-color:#8c8ca0}
+tr.grp-u td{color:var(--dm);border-left-color:var(--bd)}
+.grp-n{margin-left:8px;opacity:.65;font-weight:600}
 
 /* Activity log */
 .actlog{height:150px;flex-shrink:0;border-top:1px solid var(--bd);padding:8px 10px;overflow-y:auto;font-size:11px}
@@ -109,7 +125,7 @@ tr:hover td{background:var(--sf2)}
 .al-ok{color:var(--ok)}.al-ng{color:var(--ng)}.al-wn{color:var(--wn)}.al-in{color:var(--tx)}
 
 /* Context menu */
-#ctx-menu{position:fixed;background:var(--sf2);border:1px solid var(--bd);border-radius:var(--r);padding:4px;z-index:9999;min-width:160px;display:none;box-shadow:0 4px 16px rgba(0,0,0,.5)}
+#ctx-menu{position:fixed;background:var(--sf2);border:1px solid var(--bd);border-radius:var(--r);padding:4px;z-index:9999;min-width:160px;display:none;box-shadow:0 4px 16px rgba(0,0,0,.5);max-height:calc(100vh - 16px);overflow-y:auto}
 .ctx-header{font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--dm);padding:4px 8px 6px;border-bottom:1px solid var(--bd);margin-bottom:4px}
 .ctx-item{padding:6px 10px;border-radius:4px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px}
 .ctx-item:hover{background:var(--bd)}
@@ -414,7 +430,7 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
   <div id="mt-gf-body"></div>
   <div class="block">
     <div class="btitle">GAMEPLAY</div>
-    <div class="srow" data-eff="next" data-per="dvar" data-tip="scr_team_maxsize&#10;Players per team max; overflow goes to spectator. 0 = unlimited&#10;GF server sets 4 (4v4). Auto spawn mode flips on TOTAL players, not this."><span class="slbl">Max Team Size</span>
+    <div class="srow" data-eff="next" data-per="dvar" data-tip="scr_team_maxsize&#10;Players per team max; overflow goes to spectator. 0 = unlimited&#10;GF server sets 6 (up to 6v6). Auto spawn mode flips on TOTAL players, not this."><span class="slbl">Max Team Size</span>
       <input id="vTs" class="num ctrl" type="number" value="4" min="1" max="12">
       <button class="b-ac b-sm ctrl" onclick="sdve('scr_team_maxsize','vTs')">Set</button></div>
     <div class="srow" data-eff="live" data-per="dvar" data-tip="scr_team_fftype&#10;0 = off, 1 = on, 2 = reflect, 3 = shared&#10;Toggle sets 0 or 1"><span class="slbl">Friendly Fire</span>
@@ -498,21 +514,29 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     <div class="set-all-row"><button class="b-gh b-sm ctrl" data-tip="Write this block&#39;s values to dedicated.cfg (persists across restarts).&#10;A .bak backup is made; takes effect on next server start or `exec dedicated.cfg`." onclick="saveBlockToCfg(this)">💾 Save</button><button class="b-ac b-sm ctrl" onclick="setAllInBlock(this)">Set All</button></div>
   </div>
 
-  <div class="block" data-eff="live" data-per="dvar">
-    <div class="btitle">VIEW  <span style="font-weight:400;font-size:10px;color:var(--dm)">affects all players</span></div>
-    <div class="slider-row" data-tip="bg_viewBobAmplitudeBase&#10;Head-bob amplitude while moving. 0 = no bob. Default: 1">
+  <div class="block ded-lockable" data-eff="live" data-per="client">
+    <div class="btitle">CLIENT-LOCAL  <span style="font-weight:400;font-size:10px;color:var(--dm)">saved client dvars — can't be server-forced</span></div>
+    <div class="srow" data-tip="These are per-client SAVED (archived) dvars. Plutonium blocks a server from writing a client's saved dvars, so RCON can't push them to the lobby.&#10;&#8226; DEDICATED: set the lobby default in the shipped players/mods/mp_gunfight/config_mp.cfg -- every joiner loads it (view bob and FOV are already set there).&#10;&#8226; PASTE: hit the &#128203; on a row (or right-click the row) to copy the console line and paste it into YOUR in-game console.&#10;&#8226; LISTEN: the sliders/toggle also affect the HOST player live; greyed on a dedicated server.">
+      <span class="slbl" style="color:var(--dm)">Can't be server-forced — 📋 / right-click a row to copy for your console</span><span style="flex:1"></span>
+      <span class="shint">host only</span>
+    </div>
+    <div class="slider-row" oncontextmenu="event.preventDefault();copyClientDvar('bg_viewBobAmplitudeBase',g('vBob').value)" data-tip="bg_viewBobAmplitudeBase&#10;Head-bob amplitude while moving. 0 = no bob. Default: 1.&#10;Lobby default lives in config_mp.cfg (shipped 0.1). Live slider = host only.&#10;📋 / right-click = copy 'bg_viewBobAmplitudeBase <value>' for your console.">
       <span class="slbl" style="min-width:120px">View Bob</span>
       <input type="range" id="sBob" min="0" max="1" step="0.05" value="1" oninput="sv('sBob','vBob')" onchange="sdvv('bg_viewBobAmplitudeBase',this.value)" class="ctrl">
       <input type="number" id="vBob" class="num ctrl" value="1" step="0.05" oninput="su('vBob','sBob',0,1)">
-      <button class="b-ac b-sm ctrl" onclick="sdve('bg_viewBobAmplitudeBase','vBob')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('bg_viewBobAmplitudeBase',1,'vBob','sBob')">↺</button>
+      <button class="b-ac b-sm ctrl" onclick="sdve('bg_viewBobAmplitudeBase','vBob')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('bg_viewBobAmplitudeBase',1,'vBob','sBob')">↺</button>      <button class="b-gh b-sm" data-tip="Copy 'bg_viewBobAmplitudeBase &lt;value&gt;' to paste into your in-game console" onclick="copyClientDvar('bg_viewBobAmplitudeBase',g('vBob').value)">📋</button>
     </div>
-    <div class="slider-row" data-tip="cg_fov&#10;Field of view in degrees. Default: 65. Range: 40–120">
+    <div class="slider-row" oncontextmenu="event.preventDefault();copyClientDvar('cg_fov',g('vFov').value)" data-tip="cg_fov&#10;Field of view in degrees. Default: 65. Range: 40–120.&#10;Lobby default lives in config_mp.cfg (cg_fov_default, shipped 87). Live slider = host only.&#10;📋 / right-click = copy 'cg_fov <value>' for your console.">
       <span class="slbl" style="min-width:120px">FOV</span>
       <input type="range" id="sFov" min="40" max="120" value="65" oninput="sv('sFov','vFov')" onchange="sdvv('cg_fov',this.value)" class="ctrl">
       <input type="number" id="vFov" class="num ctrl" value="65" oninput="su('vFov','sFov',40,120)">
-      <button class="b-ac b-sm ctrl" onclick="sdve('cg_fov','vFov')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('cg_fov',65,'vFov','sFov')">↺</button>
+      <button class="b-ac b-sm ctrl" onclick="sdve('cg_fov','vFov')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('cg_fov',65,'vFov','sFov')">↺</button>      <button class="b-gh b-sm" data-tip="Copy 'cg_fov &lt;value&gt;' to paste into your in-game console" onclick="copyClientDvar('cg_fov',g('vFov').value)">📋</button>
     </div>
-    <div class="set-all-row"><button class="b-gh b-sm ctrl" data-tip="Write this block&#39;s values to dedicated.cfg (persists across restarts).&#10;A .bak backup is made; takes effect on next server start or `exec dedicated.cfg`." onclick="saveBlockToCfg(this)">💾 Save</button><button class="b-ac b-sm ctrl" onclick="setAllInBlock(this)">Set All</button></div>
+    <div class="srow" oncontextmenu="event.preventDefault();copyClientDvar('cg_drawFPS',g('cbFPS').checked?'1':'0')" data-tip="cg_drawFPS&#10;On-screen FPS counter. Saved client dvar -- a server can't force it; each player toggles their own.&#10;Live toggle = host only (listen).&#10;📋 / right-click = copy 'cg_drawFPS 0/1' for your console.">
+      <span class="slbl">FPS Counter</span><span style="flex:1"></span>
+      <button class="b-gh b-sm" data-tip="Copy 'cg_drawFPS 0/1' (current toggle state) to paste into your in-game console" onclick="copyClientDvar('cg_drawFPS',g('cbFPS').checked?'1':'0')">📋</button>
+      <label class="tog ctrl"><input type="checkbox" id="cbFPS" onchange="bridge('fps_'+(cbFPS.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
+    </div>
   </div>
 
   <div class="block" data-eff="live" data-per="transient">
@@ -555,10 +579,10 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     </div>
   </div>
 
-  <div class="block" data-eff="live" data-per="client">
-    <div class="btitle">VISUAL TWEAKS  <span style="font-weight:400;font-size:10px;color:var(--dm)">stock by default -- a set value persists (re-applied every spawn)</span></div>
-    <div class="srow" data-tip="Players keep their OWN video settings until you set a slider here.&#10;Setting a value stores it in a gf_vis_* server dvar and pushes it to everyone; the mod then re-applies it on every spawn until you reset it to stock.&#10;The old Gamma slider was removed: r_gamma is a SAVED client dvar and Plutonium blocks servers from writing those (the push never applied). Use Ambient / Grid Intensity for brightness.">
-      <span class="slbl" style="color:var(--dm)">Nothing is pushed until a value is set</span><span style="flex:1"></span>
+  <div class="block ded-lockable" data-eff="live" data-per="client">
+    <div class="btitle">VISUAL TWEAKS  <span style="font-weight:400;font-size:10px;color:var(--dm)">needs sv_cheats — listen/dev only · on the VPS use Vision FX</span></div>
+    <div class="srow" data-tip="These push cheat-protected r_* renderer dvars (r_lightTweakAmbient / r_lightGridIntensity / r_lightGridContrast / r_fog / r_fullHDRrendering) via setClientDvar.&#10;The engine only honours those when sv_cheats is 1, which the mod sets ONLY on a listen server (dedicated==0) — so on the VPS every push here is silently refused. Greyed on a dedicated server.&#10;VPS-safe look control = the Vision FX buttons below (visionSetNaked is not cheat-gated).&#10;The old Gamma slider was removed too: r_gamma is a SAVED client dvar Plutonium blocks servers from writing.">
+      <span class="slbl" style="color:var(--dm)">Cheat-protected r_* pushes — need sv_cheats (listen/dev). On the VPS use Vision FX.</span><span style="flex:1"></span>
       <span class="shint">gf_vis_*</span>
     </div>
     <div class="slider-row" data-tip="r_lightTweakAmbient&#10;Minimum scene fill light. 0 = dark shadows, 2 = fully lit. Engine default: 0 (stock).&#10;&#x21BA; resets to stock (stops the per-spawn push).">
@@ -619,26 +643,22 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
   <div class="block" data-eff="live" data-per="transient">
     <div class="btitle">VISION FX  <span style="font-weight:400;font-size:10px;color:var(--dm)">VisionSetNaked / setClientDvar — all players via bridge</span></div>
     <div class="srow" data-tip="VisionSetNaked, all players (bridge: vision_&lt;set&gt;)&#10;All sets are in common_vision.csv so they apply on every map. PERSISTS across rounds (gf_vis_vision, re-applied each round) until Normal or Reset All Visuals.&#10;There is NO true colour-invert in T5 (the r_film* path can't negate RGB) — 'Enhance' is what the old Invert/Night actually did (a contrast pop).">
-      <span class="slbl">Vision Set</span>
-      <div class="row" style="gap:4px;flex-wrap:wrap;justify-content:flex-end;flex:1">
-        <button class="b-gh b-sm ctrl" onclick="bridge('vision_normal')" title="Restore the map's default vision">Normal</button>
-        <button class="b-gh b-sm ctrl" onclick="bridge('vision_enhance')" title="default_night — crisp contrast pop (what old Invert/Night really did)">Enhance</button>
-        <button class="b-gh b-sm ctrl" onclick="bridge('vision_bw')" title="cheat_bw — pure grayscale">B&amp;W</button>
-        <button class="b-gh b-sm ctrl" onclick="bridge('vision_berserk')" title="berserker — warm, high contrast (1.5)">Berserk</button>
-        <button class="b-gh b-sm ctrl" onclick="bridge('vision_thermal')" title="infrared — dark desaturated night/thermal">Thermal</button>
-        <button class="b-gh b-sm ctrl" onclick="bridge('vision_hotsnow')" title="infrared_snow — bright grayscale thermal">Hot Snow</button>
-        <button class="b-gh b-sm ctrl" onclick="bridge('vision_nuke')" title="mp_nuked — warm hazy">Nuke</button>
-        <button class="b-gh b-sm ctrl" onclick="bridge('vision_film')" title="flashpoint — warm cinematic / sepia">Film</button>
-        <button class="b-gh b-sm ctrl" onclick="bridge('vision_bleak')" title="wmd — cold desaturated">Bleak</button>
-      </div>
+      <span class="slbl">Vision Set</span><span style="flex:1"></span>
+      <select id="visSel" class="ctrl" onchange="bridge('vision_'+this.value)" title="VisionSetNaked, all players. Persists across rounds until Normal / Reset All Visuals.">
+        <option value="normal">Normal (map default)</option>
+        <option value="enhance">Enhance (contrast pop)</option>
+        <option value="bw">Black &amp; White</option>
+        <option value="berserk">Berserk (warm, high contrast)</option>
+        <option value="thermal">Thermal (dark night)</option>
+        <option value="hotsnow">Hot Snow (bright thermal)</option>
+        <option value="nuke">Nuke (warm hazy)</option>
+        <option value="film">Film (cinematic sepia)</option>
+        <option value="bleak">Bleak (cold desaturated)</option>
+      </select>
     </div>
-    <div class="srow" data-tip="cg_thirdPerson&#10;Third-person camera for all players. setClientDvar via bridge: thirdperson_1/0">
+    <div class="srow" data-tip="cg_thirdPerson&#10;Third-person camera for all players. Non-archived — setClientDvar via bridge works on dedicated: thirdperson_1/0">
       <span class="slbl">Third Person</span><span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbTP" onchange="bridge('thirdperson_'+(cbTP.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
-    </div>
-    <div class="srow" data-tip="cg_drawFPS&#10;On-screen FPS counter for all players. setClientDvar via bridge: fps_1/0">
-      <span class="slbl">FPS Counter</span><span style="flex:1"></span>
-      <label class="tog ctrl"><input type="checkbox" id="cbFPS" onchange="bridge('fps_'+(cbFPS.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
     </div>
   </div>
 
@@ -752,10 +772,11 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
   </div>
   <div class="block">
     <div class="btitle">CLIENT BINDS  <span style="font-weight:400;font-size:10px;color:var(--dm)">client-side — copy &amp; paste into the in-game console</span></div>
-    <div class="srow" data-tip="bind SHIFT &quot;+breath_sprint&quot;&#10;bind MOUSE2 &quot;+speed_throw; -breath_sprint; -sprint&quot;&#10;Makes ADS cancel sprint (sprint-out / tactical fix).&#10;Binds can't be pushed from a server — each player pastes these in their own console.">
+    <div class="srow" data-tip="Client bind so ADS cancels sprint — aim without releasing Shift. Binds can't be pushed from a server; each player pastes into their own console.&#10;&#8226; MOUSE2 only: just the ADS-cancels-sprint bind. Take this if you sprint on a NON-default key.&#10;&#8226; + SHIFT: also re-pins sprint to the default SHIFT = +breath_sprint that the MOUSE2 bind cancels.">
       <span class="slbl">Sprint-ADS Fix</span>
       <span style="flex:1"></span>
-      <button class="b-ac b-sm" onclick="copySprintAdsFix()">📋 Copy binds</button>
+      <button class="b-ac b-sm" data-tip="Copy just: bind MOUSE2 &quot;+speed_throw; -breath_sprint; -sprint&quot;&#10;Take this if you sprint on a non-default key." onclick="copyMouse2Ads()">📋 MOUSE2 only</button>
+      <button class="b-gh b-sm" data-tip="Copy both: bind SHIFT &quot;+breath_sprint&quot; + the MOUSE2 bind.&#10;Re-pins sprint to default SHIFT so the ADS cancel lines up." onclick="copySprintAdsFix()">📋 + SHIFT</button>
     </div>
     <div class="srow" data-tip="com_drawFps 1&#10;developer 1&#10;cl_showSnaps 1&#10;Client-side debug overlays (FPS, developer logging, net-snapshot graph).&#10;Can't be pushed from a server — each player pastes these in their own console.">
       <span class="slbl">Debug Dvars</span>
@@ -1021,6 +1042,10 @@ async function fetchGfState(){
   const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
   return (await fetch(API+'/gfstate?'+p)).json();
 }
+async function fetchGfRoster(){
+  const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
+  return (await fetch(API+'/gfroster?'+p)).json();
+}
 async function fetchDvars(names){
   const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password,names:names.join(',')});
   return (await fetch(API+'/dvars?'+p)).json();
@@ -1077,6 +1102,7 @@ function updateSyncUI(){
 function readAllFromServer(){ readServerDvars(); readMatchDvars(); }
 function disconnect(){
   setLive(false);
+  _roster={};_rosterSig='';_lastPlayers=[];_grouped=false;
   g('ptbody').innerHTML='<tr class="empty"><td colspan="6">Not connected</td></tr>';
   g('sMap').textContent=g('sGt').textContent=g('sPl').textContent='—';
   g('scA').textContent=g('scX').textContent=g('scRound').textContent='—';
@@ -1108,7 +1134,20 @@ async function scoreTick(){
       if(s.gametype) g('sGt').textContent=s.gametype;
     }
   }catch(_){}
+  // Per-player team roster (dedicated only; listen server times out — grouping just stays off).
+  try{
+    const r=await fetchGfRoster();
+    if(r.ok){
+      _roster={}; for(const e of r.roster) _roster[e.num]=e;
+      // Only rebuild the table when the team/pending mapping actually changed (this ticks every
+      // 2.5s; the status tick already re-renders on its own cadence).
+      const sig=r.roster.map(e=>e.num+':'+e.team+':'+(e.pending||'')).join('|');
+      if(sig!==_rosterSig){ _rosterSig=sig; renderPlayers(); }
+    }
+  }catch(_){}
 }
+// num -> {num,team,alive,pending} from gf_roster; empty until first successful roster read.
+let _roster={}, _rosterSig='';
 let _listenServer=false;
 function tick(d){
   _listenServer=!!d.listenServer;
@@ -1131,6 +1170,10 @@ function applyServerMode(){
   b.className='bdg '+(_listenServer?'mode-listen':'mode-ded');
   document.querySelectorAll('.ded-only').forEach(el=>el.disabled=_listenServer);
   document.querySelectorAll('.listen-only').forEach(el=>el.disabled=!_listenServer);
+  // Controls that only work off a dedicated server: saved client dvars (FOV / view bob /
+  // drawfps — host-only) and cheat-protected r_* pushes (Visual Tweaks — need sv_cheats,
+  // which the mod only sets on a listen server). Grey them on a dedicated server.
+  document.querySelectorAll('.ded-lockable').forEach(el=>el.classList.toggle('ded-locked',!_listenServer));
 }
 function setCtrl(en){
   document.querySelectorAll('.ctrl').forEach(el=>el.disabled=!en);
@@ -1138,47 +1181,108 @@ function setCtrl(en){
 
 // ─── Players + right-click ────────────────────────────────────────────────────
 let ctxPlayer=null;
-function buildPlayers(ps){
+let _lastPlayers=[];   // last status roster (names/ping/etc); merged with _roster (teams) to render
+let _grouped=false;    // true when we have team data and render grouped-by-team headers
+// Status tick hands us the player list; renderPlayers() merges it with the team roster.
+function buildPlayers(ps){ _lastPlayers=ps||[]; renderPlayers(); }
+// Render the PLAYERS table. With gf_roster team data (dedicated), players are grouped under
+// ALLIES / AXIS / SPECTATOR headers (with counts) so you can read the teams at a glance and
+// balance them. Without team data (listen server, or roster not read yet) it falls back to a
+// flat list. Called from both the status tick (buildPlayers) and the roster tick (scoreTick).
+function renderPlayers(){
   const tb=g('ptbody');
-  if(!ps||!ps.length){tb.innerHTML='<tr class="empty"><td colspan="6">No players</td></tr>';return;}
-  tb.innerHTML=ps.map(p=>{
-    const tag=p.bot?'<span class="bot-t">BOT</span>':p.local?'<span class="you-t">YOU</span>':'';
-    const pg=p.bot?'<span class="bot-t">BOT</span>':`<span class="${p.ping<80?'p-ok':p.ping<150?'p-mid':'p-bad'}">${p.ping}ms</span>`;
-    const ipCell=p.ip?`<span class="dm" style="font-size:10px">${x(p.ip)}</span>`:`<span class="dm">-</span>`;
-    const guidCell=p.bot?'<span class="dm">-</span>':`<span class="dm" style="font-size:10px;user-select:all">${p.guid||'-'}</span>`;
-    return`<tr data-num="${p.num}" data-name="${x(p.name)}" data-bot="${p.bot}" oncontextmenu="showCtx(event,${p.num},'${x(p.name)}',${p.bot})">
-      <td>${p.num}</td><td>${tag}${p.bot?x(p.name):`<span class="real-n">${x(p.name)}</span>`}</td><td>${p.score}</td><td>${pg}</td><td>${ipCell}</td><td>${guidCell}</td></tr>`;
-  }).join('');
+  const ps=_lastPlayers;
+  if(!ps||!ps.length){tb.innerHTML='<tr class="empty"><td colspan="6">No players</td></tr>';_grouped=false;return;}
+  const groups={allies:[],axis:[],spectator:[],unknown:[]};
+  for(const p of ps){ const t=(_roster[p.num]||{}).team||'unknown'; (groups[t]||groups.unknown).push(p); }
+  _grouped = !!(groups.allies.length||groups.axis.length||groups.spectator.length);
+  let html;
+  if(!_grouped){
+    html=ps.map(rowHtml).join('');
+  }else{
+    const sec=(key,label,cls)=>{
+      const a=groups[key]; if(!a.length) return '';
+      return `<tr class="grp ${cls}"><td colspan="6">${label}<span class="grp-n">${a.length}</span></td></tr>`+a.map(rowHtml).join('');
+    };
+    html = sec('allies','◆ ALLIES','grp-a')
+         + sec('axis','◆ AXIS','grp-x')
+         + sec('spectator','◇ SPECTATOR','grp-s')
+         + sec('unknown','◇ —','grp-u');
+  }
+  tb.innerHTML=html;
+  paintTeams();
+}
+function rowHtml(p){
+  const tag=p.bot?'<span class="bot-t">BOT</span>':p.local?'<span class="you-t">YOU</span>':'';
+  const pg=p.bot?'<span class="bot-t">BOT</span>':`<span class="${p.ping<80?'p-ok':p.ping<150?'p-mid':'p-bad'}">${p.ping}ms</span>`;
+  const ipCell=p.ip?`<span class="dm" style="font-size:10px">${x(p.ip)}</span>`:`<span class="dm">-</span>`;
+  const guidCell=p.bot?'<span class="dm">-</span>':`<span class="dm" style="font-size:10px;user-select:all">${p.guid||'-'}</span>`;
+  return`<tr data-num="${p.num}" data-name="${x(p.name)}" data-bot="${p.bot}" oncontextmenu="showCtx(event,${p.num},'${x(p.name)}',${p.bot})">
+    <td>${p.num}</td><td>${tag}${p.bot?x(p.name):`<span class="real-n">${x(p.name)}</span>`}<span class="tm-slot" data-tm="${p.num}"></span></td><td>${p.score}</td><td>${pg}</td><td>${ipCell}</td><td>${guidCell}</td></tr>`;
+}
+// Per-row indicator from the last gf_roster read. When the list is grouped, the team is already
+// shown by the section header, so the row only carries a pending-move hint (→ Axis). When flat
+// (no team data), we show nothing extra. Empty string when there's no roster entry for that num.
+function teamBadgeHtml(num){
+  const e=_roster[num];
+  if(!e) return '';
+  let h='';
+  if(!_grouped && e.team){
+    const code=e.team==='allies'?'a':e.team==='axis'?'x':'s';
+    const lbl=e.team==='allies'?'ALLIES':e.team==='axis'?'AXIS':'SPEC';
+    h+=`<span class="tm tm-${code}">${lbl}</span>`;
+  }
+  if(e.pending && e.pending!==e.team){
+    const pl=e.pending==='allies'?'Allies':e.pending==='axis'?'Axis':'Spec';
+    h+=`<span class="tm-pend">→ ${pl}</span>`;
+  }
+  return h;
+}
+// Re-fill the team-badge slots in the current player rows from _roster (kept across the
+// status rebuild so badges don't flicker between the 3s status tick and 2.5s roster tick).
+function paintTeams(){
+  document.querySelectorAll('#ptbody .tm-slot').forEach(sl=>{
+    sl.innerHTML=teamBadgeHtml(parseInt(sl.getAttribute('data-tm')));
+  });
 }
 function x(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;')}
 
 function showCtx(e,num,name,isBot){
   e.preventDefault();
-  ctxPlayer={num,name,isBot};
+  const pl=_lastPlayers.find(p=>p.num===num)||{};
+  const ip=(!isBot && pl.ip && pl.ip!=='local')?pl.ip:'';   // real routable IP only (not bots/host)
+  ctxPlayer={num,name,isBot,ip};
+  const ct=(_roster[num]||{}).team||'';   // current team (grays its own move item)
+  const teamItem=(t,code,label)=>`<div class="ctx-item ${ct===t?'cur':''}" onclick="ctxAction('team_${code}')">${label}</div>`;
+  const ipItems=ip?`<div class="ctx-sep"></div>
+    <div class="ctx-item" onclick="ctxAction('copyip')">Copy IP</div>
+    <div class="ctx-item" onclick="ctxAction('locate')">Locate (city)</div>`:'';
   const m=g('ctx-menu');
   m.innerHTML=`<div class="ctx-header">${x(name)}</div>
-    <div class="ctx-item" onclick="ctxAction('kick')">✕ Kick</div>
-    <div class="ctx-item red" onclick="ctxAction('ban')">⛔ Ban</div>
+    <div class="ctx-item" onclick="ctxAction('kick')">Kick</div>
+    <div class="ctx-item red" onclick="ctxAction('ban')">Ban</div>
     <div class="ctx-sep"></div>
-    <div class="ctx-item green" onclick="ctxAction('pgod')">⚡ God Mode</div>
-    <div class="ctx-item yellow" onclick="ctxAction('pfreeze')">❄ Freeze</div>
-    <div class="ctx-item yellow" onclick="ctxAction('punfreeze')">▶ Unfreeze</div>
-    <div class="ctx-item" onclick="ctxAction('pperks')">★ Give Perks</div>
-    <div class="ctx-item" onclick="ctxAction('pnoclip')">👻 Noclip</div>
+    ${teamItem('allies','allies','<span class="tm tm-a">A</span> Move to Allies')}
+    ${teamItem('axis','axis','<span class="tm tm-x">X</span> Move to Axis')}
+    ${teamItem('spectator','spec','<span class="tm tm-s">S</span> Move to Spectator')}
     <div class="ctx-sep"></div>
-    <div class="ctx-item" onclick="ctxAction('pnobob')">〰 No View Bob</div>`;
+    <div class="ctx-item green" onclick="ctxAction('pgod')">God Mode</div>
+    <div class="ctx-item yellow" onclick="ctxAction('pfreeze')">Freeze</div>
+    <div class="ctx-item yellow" onclick="ctxAction('punfreeze')">Unfreeze</div>
+    <div class="ctx-item" onclick="ctxAction('pperks')">Give Perks</div>
+    <div class="ctx-item" onclick="ctxAction('pnoclip')">Noclip</div>${ipItems}`;
   m.style.display='block';
   // Position near cursor, keep in viewport
   const vw=window.innerWidth,vh=window.innerHeight;
   let lft=e.clientX+4,top=e.clientY+4;
   if(lft+170>vw) lft=e.clientX-174;
-  if(top+200>vh) top=e.clientY-200;
+  if(top+360>vh) top=Math.max(4,vh-364);
   m.style.left=lft+'px';m.style.top=top+'px';
 }
 async function ctxAction(act){
   hideCtx();
   if(!ctxPlayer)return;
-  const{num,name}=ctxPlayer;
+  const{num,name,ip}=ctxPlayer;
   if(act==='kick'){
     const r=await rcon(`clientkick ${num}`);
     r.ok?actLog('Kicked '+name,'wn'):toast('Kick failed','err');
@@ -1194,11 +1298,29 @@ async function ctxAction(act){
     await bridge(`punfreeze_${num}`);actLog('Unfrozen: '+name,'ok');
   }else if(act==='pperks'){
     await bridge(`pperks_${num}`);actLog('Perks → '+name,'ok');
+  }else if(act==='team_allies'||act==='team_axis'||act==='team_spec'){
+    // Applies live during the prematch countdown / min-players hold; otherwise the mod
+    // defers it to the start of the next round (never suicides a player mid-round).
+    const code=act.slice(5);   // allies | axis | spec
+    const lbl={allies:'Allies',axis:'Axis',spec:'Spectator'}[code];
+    await bridge(`pteam_${num}_${code}`);
+    actLog('Team → '+lbl+': '+name,code==='spec'?'wn':'ok');
   }else if(act==='pnoclip'){
     // noclip is a server console command, not GSC — send directly via RCON
     await rcon(`noclip ${num}`);actLog('Noclip toggled: '+name,'ok');
-  }else if(act==='pnobob'){
-    await rcon(`setclientdvar ${num} bg_viewBobMax 0`);actLog('No view bob → '+name,'ok');
+  }else if(act==='copyip'){
+    if(!ip){toast('No IP for this player','err');return;}
+    try{ await navigator.clipboard.writeText(ip); actLog('Copied IP '+ip+' ('+name+')','ok'); }
+    catch(_){ toast('Clipboard blocked — IP: '+ip,'err'); }
+  }else if(act==='locate'){
+    if(!ip){toast('No IP for this player','err');return;}
+    actLog('Locating '+name+' ('+ip+')…','in');
+    try{
+      const r=await (await fetch(API+'/geoip?ip='+encodeURIComponent(ip))).json();
+      if(r.ok){ const loc=[r.city,r.region,r.country].filter(Boolean).join(', ')||'unknown';
+        actLog(name+' @ '+loc+(r.isp?' · '+r.isp:''),'ok'); }
+      else toast('Locate failed: '+(r.error||'unknown'),'err');
+    }catch(e){ toast('Locate failed: '+e.message,'err'); }
   }
 }
 function hideCtx(){g('ctx-menu').style.display='none';}
@@ -1522,7 +1644,8 @@ async function readDv(){
 }
 
 // ─── Client binds (clipboard helpers — these run on the player's machine, not the server) ──
-const SPRINT_ADS_FIX = 'bind SHIFT "+breath_sprint"\nbind MOUSE2 "+speed_throw; -breath_sprint; -sprint"';
+const MOUSE2_ADS = 'bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"';
+const SPRINT_ADS_FIX = 'bind SHIFT "+breath_sprint"\n'+MOUSE2_ADS;
 const DEBUG_DVARS = 'com_drawFps 1\ndeveloper 1\ncl_showSnaps 1';
 async function copyText(text){
   try{ if(navigator.clipboard&&navigator.clipboard.writeText){ await navigator.clipboard.writeText(text); return true; } }catch(_){}
@@ -1530,11 +1653,26 @@ async function copyText(text){
     document.body.appendChild(ta);ta.focus();ta.select();const ok=document.execCommand('copy');document.body.removeChild(ta);return ok;
   }catch(_){ return false; }
 }
+async function copyMouse2Ads(){
+  if(await copyText(MOUSE2_ADS)){
+    toast('MOUSE2 ADS bind copied — paste into the in-game console','ok');
+    actLog('Copied MOUSE2 ADS bind to clipboard','in');
+    clogAdd(MOUSE2_ADS,'ls');
+  } else toast('Clipboard copy failed','err');
+}
 async function copySprintAdsFix(){
   if(await copyText(SPRINT_ADS_FIX)){
-    toast('Sprint-ADS Fix copied — paste into the in-game console','ok');
-    actLog('Copied Sprint-ADS Fix binds to clipboard','in');
+    toast('Sprint-ADS Fix (MOUSE2 + SHIFT) copied — paste into the in-game console','ok');
+    actLog('Copied Sprint-ADS Fix binds (MOUSE2 + SHIFT) to clipboard','in');
     clogAdd(SPRINT_ADS_FIX,'ls');
+  } else toast('Clipboard copy failed','err');
+}
+async function copyClientDvar(dv,val){
+  const cmd=dv+' '+val;
+  if(await copyText(cmd)){
+    toast('Copied "'+cmd+'" — paste into your in-game console','ok');
+    actLog('Copied client cmd: '+cmd,'in');
+    clogAdd(cmd,'ls');
   } else toast('Clipboard copy failed','err');
 }
 async function copyExecAutoexec(){
@@ -1660,7 +1798,7 @@ const SRV_SECTIONS = [
     { n:'g_allowvote',              lbl:'Allow Voting',           type:'tog',    def:'1',   tip:'g_allowvote\nLet players call /callvote in console. GF default: 1' },
     { n:'g_inactivity',             lbl:'AFK Kick Timer (s)',     type:'num',    def:'190', tip:'g_inactivity\nSeconds of inactivity before auto-kick. 0 = disabled.' },
     { n:'party_minplayers',         lbl:'Min Players to Start',   type:'num',    def:'2',   tip:'party_minplayers\nMinimum connected players before the match begins. GF default: 2 (set 1 for solo testing).' },
-    { n:'sv_maxclients',            lbl:'Max Players',            type:'num',    def:'10',  eff:'restart', tip:'sv_maxclients\nMaximum simultaneous connections the server accepts. GF: 10 = 8 playing (4v4) + 2 spectator headroom.' },
+    { n:'sv_maxclients',            lbl:'Max Players',            type:'num',    def:'14',  eff:'restart', tip:'sv_maxclients\nMaximum simultaneous connections the server accepts. GF: 14 = 12 playing (up to 6v6) + 2 spectator headroom.' },
     { n:'sv_floodProtect',          lbl:'Chat Flood Protection',  type:'num',    def:'4',   tip:'sv_floodProtect\nThrottle rapid chat messages. Set to 20 when using an RCON tool.' },
     { n:'sv_kickBanTime',           lbl:'Kick Ban Duration (s)',  type:'num',    def:'300', tip:'sv_kickBanTime\nHow long a kicked player must wait before reconnecting.' },
     { n:'sv_maxPing',               lbl:'Max Ping (0=any)',       type:'num',    def:'0',   tip:'sv_maxPing\nKick players whose ping exceeds this. 0 = no limit.' },
@@ -1748,7 +1886,7 @@ const SRV_SECTIONS = [
     { n:'scr_player_suicidespawndelay',lbl:'Suicide Penalty (s)',    type:'num', def:'0',   tip:'scr_player_suicidespawndelay\nExtra respawn delay after suiciding.' },
   ]},
   { title: 'TEAMS', eff: 'live', per: 'dvar', vars: [
-    { n:'scr_team_maxsize',           lbl:'Max Players / Team',      type:'num', def:'4',   tip:'scr_team_maxsize\nCaps players per team; overflow is sent to spectator on spawn (gf_playerSpawnedCB). 0 = no cap. GF ships 4 (4v4). Takes effect on next spawn.' },
+    { n:'scr_team_maxsize',           lbl:'Max Players / Team',      type:'num', def:'6',   tip:'scr_team_maxsize\nCaps players per team; overflow is sent to spectator on spawn (gf_playerSpawnedCB). 0 = no cap. GF ships 6 (up to 6v6). Takes effect on next spawn.' },
     { n:'scr_teamchange',             lbl:'Allow Team Change',       type:'tog', def:'1',   tip:'scr_teamchange\n1 = players can switch teams freely.' },
     { n:'scr_teambalance',            lbl:'Block Joining Larger Team',type:'tog',def:'0',   tip:'scr_teambalance\nPrevent players from joining the already-larger team. GF default: 0.' },
     { n:'scr_autobalanceteams',       lbl:'Auto-Balance at Round End',type:'tog',def:'0',   tip:'scr_autobalanceteams\nMove one player to even teams at the end of each round.' },
@@ -1777,11 +1915,9 @@ const SRV_SECTIONS = [
     { n:'sv_botMinFireTime',     lbl:'Fire Burst Min (ms)',   type:'num', def:'400',  tip:'sv_botMinFireTime\nShortest continuous-fire burst. Cheat-protected — needs sv_cheats 1.' },
     { n:'sv_botMaxFireTime',     lbl:'Fire Burst Max (ms)',   type:'num', def:'600',  tip:'sv_botMaxFireTime\nLongest continuous-fire burst. Cheat-protected — needs sv_cheats 1.' },
     { n:'sv_botStrafeChance',    lbl:'Strafe Chance (0–1)',   type:'flt', def:'0.1',  tip:'sv_botStrafeChance\nProbability a bot strafes during a fight. Cheat-protected — needs sv_cheats 1.' },
-    { n:'sv_botCloseDistance',   lbl:'Close Distance',        type:'num', def:'256',  tip:'sv_botCloseDistance\nRange under which bots treat you as close-quarters. Cheat-protected — needs sv_cheats 1.' },
     { n:'sv_botSprintDistance',  lbl:'Sprint Distance',       type:'num', def:'512',  tip:'sv_botSprintDistance\nRange beyond which bots sprint toward targets/objectives. Cheat-protected — needs sv_cheats 1.' },
     { n:'sv_botMeleeDist',       lbl:'Melee Distance',        type:'num', def:'80',   tip:'sv_botMeleeDist\nRange at which bots attempt a melee. Cheat-protected — needs sv_cheats 1.' },
-    { n:'sv_botPitchSpeed',      lbl:'Aim Pitch Speed',       type:'num', def:'2',    tip:'sv_botPitchSpeed\nVertical aim turn speed. Higher = snappier. Cheat-protected — needs sv_cheats 1.' },
-    { n:'sv_botYawSpeed',        lbl:'Aim Yaw Speed',         type:'num', def:'4',    tip:'sv_botYawSpeed\nHorizontal aim turn speed. Higher = snappier. Cheat-protected — needs sv_cheats 1.' },
+    { n:'sv_botYawSpeed',        lbl:'Aim Turn Speed',        type:'num', def:'4',    tip:'sv_botYawSpeed\nAim turn speed. Higher = snappier. Cheat-protected — needs sv_cheats 1.' },
     { n:'sv_botAllowGrenades',   lbl:'Bots Throw Grenades',   type:'tog', def:'1',    tip:'sv_botAllowGrenades\nAllow bots to throw lethal grenades.' },
     { n:'sv_randomizeBotNames',  lbl:'Randomize Bot Names',   type:'tog', def:'1',    tip:'sv_randomizeBotNames\nGive bots random player-style names.' },
     { n:'sv_botUseFriendNames',  lbl:'Bots Use Friend Names', type:'tog', def:'1',    tip:'sv_botUseFriendNames\nBots borrow names from your friends list.' },
@@ -2192,17 +2328,14 @@ const GT_OPTS = [
   { val:'hlnd', lbl:'hlnd — Sticks and Stones',       desc:'Sticks and Stones. Crossbow and ballistic knife only. Melee kills bankrupt an enemy\'s score. First to the score limit wins.' },
 ];
 
-// Plutonium server modifier dvars surfaced on the MATCH tab (GAME MODIFIERS block).
-// All are plain server dvars (no GSC bridge) — set live via RCON. Most take effect on
-// the next round; scr_oldschool needs a map_restart. Toggles call sdvv directly.
+// Server modifier dvars surfaced on the MATCH tab (GAME MODIFIERS block). Only dvars with a
+// verified engine mechanism live here. The old sv_BigHeadMode / sv_TripleBullet / sv_SuperPenetrate
+// / sv_InfiniteSprint / sv_InstantReload / sv_QuickHealthRecharge toggles were removed: none of
+// those dvars exist in the T5 engine, the mod, or any config (big head was confirmed dead in-game),
+// so they did nothing. scr_oldschool IS a real engine dvar (level.oldschool is read throughout the
+// stock source); it needs a map_restart. Toggles call sdvv directly (no GSC bridge).
 const MATCH_MODIFIERS = [
-  { n:'sv_BigHeadMode',         lbl:'Big Head Mode',         type:'tog', def:'0', tip:'sv_BigHeadMode\nOversized player heads — easy headshots, crowd-pleaser.\nApplies on the next round.' },
-  { n:'sv_TripleBullet',        lbl:'Triple Bullet',         type:'tog', def:'0', tip:'sv_TripleBullet\nEvery shot fires three bullets.\nApplies on the next round.' },
-  { n:'sv_SuperPenetrate',      lbl:'Super Penetration',     type:'tog', def:'0', tip:'sv_SuperPenetrate\nBullets wallbang through almost anything.\nApplies on the next round.' },
-  { n:'sv_InfiniteSprint',      lbl:'Infinite Sprint',       type:'tog', def:'0', tip:'sv_InfiniteSprint\nSprint never runs out.\nApplies on the next round.' },
-  { n:'sv_InstantReload',       lbl:'Instant Reload',        type:'tog', def:'0', tip:'sv_InstantReload\nReloads complete instantly.\nApplies on the next round.' },
-  { n:'sv_QuickHealthRecharge', lbl:'Quick Health Recharge', type:'tog', def:'0', tip:'sv_QuickHealthRecharge\nVery fast health regen.\nNOTE: overrides the Gunfight no-regen rule. Applies on the next round.' },
-  { n:'scr_oldschool',          lbl:'Old School Mode',       type:'tog', def:'0', eff:'restart', tip:'scr_oldschool\nClassic high-jump / map-pickup movement feel.\nNeeds a map_restart to take effect.' },
+  { n:'scr_oldschool',          lbl:'Old School Mode',       type:'tog', def:'0', eff:'restart', tip:'scr_oldschool\nClassic high-jump / map-pickup movement feel (real engine dvar).\nChanges movement + enables map weapon pickups, so it fights the curated one-life design — test before using.\nNeeds a map_restart to take effect.' },
   { n:'__modreset',             lbl:'Reset all modifiers',   type:'btn', act:'resetModifiers()', btxt:'Reset', tip:'Sets every modifier above back to 0 (off).' },
 ];
 

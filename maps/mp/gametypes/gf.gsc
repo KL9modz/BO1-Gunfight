@@ -274,6 +274,14 @@ onStartGameType()
     if ( getDvar( "scr_gf_prematch_seconds" ) == "" )
         setDvar( "scr_gf_prematch_seconds", "7" );          // every later round
 
+    // Seed the round-start gate dvars here so they exist from boot (the RCON panel reads
+    // them, and they'd otherwise show "not read" until gf_tryActivateRound first touched
+    // them via gf_cfgFloat). Clamping still happens on read in _gf_rounds.gsc.
+    if ( getDvar( "scr_gf_roster_wait" ) == "" )
+        setDvar( "scr_gf_roster_wait", "15" );   // max s to wait for the roster to spawn in (0 = no cap)
+    if ( getDvar( "scr_gf_min_players" ) == "" )
+        setDvar( "scr_gf_min_players", "1" );     // min HUMANS to start the match (1 = off)
+
     // roundsplayed == 0 is the match's first round (longer intro); later rounds get the shorter one.
     if ( game["roundsplayed"] == 0 )
     {
@@ -378,8 +386,24 @@ onStartGameType()
         gf_applyWagerZoneAssets();
 
     // #strip-begin - RCON bridge + bot init (dev/main only; stripped from public release)
-    thread gf_bridgeInit();
-    thread maps\mp\gametypes\_bot::init();
+    thread gf_bridgeInit();   // per-round on purpose: re-threads to apply pending RCON team moves
+    // The bot manager is once-per-MATCH, NOT once-per-round. onStartGameType re-runs on every
+    // map_restart (SD round cycling), but _bot::init() threads PERSISTENT managers
+    // (handleBots/addBots/diffBots/teamBots) that carry only "game_ended" endon (fires at match
+    // end, never on a map_restart), so they SURVIVE round cycling. Re-threading them every round
+    // stacked N concurrent addBots() fill loops that raced on the shared bots_manage_add dvar and
+    // over-added bots ("keeps adding more every match"). Gate on game[] — the only state that
+    // survives map_restart, and it resets on a genuine new map load — so exactly ONE manager set
+    // runs per match and it still re-inits for the next match. Same idiom as gf_rocketOncePerMatch
+    // / game["gf_init"]. Also clear any stale bots_manage_add the prior match's racing loops left
+    // behind (handleBots' reconciliation tail is unreachable dead code), so each match starts clean
+    // and the single fill loop converges to bots_manage_fill instead of ratcheting upward.
+    if ( !isDefined( game["gf_botInit"] ) )
+    {
+        game["gf_botInit"] = true;
+        setDvar( "bots_manage_add", 0 );
+        thread maps\mp\gametypes\_bot::init();
+    }
     // #strip-end
 }
 

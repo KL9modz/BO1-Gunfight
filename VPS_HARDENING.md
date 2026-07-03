@@ -195,7 +195,7 @@ days of stable HTTPS + confirmed cert renewal.
         <add name="X-Frame-Options" value="DENY" />
         <add name="Referrer-Policy" value="no-referrer" />
         <add name="Permissions-Policy" value="geolocation=(), microphone=(), camera=(), payment=(), usb=(), interest-cohort=()" />
-        <add name="Content-Security-Policy" value="default-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests" />
+        <add name="Content-Security-Policy" value="default-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; frame-src https://discord.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests" />
       </customHeaders>
     </httpProtocol>
 
@@ -218,6 +218,18 @@ days of stable HTTPS + confirmed cert renewal.
 > **CSP caveat:** validate against the real landing-page HTML before locking in. The page links to
 > GitHub/Discord (navigation `<a>` is fine under this CSP). If it uses inline `<style>`,
 > `style-src 'unsafe-inline'` covers it; if it loads an external font/CSS/JS, add that origin.
+>
+> **`frame-src https://discord.com` — required for the Discord widget on `status.html`.** The Live
+> Status page embeds Discord's official server-widget iframe (`discord.com/widget?id=...`). Under a
+> bare `default-src 'none'` the frame silently renders **blank** (no error banner) because `frame-src`
+> falls back to `default-src`; the widget itself is self-contained (its scripts run in Discord's own
+> origin inside the frame). The pre-existing `X-Frame-Options: DENY` + `frame-ancestors 'none'` only
+> stop **our** page from being framed by others; they don't affect us embedding Discord.
+>
+> `status.html` also drives its live server readout with an inline `<script>` + a same-origin
+> `fetch('live/status.json')`, so shipping it needs `script-src 'self' 'unsafe-inline'` and
+> `connect-src 'self'` **in addition** to the `frame-src` above. `index.html` and `setup.html` stay
+> pure-static and need none of these. (The page is 404 on live until deployed.)
 
 **Apply & test (from a separate machine):**
 ```
