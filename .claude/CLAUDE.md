@@ -2,15 +2,27 @@
 ---
 ### TODO
 unknown cmd cd
-night and invert look better
 more ammo
 match starts too early
 manage teams
 widen the spawns
 support 6v6
+auto run notify
 show feature we support every map
 fable website design
+- edit gamemode to Gunfight not GF?
+- server advertisements 
+- Refine loadouts
+- Adjust spawns & flags
+- ship weapon files: ads fov/move speed
+- custom camos
+- add credit to Plutonium/bots, etc
 
+- On-brand live card (Discord)
+A card in the site's own orange 'Evolved Dark' theme showing the live online count (96 now) + a 'Join the Discord'
+button. Fetches widget.json client-side. Matches the site perfectly. CSP cost: add script-src 'self' 'unsafe-inline' +
+connect-src https://discord.com (same script/connect relaxation status.html already needs). No avatars - img-src
+untouched.
 
 - support 30 FPS Server tick rate (sv_fps 30) — investigated 2026-07-02. WHY IT'S NOT JUST A DVAR:
   T5/CoD scales GSC `wait` by 20/sv_fps, so at sv_fps 30 every wait-driven timer runs ~1.5x fast
@@ -49,31 +61,39 @@ fable website design
   so if it advertises >1 file while IIS hosts only mod.ff, first joiners grind 404 retries;
   (c) staff-endorsed unstick trick if a player reports a hard hang: type vid_restart in the
   Plutonium bootstrapper console window
-- client join notifications
-- edit gamemode to Gunfight not GF?
-- server advertisements 
-- Refine loadouts
-- Adjust spawns & flags
-- ship weapon files: ads fov/move speed
-- custom camos
-- add credit to Plutonium/bots, etc
 - Custom round-timer HUD: the stock game timer turns orange + shows tenths in the final 30s, which
   is hardcoded in the engine CG layer (NOT GSC-tunable — no dvar/property/hook; `setGameEndTime`
   only feeds it the end time). To trigger that at 10s instead, draw our OWN top-center timer fed by
   the existing `gf_roundRemaining` clock (MM:SS white normally, switch to S.T + orange at <=10s),
   hide the engine timer (`setGameEndTime 0`), and route the OT countdown through the same element
   so round + OT share one style. Moderate work, not a threshold tweak.
-
-BOT BUGS
-- I have touble spawning bots to start the match since they dont always make it before the prematch
-they soemtime spawn in the wrong areas. my guess is we shouldnt be using any TDM spawn logic for small map mode
-- sometimes on the VPS when u get a kill the bonus XP for a medel such as first blood is shown instead of our +1 elimination 
-
-BUGS
-- pause match not fully working on server ("clock kept running" — likely fixed locally by
-  3514844/c7e1329; VPS probably running pre-fix code. `deploy.ps1 -Mod`, then retest. Residual gaps
-  either way: pausing during the between-round countdown doesn't freeze the upcoming round clock,
-  and a pause never survives `map_restart` (`level.gf_paused` is level.*))
+  HYBRID PLAN (preferred — keeps the native engine-driven tick, only owns the final-seconds phase):
+  What we DON'T lose by going custom: the native time-out AUDIO is already ours — `pauseTimer()`
+  already gates off the stock `timeLimitClock` loop, so the announcer VO / `TIME_OUT` music /
+  30s+12s+1-min beeps are already suppressed and replaced by our `timesup` VO (15s) + final-10s
+  beeps. Only the VISIBLE number is still the engine element (fed by `setGameEndTime`). So the cost
+  of going custom is purely visual: engine-driven rendering smoothness, the exact native font/glow/
+  position, and automatic spectator/killcam visibility (re-own via `archived`/`hidewheninmenu`).
+  DESIGN — two-phase, one visible number at a time:
+  (1) NORMAL phase (remaining > threshold, default 10s): keep an engine-driven element showing
+      `MM:SS` white — either leave the stock `setGameEndTime` number as-is, or mirror it onto our
+      own hudelem via `setTimerDown`/`setTimerUp` (engine ticks it, zero polling, no stutter).
+      `setTimer*` only renders `MM:SS`, NOT tenths — that's why it's the normal phase only.
+  (2) FINAL phase (remaining <= threshold): hide the engine number (`setGameEndTime 0`), reveal our
+      OWN element hand-driven from `gf_roundRemaining` showing `S.T` (seconds.tenths) in orange,
+      updated on a fast loop (the micro-stutter is invisible/acceptable for a 10s burst).
+  Route the OT countdown through the SAME final-phase element so round + OT share one style.
+  Prefer the MENU layer (`hud_gf_health.menu` + `ui_gf_*` dvars) to match the rest of the mod HUD
+  and stay off the ~17 per-client render cap; menu STRUCTURE change needs a `mod.ff` rebuild
+  (`tools/build_ff.ps1`), positions/thresholds stay GSC-tunable. Set `hidewheninmenu`/spectator
+  visibility so killcam + spectators still see it (the one native freebie we'd be re-owning).
+  PLANNED TEST BRANCH — "fully custom timers + server tick-rate (sv_fps) offsets". A throwaway
+  branch (keeps the prematch-flow regression risk off main) that combines this hybrid timer with
+  the sv_fps 30 item at the top of the TODO into one experiment: (a) own EVERY visible countdown
+  with gettime()-anchored logic — this round timer PLUS the stock prematch/intro countdown — so no
+  visible timer rides a wait-scaled hudelem; (b) run sv_fps 30 for the snapshot/hit-reg perf and
+  compensate the 20/sv_fps `wait`-scaling wherever a wait still drives timing (the "offset"). Goal:
+  keep the sv_fps 30 perf WITHOUT the ~1.5x-fast prematch countdown (the current deal-breaker).
 
 DONE:
 - "Match starts before all players spawned" + "bot fill issues" + "bots die on spawn" — FIXED
@@ -105,8 +125,8 @@ DONE:
 - "unkown command cd" — resolved 2026-07-01: never the mod (no stufftext/sendServerCommand anywhere);
   stray console paste client-side. The related cfg `;`-inside-comment parse errors in dedicated.cfg
   were fixed separately on the box.
-- Server player limit + team-size caps set: `sv_maxclients 10` (launch bat) = 8 playing + 2
-  spectator headroom; `scr_team_maxsize 4` (4v4, overflow -> spectator) in `dedicated.cfg`.
+- Server player limit + team-size caps set: `sv_maxclients 14` (launch bat) = 12 playing + 2
+  spectator headroom; `scr_team_maxsize 6` (up to 6v6, overflow -> spectator) in `dedicated.cfg`.
   Spatial mode now flips small->large on TOTAL in-match players via `scr_gf_largemode_minplayers`
   (default 7: 0-6 small, 7+ large), replacing the old per-team "both teams 4+" rule.
 - 30s warning replaced by a mod-owned live-round clock (`gf_startRoundClock` etc. in
@@ -214,7 +234,7 @@ persists through `map_restart`.
 | `scr_gf_largemode_minplayers` | 7 | Total in-match players (allies+axis) at/above which `auto` mode uses LARGE spawns; below it, SMALL. `0-6` small, `7+` large. Clamped 2-12 |
 | `scr_gf_roster_wait` | 15 | Max seconds `gf_tryActivateRound` holds the round clock after `prematch_over` waiting for every teamed player to finish spawning (slow loaders / round-1 bot fill). **`0` = no cap** (wait until all in; only `game_ended` releases a stuck client). Clamped 0-120. Live-tunable (re-read each round). Replaced the old hard-coded 8s bound |
 | `scr_gf_min_players` | 1 | **Min HUMANS-to-start gate** (`gf_waitForMinPlayers`, `_gf_rounds.gsc`). Holds the match's FIRST round (`game["roundsplayed"]==0` only) until at least this many *human* players are on a team — bots (`pers["isBot"]`) don't count, so bot-fill can't satisfy it. During the hold everyone is frozen (`freeze_player_controls`) and **all damage is voided** via the `level.gf_waitingForPlayers` guard in `gf_onPlayerDamage` (so no one dies into a not-yet-live round → instant-wipe). Match-start only: never re-holds mid-match if a player leaves. `1` = effectively off. Clamped 1-8. Distinct from `scr_gf_roster_wait` (that waits for the present roster to *spawn in*; this waits for enough humans to *exist*) |
-| `scr_team_maxsize` | 0 (shipped cfg sets **4**) | `>0` caps players/team; overflow is sent to spectator on spawn (`gf_playerSpawnedCB`). `dedicated.cfg` ships `4` (4v4); `sv_maxclients` 10 = 8 play + 2 spectator |
+| `scr_team_maxsize` | 0 (shipped cfg sets **6**) | `>0` caps players/team; overflow is sent to spectator on spawn (`gf_playerSpawnedCB`). `dedicated.cfg` ships `6` (up to 6v6); `sv_maxclients` 14 = 12 play + 2 spectator. Set `4` for a 4v4 server |
 | `perk_weapSwitchMultiplier` | (engine default) | Engine weapon-swap speed (lower = faster); gated by `specialty_fastweaponswitch`, which is **OFF by default** (no longer in the base loadout). NOT forced by the mod — stock by default. To use it: enable Fast Weapon Switch via the RCON Perks tab (`gf_perk_on`), then tune the slider; inert until the perk is on |
 | `gf_perk_on` / `gf_perk_off` | "" | Comma-separated perk override lists (RCON-managed) applied AFTER the base perk set in `gf_giveCustomLoadout` |
 
@@ -223,6 +243,29 @@ persists through `map_restart`.
 
 **Dev/debug dvars** (callers are strip-wrapped, so only active on `main`): `gf_debug_spawns`,
 `gf_debug_hud_pool`, `gf_debug_elem_probe`.
+
+**RCON team management (dev bridge):** the RCON panel's per-player right-click menu moves a player
+between allies/axis/spectator via bridge command `pteam_<num>_<allies|axis|spec>`
+(`gf_bridgeTeamCmd` in `_gf_bridge.gsc`). A live switch would `suicide()` a "playing" player
+(stock `menuAllies`/`menuAxis`/`menuSpectator` = `level.allies`/`axis`/`spectator`), so it's applied
+**immediately only during the native prematch countdown** (`level.inPrematchPeriod` — players frozen,
+round unscored, so the suicide/respawn is the harmless warmup switch). **Any other time — live round,
+killcam, or the min-players hold — it DEFERS** via `self.pers["gf_pendingTeam"]` (the only state that
+survives `map_restart`) and is applied in the **next round's prematch**. Two subtleties drove this
+(both caught by adversarial review): (1) it can't sweep at `gf_bridgeInit`, because `_spawnlogic::init`
+empties `level.players` *before* `onStartGameType` and `Callback_PlayerConnect` only repopulates it
+later — so the deferred apply is driven by a `gf_bridgeWatchPendingTeam` watcher on the
+`spawned_player` notify (fires when a player has actually spawned that round); (2) it must NOT flip
+`pers["team"]` on a live player, because `gf_onPlayerDamage` reads it for friendly-fire — deferral
+keeps the pending team in a *separate* `pers` key until the prematch apply. `gf_applyTeamMove` then
+branches on `sessionstate`: `"playing"` (spawned/frozen) → full stock switch; otherwise a quiet
+`pers["team"]`/`team`/`sessionteam` reassign the spawn honors. The min-players hold is excluded from
+the immediate window on purpose — its "no deaths" invariant forbids the switch's suicide. Team-size
+caps are enforced up front in `gf_bridgeTeamCmd` (`gf_bridgeTeamFull` mirrors `gf_playerSpawnedCB`'s
+overflow count) so an over-cap move is refused with feedback instead of a silent spectator-bounce. The
+panel reads a new **`gf_roster`** telemetry dvar (`<num>,<team>,<alive>,<pending>;…`, codes `a/x/s/-`)
+for per-player team badges + grouped-by-team roster; dedicated-only (times out on a listen server, like
+`gf_state`), so on listen it falls back to a flat list while the move commands still work.
 
 > Note: video tweaks are STOCK by default (rebuilt 2026-07-03). `gf_playerSpawnedCB` calls
 > `gf_applyVisTweaks()` (humans only), which pushes ONLY the `gf_vis_*` dvars that are non-empty
@@ -751,7 +794,7 @@ T5 has **two separate** client-HUD limits, and only the harmless one is measurab
 The cap is **global across ALL hudelem types** (our stuff + stock ammo/compass HUD + score popup + overtime flag objpoint all share it), and proven so: with the panel at 17 client hudelems, the kill popup AND the flag icon were invisible during play and only appeared when the round-end teardown freed slots. So "17 for us" was wrong — 17 is most of the *whole* per-client budget.
 
 **Mitigation — move EVERYTHING mod-owned off client hudelems into the MENU layer** (`ui_mp/hud_gf_health.menu`), a separate rendering system with no such cap (0 client hudelems). Server pushes state via `setClientDvar` only on change; menu itemDefs read the dvars (`exp rect X/Y`, `exp rect W`, `exp forecolor A`, `exp material(dvarString())`, `visible when(...)` — `when` supports `>`/`<=`/`&&`, not just `==`). All mod HUD is now menu-rendered → **~0 client hudelems**:
-- **Team health panel** (2026-06-15) — bg fade + 8 skulls + 2 bars + 2 numbers. Dvars: `ui_gf_panel_x/y` (anchor), `ui_gf_hp_alpha` (reveal fade), `ui_gf_rN_hp/_fw/_cnt/_alive` (row N=0 friendly/1 enemy), `ui_gf_skull_mat`/`ui_gf_fade_mat` (material names). GSC `gf_pushHealthRow`/`gf_setRowDvar`. Skulls = alive(team-colour)+dead(white) itemDef per slot (forecolor R/G/B isn't exp-drivable, only A). Materials MUST be dynamic `exp material(dvarString())` — static `background "hud_..."` makes the linker try to bundle the .iwi (missing → build error).
+- **Team health panel** (2026-06-15; 6v6 readout 2026-07-03) — bg fade + 8 skulls (shown while a team has `<=4`) OR 2 `alive / total` readouts (shown when a team has `>4`, e.g. 6v6) + 2 bars + 2 numbers. Dvars: `ui_gf_panel_x/y` (anchor), `ui_gf_hp_alpha` (reveal fade), `ui_gf_rN_hp/_fw/_cnt/_alive/_alivecount` (row N=0 friendly/1 enemy), `ui_gf_skull_mat`/`ui_gf_fade_mat` (material names). GSC `gf_pushHealthRow`/`gf_setRowDvar` (real, unclamped counts — the menu owns the 4-skull cap via a per-skull `cnt<=4` gate; the readout appears via `cnt>4`, so small mode / 4v4 is byte-identical). Skulls = alive(team-colour)+dead(white) itemDef per slot (forecolor R/G/B isn't exp-drivable, only A). Materials MUST be dynamic `exp material(dvarString())` — static `background "hud_..."` makes the linker try to bundle the .iwi (missing → build error).
 - **Self health bar** (`ui_gf_self_*`), **Loadout overview** (`ui_gf_lo_*`), **Team-panel border** (`ui_gf_panel_*`).
 - **Kill popup** "Elimination"/"Assist" — reuses the ENGINE's score popup element `self.hud_rankscroreupdate` (`NewScoreHudElem`, created by `_rank` at spawn) for the exact stock yellow look (font/glow/fontPulse); `gf_showScorePopup` `setText`'s it. Still counts in the global cap, but there's room now that the panel is off the pool. (Dormant `ui_gf_popup_*` menu items remain from an earlier attempt — unused.)
 

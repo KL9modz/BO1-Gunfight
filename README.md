@@ -8,7 +8,7 @@
 
 Made by **KL9**. Join us on **[Discord](https://discord.gg/blackops)**.
 
-![Version](https://img.shields.io/badge/version-0.5.2-ff7a1a)
+![Version](https://img.shields.io/badge/version-0.5.4-ff7a1a)
 [![Discord](https://img.shields.io/badge/Discord-join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/blackops)
 [![Website](https://img.shields.io/badge/web-gunfight.us-2ea44f)](https://gunfight.us)
 

@@ -189,10 +189,11 @@ gf_hidePanelChromeOnRoundEnd()
     self setClientDvar( "ui_gf_panel_show", 0 );
 }
 
-// The two layout constants the GSC side still needs (the menu file owns the rest of the
-// layout). MAX_SKULLS caps the skull count per row (4v4); BAR_W is the fill width in px
-// that gf_pushHealthRow scales by the health fraction before pushing ui_gf_rN_fw.
-gf_HP_MAX_SKULLS()   { return 4; }
+// Layout constant the GSC side still needs (the menu file owns the rest of the layout).
+// BAR_W is the fill width in px that gf_pushHealthRow scales by the health fraction before
+// pushing ui_gf_rN_fw. The 4-skull-per-row cap is enforced by the MENU now (each skull is
+// gated cnt <= 4); above 4 the menu hides the cluster and shows the ui_gf_rN_alivecount
+// "alive / total" readout instead (6v6 support).
 gf_HP_BAR_W() { return 45; }
 
 // ─── Self health bar (bottom-center) ─────────────────────────────────────────
@@ -355,19 +356,21 @@ gf_pushHealthRow( r, team )
     count = gf_readTeamCount( team );
     alive = gf_readTeamAlive( team );
 
-    if ( count > gf_HP_MAX_SKULLS() ) count = gf_HP_MAX_SKULLS();
-    if ( alive > gf_HP_MAX_SKULLS() ) alive = gf_HP_MAX_SKULLS();
-
     fw = int( gf_HP_BAR_W() * frac + 0.5 );
     if ( hp <= 0 )
         fw = 0;
     else if ( fw < 1 )
         fw = 1;
 
-    self gf_setRowDvar( "ui_gf_r" + r + "_hp",    int( hp ) );
-    self gf_setRowDvar( "ui_gf_r" + r + "_fw",    fw );
-    self gf_setRowDvar( "ui_gf_r" + r + "_cnt",   count );
-    self gf_setRowDvar( "ui_gf_r" + r + "_alive", alive );
+    // Real (unclamped) counts. The menu draws the 4-skull cluster only while cnt <= 4
+    // (small mode / 4v4 — unchanged); above 4 it hides the skulls and shows the
+    // "alive / total" readout instead (6v6 support). Colour isn't pushed (the menu fixes
+    // row 0 green, row 1 red).
+    self gf_setRowDvar( "ui_gf_r" + r + "_hp",         int( hp ) );
+    self gf_setRowDvar( "ui_gf_r" + r + "_fw",         fw );
+    self gf_setRowDvar( "ui_gf_r" + r + "_cnt",        count );
+    self gf_setRowDvar( "ui_gf_r" + r + "_alive",      alive );
+    self gf_setRowDvar( "ui_gf_r" + r + "_alivecount", alive + " / " + count );
 }
 
 // setClientDvar only on change (cached on self) — the 0.1s update loop would otherwise spam 8

@@ -110,7 +110,7 @@ All gameplay dvars are registered, defaulted, and clamped in code (`gf.gsc::main
 | `gf_capture_time_large` | `5` | `0.5`–`60` (s) | large | OT zone hold-to-capture time, large mode. |
 | `scr_gf_teamspawnmode` | `auto` | `auto` \| `large` \| `small` | both | Spatial mode selector. `auto` goes large once the total in-match player count (allies+axis) reaches `scr_gf_largemode_minplayers`. An invalid value is rewritten to `auto`. |
 | `scr_gf_largemode_minplayers` | `7` | `2`–`12` | both | Total in-match players (allies+axis) at/above which `auto` mode uses large spawns; below it, small. `0`–`6` small, `7+` large. |
-| `scr_team_maxsize` | `0` (shipped cfg sets `4`) | `>0` caps team | both | If `>0`, caps players per team; overflow is redirected to spectator on spawn (`gf_playerSpawnedCB`). Shipped `dedicated.cfg` sets `4` (4v4); with `sv_maxclients` 10 that's 8 playing + 2 spectator. |
+| `scr_team_maxsize` | `0` (shipped cfg sets `6`) | `>0` caps team | both | If `>0`, caps players per team; overflow is redirected to spectator on spawn (`gf_playerSpawnedCB`). Shipped `dedicated.cfg` sets `6` (up to 6v6); with `sv_maxclients` 14 that's 12 playing + 2 spectator. Set `4` for a 4v4-capped server. |
 | `scr_gf_match_prematch_seconds` | `15` | `2`–`30` (s) | both | Native prematch countdown length for the match's first round (longer intro). |
 | `scr_gf_prematch_seconds` | `7` | `2`–`20` (s) | both | Native prematch countdown length for every later round. |
 | `gf_vis_ambient` / `gf_vis_gridint` / `gf_vis_gridcon` / `gf_vis_hdr` / `gf_vis_fog` | `""` (unset) | client-dvar value | both | Persistent video tweaks (→ `r_lightTweakAmbient` / `r_lightGridIntensity` / `r_lightGridContrast` / `r_fullHDRrendering` / `r_fog`). Unset = the mod never touches that client setting (stock). A set value is pushed to every player on every spawn (`gf_applyVisTweaks`). Normally managed by the RCON Visuals sliders via the bridge (`vis<key>_<value>`, value `stock` clears one, `visreset` clears all). Replaces the removed `scr_gf_visualtweaks` force-push; `r_gamma` was dropped entirely — it is a saved client dvar that Plutonium blocks servers from writing. |
@@ -466,9 +466,6 @@ Pushes the menu panel's anchor and material dvars: `ui_gf_panel_x = -22` / `ui_g
 #### `gf_hidePanelChromeOnRoundEnd()`
 Per-player thread that waits on `level "gf_round_over"` and then hides the menu border (`ui_gf_panel_show 0`), keeping the menu-rendered chrome in sync with the round-end wipe (the row dvars are wiped by `map_restart`, but the border would otherwise linger until the next spawn's teardown). `endon`s `"disconnect"` and `"gf_kill_health_hud"`.
 
-#### `gf_HP_MAX_SKULLS()`
-Returns `4` — the per-row skull cap (4v4).
-
 #### `gf_HP_BAR_W()`
 Returns `45` — the team-bar fill width in pixels that `gf_pushHealthRow` scales by the health fraction.
 
@@ -494,7 +491,7 @@ Per-player linear fade of a client dvar from `from` to `to` over `dur` seconds i
 Per-tick panel refresh. No-ops unless `self.gf_panelActive` is set. Updates the self bar (`gf_updateSelfBar`), then maps the viewer's own team to row 0 (friendly/green) and the enemy to row 1 (red) — defaulting to allies=green/axis=red for spectators/unassigned — and pushes both rows via `gf_pushHealthRow`.
 
 #### `gf_pushHealthRow( r, team )`
-Pushes one row's data as per-client dvars. Reads HP/fraction/count/alive via the `gf_readTeam*` helpers, clamps count and alive to `gf_HP_MAX_SKULLS()`, computes fill width `fw = int(gf_HP_BAR_W()*frac + 0.5)` (forced to 0 when HP ≤ 0, floored to 1 otherwise), then sets `ui_gf_r{r}_hp`, `_fw`, `_cnt`, `_alive` via `gf_setRowDvar`. Colour isn't pushed (the menu fixes row 0 green, row 1 red).
+Pushes one row's data as per-client dvars. Reads HP/fraction/count/alive via the `gf_readTeam*` helpers (no clamp — real counts flow through), computes fill width `fw = int(gf_HP_BAR_W()*frac + 0.5)` (forced to 0 when HP ≤ 0, floored to 1 otherwise), then sets `ui_gf_r{r}_hp`, `_fw`, `_cnt`, `_alive`, and `_alivecount` (the `"alive / total"` string) via `gf_setRowDvar`. The menu draws the 4-skull cluster only while `cnt <= 4` (small mode / 4v4, unchanged); above 4 it hides the skulls and shows the `_alivecount` readout instead (6v6 support). Colour isn't pushed (the menu fixes row 0 green, row 1 red).
 
 #### `gf_setRowDvar( name, val )`
 Change-gated `setClientDvar`: lazily inits `self.gf_dvarCache`, returns early if the cached value equals `val`, otherwise caches and pushes. Prevents the 0.1s loop from spamming 8 pushes per tick; `gf_createHealthPanel` resets the cache so the first push each spawn always sends.

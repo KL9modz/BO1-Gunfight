@@ -98,8 +98,8 @@ Set in `dedicated.cfg` (requires server restart) or console (live).
 | `scr_game_spectatetype` | `1` | `0` = disabled, `1` = own team, `2` = all players, `3` = all + free roam. |
 | `scr_game_allowkillcam` | `1` | Show killcam after death. |
 | `scr_game_allowfinalkillcam` | `1` | Show final killcam at round end. |
-| `sv_maxclients` | `10` | Max player slots (set via the launch bat). GF: 10 = 8 playing (4v4) + 2 spectator headroom. |
-| `scr_team_maxsize` | `4` | Max players per team (4v4). Overflow past it is sent to spectator on spawn. |
+| `sv_maxclients` | `14` | Max player slots (set via the launch bat). GF: 14 = 12 playing (up to 6v6) + 2 spectator headroom. |
+| `scr_team_maxsize` | `6` | Max players per team (up to 6v6). Overflow past it is sent to spectator on spawn. |
 | `scr_gf_largemode_minplayers` | `7` | Total in-match players (both teams) at/above which spawns switch to large/full-map. `0`–`6` small, `7+` large. |
 
 ---

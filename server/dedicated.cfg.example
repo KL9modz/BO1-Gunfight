@@ -30,7 +30,7 @@ set g_allowvote "0"                                 // Allow Vote.
 set g_inactivity "300"                              // Enable or Disable auto kick feature for idle/AFK players.
 set g_password ""                                   // Password Protected Game. Leave blank if you want players to join.
 set party_minplayers "2"                            // Pre-Match Lobby (2 = public; set to 1 for solo local testing)
-set scr_team_maxsize "4"                            // Gunfight: max players per team (4v4). Overflow past this is sent to spectator on spawn. sv_maxclients (launch bat) = 10 -> 8 play + 2 spectator/headroom.
+set scr_team_maxsize "6"                            // Gunfight: max players per team (up to 6v6). Overflow past this is sent to spectator on spawn. sv_maxclients (launch bat) = 14 -> 12 play + 2 spectator/headroom. Set 4 for a 4v4-capped server.
 //set scr_gf_largemode_minplayers "7"               // Total in-match players (allies+axis) at/above which spawns switch to LARGE (full-map). Default 7: 0-6 small, 7+ large.
 set scr_xpscale "1"                                 // Round end XP multiplicator (score * scr_xpscale = xp)
 set scr_wagerbet "100"                              // How much it would cost to connect to a wager gamemode. 
