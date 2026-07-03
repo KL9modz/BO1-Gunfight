@@ -20,9 +20,11 @@
 //   (primary, secondary, 3 equipment, 3 perks — each icon + bracket + name) via the
 //   ui_gf_lo_* dvars. The slide is driven by ui_gf_lo_off.
 //
-// Score popup: gf_showScorePopup() reuses the ENGINE's own score element
-//   (self.hud_rankscroreupdate, NewScoreHudElem) — a render-cap-exempt pool — for the
-//   stock yellow "Elimination"/"Assist" look.
+// Score popup: gf_showScorePopup() renders on our OWN element (self.gf_popupElem,
+//   NewScoreHudElem — a render-cap-exempt pool) styled to the stock yellow
+//   "Elimination"/"Assist" look; the ENGINE's own element (hud_rankscroreupdate)
+//   is parked offscreen per spawn (gf_parkStockScorePopup) so stock "+N" XP
+//   pushes can never race/replace ours.
 
 #include maps\mp\gametypes\_hud_util;
 
@@ -599,16 +601,18 @@ gf_destroyLoadoutHUD()
 }
 
 // ─── Score popup ─────────────────────────────────────────────────────────────
-// "Elimination" / "Assist" center-screen popup. Reuses the ENGINE'S own score popup element
-// (self.hud_rankscroreupdate, a NewScoreHudElem created at _rank spawn init) so it matches the stock
-// yellow score popup EXACTLY — same font / scale / glow / fontPulse — AND renders at any lobby size:
-// NewScoreHudElem is a dedicated score-element pool, NOT the newClientHudElem pool with the ~17
-// per-player DRAWN render cap (our old lazily-created client hudelem hit that cap and vanished as the
-// lobby grew). The stock rank popup is kept off this element by self.enableText = false (set every
-// spawn in gf_playerSpawnedCB) — the stock gate on _rank::giveRankXP's popup push. The zeroed
-// kill/assist score info + the no-popup score setter alone were NOT enough: medals (First Blood),
-// challenges, and stat milestones pass explicit XP values that bypassed the zeroing on ranked servers
-// and raced/replaced our popup. With the gate off, the element is free to reuse.
+// "Elimination" / "Assist" center-screen popup, on our OWN element (gf_popupElem —
+// a NewScoreHudElem, so it matches the stock yellow popup EXACTLY: same font /
+// scale / glow / fontPulse, and renders at any lobby size — the score-element pool
+// is NOT the newClientHudElem pool with the ~17 per-player DRAWN render cap).
+// History: we first REUSED the engine's hud_rankscroreupdate and suppressed the
+// stock pushes onto it (zeroed kill/assist score info; then self.enableText=false;
+// then ui_xpText 0) — but on the ranked VPS a stock "+N" (First Blood +100 etc.)
+// STILL landed on the shared element despite every documented gate checking out
+// in retail AND plutoniummod/t5-scripts. So the popup moved to its own element
+// and the stock one is parked offscreen per spawn (gf_parkStockScorePopup) —
+// unconditional, no gates to argue with. The enableText/ui_xpText sets remain in
+// gf_playerSpawnedCB as defense in depth.
 // popupType: 2 = elimination, 1 = assist. pri keeps Elimination from being stomped by Assist.
 // SIZE knob: gf_popupSize() (resting fontscale). It's applied via baseFontScale/maxFontScale, NOT
 // .fontscale — fontPulse (_hud.gsc) always animates the element back to baseFontScale, so a plain
