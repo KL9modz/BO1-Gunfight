@@ -443,15 +443,21 @@ After the markers are removed, `package_release.ps1`'s `Strip-Comments` strips A
 - **`package_server.ps1 [ver] [-RotateRcon] [-SanitizeConfig] [-IncludeRconTool]`** — **PRIVATE** VPS bundle. The mod folder is a **complete mirror of `main`** (every `git ls-files` path — all gameplay + dev GSC, `mod.csv`, the UI/strings/csv source, `gf.cfg`, `notes/`, `tools/` incl. the RCON panel, `.claude/`, README, ...) **plus the compiled `mod.ff`** (gitignored, added explicitly). This is the deliberate inverse of `package_release.ps1`, which ships only a stripped public subset — the server gets *everything from main*. The file set is git-driven, so gitignored junk (`tools/dist`, logs, `raw/`, the real `dedicated.cfg`) is auto-excluded and there is no hand-maintained include list to keep in sync. Bundle also carries `dedicated.cfg` (carries `rcon_password` — never publish) + `DEPLOY.txt`. Extract into the Plutonium `t5/` storage dir. `-RotateRcon` injects a fresh cryptographically-random `rcon_password` into the bundled cfg **only** (source cfg untouched) and prints it to the console — so the live password is never the one in git history; deploy the bundle, then paste the printed value into your RCON client. Takes precedence over `-SanitizeConfig`.
 - **`push_all.ps1 ["msg"]`** — stage/commit/push the current branch.
 - **`deploy.ps1 [-Mod] [-Web] [-DryRun] [-NoPull] [-NoRestart] [-ModDest ..] [-WebDest ..]`** —
-  **runs ON the VPS**, inside the deploy clone (e.g. `C:\gfdeploy\BO1-Gunfight`), as the `gfsvc`
-  account. The git-pull deploy applier (full flow in `VPS_DEPLOY.md` Phase 11). `-Web` git-pulls,
+  **runs ON the VPS**, inside the deploy clone (e.g. `C:\gfdeploy\BO1-Gunfight`), as the account
+  that RUNS the game server — on the current VPS that is **Administrator** (confirmed 2026-07-02
+  via the bootstrapper process owner; no `gfsvc` account exists — the runbook's low-priv `gfsvc`
+  is aspirational hardening). A wrong-account deploy SILENTLY mirrors into that account's own
+  `$env:LOCALAPPDATA` Plutonium storage while the server keeps loading old files (this exact
+  failure shipped stale GSC once). The git-pull deploy applier (full flow in `VPS_DEPLOY.md`
+  Phase 11). `-Web` git-pulls,
   secret-scans `site/wwwroot/` (hard-fails on `rcon_password` / the leaked literal / secret-
   assignment patterns), then robocopy `/MIR`s it into `C:\inetpub\wwwroot` — preserving the
   VPS-owned hardened `web.config` (excluded from the mirror unless the repo tracks one); no
   restart. `-Mod` git-pulls `main`, checks `mod.ff` out of the `release` branch (it is a gitignored
   binary on `main`), mirrors the tracked tree + `mod.ff` into the Plutonium mods folder, then
   restarts the server (`taskkill` the bootstrapper → the restart-loop bat relaunches it under
-  gfsvc). Never touches the live `dedicated.cfg` (it lives in `storage\t5\`, not the mod folder).
+  the server account). Never touches the live `dedicated.cfg` (it lives in `storage\t5\`, not the
+  mod folder).
   Refuses the mod mirror if `-ModDest` doesn't contain `mp_gunfight` (anti-typo guard). `-DryRun`
   passes robocopy `/L` to preview. This is the **inverse direction** of the packagers: they build
   artifacts; `deploy.ps1` applies a git-pulled checkout in place on the box.

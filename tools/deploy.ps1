@@ -27,10 +27,15 @@ $ErrorActionPreference = "Stop"
 #   .\tools\deploy.ps1 -Mod -NoRestart   # copy mod files but leave the server running
 #   .\tools\deploy.ps1 -Mod -NoFastDL    # deploy the mod but skip the FastDL copy
 #
-# Run as the SAME account that runs the game server (gfsvc) so $env:LOCALAPPDATA
-# resolves to that profile's Plutonium storage. If you run it as a different
-# account, pass -ModDest with the explicit path, e.g.
-#   -ModDest C:\Users\gfsvc\AppData\Local\Plutonium\storage\t5\mods\mp_gunfight
+# Run as the SAME account that runs the game server so $env:LOCALAPPDATA resolves
+# to that profile's Plutonium storage. On the current VPS the server runs as
+# ADMINISTRATOR (confirmed 2026-07-02 via the bootstrapper process owner; no gfsvc
+# account exists - the low-priv gfsvc in VPS_DEPLOY.md is aspirational hardening).
+# A wrong-account deploy SILENTLY mirrors into that account's own profile while the
+# server keeps loading old files. Find the real account any time:
+#   Get-CimInstance Win32_Process | ? Name -match bootstrapper   # check the owner
+# If deploying from a different account, pass -ModDest explicitly, e.g.
+#   -ModDest C:\Users\Administrator\AppData\Local\Plutonium\storage\t5\mods\mp_gunfight
 #
 # FastDL (client auto-download): -Mod also copies the release mod.ff to
 #   <WebDest>\mods\<ModName>\mod.ff  so connecting clients download it over HTTP.
@@ -259,7 +264,7 @@ function Restart-Server {
         Write-Host "Skipping server restart$(if ($DryRun) { ' (dry run)' }) - relaunch manually to load the new mod."
         return
     }
-    Write-Host "Restarting game server (the restart-loop bat relaunches it under gfsvc)..."
+    Write-Host "Restarting game server (the restart-loop bat relaunches it under the server account)..."
     # Use Get-Process/Stop-Process, NOT taskkill: under $ErrorActionPreference='Stop'
     # taskkill's stderr ("process not found", emitted when the server is already
     # down) is promoted to a terminating NativeCommandError and aborts the deploy
