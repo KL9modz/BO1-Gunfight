@@ -199,6 +199,13 @@ function Deploy-Web {
     # (usermaps\) are published by Deploy-Mod, not by the website source, so /MIR
     # must leave them alone or the next -Web would delete the client-download files.
     $extra += @("/XD", (Join-Path $WebDest "mods"), (Join-Path $WebDest "usermaps"))
+    # Never purge live\ - the status service (tools\status_service) writes the public
+    # status.json snapshot there on the box; it isn't in the repo, so /MIR would delete it.
+    $extra += @("/XD", (Join-Path $WebDest "live"))
+    # Never purge admin\live\ either - it holds the auth-gated admin.json snapshot AND the
+    # .secured marker (created by setup_admin_auth.ps1). Purging it would silently disable
+    # the admin view. admin\admin.html itself IS tracked and mirrors normally.
+    $extra += @("/XD", (Join-Path $WebDest "admin\live"))
 
     Invoke-Robocopy -Source $webSrc -Destination $WebDest -ExtraArgs $extra
     Write-Host "Website deployed$(if ($DryRun) { ' (dry run - nothing changed)' }). No restart needed (static IIS content)."
@@ -303,7 +310,12 @@ function Deploy-Mod {
         (Join-Path $RepoRoot "tools\dist"),
         (Join-Path $RepoRoot "raw")
     )
-    Invoke-Robocopy -Source $RepoRoot -Destination $ModDest -ExtraArgs (@("/XD") + $xd)
+    # Gitignored per-box secret stores live IN the mod tree but aren't tracked, so the
+    # source (deploy clone) doesn't have them; without /XF, /MIR would DELETE the copies
+    # a box operator placed by hand. Exclude them by name so they survive every deploy.
+    # (config.example.json / secrets.local.json.example are different names and still ship.)
+    $xf = @("config.json", "secrets.local.json")
+    Invoke-Robocopy -Source $RepoRoot -Destination $ModDest -ExtraArgs (@("/XD") + $xd + @("/XF") + $xf)
     Write-Host "Mod tree + mod.ff deployed$(if ($DryRun) { ' (dry run - nothing changed)' }) to $ModDest"
 
     Publish-FastDL

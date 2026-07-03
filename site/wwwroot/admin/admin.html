@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin &mdash; Gunfight Status</title>
+  <meta name="theme-color" content="#0b0d10" />
+  <meta name="robots" content="noindex, nofollow" />
+  <style>
+    :root{
+      --bg:#0b0d10; --panel:#14171c; --panel2:#191d23; --bd:#262b33;
+      --tx:#e7ebf0; --dm:#8b94a2; --accent:#ff7a1a; --ok:#2ec653; --ng:#e63946; --r:10px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--tx);
+      font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif;line-height:1.45}
+    .wrap{max-width:900px;margin:0 auto;padding:20px 16px 48px}
+    a{color:var(--accent);text-decoration:none}
+    .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+    .back{font-size:13px;color:var(--dm)} .back:hover{color:var(--tx)}
+    .chip{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;
+      color:#1a1106;background:var(--accent);border-radius:999px;padding:4px 11px}
+    .dot{width:8px;height:8px;border-radius:50%;background:#1a1106;opacity:.5}
+    .dot.on{background:#0b3d16;opacity:1}
+    h1{font-size:21px;margin:0 0 2px;font-weight:800}
+    h1 .accent{color:var(--accent)}
+    .meta{color:var(--dm);font-size:13px;margin-bottom:16px}
+    .card{background:var(--panel);border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px;margin-bottom:14px}
+    .kick{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dm);margin:0 0 10px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--bd);white-space:nowrap}
+    th{color:var(--dm);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+    td.name{width:40%;white-space:normal;overflow-wrap:anywhere}
+    .tag{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px}
+    .tag.allies{color:var(--ok);border:1px solid rgba(46,198,83,.4)}
+    .tag.axis{color:var(--ng);border:1px solid rgba(230,57,70,.4)}
+    .tag.other{color:var(--dm);border:1px solid var(--bd)}
+    .pdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#3a4150;margin-right:6px}
+    .pdot.alive{background:var(--ok)}
+    .ip{font-variant-numeric:tabular-nums;color:#c7d0dc}
+    .mono{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:12px;
+      background:#0c0f13;border:1px solid var(--bd);border-radius:8px;padding:10px 12px;
+      overflow-x:auto;max-height:420px;overflow-y:auto}
+    .mono div{white-space:pre;color:#cdd6e2}
+    .empty{color:var(--dm);font-size:13px;padding:6px 0}
+    .foot{color:#6b7482;font-size:12px;text-align:center;margin-top:10px}
+    .warn{font-size:12px;color:#e8b339;border:1px solid rgba(232,179,57,.35);
+      background:rgba(232,179,57,.06);border-radius:8px;padding:8px 10px;margin-bottom:14px}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="top">
+      <a class="back" href="/status.html">&larr; public status</a>
+      <span class="chip"><span id="liveDot" class="dot"></span>ADMIN</span>
+    </div>
+    <h1>Admin <span class="accent">Console</span></h1>
+    <p class="meta" id="metaLine">&nbsp;</p>
+    <div class="warn">Private view &mdash; contains player IP addresses. Do not share screenshots.</div>
+
+    <div id="content"></div>
+    <p class="foot" id="foot">&nbsp;</p>
+  </main>
+
+  <script>
+    var URL = 'live/admin.json';
+    var lastUpdated = null;
+
+    function el(tag, cls, text){
+      var e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text != null) e.textContent = text;   // textContent = safe vs. name/log injection
+      return e;
+    }
+    function prettyGt(g){ var m={gf:'Gunfight',dm:'Team Deathmatch',dom:'Domination',sd:'Search & Destroy'}; return m[g]||(g||'').toUpperCase(); }
+    function ago(iso){ if(!iso) return ''; var s=Math.max(0,Math.round((Date.now()-new Date(iso).getTime())/1000)); return s<60? s+'s ago' : Math.floor(s/60)+'m ago'; }
+    function teamTag(t){ return t==='allies'?'allies':t==='axis'?'axis':'other'; }
+
+    function render(d){
+      var dot=document.getElementById('liveDot');
+      var meta=document.getElementById('metaLine');
+      var content=document.getElementById('content');
+      content.innerHTML=''; lastUpdated=d.updated;
+      dot.className='dot'+(d.online?' on':'');
+
+      meta.textContent = d.online
+        ? ((d.mapName||d.map||'')+'  ·  '+prettyGt(d.gametype)+(d.round?'  ·  Round '+d.round:'')+
+           '  ·  Allies '+((d.score&&d.score.allies)||0)+' – '+((d.score&&d.score.axis)||0)+' Axis')
+        : 'Server offline';
+
+      // Live roster with IPs
+      var rc=el('div','card');
+      var players=d.players||[];
+      rc.appendChild(el('p','kick','Live roster  ('+players.length+' online)'));
+      if(!players.length){ rc.appendChild(el('div','empty', d.online?'No players online.':'—')); }
+      else{
+        var tbl=el('table');
+        var thead=el('tr');
+        ['','Player','Team','Ping','IP address'].forEach(function(h){ thead.appendChild(el('th',null,h)); });
+        tbl.appendChild(thead);
+        players.forEach(function(p){
+          var tr=el('tr');
+          var td0=el('td'); td0.appendChild(el('span','pdot'+(p.alive?' alive':''))); tr.appendChild(td0);
+          tr.appendChild(el('td','name',p.name));
+          var tt=el('td'); tt.appendChild(el('span','tag '+teamTag(p.team), p.team||'—')); tr.appendChild(tt);
+          tr.appendChild(el('td',null,(p.ping!=null?p.ping+' ms':'')));
+          tr.appendChild(el('td','ip', p.ip||''));
+          tbl.appendChild(tr);
+        });
+        rc.appendChild(tbl);
+      }
+      content.appendChild(rc);
+
+      // Full connection log tail (with IPs + session), newest last
+      var lc=el('div','card');
+      var log=d.logTail||[];
+      lc.appendChild(el('p','kick','Connection log  ('+log.length+' recent lines, today)'));
+      if(!log.length){ lc.appendChild(el('div','empty','No log lines yet today.')); }
+      else{
+        var box=el('div','mono');
+        log.forEach(function(line){ box.appendChild(el('div',null,line)); });
+        lc.appendChild(box);
+      }
+      content.appendChild(lc);
+    }
+
+    function tick(){
+      fetch(URL+'?t='+Date.now(),{cache:'no-store'})
+        .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+        .then(render)
+        .catch(function(){
+          document.getElementById('content').innerHTML=
+            '<div class="card"><div class="empty">Admin snapshot unavailable. '+
+            'It is only written after setup_admin_auth.ps1 has secured this folder '+
+            '(the .secured marker). Check the GF-StatusService task.</div></div>';
+        });
+    }
+    function updFoot(){ document.getElementById('foot').textContent=(lastUpdated?'Updated '+ago(lastUpdated)+'  ·  ':'')+'auto-refreshes every 5s'; }
+    tick(); setInterval(tick,5000); setInterval(updFoot,1000);
+  </script>
+</body>
+</html>

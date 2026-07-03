@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live Status &mdash; Black Ops Gunfight</title>
+  <meta name="description" content="Live server status for Black Ops Gunfight: map, score, and who's playing right now." />
+  <meta name="theme-color" content="#0b0d10" />
+  <meta name="robots" content="noindex" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ff7a1a'/%3E%3Ctext x='16' y='22' font-family='Segoe UI,Arial' font-size='15' font-weight='800' text-anchor='middle' fill='%231a1106'%3EGF%3C/text%3E%3C/svg%3E" />
+  <style>
+    :root{
+      --bg:#0b0d10; --panel:#14171c; --panel2:#191d23; --bd:#262b33;
+      --tx:#e7ebf0; --dm:#8b94a2; --accent:#ff7a1a;
+      --ok:#2ec653; --ng:#e63946; --r:10px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--tx);
+      font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif;line-height:1.45}
+    a{color:var(--accent);text-decoration:none}
+    .wrap{max-width:760px;margin:0 auto;padding:20px 16px 48px}
+    .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    .back{font-size:13px;color:var(--dm)}
+    .back:hover{color:var(--tx)}
+    .chip{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;
+      color:var(--dm);border:1px solid var(--bd);border-radius:999px;padding:5px 11px}
+    .dot{width:8px;height:8px;border-radius:50%;background:var(--dm)}
+    .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+    .dot.off{background:var(--ng)}
+    h1{font-size:22px;margin:0 0 2px;font-weight:800;letter-spacing:.2px}
+    h1 .accent{color:var(--accent)}
+    .meta{color:var(--dm);font-size:13px;margin-bottom:16px}
+    .card{background:var(--panel);border:1px solid var(--bd);border-radius:var(--r);
+      padding:14px 16px;margin-bottom:14px}
+    .kick{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dm);margin:0 0 10px}
+    .score{display:flex;gap:12px;align-items:stretch}
+    .team{flex:1;background:var(--panel2);border:1px solid var(--bd);border-radius:var(--r);
+      padding:12px;text-align:center}
+    .team.allies{border-color:rgba(46,198,83,.35)}
+    .team.axis{border-color:rgba(230,57,70,.35)}
+    .team .name{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--dm)}
+    .team .wins{font-size:40px;font-weight:800;line-height:1.1}
+    .team.allies .wins{color:var(--ok)}
+    .team.axis .wins{color:var(--ng)}
+    .team .alive{font-size:12px;color:var(--dm);margin-top:2px}
+    .vs{display:flex;align-items:center;color:var(--dm);font-size:12px;font-weight:700}
+    .rosters{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    @media(max-width:540px){.rosters{grid-template-columns:1fr}}
+    .rhead{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+      display:flex;justify-content:space-between;margin:0 0 8px}
+    .rhead.allies{color:var(--ok)} .rhead.axis{color:var(--ng)} .rhead.spec{color:var(--dm)}
+    .plist{list-style:none;margin:0;padding:0}
+    .plist li{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--bd);font-size:14px}
+    .plist li:first-child{border-top:none}
+    .pdot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:#3a4150}
+    .pdot.alive{background:var(--ok)} .plist.axis .pdot.alive{background:var(--ng)}
+    .pname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pdead{color:var(--dm)}
+    .ping{color:var(--dm);font-size:12px;font-variant-numeric:tabular-nums}
+    .empty{color:var(--dm);font-size:13px;padding:6px 0}
+    .feed{list-style:none;margin:0;padding:0}
+    .feed li{display:flex;gap:10px;font-size:13px;padding:4px 0;color:var(--dm)}
+    .feed .ft{font-variant-numeric:tabular-nums;color:#6b7482;flex:0 0 auto}
+    .feed .join{color:var(--ok)} .feed .left{color:var(--ng)}
+    .foot{color:#6b7482;font-size:12px;text-align:center;margin-top:10px}
+    .offline{text-align:center;color:var(--dm);padding:28px 0}
+    .offline .big{font-size:18px;color:var(--tx);font-weight:700;margin-bottom:4px}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="top">
+      <a class="back" href="/">&larr; gunfight.us</a>
+      <span class="chip"><span id="liveDot" class="dot"></span><span id="liveTxt">connecting&hellip;</span></span>
+    </div>
+    <h1>Live <span class="accent">Status</span></h1>
+    <p class="meta" id="metaLine">&nbsp;</p>
+
+    <div id="content"></div>
+
+    <p class="foot" id="foot">&nbsp;</p>
+  </main>
+
+  <script>
+    var URL = 'live/status.json';
+    var REFRESH_MS = 5000;
+    var lastUpdated = null;
+
+    function el(tag, cls, text){
+      var e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text != null) e.textContent = text;   // textContent = safe against name injection
+      return e;
+    }
+    function prettyGt(g){
+      var m = { gf:'Gunfight', dm:'Team Deathmatch', dom:'Domination', sd:'Search & Destroy' };
+      return m[g] || (g || '').toUpperCase();
+    }
+    function ago(iso){
+      if(!iso) return '';
+      var s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime())/1000));
+      if (s < 60) return s + 's ago';
+      var m = Math.floor(s/60); return m + 'm ago';
+    }
+    function hhmm(iso){
+      try{ var d = new Date(iso);
+        return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+      }catch(e){ return ''; }
+    }
+
+    function renderRoster(parent, teamKey, label, players){
+      var group = players.filter(function(p){ return p.team === teamKey; });
+      var box = el('div');
+      var head = el('div', 'rhead ' + (teamKey==='allies'?'allies':teamKey==='axis'?'axis':'spec'));
+      head.appendChild(el('span', null, label));
+      head.appendChild(el('span', null, String(group.length)));
+      box.appendChild(head);
+      var ul = el('ul', 'plist ' + teamKey);
+      if (!group.length){ ul.appendChild(el('li', 'empty', '—')); }
+      group.forEach(function(p){
+        var li = el('li');
+        li.appendChild(el('span', 'pdot' + (p.alive?' alive':'')));
+        var nm = el('span', 'pname' + (p.alive?'':' pdead'), p.name);
+        li.appendChild(nm);
+        li.appendChild(el('span', 'ping', (p.ping!=null? p.ping+' ms':'')));
+        ul.appendChild(li);
+      });
+      box.appendChild(ul);
+      parent.appendChild(box);
+    }
+
+    function render(d){
+      var dot = document.getElementById('liveDot');
+      var txt = document.getElementById('liveTxt');
+      var meta = document.getElementById('metaLine');
+      var content = document.getElementById('content');
+      content.innerHTML = '';
+      lastUpdated = d.updated;
+
+      if (!d.online){
+        dot.className = 'dot off'; txt.textContent = 'Offline';
+        meta.textContent = '';
+        var off = el('div', 'offline');
+        off.appendChild(el('div', 'big', 'Server offline'));
+        off.appendChild(el('div', null, 'The Gunfight server is not responding right now.'));
+        content.appendChild(off);
+        return;
+      }
+
+      dot.className = 'dot on'; txt.textContent = 'Online';
+      meta.textContent = (d.mapName || d.map || '') + '  ·  ' + prettyGt(d.gametype) +
+                         (d.round ? '  ·  Round ' + d.round : '');
+
+      // Scoreboard
+      var scard = el('div', 'card');
+      scard.appendChild(el('p', 'kick', 'Match score'));
+      var score = el('div', 'score');
+      var a = el('div', 'team allies');
+      a.appendChild(el('div', 'name', 'Allies'));
+      a.appendChild(el('div', 'wins', String((d.score&&d.score.allies)||0)));
+      a.appendChild(el('div', 'alive', ((d.alive&&d.alive.allies)||0) + ' alive'));
+      var vs = el('div', 'vs', 'vs');
+      var x = el('div', 'team axis');
+      x.appendChild(el('div', 'name', 'Axis'));
+      x.appendChild(el('div', 'wins', String((d.score&&d.score.axis)||0)));
+      x.appendChild(el('div', 'alive', ((d.alive&&d.alive.axis)||0) + ' alive'));
+      score.appendChild(a); score.appendChild(vs); score.appendChild(x);
+      scard.appendChild(score);
+      content.appendChild(scard);
+
+      // Rosters
+      var players = d.players || [];
+      var rcard = el('div', 'card');
+      rcard.appendChild(el('p', 'kick', 'Players  (' + (d.humans||players.length) +
+        (d.bots ? ' + ' + d.bots + ' bots' : '') + ')'));
+      if (!players.length){
+        rcard.appendChild(el('div', 'empty', 'No players online right now.'));
+      } else {
+        var grid = el('div', 'rosters');
+        renderRoster(grid, 'allies', 'Allies', players);
+        renderRoster(grid, 'axis', 'Axis', players);
+        rcard.appendChild(grid);
+        var specs = players.filter(function(p){ return p.team!=='allies' && p.team!=='axis'; });
+        if (specs.length){
+          var sg = el('div'); sg.style.marginTop = '12px';
+          renderRoster(sg, 'spectator', 'Spectators', players);
+          rcard.appendChild(sg);
+        }
+      }
+      content.appendChild(rcard);
+
+      // Recent activity
+      var recent = d.recent || [];
+      if (recent.length){
+        var fcard = el('div', 'card');
+        fcard.appendChild(el('p', 'kick', 'Recent activity'));
+        var ul = el('ul', 'feed');
+        recent.forEach(function(r){
+          var li = el('li');
+          li.appendChild(el('span', 'ft', hhmm(r.t)));
+          var nm = el('span', null, r.name); nm.style.color = '#e7ebf0';
+          li.appendChild(nm);
+          li.appendChild(el('span', r.event==='joined'?'join':'left', r.event));
+          ul.appendChild(li);
+        });
+        fcard.appendChild(ul);
+        content.appendChild(fcard);
+      }
+    }
+
+    function tick(){
+      fetch(URL + '?t=' + Date.now(), { cache:'no-store' })
+        .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+        .then(render)
+        .catch(function(){
+          var dot = document.getElementById('liveDot');
+          var txt = document.getElementById('liveTxt');
+          dot.className = 'dot off'; txt.textContent = 'No data';
+          document.getElementById('content').innerHTML =
+            '<div class="offline"><div class="big">Status unavailable</div>' +
+            '<div>Live status isn\'t being published yet.</div></div>';
+        });
+    }
+    function updFoot(){
+      document.getElementById('foot').textContent =
+        (lastUpdated ? 'Updated ' + ago(lastUpdated) + '  ·  ' : '') + 'auto-refreshes every 5s';
+    }
+    tick(); setInterval(tick, REFRESH_MS); setInterval(updFoot, 1000);
+  </script>
+</body>
+</html>
