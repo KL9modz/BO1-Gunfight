@@ -30,7 +30,7 @@ $ErrorActionPreference = "Stop"
 # Run as the SAME account that runs the game server so $env:LOCALAPPDATA resolves
 # to that profile's Plutonium storage. On the current VPS the server runs as
 # ADMINISTRATOR (confirmed 2026-07-02 via the bootstrapper process owner; no gfsvc
-# account exists - the low-priv gfsvc in VPS_DEPLOY.md is aspirational hardening).
+# account exists - the low-priv gfsvc in docs/VPS_DEPLOY.md is aspirational hardening).
 # A wrong-account deploy SILENTLY mirrors into that account's own profile while the
 # server keeps loading old files. Find the real account any time:
 #   Get-CimInstance Win32_Process | ? Name -match bootstrapper   # check the owner
@@ -50,7 +50,7 @@ $ErrorActionPreference = "Stop"
 #      %windir%\system32\inetsrv\appcmd set config /section:staticContent ^
 #        /+"[fileExtension='.ff',mimeType='application/octet-stream']"
 #      (.iwd/.iwi too if you later ship custom maps). HFS on a separate port is
-#      the staff-recommended alt that auto-handles MIME. See VPS_DEPLOY.md Phase 8.
+#      the staff-recommended alt that auto-handles MIME. See docs/VPS_DEPLOY.md Phase 8.
 #
 # Guardrails:
 #   - Never touches dedicated.cfg (lives in storage\t5\, not the mod folder; it
@@ -263,7 +263,7 @@ function Publish-FastDL {
     Write-Host "Published mod.ff ($size bytes) -> $fastDlFf"
     Write-Host "Client fetch URL: <sv_wwwBaseURL>/mods/$ModName/mod.ff"
     Write-Host "If clients still can't download: confirm dedicated.cfg has a NON-empty" -ForegroundColor Yellow
-    Write-Host "sv_wwwBaseURL and IIS serves the .ff MIME type (see VPS_DEPLOY.md Phase 8)." -ForegroundColor Yellow
+    Write-Host "sv_wwwBaseURL and IIS serves the .ff MIME type (see docs/VPS_DEPLOY.md Phase 8)." -ForegroundColor Yellow
 }
 
 function Restart-Server {

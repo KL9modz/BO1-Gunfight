@@ -16,7 +16,7 @@ These are specific to the `gf` gametype. Set them in `gamesettings/gf.cfg` or th
 | `scr_gf_scorelimit` | `6` | 0–10 | **Rounds needed to win the match.** This is the primary win condition. |
 | `scr_gf_roundsperloadout` | `2` | 1–9 | How many rounds before the loadout rotates to the next one. |
 | `scr_gf_overtimelimit` | `15` | 0–120 | Overtime flag-capture countdown in **seconds**. `0` disables overtime. |
-| `gf_debug_spawns` | `0` | 0–1 | Enable spawn recorder tool (set before map loads, see `notes/spawn_recorder.md`). |
+| `gf_debug_spawns` | `0` | 0–1 | Enable spawn recorder tool (set before map loads, see `docs/notes/spawn_recorder.md`). |
 
 ---
 
@@ -163,4 +163,4 @@ set bots_manage_fill 4    // add bots to fill to 4 players live
 | `dedicated.cfg` | Server settings, map rotation, player limits |
 | `gamesettings/gf.cfg` | Gunfight dvars, exec'd before each map |
 | `maps/mp/gametypes/_gf_locations.gsc` | Custom spawn points and overtime flag locations |
-| `notes/spawn_recorder.md` | How to record spawn points for new maps |
+| `docs/notes/spawn_recorder.md` | How to record spawn points for new maps |

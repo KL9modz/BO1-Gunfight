@@ -4,7 +4,7 @@ How to build, branch, release, deploy, and use the dev tooling for Black Ops Gun
 
 *Part of the [Black Ops Gunfight](../README.md) documentation.*
 
-This guide covers the contributor side: the repo layout, building `mod.ff`, the branch/release model, the deploy pipeline, and the dev-only tooling (RCON, bots, debug). For per-function and per-dvar detail, see [Reference](REFERENCE.md), and for running a server see the ops runbooks [../VPS_DEPLOY.md](../VPS_DEPLOY.md) and [../VPS_HARDENING.md](../VPS_HARDENING.md).
+This guide covers the contributor side: the repo layout, building `mod.ff`, the branch/release model, the deploy pipeline, and the dev-only tooling (RCON, bots, debug). For per-function and per-dvar detail, see [Reference](REFERENCE.md), and for running a server see the ops runbooks [VPS_DEPLOY.md](VPS_DEPLOY.md) and [VPS_HARDENING.md](VPS_HARDENING.md).
 
 ---
 
@@ -179,7 +179,7 @@ Day-to-day, push from the laptop:
 .\tools\push_all.ps1 "WIP" -NoPush    # commit only
 ```
 
-The VPS uses a **git-pull deploy model**. The full runbook is in [../VPS_DEPLOY.md](../VPS_DEPLOY.md); the script-level summary:
+The VPS uses a **git-pull deploy model**. The full runbook is in [VPS_DEPLOY.md](VPS_DEPLOY.md); the script-level summary:
 
 **One-time readiness check** (read-only — changes nothing) run from inside the VPS clone:
 

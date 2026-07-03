@@ -44,7 +44,7 @@ Preview what would change first with `.\tools\deploy.ps1 -Web -DryRun`.
 ## web.config ownership
 
 The live `web.config` on the VPS carries the hardened IIS config (HTTP→HTTPS
-301 redirect, HSTS, security headers — see `VPS_HARDENING.md`). It is **owned by
+301 redirect, HSTS, security headers — see `docs/VPS_HARDENING.md`). It is **owned by
 the VPS** and is intentionally *not* tracked here.
 
 `deploy.ps1 -Web` detects this: because there is no `wwwroot/web.config` in the

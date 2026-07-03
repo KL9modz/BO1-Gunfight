@@ -527,7 +527,7 @@ Secrets never live in a tracked file. Three layers keep them out of git:
 
 > Deployment infra (set up 2026-06-15). Scripts live in `tools/`; their output goes to gitignored `tools/dist/`.
 
-**Plutonium T5 DOES download the server's mod to clients on join — via FastDL (`sv_wwwBaseURL`).** Set up correctly, a joiner auto-fetches `mod.ff` from the server's download host and loads it — no manual install. (The old "NO client-side mod download" claim was a misconfiguration, **corrected 2026-06-29**; see `VPS_DEPLOY.md` for the FastDL setup and the Plutonium-staff confirmation.) Two caveats remain: FastDL ships only the **mod**, not the Plutonium **engine** build, so players keep their launcher updated to match the server; and the server's `mod.ff` and the FastDL-hosted `mod.ff` must be byte-identical (`deploy.ps1 -Mod` updates both together). Manual install still works as a fallback, so the public player package stays useful for that and for offline/local use.
+**Plutonium T5 DOES download the server's mod to clients on join — via FastDL (`sv_wwwBaseURL`).** Set up correctly, a joiner auto-fetches `mod.ff` from the server's download host and loads it — no manual install. (The old "NO client-side mod download" claim was a misconfiguration, **corrected 2026-06-29**; see `docs/VPS_DEPLOY.md` for the FastDL setup and the Plutonium-staff confirmation.) Two caveats remain: FastDL ships only the **mod**, not the Plutonium **engine** build, so players keep their launcher updated to match the server; and the server's `mod.ff` and the FastDL-hosted `mod.ff` must be byte-identical (`deploy.ps1 -Mod` updates both together). Manual install still works as a fallback, so the public player package stays useful for that and for offline/local use.
 
 ### Two outputs, one minimal public profile
 | Output | Content | Built by |
@@ -559,7 +559,7 @@ After the markers are removed, `package_release.ps1`'s `Strip-Comments` strips A
   via the bootstrapper process owner; no `gfsvc` account exists — the runbook's low-priv `gfsvc`
   is aspirational hardening). A wrong-account deploy SILENTLY mirrors into that account's own
   `$env:LOCALAPPDATA` Plutonium storage while the server keeps loading old files (this exact
-  failure shipped stale GSC once). The git-pull deploy applier (full flow in `VPS_DEPLOY.md`
+  failure shipped stale GSC once). The git-pull deploy applier (full flow in `docs/VPS_DEPLOY.md`
   Phase 11). `-Web` git-pulls,
   secret-scans `site/wwwroot/` (hard-fails on `rcon_password` / the leaked literal / secret-
   assignment patterns), then robocopy `/MIR`s it into `C:\inetpub\wwwroot` — preserving the
