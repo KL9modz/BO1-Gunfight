@@ -67,9 +67,13 @@ if (Test-Path $secrets) {
     $pw = ([regex]::Match((Get-Content $cfgPath -Raw), 'set\s+rcon_password\s+"([^"]*)"')).Groups[1].Value
     if ([string]::IsNullOrEmpty($pw)) { throw "No rcon_password found in dedicated.cfg." }
     # ConvertTo-Json is fine for the shape { profiles: { name: pw } }
-    $obj = @{ profiles = @{ 'Local (listen)' = $pw } }
-    ($obj | ConvertTo-Json -Depth 4) | Set-Content -Path $secrets -Encoding UTF8
-    Write-Host "Wrote secrets.local.json (profile 'Local (listen)')."
+    $obj = @{ profiles = @{ 'Local (listen)' = $pw; 'VPS' = $pw } }
+    # NO-BOM UTF-8: PowerShell's `Set-Content -Encoding UTF8` writes a BOM, which makes
+    # server.js's JSON.parse(fs.readFileSync(...)) THROW -> loadSecrets() returns {} ->
+    # the panel has zero saved passwords -> clicking Connect silently fails auth. Write
+    # without a BOM so Node can parse it.
+    [System.IO.File]::WriteAllText($secrets, ($obj | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "Wrote secrets.local.json (profiles 'Local (listen)' + 'VPS')."
 }
 
 # --- 3. GF-RconPanel boot-start task (SYSTEM, loopback, restart-on-exit) -------
