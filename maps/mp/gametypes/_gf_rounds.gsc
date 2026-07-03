@@ -157,6 +157,15 @@ gf_playerSpawnedCB()
     // engine's popup text is suppressed.
     self.enableText = false;
 
+    // ...and the CLIENT half of the same stock toggle: ui_xpText gates the
+    // client-engine-rendered floating "+N" XP text (the lower-right +100 seen on
+    // medal bonuses — NOT a script hudelem; no GSC writes it, so enableText can't
+    // reach it). The stock xpTextToggle menu response flips BOTH together;
+    // _persistence re-pushes ui_xpText "1" on every connect, so re-push 0 per
+    // spawn (spawn always follows connect, so our write wins). Medal banners and
+    // the medal card are separate UI and stay.
+    self setClientDvar( "ui_xpText", "0" );
+
     // If scr_team_maxsize > 0, redirect to spectator when the team is already full.
     // The notify above still fires so SD and round logic don't stall.
     maxTeam = getDvarInt( "scr_team_maxsize" );
