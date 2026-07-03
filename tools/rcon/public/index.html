@@ -17,7 +17,16 @@ html,body{height:100%;background:var(--bg);color:var(--tx);font-family:var(--fn)
 .root{display:flex;flex-direction:column;height:100vh}
 
 /* Header */
-header{display:flex;align-items:center;gap:10px;padding:7px 14px;background:var(--sf);border-bottom:1px solid var(--bd);flex-shrink:0;z-index:10}
+header{display:flex;align-items:center;gap:10px;padding:7px 14px;background:var(--sf);border-bottom:1px solid var(--bd);flex-shrink:0;z-index:10;position:relative}
+/* Indeterminate sync bar pinned to the header's bottom edge — shown while dvar reads are in flight. */
+.syncbar{position:absolute;left:0;right:0;bottom:-1px;height:2px;overflow:hidden;opacity:0;transition:opacity .15s;pointer-events:none}
+.syncbar.on{opacity:1}
+.syncbar::before{content:"";position:absolute;top:0;bottom:0;width:35%;background:linear-gradient(90deg,transparent,var(--ac),transparent);animation:syncslide 1.05s ease-in-out infinite}
+@keyframes syncslide{0%{left:-35%}100%{left:100%}}
+/* Busy spinner on the header Read button while a sync runs. */
+.b-busy{position:relative;color:transparent!important}
+.b-busy::after{content:"";position:absolute;top:50%;left:50%;width:11px;height:11px;margin:-6px 0 0 -6px;border:2px solid var(--dm);border-top-color:var(--ac);border-radius:50%;animation:syncspin .6s linear infinite}
+@keyframes syncspin{to{transform:rotate(360deg)}}
 .logo{font-size:15px;font-weight:800;letter-spacing:.1em;color:var(--ac);padding-right:12px;border-right:1px solid var(--bd);white-space:nowrap}
 .conn-row{display:flex;gap:6px;flex:1;align-items:center}
 input,select{background:var(--bg);border:1px solid var(--bd);color:var(--tx);border-radius:var(--r);padding:5px 8px;font:13px var(--fn);outline:none}
@@ -86,6 +95,8 @@ tr:last-child td{border-bottom:none}
 tr:hover td{background:var(--sf2)}
 .bot-t{font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:#1a2d4a;color:#7ab4ff;border:1px solid #2a4a7a;margin-right:3px}
 .you-t{font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:rgba(255,214,10,.1);color:var(--wn);border:1px solid rgba(255,214,10,.3);margin-right:3px}
+/* Real (human) players — name colored so they stand out from bots at a glance */
+.real-n{color:var(--ac);font-weight:600}
 .empty td{color:var(--dm);text-align:center;padding:14px;font-style:italic}
 .p-ok{color:var(--ok)}.p-mid{color:var(--wn)}.p-bad{color:var(--ng)}
 
@@ -166,6 +177,11 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .srow{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd)}
 .srow:last-child{border-bottom:none;padding-bottom:0}.srow:first-child{padding-top:0}
 .slbl{flex:1;font-size:13px}.shint{color:var(--dm);font-size:11px;min-width:110px;text-align:right}
+/* Unsynced: the live RCON read returned null, so the shown value is only the hardcoded
+   default — flag it so a default isn't mistaken for a confirmed live value. */
+.srow.unsynced .slbl::after{content:'not read';margin-left:6px;font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--wn);border:1px solid var(--wn);border-radius:3px;padding:0 4px;opacity:.85;white-space:nowrap}
+.srow.unsynced input.num,.srow.unsynced input[type=text],.srow.unsynced input.sld,.srow.unsynced select{border-color:var(--wn)!important;color:var(--wn)}
+.srow.unsynced label.tog .tog-t{box-shadow:0 0 0 1px var(--wn) inset}
 /* Any hint/state text that follows a toggle renders to the toggle's LEFT (toggle ordered last). */
 .srow label.tog{order:2}.srow .shint,.srow .tlbl{order:1}
 input.num{width:72px}
@@ -297,6 +313,10 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
   </div>
   <span id="badge" class="bdg off">● Disconnected</span>
   <span id="modeBadge" class="bdg off" style="display:none" data-tip="Detected from the server's status output (loopback = listen).&#10;DEDICATED: live scoreboard + Kill Server available.&#10;LISTEN: Noclip (host) available; scoreboard has no live data.">—</span>
+  <button id="hdrRead" class="b-gh b-sm" style="display:none" data-tip="Re-reads every live dvar (SERVER + MATCH tabs) from the server and fills the fields.&#10;Runs automatically on connect. Takes a few seconds — the server rate-limits rcon, so reads are paced.&#10;Fields whose read misses keep their default and show a NOT READ flag." onclick="readAllFromServer()">↻ Read</button>
+  <button id="hdrKill" class="b-ng b-sm ded-only" style="display:none" data-tip="killserver (RCON console command)&#10;Shuts down the dedicated server process immediately.&#10;(dedicated only — greyed on a listen server)" onclick="cmd('killserver')">Kill Server</button>
+  <button class="b-gh b-sm" onclick="copyExecAutoexec()" data-tip="Copies 'exec autoexec' to the clipboard.&#10;Paste it into the IN-GAME (client) console to re-apply your MOUSE2 ADS bind + view-bob after a restart.&#10;This is a CLIENT command — it is NOT sent over RCON.">Copy exec autoexec</button>
+  <div id="syncBar" class="syncbar"></div>
 </header>
 
 <div class="body">
@@ -943,7 +963,7 @@ async function doConn(){
   const btn=g('cBtn');btn.disabled=true;btn.textContent='…';
   try{
     const d=await fetchStatus();
-    if(d.ok){setLive(true);tick(d);actLog('Connected to '+conn().host,'ok');readServerDvars();readMatchDvars();}
+    if(d.ok){setLive(true);tick(d);actLog('Connected to '+conn().host,'ok');reqNotifyPerm();readServerDvars();readMatchDvars();}
     else{toast('Failed: '+d.error,'err');setLive(false);}
   }catch(e){toast('Error: '+e.message,'err');setLive(false);}
   btn.disabled=false;
@@ -951,9 +971,11 @@ async function doConn(){
 function setLive(v){
   live=v;
   const btn=g('cBtn'),bdg=g('badge');
+  const hr=g('hdrRead'),hk=g('hdrKill');
   if(v){
     btn.textContent='Disconnect';btn.className='disc';
     bdg.textContent='● Connected';bdg.className='bdg on';
+    if(hr)hr.style.display='';if(hk)hk.style.display='';   // header Read + Kill Server
     setCtrl(true);
     // Default bot difficulty is normal — highlight until user changes it
     ['easy','normal','hard','fu'].forEach(k=>g('d-'+k).classList.toggle('sel',k==='normal'));
@@ -963,9 +985,26 @@ function setLive(v){
     btn.textContent='Connect';btn.className='';
     bdg.textContent='● Disconnected';bdg.className='bdg off';
     g('modeBadge').style.display='none';
+    if(hr)hr.style.display='none';if(hk)hk.style.display='none';
     setCtrl(false);clearInterval(window._rt);clearInterval(window._st);
+    _knownPlayers=null;   // re-seed the join baseline on next connect (no spam on reconnect)
   }
+  updateSyncUI();
 }
+// ─── Sync (dvar-read) progress indicator ──────────────────────────────────────
+// Reads are single fetches that resolve only when the whole paced sweep finishes, so the
+// bar is indeterminate. A counter tracks overlapping reads (connect fires several at once).
+let _syncN=0;
+function syncBegin(){ _syncN++; updateSyncUI(); }
+function syncEnd(){ _syncN=Math.max(0,_syncN-1); updateSyncUI(); }
+function updateSyncUI(){
+  const on=_syncN>0;
+  const bar=g('syncBar'); if(bar) bar.classList.toggle('on',on);
+  const hr=g('hdrRead'); if(hr){ hr.classList.toggle('b-busy',on); hr.disabled=on||!live; }
+  const bdg=g('badge'); if(bdg&&live) bdg.textContent=on?'● Syncing…':'● Connected';
+}
+// Header ↻ Read: refresh every live dvar block (SERVER + MATCH), same as on connect.
+function readAllFromServer(){ readServerDvars(); readMatchDvars(); }
 function disconnect(){
   setLive(false);
   g('ptbody').innerHTML='<tr class="empty"><td colspan="6">Not connected</td></tr>';
@@ -1007,6 +1046,7 @@ function tick(d){
   g('sGt').textContent=d.gametype||(d.listenServer?'Listen Server':'—');
   g('sPl').textContent=d.players.length+' online';
   buildPlayers(d.players);
+  notifyJoins(d.players);
   g('scoreCard').classList.toggle('listen-muted',_listenServer);
   g('scoreListenNote').style.display=_listenServer?'':'none';
   applyServerMode();
@@ -1037,7 +1077,7 @@ function buildPlayers(ps){
     const ipCell=p.ip?`<span class="dm" style="font-size:10px">${x(p.ip)}</span>`:`<span class="dm">-</span>`;
     const guidCell=p.bot?'<span class="dm">-</span>':`<span class="dm" style="font-size:10px;user-select:all">${p.guid||'-'}</span>`;
     return`<tr data-num="${p.num}" data-name="${x(p.name)}" data-bot="${p.bot}" oncontextmenu="showCtx(event,${p.num},'${x(p.name)}',${p.bot})">
-      <td>${p.num}</td><td>${tag}${x(p.name)}</td><td>${p.score}</td><td>${pg}</td><td>${ipCell}</td><td>${guidCell}</td></tr>`;
+      <td>${p.num}</td><td>${tag}${p.bot?x(p.name):`<span class="real-n">${x(p.name)}</span>`}</td><td>${p.score}</td><td>${pg}</td><td>${ipCell}</td><td>${guidCell}</td></tr>`;
   }).join('');
 }
 function x(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;')}
@@ -1048,6 +1088,7 @@ function showCtx(e,num,name,isBot){
   const m=g('ctx-menu');
   m.innerHTML=`<div class="ctx-header">${x(name)}</div>
     <div class="ctx-item" onclick="ctxAction('kick')">✕ Kick</div>
+    <div class="ctx-item red" onclick="ctxAction('ban')">⛔ Ban</div>
     <div class="ctx-sep"></div>
     <div class="ctx-item green" onclick="ctxAction('pgod')">⚡ God Mode</div>
     <div class="ctx-item yellow" onclick="ctxAction('pfreeze')">❄ Freeze</div>
@@ -1071,6 +1112,10 @@ async function ctxAction(act){
   if(act==='kick'){
     const r=await rcon(`clientkick ${num}`);
     r.ok?actLog('Kicked '+name,'wn'):toast('Kick failed','err');
+  }else if(act==='ban'){
+    if(!confirm(`Ban ${name}? This kicks them and blocks reconnects.`))return;
+    const r=await rcon(`banClient ${num}`);
+    r.ok?actLog('Banned '+name,'wn'):toast('Ban failed','err');
   }else if(act==='pgod'){
     await bridge(`pgod_${num}`);actLog('God → '+name,'ok');
   }else if(act==='pfreeze'){
@@ -1200,6 +1245,11 @@ document.addEventListener('click',e=>{
   if(!e.target.closest('.gsearch') && !e.target.closest('#gSearchResults')) g('gSearchResults').classList.remove('open');
 });
 
+// Once the user edits a flagged (unsynced) field, the value becomes authoritative —
+// drop the "not read" flag. Programmatic srvApplyValues writes don't fire these events.
+document.addEventListener('input',e=>{const r=e.target.closest&&e.target.closest('.srow.unsynced');if(r)r.classList.remove('unsynced');});
+document.addEventListener('change',e=>{const r=e.target.closest&&e.target.closest('.srow.unsynced');if(r)r.classList.remove('unsynced');});
+
 // ─── Gunfight ────────────────────────────────────────────────────────────────
 async function sdv(dv,id){
   const v=g(id).value;
@@ -1244,11 +1294,15 @@ async function bridge(bcmd){
   if(!r.ok) toast('Bridge error: '+r.error,'err');
   return r.ok;
 }
-// FUN tab: broadcast a chat-style bold message to all players via gf_say + saymsg
+// FUN tab: broadcast a chat-style bold message to all players via gf_say + saymsg.
+// Both sets go in ONE chained rcon command so gf_say is guaranteed set in the same server
+// execution as gf_cmd=saymsg — two separate packets raced on the rate-limited server and the
+// gf_say one could drop, leaving the bridge to print an empty message (i.e. nothing). Strip
+// quotes/semicolons/backslashes so the message can't break out of the chained command.
 async function broadcastMsg(){
-  const inp=g('vSay'),m=inp.value.trim();
+  const inp=g('vSay'),m=inp.value.trim().replace(/["'`;\\]/g,'');
   if(!m){toast('Enter a message','err');return;}
-  const r=await batchCmds([`set gf_say "${m}"`,'set gf_cmd saymsg'],60);
+  const r=await batchCmds([`set gf_say "${m}";set gf_cmd saymsg`],60);
   if(r&&r.ok){toast('Broadcast sent','ok');actLog('Broadcast: '+m,'in');inp.value='';}
   else toast('Broadcast failed','err');
 }
@@ -1420,6 +1474,13 @@ async function copySprintAdsFix(){
     clogAdd(SPRINT_ADS_FIX,'ls');
   } else toast('Clipboard copy failed','err');
 }
+async function copyExecAutoexec(){
+  if(await copyText('exec autoexec')){
+    toast('"exec autoexec" copied — paste into the in-game console','ok');
+    actLog('Copied "exec autoexec" to clipboard','in');
+    clogAdd('exec autoexec','ls');
+  } else toast('Clipboard copy failed','err');
+}
 async function copyDebugDvars(){
   if(await copyText(DEBUG_DVARS)){
     toast('Debug dvars copied — paste into the in-game console','ok');
@@ -1463,6 +1524,50 @@ function renderAct(){
   g('actEntries').innerHTML=actEntries.map(a=>
     `<div class="al-entry"><span class="al-time">${a.ts}</span><span class="al-msg al-${a.cls}">${x(a.msg)}</span></div>`
   ).join('');
+}
+
+// ─── Player join/leave notifications ─────────────────────────────────────────
+// Diff the real-player set (bots excluded) each status tick. First tick after a
+// connect seeds the baseline silently so already-connected players aren't announced;
+// afterwards a new key -> "joined", a vanished key -> "left". Keyed by GUID (stable
+// across reconnects/name changes), falling back to name for the rare guid-less case.
+let _knownPlayers=null;   // Map(key -> name); null until seeded, reset on disconnect
+function _pKey(p){ return (p.guid && p.guid!=='0') ? 'g:'+p.guid : 'n:'+p.name; }
+function notifyJoins(players){
+  const real=(players||[]).filter(p=>!p.bot);
+  const cur=new Map(real.map(p=>[_pKey(p),p.name]));
+  if(_knownPlayers===null){ _knownPlayers=cur; return; }   // seed silently
+  for(const [k,nm] of cur){
+    if(!_knownPlayers.has(k)){
+      actLog(nm+' joined','ok');
+      toast(nm+' joined','ok');
+      joinBeep();
+      desktopNotify('Player joined', nm+' connected');
+    }
+  }
+  for(const [k,nm] of _knownPlayers){
+    if(!cur.has(k)) actLog(nm+' left','wn');
+  }
+  _knownPlayers=cur;
+}
+let _ac=null;
+function joinBeep(){
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext; if(!AC)return;
+    _ac=_ac||new AC(); if(_ac.state==='suspended') _ac.resume();
+    const t=_ac.currentTime, o=_ac.createOscillator(), gn=_ac.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(660,t); o.frequency.setValueAtTime(990,t+0.09);
+    gn.gain.setValueAtTime(0.0001,t);
+    gn.gain.exponentialRampToValueAtTime(0.12,t+0.02);
+    gn.gain.exponentialRampToValueAtTime(0.0001,t+0.28);
+    o.connect(gn); gn.connect(_ac.destination); o.start(t); o.stop(t+0.3);
+  }catch(_){}
+}
+function reqNotifyPerm(){
+  try{ if(window.Notification && Notification.permission==='default') Notification.requestPermission(); }catch(_){}
+}
+function desktopNotify(title,body){
+  try{ if(window.Notification && Notification.permission==='granted') new Notification(title,{body,icon:'ops.png',silent:true}); }catch(_){}
 }
 
 // ─── Toasts ──────────────────────────────────────────────────────────────────
@@ -1559,7 +1664,9 @@ const SRV_SECTIONS = [
     { n:'specialty_scavenger',         lbl:'Scavenger',                type:'perk', def:'0', tip:'specialty_scavenger\nReplenish ammo from dead bodies.' },
     { n:'specialty_twoattach',         lbl:'Warlord',                  type:'perk', def:'0', tip:'specialty_twoattach\nTwo attachments per weapon.' },
     { n:'specialty_detectexplosive',   lbl:'Hacker',                   type:'perk', def:'0', tip:'specialty_detectexplosive\nDetect enemy equipment.' },
-    { n:'specialty_gas_mask',          lbl:'Tactical Mask',            type:'perk', def:'0', tip:'specialty_gas_mask\nReduced gas / flash / concussion effect.' },
+    { n:'specialty_gas_mask',          lbl:'Tactical Mask',            type:'perk', def:'0', tip:'specialty_gas_mask\nReduces GAS (tabun) effect only. In this mod, flash/concussion resistance rides on the separate Flash Resist / Stun Resist perks below (the CAC Pro-upgrade that would grant them is bypassed here).' },
+    { n:'specialty_shades',            lbl:'Flash Resist',             type:'perk', def:'0', tip:'specialty_shades\nCuts flashbang blind DURATION to 10% (_flashgrenades.gsc keys off this perk). Give to all players to make flashes barely register.' },
+    { n:'specialty_stunprotection',    lbl:'Stun Resist',              type:'perk', def:'0', tip:'specialty_stunprotection\nCuts concussion-grenade stun DURATION to 10% (_weapons.gsc keys off this perk). Give to all players to neuter stun grenades.' },
     { n:'specialty_pistoldeath',       lbl:'Second Chance',            type:'perk', def:'0', tip:'specialty_pistoldeath\nDrop into last-stand with a pistol on death.' },
     { n:'specialty_blindeye',          lbl:'Cold Blooded',             type:'perk', def:'0', tip:'specialty_blindeye\nUndetectable by AI killstreaks; no red name.' },
     { n:'specialty_sprintrecovery',    lbl:'Extreme Conditioning',     type:'perk', def:'0', tip:'specialty_sprintrecovery\nFaster sprint recovery. Pairs with the Sprint Recovery slider.' },
@@ -1578,6 +1685,7 @@ const SRV_SECTIONS = [
     { n:'scr_player_suicidespawndelay',lbl:'Suicide Penalty (s)',    type:'num', def:'0',   tip:'scr_player_suicidespawndelay\nExtra respawn delay after suiciding.' },
   ]},
   { title: 'TEAMS', eff: 'live', per: 'dvar', vars: [
+    { n:'scr_team_maxsize',           lbl:'Max Players / Team',      type:'num', def:'4',   tip:'scr_team_maxsize\nCaps players per team; overflow is sent to spectator on spawn (gf_playerSpawnedCB). 0 = no cap. GF ships 4 (4v4). Takes effect on next spawn.' },
     { n:'scr_teamchange',             lbl:'Allow Team Change',       type:'tog', def:'1',   tip:'scr_teamchange\n1 = players can switch teams freely.' },
     { n:'scr_teambalance',            lbl:'Block Joining Larger Team',type:'tog',def:'0',   tip:'scr_teambalance\nPrevent players from joining the already-larger team. GF default: 0.' },
     { n:'scr_autobalanceteams',       lbl:'Auto-Balance at Round End',type:'tog',def:'0',   tip:'scr_autobalanceteams\nMove one player to even teams at the end of each round.' },
@@ -1869,13 +1977,7 @@ function srvBlock(title, vars, prefix, dEff, dPer) {
 
 function buildServerPanel() {
   const el = g('srv-body');
-  // Top toolbar: live-read + dedicated-only Kill Server
-  const toolbar =
-    `<div class="mact">`
-    + `<button class="b-gh ctrl" data-tip="Reads every SERVER-tab dvar's current value from the server and fills the fields.&#10;Runs automatically on connect." onclick="readServerDvars()">↻ Read from server</button>`
-    + `<span style="flex:1"></span>`
-    + `<button class="b-ng ctrl ded-only" data-tip="killserver (RCON console command)&#10;Shuts down the dedicated server process immediately.&#10;(dedicated only — greyed on a listen server)" onclick="cmd('killserver')">Kill Server</button>`
-    + `</div>`;
+  // Read-from-server + Kill Server now live in the header (see #hdrRead / #hdrKill).
   // Shared (always-visible) sections
   const shared = SRV_SECTIONS.map(sec => srvBlock(sec.title, sec.vars, undefined, sec.eff, sec.per)).join('');
   // Gametype picker (native select, grouped) — swaps the per-mode block below
@@ -1891,7 +1993,7 @@ function buildServerPanel() {
     `<div class="mact"><label>Gametype settings</label>${selHtml}`
     + `<span class="dm" style="font-size:11px">one mode at a time · gf settings live in the MATCH tab</span></div>`
     + `<div id="srv-gt-body"></div>`;
-  el.innerHTML = toolbar + shared + gtPicker;
+  el.innerHTML = shared + gtPicker;
   buildGtSection('gf');
 }
 // Render a single gametype's dvar block into #srv-gt-body (and live-read it if connected).
@@ -1926,11 +2028,18 @@ function srvApplyValues(vars, values, prefix) {
   const pf = prefix || 'srv';
   vars.forEach(v => {
     if (v.type === 'perk' || v.type === 'btn') return;
-    const val = values[v.n];
-    if (val === null || val === undefined) return;
     const base = pf + '_' + v.n.replace(/[^a-zA-Z0-9]/g,'_');
     const el = g(base);
     if (!el) return;
+    const row = el.closest('.srow');
+    const val = values[v.n];
+    if (val === null || val === undefined) {
+      // Read missed (timeout/parse-miss): field still shows its hardcoded default, not a
+      // live value. Flag the row so the two aren't confused.
+      if (row) row.classList.add('unsynced');
+      return;
+    }
+    if (row) row.classList.remove('unsynced');
     if (v.type === 'tog') { el.checked = (val === '1' || val === 1 || val === 'true'); }
     else if (v.type === 'sld') {
       el.value = val;
@@ -1949,6 +2058,7 @@ async function readServerDvars() {
   const names = vars.filter(v => v.type !== 'perk' && v.type !== 'btn').map(v => v.n);
   if (!names.length) return;
   actLog('Reading ' + names.length + ' server dvars…', 'in');
+  syncBegin();
   try {
     const r = await fetchDvars(names);
     if (r && r.ok) {
@@ -1958,6 +2068,7 @@ async function readServerDvars() {
       toast('SERVER values synced', 'ok');
     } else toast('Dvar read failed', 'err');
   } catch (e) { toast('Dvar read error: ' + e.message, 'err'); }
+  finally { syncEnd(); }
 }
 // Read only one gametype block (used when switching the dropdown while connected).
 async function readGtDvars(key) {
@@ -1965,7 +2076,9 @@ async function readGtDvars(key) {
   const vars = GT_SECTIONS[key] || [];
   const names = vars.map(v => v.n);
   if (!names.length) return;
+  syncBegin();
   try { const r = await fetchDvars(names); if (r && r.ok) srvApplyValues(vars, r.values); } catch (_) {}
+  finally { syncEnd(); }
 }
 
 // ─── MATCH tab GUNFIGHT block (same GT_SECTIONS.gf data, mt_ id prefix) ────────
@@ -1990,7 +2103,9 @@ async function readMatchDvars() {
   if (!live) return;
   const vars = GT_SECTIONS.gf.concat(MATCH_MODIFIERS);
   const names = vars.filter(v => v.type !== 'btn').map(v => v.n);
+  syncBegin();
   try { const r = await fetchDvars(names); if (r && r.ok) srvApplyValues(vars, r.values, 'mt'); } catch (_) {}
+  finally { syncEnd(); }
 }
 
 // ─── Gametype custom dropdown ─────────────────────────────────────────────────

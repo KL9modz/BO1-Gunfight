@@ -691,6 +691,37 @@ gf_ensureScorePopupElem()
     self.gf_popupElem.overrridewhenindemo = true;
 }
 
+// ─── Welcome message ─────────────────────────────────────────────────────────
+// First-spawn greeting: "Welcome <name>!" / "visit us at gunfight.us" (URL in
+// blue via the ^4 inline color code). Rides the STOCK notify pipeline
+// (_hud_message::oldNotifyMessage -> _popups startMessage queue ->
+// showNotifyMessage), so it gets the native BO1 decode/typewriter FX
+// (setCOD7DecodeFX on title + text) and serializes behind any other center
+// splash — zero mod-owned hudelems, no render-cap cost. The per-player notify
+// elements and the queue consumer already exist for every connect (stock
+// _globallogic threads _hud_message::init; _persistence inits _popups), so
+// nothing needs creating here. oldNotifyMessage is used instead of
+// notifyMessage(notifyData) on purpose: building notifyData needs
+// spawnStruct(), which is broken in T5 MOD scripts — the stock wrapper builds
+// the struct inside stock code where it works.
+// Caller (gf_playerSpawnedCB) gates to humans + once per connection.
+// Configstring cost: one unique setText string per human joiner — negligible.
+gf_welcomeMessage()
+{
+    self endon( "disconnect" );
+
+    // Let the spawn moment settle (loadout overview slide-in, gametype hint).
+    wait 2;
+
+    self maps\mp\gametypes\_hud_message::oldNotifyMessage(
+        "Welcome " + self.name + "!",          // title line (big, decode FX)
+        "visit us at ^4gunfight.us",           // ^4 = blue; ^5 = lighter cyan if 4 reads too dark
+        undefined,                             // no icon
+        undefined,                             // default (black) glow
+        undefined,                             // no sound
+        7 );                                   // seconds on screen
+}
+
 // Park the ENGINE's own rank score popup element permanently offscreen. Every
 // known writer (_rank::updateRankScoreHUD; _globallogic_score's wager/offline
 // paths) sets label/value/color/alpha but NEVER x/y after creation, so one

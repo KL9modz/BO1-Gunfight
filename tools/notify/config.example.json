@@ -1,0 +1,16 @@
+{
+  "_comment": "Copy to config.json and fill in ntfyTopic. rcon password auto-reads from dedicated.cfg if left blank. Only ntfyTopic is required.",
+  "ntfyTopic": "gf-join-CHANGE-ME-to-something-secret",
+  "ntfyServer": "https://ntfy.sh",
+  "ntfyToken": "",
+  "host": "127.0.0.1",
+  "port": 28960,
+  "password": "",
+  "pollMs": 12000,
+  "notifyLeaves": false,
+  "notifyFirstJoin": true,
+  "notifyEmpty": false,
+  "heartbeatMins": 0,
+  "serverName": "Gunfight",
+  "quietStart": false
+}

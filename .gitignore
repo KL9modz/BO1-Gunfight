@@ -18,6 +18,9 @@ zone/
 .claude/settings.json
 .claude/settings.local.json
 
+# Join notifier — real config carries the secret ntfy topic (acts like a password)
+tools/notify/config.json
+
 # Local-only reference/server files
 dedicated.cfg
 dedicated_sp.cfg

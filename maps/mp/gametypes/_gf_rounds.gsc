@@ -171,6 +171,17 @@ gf_playerSpawnedCB()
     if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
         self thread gf_parkStockScorePopup();
 
+    // One-time welcome splash, once per CONNECTION (pers[] resets on disconnect,
+    // so a rejoiner is greeted again; the between-round map_restart is not a
+    // re-greet). Humans only — bots draw no HUD and their names would burn
+    // setText configstrings for nothing.
+    if ( ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+        && !isDefined( self.pers["gf_welcomed"] ) )
+    {
+        self.pers["gf_welcomed"] = true;
+        self thread gf_welcomeMessage();
+    }
+
     // If scr_team_maxsize > 0, redirect to spectator when the team is already full.
     // The notify above still fires so SD and round logic don't stall.
     maxTeam = getDvarInt( "scr_team_maxsize" );

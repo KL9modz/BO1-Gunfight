@@ -1,7 +1,28 @@
 ﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 ---
 ### TODO
-- support 30 FPS Server tick rate
+- support 30 FPS Server tick rate (sv_fps 30) — investigated 2026-07-02. WHY IT'S NOT JUST A DVAR:
+  T5/CoD scales GSC `wait` by 20/sv_fps, so at sv_fps 30 every wait-driven timer runs ~1.5x fast
+  (0.667x real duration). Our round/OT clocks are IMMUNE (gettime()-delta anchored + setGameEndTime,
+  self-correcting) and so are the roster gate + gf_closeGraceEarly (gettime deadlines). The ONE
+  visible casualty is the STOCK prematch countdown: matchStartTimer() ([_globallogic.gsc:396-435])
+  decrements a local hudelem on `wait(1.0)`, and its number + the freeze/hold + prematch_over are all
+  welded to level.prematchPeriod (can't peel off just the number — direct `thread` call, unreachable
+  local element). So the visible count ticks ~1.5x fast on the VPS (also the gf_nativePrematchTicker
+  beep). User verdict: fast-appearing timer is a DEAL BREAKER; wants to keep the sv_fps 30 perf
+  (smoother snapshots/hit-reg). FIX (planned, moderate work + regression risk in the prematch flow):
+  set level.prematchPeriod ~= 0 so the engine draws NO number, then OWN the frozen-countdown phase in
+  gf_tryActivateRound using STOCK primitives — freeze_player_controls() for the freeze (stock spawn
+  only auto-freezes while inPrematchPeriod, [_globallogic_spawn.gsc:191-193], which we'd be
+  shortening, so we freeze late/gate spawners ourselves), leaderDialog() for intro VO, gettime() for
+  an honest countdown number + per-second beep — positioned where the roster gate already holds, so
+  the two compose into one frozen window. gettime itself is native-friendly (stock waveSpawnTimer
+  [_globallogic.gsc:448-456] uses getTime() deltas too); caveats: ignores pauseTimer (raw wall clock
+  — that's the immunity), keeps counting across map_restart (baseline per-window). New surface we'd
+  own: intro freeze, intro vision blend (minor cosmetic), VO timing. TEST: add `set sv_fps "30"` to
+  the LOCAL dedi cfg to reproduce the VPS skew exactly (listen server is always 20 → looked normal).
+  Alt if native-purity wins: revert VPS to sv_fps 20 (zero custom, loses the perf). Client-side
+  cl_maxpackets 100 already applied (helps independently); snaps 30 is inert until sv_fps >= 30.
 - the mod hangs on first download — ROOT CAUSE FOUND 2026-07-01 (client-engine-side, can't be fully
   fixed server-side): after the first-time FastDL download the Plutonium client does an in-place
   engine rebuild with NO loading UI — unloads ALL fastfiles, DESTROYS + recreates the D3D window

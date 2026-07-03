@@ -9,8 +9,18 @@ const cp   = require('child_process');
 const WEB_PORT   = 3000;
 const RCON_TIMEOUT = 3000;
 const COLLECT_MS   = 350;
-const DVAR_COLLECT_MS = 120;   // shorter window for single-value dvar reads (one small packet)
-const DVAR_CHUNK   = 8;        // concurrent dvar reads per batch
+// This server RATE-LIMITS rcon replies to ~1 per 0.7s (measured): a command sent sooner than
+// that after the previous reply is silently dropped. So dvar reads are (a) BATCHED — many
+// dvar queries chained into one rcon command (`a;b;c`), one reply carries all their values —
+// and (b) PACED at ~1s between commands. ~100 dvars become ~5 replies (~10s) at near-100%.
+const DVAR_BATCH_SIZE = 24;        // dvars chained per rcon command (keeps the request under MTU)
+const DVAR_BATCH_COLLECT_MS = 350; // quiet window to gather the multi-packet batched reply
+const DVAR_BATCH_HARD_MS = 1300;   // batched replies land in ~400ms; a miss retries without a long stall
+const DVAR_BATCH_ROUNDS = 3;       // re-query passes; each re-asks only the names still missing
+                                   // (command pacing is handled globally by sendRconQueued / RCON_MIN_GAP)
+const DVAR_DEAD_BATCH_MAX = 12;    // in a re-query batch this small the reply can't be truncated, so a
+                                   // name that comes back UNparsed is a genuine unknown/unset dvar —
+                                   // mark it dead and stop retrying (avoids burning every round on it)
 const PUBLIC_DIR   = path.join(__dirname, 'public');
 // dedicated.cfg lives at storage/t5/dedicated.cfg; this file is at
 // storage/t5/mods/mp_gunfight/tools/rcon/server.js → four levels up.
@@ -20,11 +30,13 @@ const CFG_PATH     = path.resolve(__dirname, '..', '..', '..', '..', 'dedicated.
 
 const OOB = Buffer.from([0xff, 0xff, 0xff, 0xff]);
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 function buildPacket(password, command) {
   return Buffer.concat([OOB, Buffer.from(`rcon ${password} ${command}`, 'utf8')]);
 }
 
-function sendRcon(host, port, password, command, collectMs = COLLECT_MS) {
+function sendRcon(host, port, password, command, collectMs = COLLECT_MS, hardMs = RCON_TIMEOUT) {
   return new Promise((resolve, reject) => {
     const sock   = dgram.createSocket('udp4');
     const chunks = [];
@@ -36,7 +48,7 @@ function sendRcon(host, port, password, command, collectMs = COLLECT_MS) {
     mainTimer = setTimeout(() => {
       if (chunks.length > 0) finish();
       else { cleanup(); reject(new Error('Server not responding (timeout)')); }
-    }, RCON_TIMEOUT);
+    }, hardMs);
 
     sock.on('message', (msg) => {
       chunks.push(msg);
@@ -50,6 +62,27 @@ function sendRcon(host, port, password, command, collectMs = COLLECT_MS) {
       sock.send(pkt, 0, pkt.length, port, host, (err) => { if (err) { cleanup(); reject(err); } });
     });
   });
+}
+
+// ── Global rcon send throttle ─────────────────────────────────────────────────
+// This server rate-limits rcon replies (~1 per 0.7s) and silently DROPS commands sent
+// faster. The web UI issues many concurrent rcon calls (dvar sweeps + status/score ticks
+// overlap on connect), so we serialize EVERY send through one queue with a minimum gap,
+// measured from the previous send's completion — the server is never outrun no matter how
+// many HTTP requests arrive at once. This is what makes the batched dvar sync land ~100%.
+const RCON_MIN_GAP = 850;
+let _rconQueue = Promise.resolve();
+let _rconLastDone = 0;
+function sendRconQueued(...args) {
+  const run = async () => {
+    const gap = RCON_MIN_GAP - (Date.now() - _rconLastDone);
+    if (gap > 0) await sleep(gap);
+    try { return await sendRcon(...args); }
+    finally { _rconLastDone = Date.now(); }
+  };
+  const p = _rconQueue.then(run, run);      // run regardless of the previous call's outcome
+  _rconQueue = p.then(() => {}, () => {});   // keep the chain alive even if this send rejects
+  return p;
 }
 
 function parseRconResponse(buf) {
@@ -113,30 +146,60 @@ function parseStatusText(text) {
 }
 
 function parseDvarValue(text, dvarName) {
-  // Matches T5 Plutonium "g_gametype" is: "gf"  AND the older  g_gametype is gf
-  // form. The ':' after "is" is the key — T5 (r5328) prints `is:`, so the colon
-  // must be optional or the whole read returns null (blank scoreboard/gametype).
-  const m = text.match(new RegExp('"?' + dvarName + '"?\\s+is:?\\s+"?([^"\\n]+)"?'));
-  return m ? m[1].trim() : null;
+  // Plutonium T5 dvar echo:  "sv_floodprotect" is: "20^7" default: "4^7" Domain is ...
+  // - Case-INSENSITIVE: the server echoes the dvar's REGISTERED name (all-lowercase,
+  //   e.g. sv_floodprotect) regardless of the queried case (sv_floodProtect) — a
+  //   case-sensitive match nulled every mixed-case dvar (most of the panel).
+  // - The ':' after "is" and the whitespace after it are both optional (r5328 varies
+  //   between `is:"x"` and `is: "x"`).
+  // - Value may be quoted or bare; strip trailing ^N color codes (they blank number inputs).
+  const esc = dvarName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let m = text.match(new RegExp('"?' + esc + '"?\\s+is:?\\s*"([^"]*)"', 'i'));      // quoted value
+  if (!m) m = text.match(new RegExp('"?' + esc + '"?\\s+is:?\\s*([^\\s"]+)', 'i')); // bare value
+  if (!m) return null;
+  return m[1].replace(/\^[0-9a-zA-Z]/g, '').trim();
 }
 
-// Read many dvars and return { name: value|null }. Reads in chunks of DVAR_CHUNK
-// concurrently with a short collect window so a ~100-dvar sweep finishes in ~2-3s
-// instead of ~35s. A per-dvar timeout/parse-miss yields null (frontend keeps its default).
+// Read many dvars and return { name: value|null }. Reads are PACED (sequential, small gap,
+// short timeout, one retry) rather than bursted concurrently — Plutonium flood-drops rapid
+// OOB rcon packets, so an 8-wide concurrent sweep lost ~90% of reads to timeout. A ~100-dvar
+// sweep now takes a few seconds but the reads actually land. Timeout/parse-miss yields null
+// (frontend keeps its default and flags the field "not read").
 async function readDvars(host, port, password, names) {
   const values = {};
-  for (let i = 0; i < names.length; i += DVAR_CHUNK) {
-    const chunk = names.slice(i, i + DVAR_CHUNK);
-    await Promise.all(chunk.map(async (name) => {
+  for (const n of names) values[n] = null;
+  const DBG = process.env.GF_RCON_DEBUG;
+  const T0 = Date.now();
+  const ts = () => '+' + (Date.now() - T0) + 'ms';
+
+  // Each round compacts the still-missing names into chained rcon commands (one reply carries
+  // every value in the command). Re-query rounds recover genuine packet loss / split replies.
+  // A name that comes back UNparsed from a small served batch is an unknown/unset dvar (e.g.
+  // the *_large mode dvars while in small mode, or dev-only gf_debug*) — it's marked dead so it
+  // doesn't burn every round. Command pacing (the server's rcon rate limit) is enforced globally
+  // by sendRconQueued, so concurrent sweeps don't outrun the limit between them.
+  const dead = new Set();
+  for (let round = 0; round < DVAR_BATCH_ROUNDS; round++) {
+    const pending = names.filter((n) => values[n] === null && !dead.has(n));
+    if (!pending.length) break;
+    for (let i = 0; i < pending.length; i += DVAR_BATCH_SIZE) {
+      const need = pending.slice(i, i + DVAR_BATCH_SIZE);
       try {
-        const buf  = await sendRcon(host, port, password, name, DVAR_COLLECT_MS);
+        const buf  = await sendRconQueued(host, port, password, need.join(';'), DVAR_BATCH_COLLECT_MS, DVAR_BATCH_HARD_MS);
         const text = parseRconResponse(buf);
-        values[name] = parseDvarValue(text, name);
-      } catch (_) {
-        values[name] = null;
+        let hit = 0;
+        for (const name of need) { const v = parseDvarValue(text, name); if (v !== null) { values[name] = v; hit++; } }
+        // Reply arrived (no timeout). In a batch small enough not to truncate, anything still
+        // unparsed is a genuine unknown/unset dvar → stop retrying it.
+        if (hit < need.length && need.length <= DVAR_DEAD_BATCH_MAX)
+          for (const name of need) if (values[name] === null) dead.add(name);
+        if (DBG) console.error(ts() + ' [r' + round + '] need=' + need.length + ' bytes=' + (buf ? buf.length : 0) + ' hit=' + hit + ' dead=' + dead.size);
+      } catch (e) {
+        if (DBG) console.error(ts() + ' [r' + round + '] need=' + need.length + ' ERR ' + (e && e.message));
       }
-    }));
+    }
   }
+  if (DBG) { const miss = names.filter((n) => values[n] === null); console.error(ts() + ' [done] got ' + (names.length - miss.length) + '/' + names.length + (miss.length ? ' MISSING: ' + miss.join(',') : '')); }
   return values;
 }
 
@@ -254,7 +317,7 @@ const server = http.createServer(async (req, res) => {
     const { host = '127.0.0.1', port = '28960', password = '' } = query;
     const p = parseInt(port);
     try {
-      const statusBuf = await sendRcon(host, p, password, 'status');
+      const statusBuf = await sendRconQueued(host, p, password, 'status');
       const text = parseRconResponse(statusBuf);
       const data = parseStatusText(text);
       return sendJson(res, { ok: true, ...data, raw: text });
@@ -267,7 +330,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname === '/api/gfstate') {
     const { host = '127.0.0.1', port = '28960', password = '' } = query;
     try {
-      const buf  = await sendRcon(host, parseInt(port), password, 'gf_state');
+      const buf  = await sendRconQueued(host, parseInt(port), password, 'gf_state');
       const text = parseRconResponse(buf);
       const val  = parseDvarValue(text, 'gf_state');
       const state = val ? parseGfState(val) : null;
@@ -297,7 +360,7 @@ const server = http.createServer(async (req, res) => {
     const { host = '127.0.0.1', port = '28960', password = '', command } = body;
     if (!command) return sendJson(res, { ok: false, error: 'Missing command' }, 400);
     try {
-      const buf      = await sendRcon(host, parseInt(port), password, command);
+      const buf      = await sendRconQueued(host, parseInt(port), password, command);
       const response = parseRconResponse(buf);
       return sendJson(res, { ok: true, response });
     } catch (err) {
@@ -340,7 +403,9 @@ const server = http.createServer(async (req, res) => {
     for (let i = 0; i < commands.length; i++) {
       const command = commands[i];
       try {
-        const buf      = await sendRcon(host, parseInt(port), password, command);
+        // Batch commands are writes (`set ...`, bridge triggers) that don't echo a reply, so
+        // don't wait the full RCON_TIMEOUT for one — a short window keeps them snappy.
+        const buf      = await sendRconQueued(host, parseInt(port), password, command, 200, 700);
         const response = parseRconResponse(buf);
         results.push({ ok: true, command, response });
       } catch (err) {
