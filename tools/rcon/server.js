@@ -303,7 +303,15 @@ function serveFile(res, filePath) {
     const mime = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css',
       '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
       '.gif': 'image/gif', '.webp': 'image/webp', '.ico': 'image/x-icon' };   // drop extracted game art in public/ and <img> it
-    res.writeHead(200, { 'Content-Type': mime[ext] || 'application/octet-stream' });
+    // No caching: this is a live-edited local dev tool served over loopback. Without this the
+    // browser keeps serving a stale index.html after an edit (looked fine in VSCode but not the
+    // browser). Tiny files on 127.0.0.1 — always re-fetch so edits show on a normal reload.
+    res.writeHead(200, {
+      'Content-Type':  mime[ext] || 'application/octet-stream',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Pragma':        'no-cache',
+      'Expires':       '0',
+    });
     res.end(data);
   } catch (_) { res.writeHead(404); res.end('Not found'); }
 }
