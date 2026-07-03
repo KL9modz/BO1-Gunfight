@@ -150,7 +150,9 @@ function Write-Snapshot {
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
     $json = $obj | ConvertTo-Json -Depth 6
     $tmp  = "$path.tmp"
-    Set-Content -Path $tmp -Value $json -Encoding UTF8
+    # No-BOM UTF-8: a leading BOM is legal but trips strict JSON consumers (jq, some
+    # parsers). Browsers strip it, but keep the served file clean.
+    [System.IO.File]::WriteAllText($tmp, $json, (New-Object System.Text.UTF8Encoding($false)))
     Move-Item -Path $tmp -Destination $path -Force
 }
 
@@ -169,7 +171,10 @@ function Get-LogTail {
     $lines = @()
     $todays = Join-Path $dir ('players_{0}.log' -f (Get-Date -Format 'yyyy-MM-dd'))
     if (Test-Path $todays) {
-        try { $lines = @(Get-Content -Path $todays -Tail $n -ErrorAction SilentlyContinue) } catch { }
+        # "$_" forces a NEW plain string - Get-Content tags each line with ETS
+        # note-properties (PSPath/PSDrive/...) that ConvertTo-Json would otherwise
+        # emit as bloated objects instead of bare log strings.
+        try { $lines = @(Get-Content -Path $todays -Tail $n -ErrorAction SilentlyContinue | ForEach-Object { "$_" }) } catch { }
     }
     return $lines
 }
