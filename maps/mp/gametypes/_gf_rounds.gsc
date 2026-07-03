@@ -157,14 +157,19 @@ gf_playerSpawnedCB()
     // engine's popup text is suppressed.
     self.enableText = false;
 
-    // ...and the CLIENT half of the same stock toggle: ui_xpText gates the
-    // client-engine-rendered floating "+N" XP text (the lower-right +100 seen on
-    // medal bonuses — NOT a script hudelem; no GSC writes it, so enableText can't
-    // reach it). The stock xpTextToggle menu response flips BOTH together;
-    // _persistence re-pushes ui_xpText "1" on every connect, so re-push 0 per
-    // spawn (spawn always follows connect, so our write wins). Medal banners and
-    // the medal card are separate UI and stay.
+    // ...and the CLIENT half of the same stock toggle (ui_xpText), which
+    // _persistence re-pushes "1" on every connect. Both halves stay as defense in
+    // depth, but on the ranked VPS a stock "+N" STILL got through with both off —
+    // every script gate checked out on paper (retail AND plutoniummod/t5-scripts),
+    // so the decisive fix is element-level: our popup now uses its OWN element
+    // (gf_popupElem) and the stock hud_rankscroreupdate is parked offscreen below.
     self setClientDvar( "ui_xpText", "0" );
+
+    // Element-level backstop: park the stock rank-score element offscreen so any
+    // stock "+N" that slips past the gates renders invisibly. No stock writer
+    // ever re-sets x/y after creation. Humans only — bots draw no HUD.
+    if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+        self thread gf_parkStockScorePopup();
 
     // If scr_team_maxsize > 0, redirect to spectator when the team is already full.
     // The notify above still fires so SD and round logic don't stall.

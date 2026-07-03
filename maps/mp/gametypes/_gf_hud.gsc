@@ -638,47 +638,74 @@ gf_showScorePopup( popupType, pri )
     if ( popupType == 2 )
         text = &"GF_POPUP_ELIMINATION";
 
-    self notify( "update_score" );   // cancel any in-flight stock rank popup sharing this element
     self notify( "gf_dmg_popup" );
     self endon( "gf_dmg_popup" );
 
-    self.hud_rankscroreupdate.label = &"";
-    self.hud_rankscroreupdate.color = ( 1, 1, 0.5 );
-    self.hud_rankscroreupdate.baseFontScale = gf_popupSize();       // resting size — fontPulse returns here
-    self.hud_rankscroreupdate.maxFontScale  = gf_popupSize() * 2;   // pulse peak (stock 2x ratio)
-    self.hud_rankscroreupdate.fontScale     = gf_popupSize();       // start the pulse from the resting size
-    self.hud_rankscroreupdate.x             = gf_popupX();          // shift right of centre
-    self.hud_rankscroreupdate.y             = gf_popupY();          // vertical position (0 = middle screen)
-    self.hud_rankscroreupdate setText( text );
-    self.hud_rankscroreupdate.alpha = 0.85;
-    self.hud_rankscroreupdate thread maps\mp\gametypes\_hud::fontPulse( self );
+    self.gf_popupElem.label = &"";
+    self.gf_popupElem.color = ( 1, 1, 0.5 );
+    self.gf_popupElem.baseFontScale = gf_popupSize();       // resting size — fontPulse returns here
+    self.gf_popupElem.maxFontScale  = gf_popupSize() * 2;   // pulse peak (stock 2x ratio)
+    self.gf_popupElem.fontScale     = gf_popupSize();       // start the pulse from the resting size
+    self.gf_popupElem.x             = gf_popupX();          // shift right of centre
+    self.gf_popupElem.y             = gf_popupY();          // vertical position (0 = middle screen)
+    self.gf_popupElem setText( text );
+    self.gf_popupElem.alpha = 0.85;
+    self.gf_popupElem thread maps\mp\gametypes\_hud::fontPulse( self );
 
     wait 1;
-    self.hud_rankscroreupdate fadeOverTime( 0.75 );
-    self.hud_rankscroreupdate.alpha = 0;
+    self.gf_popupElem fadeOverTime( 0.75 );
+    self.gf_popupElem.alpha = 0;
 }
 
-// The engine's _rank::onPlayerSpawned makes self.hud_rankscroreupdate on spawn; mirror that creation
-// as a fallback so the popup works even if that init didn't run for this player. NewScoreHudElem is
-// the dedicated score-element pool (render-cap-exempt). Matches the stock properties verbatim.
+// Our OWN dedicated popup element (NewScoreHudElem pool — render-cap-exempt).
+// Mirrors the stock hud_rankscroreupdate creation verbatim. We used to REUSE the
+// stock element, but on the ranked VPS stock "+N" XP pushes (First Blood +100
+// etc.) kept landing on it and racing/replacing our text EVEN WITH
+// self.enableText = false — every script gate checked out on paper (retail AND
+// plutoniummod/t5-scripts _rank/_persistence/_globallogic_score), so the writer
+// is something we can't see/gate. Separate element + park the stock one
+// (gf_parkStockScorePopup) ends the shared-element fight for good.
 gf_ensureScorePopupElem()
 {
-    if ( isDefined( self.hud_rankscroreupdate ) )
+    if ( isDefined( self.gf_popupElem ) )
         return;
 
-    self.hud_rankscroreupdate = NewScoreHudElem( self );
-    self.hud_rankscroreupdate.horzAlign = "center";
-    self.hud_rankscroreupdate.vertAlign = "middle";
-    self.hud_rankscroreupdate.alignX    = "center";
-    self.hud_rankscroreupdate.alignY    = "middle";
-    self.hud_rankscroreupdate.x         = 0;
-    self.hud_rankscroreupdate.y         = -60;
-    self.hud_rankscroreupdate.font      = "default";
-    self.hud_rankscroreupdate.fontscale = 2.0;
-    self.hud_rankscroreupdate.archived  = false;
-    self.hud_rankscroreupdate.color     = ( 1, 1, 0.5 );
-    self.hud_rankscroreupdate.alpha     = 0;
-    self.hud_rankscroreupdate.sort      = 50;
-    self.hud_rankscroreupdate maps\mp\gametypes\_hud::fontPulseInit();
-    self.hud_rankscroreupdate.overrridewhenindemo = true;
+    self.gf_popupElem = NewScoreHudElem( self );
+    self.gf_popupElem.horzAlign = "center";
+    self.gf_popupElem.vertAlign = "middle";
+    self.gf_popupElem.alignX    = "center";
+    self.gf_popupElem.alignY    = "middle";
+    self.gf_popupElem.x         = 0;
+    self.gf_popupElem.y         = -60;
+    self.gf_popupElem.font      = "default";
+    self.gf_popupElem.fontscale = 2.0;
+    self.gf_popupElem.archived  = false;
+    self.gf_popupElem.color     = ( 1, 1, 0.5 );
+    self.gf_popupElem.alpha     = 0;
+    self.gf_popupElem.sort      = 50;
+    self.gf_popupElem maps\mp\gametypes\_hud::fontPulseInit();
+    self.gf_popupElem.overrridewhenindemo = true;
+}
+
+// Park the ENGINE's own rank score popup element permanently offscreen. Every
+// known writer (_rank::updateRankScoreHUD; _globallogic_score's wager/offline
+// paths) sets label/value/color/alpha but NEVER x/y after creation, so one
+// reposition per spawn hides ANY stock "+N" push no matter which gate let it
+// through. This is the element-level backstop for the ranked-server popup that
+// survived the enableText/ui_xpText gates. Bounded poll: _rank creates the
+// element asynchronously around spawn/team-join; if it never appears this
+// round, stock's own write is isDefined-guarded and shows nothing anyway.
+gf_parkStockScorePopup()
+{
+    self endon( "disconnect" );
+
+    for ( i = 0; i < 50; i++ )   // up to 5s
+    {
+        if ( isDefined( self.hud_rankscroreupdate ) )
+        {
+            self.hud_rankscroreupdate.x = -2000;   // centre-aligned; far offscreen
+            return;
+        }
+        wait 0.1;
+    }
 }
