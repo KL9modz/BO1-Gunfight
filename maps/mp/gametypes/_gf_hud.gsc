@@ -109,6 +109,18 @@ gf_updateHealthHUD()
 // rawfile — map_restart, no mod.ff rebuild).
 gf_REVEAL_TIME() { return 0.6; }
 
+// Round-start push-wave stagger. At round start the whole lobby respawns in ~1-2 server frames,
+// and each human threads ~40 setClientDvar (loadout overview + health panel). Piling them all onto
+// the same frame is a reliable-command burst that widens the between-rounds snapshot gap -> the
+// "Connection Interrupted" flash the second a round starts. Offset each player by their client slot
+// (getEntityNumber) so ~2 players' pushes land per 20Hz frame instead of the whole lobby at once.
+// <=0.25s, invisible during the frozen prematch (the HUD snaps in anyway). Humans only reach here
+// (bot-guarded callers). Complements the sv_maxRate bump, which drains the burst faster once on the wire.
+gf_hudRevealStagger()
+{
+    return ( self getEntityNumber() % 6 ) * 0.05;
+}
+
 // The loadout overview is now fully menu-rendered (0 client hudelems), so it no longer competes with
 // the health panel for the ~17 drawn-per-player client-hudelem render cap. The panel is therefore
 // built IMMEDIATELY on spawn and coexists with the loadout intro — no more waiting for the intro to
@@ -120,6 +132,13 @@ gf_runHealthHUD()
     self gf_destroyHealthPanel();
     self endon( "gf_kill_health_hud" );
     self endon( "disconnect" );
+
+    // Spread this player's ~18 panel setClientDvar off the shared spawn-wave frame (see
+    // gf_hudRevealStagger). The stale panel was already torn down above (pre-endon); only the
+    // rebuild is deferred, invisibly, during the frozen prematch.
+    staggerDelay = self gf_hudRevealStagger();
+    if ( staggerDelay > 0 )
+        wait staggerDelay;
 
     self setClientDvar( "ui_gf_hp_alpha", 0 );   // menu chrome (border + self bar) starts invisible; reveal fades it in
 
@@ -192,8 +211,8 @@ gf_hidePanelChromeOnRoundEnd()
 // Layout constant the GSC side still needs (the menu file owns the rest of the layout).
 // BAR_W is the fill width in px that gf_pushHealthRow scales by the health fraction before
 // pushing ui_gf_rN_fw. The 4-skull-per-row cap is enforced by the MENU now (each skull is
-// gated cnt <= 4); above 4 the menu hides the cluster and shows the ui_gf_rN_alivecount
-// "Alive: N" readout instead (6v6 support).
+// gated ui_gf_hp_mode == 0); when either team is > 4 the shared mode flips to 1 so BOTH rows
+// hide their skull clusters and show the ui_gf_rN_alivecount "Alive: N" readout (6v6 support).
 gf_HP_BAR_W() { return 45; }
 
 // ─── Self health bar (bottom-center) ─────────────────────────────────────────
@@ -342,6 +361,15 @@ gf_updateHealthPanel()
         enemyTeam    = "allies";
     }
 
+    // Shared skulls-vs-"Alive: N" decision so BOTH rows switch style together (never a mixed row):
+    // if EITHER team exceeds the 4-skull capacity, both rows use the readout; skull mode (0) only
+    // when both teams are <= 4 (small mode / 4v4 stays byte-identical). One dvar gates every menu
+    // skull (mode == 0) and both readouts (mode == 1); ui_gf_rN_cnt still drives per-slot skull counts.
+    hpMode = 0;
+    if ( gf_readTeamCount( friendlyTeam ) > 4 || gf_readTeamCount( enemyTeam ) > 4 )
+        hpMode = 1;
+    self gf_setRowDvar( "ui_gf_hp_mode", hpMode );
+
     self gf_pushHealthRow( 0, friendlyTeam );
     self gf_pushHealthRow( 1, enemyTeam );
 }
@@ -362,9 +390,10 @@ gf_pushHealthRow( r, team )
     else if ( fw < 1 )
         fw = 1;
 
-    // Real (unclamped) counts. The menu draws the 4-skull cluster only while cnt <= 4
-    // (small mode / 4v4 — unchanged); above 4 it hides the skulls and shows the
-    // "Alive: N" readout instead (6v6 support). Colour isn't pushed (the menu fixes
+    // Real (unclamped) counts. The menu draws the 4-skull cluster only in skull mode
+    // (ui_gf_hp_mode == 0, both teams <= 4 — small mode / 4v4 unchanged); when either team is
+    // > 4 the shared mode flips to 1 and both rows show the "Alive: N" readout (6v6 support).
+    // cnt still drives how many skull slots this row fills. Colour isn't pushed (the menu fixes
     // row 0 green, row 1 red).
     self gf_setRowDvar( "ui_gf_r" + r + "_hp",         int( hp ) );
     self gf_setRowDvar( "ui_gf_r" + r + "_fw",         fw );
@@ -498,6 +527,12 @@ gf_showWeaponHUD( load )
     self endon( "gf_kill_loadout_hud" );
     self endon( "disconnect" );
     level endon( "game_ended" );
+
+    // Spread this player's ~21 loadout-overview setClientDvar off the shared spawn-wave frame
+    // (see gf_hudRevealStagger) so the round-start push burst doesn't widen the snapshot gap.
+    staggerDelay = self gf_hudRevealStagger();
+    if ( staggerDelay > 0 )
+        wait staggerDelay;
 
     // The loadout overview is fully MENU-rendered (ui_mp/hud_gf_health.menu): a
     // centered-column create-a-class summary — big primary, secondary, a 3-across
