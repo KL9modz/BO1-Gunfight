@@ -1039,6 +1039,18 @@ async function loadCfg(){
     if(old&&(old.host||old.pass))localStorage.removeItem('gf_rcon');
   }catch(_){}
   fillFromProfile();                                     // now with the password
+  // URL-driven convenience for the VPS desktop shortcut: ?profile=NAME selects a saved profile and
+  // ?autoconnect (or ?connect) clicks Connect once credentials are filled. Nothing sensitive is in
+  // the URL — the password still comes from the gitignored secrets file via the loopback API.
+  try{
+    const q=new URLSearchParams(location.search);
+    const prof=q.get('profile');
+    if(prof){
+      const i=_profiles.findIndex(p=>p.name.toLowerCase()===prof.toLowerCase());
+      if(i>=0){ _activeProfile=i; renderProfiles(); persistProfiles(); fillFromProfile(); }
+    }
+    if((q.has('autoconnect')||q.has('connect')) && !live) doConn();
+  }catch(_){}
 }
 function saveCfg(){ captureToProfile(); }
 function conn(){return{host:g('iHost').value.trim()||'127.0.0.1',port:parseInt(g('iPort').value)||28960,password:g('iPass').value}}
