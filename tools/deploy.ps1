@@ -287,6 +287,40 @@ function Restart-Server {
     }
 }
 
+function Restart-Panel {
+    # The RCON admin panel (GF-RconPanel scheduled task) runs `node server.js` straight out of the
+    # mod folder we just mirrored, so a server.js change is only picked up when its node process is
+    # recycled. Do it here so a -Mod deploy always leaves the panel and game on the SAME code - a
+    # stale panel (old server.js, no /api/ack) is why command acks 404'd and showed false "timeout"
+    # after a deploy. Non-disruptive: touches only the loopback admin tool, never the game/players.
+    # No-op if the task isn't installed (e.g. deploying from a dev box); never fatal to the deploy.
+    if ($NoRestart -or $DryRun) {
+        Write-Host "Skipping RCON panel restart$(if ($DryRun) { ' (dry run)' })."
+        return
+    }
+    $task = Get-ScheduledTask -TaskName "GF-RconPanel" -ErrorAction SilentlyContinue
+    if (-not $task) { return }   # panel not installed on this box - nothing to do
+
+    Write-Host "Restarting RCON panel (GF-RconPanel) to load the new server.js..."
+    try {
+        Stop-ScheduledTask -TaskName "GF-RconPanel" -ErrorAction SilentlyContinue
+        # Stop-ScheduledTask only stops task-launched instances; kill any node still holding 3000
+        # (e.g. one launched by the AtStartup trigger at boot) so Start relaunches on the new code.
+        $c = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
+        if ($c) { $c.OwningProcess | Select-Object -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } }
+        Start-Sleep -Milliseconds 900
+        Start-ScheduledTask -TaskName "GF-RconPanel" -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 3
+        if (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue) {
+            Write-Host "RCON panel restarted (listening on 127.0.0.1:3000)."
+        } else {
+            Write-Host "RCON panel restart: 3000 not listening yet - check the GF-RconPanel task." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "RCON panel restart failed (non-fatal): $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 function Deploy-Mod {
     # Safety: never let a typo'd -ModDest mirror over the wrong directory.
     if (($ModDest -notlike "*$ModName*")) {
@@ -321,6 +355,7 @@ function Deploy-Mod {
     Publish-FastDL
 
     Restart-Server
+    Restart-Panel   # keep the admin panel's node process on the same code as the game
 
     Write-Host ""
     Write-Host "NOTE: clients auto-download mod.ff via FastDL on join (sv_wwwBaseURL)." -ForegroundColor Yellow
@@ -333,7 +368,7 @@ function Deploy-Mod {
 if (!$Mod -and !$Web) {
     Write-Host "Nothing to do. Pass -Mod and/or -Web."
     Write-Host "  .\tools\deploy.ps1 -Web      # publish the website (no restart)"
-    Write-Host "  .\tools\deploy.ps1 -Mod      # deploy the mod + restart the server"
+    Write-Host "  .\tools\deploy.ps1 -Mod      # deploy the mod + restart the server & RCON panel"
     Write-Host "  .\tools\deploy.ps1 -Mod -Web # both"
     Write-Host "  add -DryRun to preview, -NoPull to skip git pull, -NoRestart to keep the server up"
     return
