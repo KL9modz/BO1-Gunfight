@@ -77,9 +77,14 @@ gf_nativePrematchTicker()
 // read level.gf_largeMode.
 //
 // scr_<gametype>_teamspawnmode: auto (default) | large | small. "auto" goes
-// large once the TOTAL in-match player count (allies + axis) reaches
-// scr_gf_largemode_minplayers (default 7 -> 0-6 players small, 7+ large); a
-// forced value pins the mode for admins/RCON/testing.
+// large once the LARGER team's roster exceeds the health-panel skull cap
+// (gf_hudSkullCap, 4) -- i.e. the exact point the panel swaps its 4 skulls for the
+// "alive / total" readout -- so the large-map spawns and the readout HUD share one
+// switch point: <=4v4 stays small + skulls; any team of 5+ goes large + readout.
+// The split is hard-wired to the skull cap (see gf_autoLargeFromCounts); a forced
+// large/small pins the mode for admins/RCON/testing. (The old total-count dvar
+// scr_gf_largemode_minplayers is RETIRED -- no longer read, so any stale cfg value
+// is inert.)
 //
 // onStartGameType (where this runs) snapshots the roster BEFORE bots/late
 // joiners connect — _bot::init() is threaded at the end of onStartGameType — so
@@ -118,7 +123,7 @@ gf_resolveTeamMode()
     // level.playerCount is engine-maintained (_globallogic::updateTeamStatus) and initialized
     // in _globallogic::init(), so it's safe to read here. This is only the first-setup fallback;
     // once a round activates, gf_updateAutoTeamMode persists the decision in game[].
-    level.gf_largeMode = ( ( level.playerCount["allies"] + level.playerCount["axis"] ) >= gf_largeModeThreshold() );
+    level.gf_largeMode = gf_autoLargeFromCounts( level.playerCount["allies"], level.playerCount["axis"] );
 }
 
 // Captures the live team sizes once the round is active and everyone (incl.
@@ -129,15 +134,41 @@ gf_updateAutoTeamMode()
     if ( GetDvar( "scr_" + level.gameType + "_teamspawnmode" ) != "auto" )
         return;
 
-    game["gf_autoLargeMode"] = ( ( level.playerCount["allies"] + level.playerCount["axis"] ) >= gf_largeModeThreshold() );
+    game["gf_autoLargeMode"] = gf_autoLargeFromCounts( level.playerCount["allies"], level.playerCount["axis"] );
 }
 
-// Total in-match players (allies + axis) at or above which auto-mode selects
-// LARGE (full-map) spawns; below it, SMALL (curated). Tunable via
-// scr_gf_largemode_minplayers (default 7 -> 0-6 small, 7+ large; clamp 2-12).
-gf_largeModeThreshold()
+// The health panel (hud_gf_health.menu) draws up to gf_hudSkullCap() skulls per team
+// and swaps to an "alive / total" readout when a team has MORE than that (menu gate:
+// cnt > 4). Auto team-size mode keys off THIS cap so the readout and the large-map
+// spawns share one switch point. Mirror of the menu constant -- if the menu skull
+// count ever changes, update this (the menu is mod.ff-rebuild-gated).
+gf_hudSkullCap() { return 4; }
+
+// Auto-mode large/small from the per-team roster sizes: large once the LARGER team has
+// MORE players than the panel can draw as skulls (gf_hudSkullCap, 4) -- exactly when
+// that team's panel switches to the "alive / total" readout. So <=4v4 -> small + skulls;
+// any team of 5+ -> large + readout. Uses the larger team (not the total) so lopsided
+// rosters stay correct (2v6 -> large, since the 6-man team needs the readout).
+//
+// The split is HARD-WIRED to the skull cap on purpose. The menu's skull->readout gate is
+// a fixed, rebuild-gated constant, so a tunable spawn threshold could only ever DEcouple
+// the two -- the exact thing this coupling exists to prevent -- and a stale value under a
+// silently-changed meaning was a live footgun. Admins pin the spatial mode with
+// scr_<gametype>_teamspawnmode = large | small instead. (The old scr_gf_largemode_minplayers
+// total-count dvar is no longer read.)
+//
+// TIMING CAVEAT: spawn mode is decided once per round and applied the NEXT round (persisted
+// in game["gf_autoLargeMode"], snapshot at round activation -- a live count is unreliable
+// inside onStartGameType because bots/late joiners connect after it). The HUD readout is
+// LIVE. So the two share a THRESHOLD, not a clock: a roster change crossing a team 4<->5
+// (a mid-round join, bot backfill, or round 1 of a bot-filled match) can show the readout
+// one round before the spawns switch to match. It self-corrects the following round.
+gf_autoLargeFromCounts( alliesCount, axisCount )
 {
-    return int( gf_cfgFloat( "scr_gf_largemode_minplayers", 7, 2, 12 ) );
+    larger = alliesCount;
+    if ( axisCount > larger )
+        larger = axisCount;
+    return ( larger > gf_hudSkullCap() );
 }
 
 // ─── Player Lifecycle ──────────────────────────────────────────────────────

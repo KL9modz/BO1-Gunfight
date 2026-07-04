@@ -36,7 +36,7 @@ small Gunfight lobby with headroom.
 
 | Decision | Value used here | Notes |
 |---|---|---|
-| `sv_maxclients` | **14** (12 players + 2 spectator headroom) | Spawns flip to LARGE at 7+ total players (`scr_gf_largemode_minplayers`, default 7). Lower to 10 for a 4v4 server. |
+| `sv_maxclients` | **14** (12 players + 2 spectator headroom) | Spawns flip to LARGE once a team has 5+ players (hard-wired to the health-panel skull cap; `scr_gf_largemode_minplayers` is retired). Lower to 10 for a 4v4 server. |
 | `scr_team_maxsize` | **6** (up to 6v6) | Max players per team; overflow past it is sent to spectator on spawn. Set in `dedicated.cfg`. Set `4` for a 4v4 server. |
 | Server key | **Generate a fresh one** | platform.plutonium.pw/serverkeys. Do not reuse the dev-machine key. |
 | RCON password | **Rotate via packager** | The live `dedicated.cfg` still carries a leaked value - never deploy it. |

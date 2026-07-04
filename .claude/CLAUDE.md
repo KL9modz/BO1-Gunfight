@@ -1,6 +1,7 @@
 ﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 ---
 ### TODO
+bots :mistakes were made on spawn
 unknown cmd cd
 more ammo
 match starts too early
@@ -9,6 +10,7 @@ widen the spawns
 support 6v6
 auto run notify
 show feature we support every map
+add general visual improvemts to the feature list 
 fable website design
 - edit gamemode to Gunfight not GF?
 - server advertisements 
@@ -127,8 +129,14 @@ DONE:
   were fixed separately on the box.
 - Server player limit + team-size caps set: `sv_maxclients 14` (launch bat) = 12 playing + 2
   spectator headroom; `scr_team_maxsize 6` (up to 6v6, overflow -> spectator) in `dedicated.cfg`.
-  Spatial mode now flips small->large on TOTAL in-match players via `scr_gf_largemode_minplayers`
-  (default 7: 0-6 small, 7+ large), replacing the old per-team "both teams 4+" rule.
+  Spatial mode flips small->large by the LARGER team's roster, HARD-WIRED to the health-panel
+  skull cap (`gf_hudSkullCap()` = 4): `<=4v4` small + skulls, any team of `5+` large + readout —
+  the spawn mode and the panel's skulls->`alive/total` readout share one switch point.
+  `gf_autoLargeFromCounts()` keys off the larger team (2v6 -> large). (2026-07-03 — replaced the
+  old TOTAL-count rule; the `scr_gf_largemode_minplayers` dvar is now RETIRED/inert — a tunable
+  spawn threshold could only ever DEcouple it from the fixed menu skull cap, and a stale total
+  value under the reinterpreted meaning was a live footgun. Force a mode with
+  `scr_gf_teamspawnmode large|small`.)
 - 30s warning replaced by a mod-owned live-round clock (`gf_startRoundClock` etc. in
   `_gf_rounds.gsc`): native `timeLimitClock` is silenced via `pauseTimer()`, so the stock
   time-out sequence (announcer + TIME_OUT music + 30s beeps + the 1-min/12s client cues) no
@@ -190,18 +198,36 @@ Fix ADS: `exec autoexec`
 
 ## Team-Size Mode (Large vs Small)
 
-Gunfight runs two spatial modes depending on the total in-match player count, selected by
+Gunfight runs two spatial modes depending on the larger team's roster size, selected by
 `scr_<gametype>_teamspawnmode` = `auto` (default) | `large` | `small`. Resolved every round
 in `onStartGameType` -> `gf_resolveTeamMode()` (`_gf_rounds.gsc`); the result lives in
 `level.gf_largeMode` (wiped + re-derived each `map_restart`).
 
-- **small** (default at 6 or fewer total players): curated, clustered gunfight spawns from `_gf_locations.gsc`
+- **small** (auto when every team has `<=4` players, i.e. `<=4v4`): curated, clustered gunfight spawns from `_gf_locations.gsc`
   (fall back to `mp_wager_spawn`, then `mp_tdm_spawn`). The baked wager blockers
   (`gun/oic/hlnd/shrp`) are KEPT in the `_gameobjects` allow-list to shrink the play space, the
   wager compass material is applied, and overtime uses the curated OT flag spot.
-- **large** (auto at 7+ total players, allies+axis): full-map `mp_tdm_spawn` pool. Wager blockers are
+- **large** (auto when either team has `5+` players): full-map `mp_tdm_spawn` pool. Wager blockers are
   OMITTED so `_gameobjects::main` deletes them and the whole map opens up; overtime uses the
   native Domination B flag (`dom` is always kept in the allow-list so that flag survives).
+
+The `<=4` / `5+` split is the health-panel skull cap (`gf_hudSkullCap()` = 4, mirroring the
+menu's `cnt > 4` gate): auto-mode goes large exactly when a team exceeds what the panel can draw
+as skulls, so the large-map spawns and the panel's `alive/total` readout share one switch point.
+`gf_autoLargeFromCounts()` keys off the LARGER team (not the total) so lopsided rosters stay
+correct (e.g. 2v6 -> large, since the 6-man team needs the readout). The split is **hard-wired**
+to the skull cap: the menu's skull->readout gate is a fixed, rebuild-gated constant, so a tunable
+spawn threshold could only DEcouple the two — the old `scr_gf_largemode_minplayers` dvar is
+retired (no longer read; any stale cfg value is inert). To pin the spatial mode use
+`scr_<gametype>_teamspawnmode` = `large` | `small`.
+
+> **Timing caveat — same threshold, not the same clock.** Spawn mode is decided once per round
+> and applied the NEXT round (persisted in `game["gf_autoLargeMode"]`, snapshot at round
+> activation), while the HUD readout is LIVE. So on a roster change that crosses a team 4↔5 (a
+> mid-round join, bot backfill, or **round 1 of a bot-filled match** — bots connect after
+> `onStartGameType`), the readout can appear one round before the spawns switch to match. It
+> self-corrects the following round. This is inherent to the snapshot design (a live count is
+> unreliable in `onStartGameType`), not the coupling; the readout is always the correct live count.
 
 `auto` can't trust a live roster count inside `onStartGameType` (bots/late joiners connect
 after it — `_bot::init()` is threaded at its end), so it reads `game["gf_autoLargeMode"]`,
@@ -231,18 +257,33 @@ persists through `map_restart`.
 | `gf_capture_time` | 3 | OT zone hold-to-capture seconds, SMALL |
 | `gf_capture_time_large` | 5 | OT zone hold-to-capture seconds, LARGE |
 | `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (see Team-Size Mode) |
-| `scr_gf_largemode_minplayers` | 7 | Total in-match players (allies+axis) at/above which `auto` mode uses LARGE spawns; below it, SMALL. `0-6` small, `7+` large. Clamped 2-12 |
+| ~~`scr_gf_largemode_minplayers`~~ | *(retired)* | **RETIRED 2026-07-03 — no longer read.** The small/large split is now hard-wired to the health-panel skull cap in `gf_autoLargeFromCounts()` (`<=4v4` small, any team of `5+` large). A tunable spawn threshold could only DEcouple it from the fixed menu `cnt > 4` gate, and the old TOTAL-vs-new-PER-TEAM reinterpretation was a live footgun (a stale `7` made large mode unreachable). Any stale cfg value is inert. Pin the mode with `scr_gf_teamspawnmode large\|small` |
 | `scr_gf_roster_wait` | 15 | Max seconds `gf_tryActivateRound` holds the round clock after `prematch_over` waiting for every teamed player to finish spawning (slow loaders / round-1 bot fill). **`0` = no cap** (wait until all in; only `game_ended` releases a stuck client). Clamped 0-120. Live-tunable (re-read each round). Replaced the old hard-coded 8s bound |
 | `scr_gf_min_players` | 1 | **Min HUMANS-to-start gate** (`gf_waitForMinPlayers`, `_gf_rounds.gsc`). Holds the match's FIRST round (`game["roundsplayed"]==0` only) until at least this many *human* players are on a team — bots (`pers["isBot"]`) don't count, so bot-fill can't satisfy it. During the hold everyone is frozen (`freeze_player_controls`) and **all damage is voided** via the `level.gf_waitingForPlayers` guard in `gf_onPlayerDamage` (so no one dies into a not-yet-live round → instant-wipe). Match-start only: never re-holds mid-match if a player leaves. `1` = effectively off. Clamped 1-8. Distinct from `scr_gf_roster_wait` (that waits for the present roster to *spawn in*; this waits for enough humans to *exist*) |
 | `scr_team_maxsize` | 0 (shipped cfg sets **6**) | `>0` caps players/team; overflow is sent to spectator on spawn (`gf_playerSpawnedCB`). `dedicated.cfg` ships `6` (up to 6v6); `sv_maxclients` 14 = 12 play + 2 spectator. Set `4` for a 4v4 server |
 | `perk_weapSwitchMultiplier` | (engine default) | Engine weapon-swap speed (lower = faster); gated by `specialty_fastweaponswitch`, which is **OFF by default** (no longer in the base loadout). NOT forced by the mod — stock by default. To use it: enable Fast Weapon Switch via the RCON Perks tab (`gf_perk_on`), then tune the slider; inert until the perk is on |
 | `gf_perk_on` / `gf_perk_off` | "" | Comma-separated perk override lists (RCON-managed) applied AFTER the base perk set in `gf_giveCustomLoadout` |
+| `gf_admin_guids` | "" | Comma-separated player-GUID allowlist for **private** bridge feedback. `gf_bridgeNotify` prints command confirmations ONLY to these players (empty = nobody), replacing the old bare `iPrintLnBold` that center-printed to EVERYONE. Managed by the panel's right-click "Send feedback to me" (pushed live + re-pushed each reconnect). GUID = the stable `status` guid, matched via `self getGuid()`. The `saymsg` broadcast is deliberately NOT gated — it still prints to all. |
+| `gf_ack` | 0 | Read-only telemetry: sequence id of the last `gf_cmd` the bridge processed. The panel stamps each command `set gf_cmd <seq>:<cmd>` and polls `gf_ack` (via `/api/ack`, high-priority lane) to flip its command-queue entry from ⏳ "sent" to ✓ "received" (with round-trip ms). Single-token read → dedicated-only, like `gf_state`; on a listen server the panel confirms optimistically. |
 
 **Level flags (not dvars), toggled by the dev RCON bridge `_gf_bridge.gsc`:** `level.gf_headshotsOnly`
 (only head/helmet hits deal damage). The bridge is dev-only (stripped from public builds), so this is off in release.
 
 **Dev/debug dvars** (callers are strip-wrapped, so only active on `main`): `gf_debug_spawns`,
 `gf_debug_hud_pool`, `gf_debug_elem_probe`.
+
+**RCON bridge command protocol (private feedback + sent/received acks, added 2026-07-03):** the panel
+sends every bridge command as `set gf_cmd <seq>:<cmd>` (monotonic seq, persisted in the panel's
+localStorage). The GSC poll loop runs at **20 Hz** (was 2 Hz — cuts up to ~450ms of latency; read+clear
+are adjacent statements so the take is race-free, no dedup needed), splits `<seq>:<cmd>`, dispatches,
+and writes the seq into `gf_ack`. Command feedback is now **private**: `gf_bridgeNotify(text)` replaces
+the ~40 bare `iPrintLnBold` confirmation calls and prints only to `gf_admin_guids` players (the `saymsg`
+broadcast keeps its global `iPrintLnBold`). On the server side, `sendRconQueued` is now a **priority
+scheduler**: user clicks (`/api/rcon` `priority:true`) and ack reads (`/api/ack`) take a high lane so
+they preempt the background status/score/roster ticks and the ~100-dvar connect sweep — the ≥850ms
+reply gap is still enforced (hard Plutonium limit), priority only reorders who goes next. The panel shows
+a bottom-left **command queue** (`cqAdd`/`cqResolve` etc.): ⏳ sent → ✓ received (round-trip ms) → ✗
+timeout. See the `_gf_bridge.gsc` header comment for the wire format.
 
 **RCON team management (dev bridge):** the RCON panel's per-player right-click menu moves a player
 between allies/axis/spectator via bridge command `pteam_<num>_<allies|axis|spec>`

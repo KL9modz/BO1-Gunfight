@@ -193,7 +193,7 @@ gf_hidePanelChromeOnRoundEnd()
 // BAR_W is the fill width in px that gf_pushHealthRow scales by the health fraction before
 // pushing ui_gf_rN_fw. The 4-skull-per-row cap is enforced by the MENU now (each skull is
 // gated cnt <= 4); above 4 the menu hides the cluster and shows the ui_gf_rN_alivecount
-// "alive / total" readout instead (6v6 support).
+// "Alive: N" readout instead (6v6 support).
 gf_HP_BAR_W() { return 45; }
 
 // ─── Self health bar (bottom-center) ─────────────────────────────────────────
@@ -364,13 +364,13 @@ gf_pushHealthRow( r, team )
 
     // Real (unclamped) counts. The menu draws the 4-skull cluster only while cnt <= 4
     // (small mode / 4v4 — unchanged); above 4 it hides the skulls and shows the
-    // "alive / total" readout instead (6v6 support). Colour isn't pushed (the menu fixes
+    // "Alive: N" readout instead (6v6 support). Colour isn't pushed (the menu fixes
     // row 0 green, row 1 red).
     self gf_setRowDvar( "ui_gf_r" + r + "_hp",         int( hp ) );
     self gf_setRowDvar( "ui_gf_r" + r + "_fw",         fw );
     self gf_setRowDvar( "ui_gf_r" + r + "_cnt",        count );
     self gf_setRowDvar( "ui_gf_r" + r + "_alive",      alive );
-    self gf_setRowDvar( "ui_gf_r" + r + "_alivecount", alive + " / " + count );
+    self gf_setRowDvar( "ui_gf_r" + r + "_alivecount", "Alive: " + alive );
 }
 
 // setClientDvar only on change (cached on self) — the 0.1s update loop would otherwise spam 8
