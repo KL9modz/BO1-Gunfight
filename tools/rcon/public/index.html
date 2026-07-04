@@ -308,6 +308,20 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
 .toast{padding:8px 12px;border-radius:var(--r);font-size:13px;font-weight:500;background:var(--sf2);border:1px solid var(--bd);animation:tin .2s ease;max-width:260px}
 .toast.info{border-color:var(--ac)}.toast.ok{border-color:var(--ok);color:var(--ok)}
 .toast.err{border-color:var(--ng);color:var(--ng)}.toast.wn{border-color:var(--wn);color:var(--wn)}
+
+/* Command queue — bridge sent→received tracker (bottom-left; newest nearest the anchor) */
+.cmdq{position:fixed;left:12px;bottom:12px;display:flex;flex-direction:column-reverse;gap:5px;z-index:9998;max-width:300px}
+.cmdq:not(.on){display:none}
+.cq-row{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:var(--r);font-size:12px;background:var(--sf2);border:1px solid var(--bd);animation:tin .2s ease}
+.cq-ic{flex-shrink:0;width:14px;text-align:center;font-size:13px}
+.cq-lbl{font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+.cq-st{margin-left:auto;font-size:10px;color:var(--dm);white-space:nowrap}
+.cq-sent{border-color:var(--wn)}.cq-sent .cq-ic{color:var(--wn);animation:cqpulse 1s ease-in-out infinite}
+.cq-ack{border-color:var(--ok)}.cq-ack .cq-ic{color:var(--ok)}.cq-ack .cq-st{color:var(--ok)}
+.cq-timeout,.cq-fail{border-color:var(--ng)}.cq-timeout .cq-ic,.cq-fail .cq-ic,.cq-timeout .cq-st,.cq-fail .cq-st{color:var(--ng)}
+@keyframes cqpulse{0%,100%{opacity:.4}50%{opacity:1}}
+/* Feedback-admin marker on the player row */
+.adm-star{color:var(--wn);margin-right:4px}
 @keyframes tin{from{transform:translateX(14px);opacity:0}to{transform:translateX(0);opacity:1}}
 ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track{background:transparent;margin:6px 0}::-webkit-scrollbar-thumb{background:var(--bd);border-radius:4px}
 </style>
@@ -869,6 +883,9 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
 <!-- Toasts -->
 <div id="toasts"></div>
 
+<!-- Command queue (bridge sent→received tracker) -->
+<div id="cmdq" class="cmdq"></div>
+
 <script>
 'use strict';
 const API='/api';   // same-origin (relative): works whether the page is opened via 127.0.0.1 or localhost, no CORS needed
@@ -1026,9 +1043,9 @@ function saveCfg(){ captureToProfile(); }
 function conn(){return{host:g('iHost').value.trim()||'127.0.0.1',port:parseInt(g('iPort').value)||28960,password:g('iPass').value}}
 
 // ─── API ────────────────────────────────────────────────────────────────────
-async function rcon(command){
+async function rcon(command,priority){
   const c=conn();
-  return (await fetch(API+'/rcon',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...c,command})})).json();
+  return (await fetch(API+'/rcon',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...c,command,priority:!!priority})})).json();
 }
 async function batchCmds(commands,delay=80){
   const c=conn();
@@ -1058,7 +1075,7 @@ async function doConn(){
   const btn=g('cBtn');btn.disabled=true;btn.textContent='…';
   try{
     const d=await fetchStatus();
-    if(d.ok){setLive(true);tick(d);actLog('Connected to '+((_profiles[_activeProfile]||{}).name||conn().host)+' ('+conn().host+')','ok');reqNotifyPerm();readServerDvars();readMatchDvars();}
+    if(d.ok){setLive(true);tick(d);actLog('Connected to '+((_profiles[_activeProfile]||{}).name||conn().host)+' ('+conn().host+')','ok');reqNotifyPerm();pushAdminGuid();seedCmdSeq();readServerDvars();readMatchDvars();}
     else{toast('Failed: '+d.error,'err');setLive(false);}
   }catch(e){toast('Error: '+e.message,'err');setLive(false);}
   btn.disabled=false;
@@ -1181,6 +1198,10 @@ function setCtrl(en){
 
 // ─── Players + right-click ────────────────────────────────────────────────────
 let ctxPlayer=null;
+// GUID that receives PRIVATE in-game bridge feedback (via gf_admin_guids). Set by right-clicking
+// your own player → "Send feedback to me". Persisted locally and re-pushed to the server on connect.
+let _adminGuid=localStorage.getItem('gf_admin_guid')||'';
+function pushAdminGuid(){ if(_adminGuid&&live) rcon('set gf_admin_guids '+_adminGuid,true); }
 let _lastPlayers=[];   // last status roster (names/ping/etc); merged with _roster (teams) to render
 let _grouped=false;    // true when we have team data and render grouped-by-team headers
 // Status tick hands us the player list; renderPlayers() merges it with the team roster.
@@ -1213,12 +1234,13 @@ function renderPlayers(){
   paintTeams();
 }
 function rowHtml(p){
+  const adminStar=(!p.bot && _adminGuid && p.guid===_adminGuid)?'<span class="adm-star" title="Private bridge feedback goes to this player">★</span>':'';
   const tag=p.bot?'<span class="bot-t">BOT</span>':p.local?'<span class="you-t">YOU</span>':'';
   const pg=p.bot?'<span class="bot-t">BOT</span>':`<span class="${p.ping<80?'p-ok':p.ping<150?'p-mid':'p-bad'}">${p.ping}ms</span>`;
   const ipCell=p.ip?`<span class="dm" style="font-size:10px">${x(p.ip)}</span>`:`<span class="dm">-</span>`;
   const guidCell=p.bot?'<span class="dm">-</span>':`<span class="dm" style="font-size:10px;user-select:all">${p.guid||'-'}</span>`;
   return`<tr data-num="${p.num}" data-name="${x(p.name)}" data-bot="${p.bot}" oncontextmenu="showCtx(event,${p.num},'${x(p.name)}',${p.bot})">
-    <td>${p.num}</td><td>${tag}${p.bot?x(p.name):`<span class="real-n">${x(p.name)}</span>`}<span class="tm-slot" data-tm="${p.num}"></span></td><td>${p.score}</td><td>${pg}</td><td>${ipCell}</td><td>${guidCell}</td></tr>`;
+    <td>${p.num}</td><td>${adminStar}${tag}${p.bot?x(p.name):`<span class="real-n">${x(p.name)}</span>`}<span class="tm-slot" data-tm="${p.num}"></span></td><td>${p.score}</td><td>${pg}</td><td>${ipCell}</td><td>${guidCell}</td></tr>`;
 }
 // Per-row indicator from the last gf_roster read. When the list is grouped, the team is already
 // shown by the section header, so the row only carries a pending-move hint (→ Axis). When flat
@@ -1251,12 +1273,16 @@ function showCtx(e,num,name,isBot){
   e.preventDefault();
   const pl=_lastPlayers.find(p=>p.num===num)||{};
   const ip=(!isBot && pl.ip && pl.ip!=='local')?pl.ip:'';   // real routable IP only (not bots/host)
-  ctxPlayer={num,name,isBot,ip};
+  const guid=(!isBot && pl.guid && pl.guid!=='0')?pl.guid:'';   // stable id for the feedback-admin allowlist
+  ctxPlayer={num,name,isBot,ip,guid};
   const ct=(_roster[num]||{}).team||'';   // current team (grays its own move item)
   const teamItem=(t,code,label)=>`<div class="ctx-item ${ct===t?'cur':''}" onclick="ctxAction('team_${code}')">${label}</div>`;
   const ipItems=ip?`<div class="ctx-sep"></div>
     <div class="ctx-item" onclick="ctxAction('copyip')">Copy IP</div>
     <div class="ctx-item" onclick="ctxAction('locate')">Locate (city)</div>`:'';
+  // Route private in-game bridge feedback to this player (by GUID). Only offered for real players.
+  const adminItem=guid?`<div class="ctx-sep"></div>
+    <div class="ctx-item ${guid===_adminGuid?'cur':''}" onclick="ctxAction('setadmin')">★ ${guid===_adminGuid?'Feedback admin (you)':'Send feedback to me'}</div>`:'';
   const m=g('ctx-menu');
   m.innerHTML=`<div class="ctx-header">${x(name)}</div>
     <div class="ctx-item" onclick="ctxAction('kick')">Kick</div>
@@ -1270,7 +1296,7 @@ function showCtx(e,num,name,isBot){
     <div class="ctx-item yellow" onclick="ctxAction('pfreeze')">Freeze</div>
     <div class="ctx-item yellow" onclick="ctxAction('punfreeze')">Unfreeze</div>
     <div class="ctx-item" onclick="ctxAction('pperks')">Give Perks</div>
-    <div class="ctx-item" onclick="ctxAction('pnoclip')">Noclip</div>${ipItems}`;
+    <div class="ctx-item" onclick="ctxAction('pnoclip')">Noclip</div>${ipItems}${adminItem}`;
   m.style.display='block';
   // Position near cursor, keep in viewport
   const vw=window.innerWidth,vh=window.innerHeight;
@@ -1291,19 +1317,26 @@ async function ctxAction(act){
     const r=await rcon(`banClient ${num}`);
     r.ok?actLog('Banned '+name,'wn'):toast('Ban failed','err');
   }else if(act==='pgod'){
-    await bridge(`pgod_${num}`);actLog('God → '+name,'ok');
+    await bridge(`pgod_${num}`,'God → '+name);actLog('God → '+name,'ok');
   }else if(act==='pfreeze'){
-    await bridge(`pfreeze_${num}`);actLog('Frozen: '+name,'wn');
+    await bridge(`pfreeze_${num}`,'Freeze → '+name);actLog('Frozen: '+name,'wn');
   }else if(act==='punfreeze'){
-    await bridge(`punfreeze_${num}`);actLog('Unfrozen: '+name,'ok');
+    await bridge(`punfreeze_${num}`,'Unfreeze → '+name);actLog('Unfrozen: '+name,'ok');
   }else if(act==='pperks'){
-    await bridge(`pperks_${num}`);actLog('Perks → '+name,'ok');
+    await bridge(`pperks_${num}`,'Perks → '+name);actLog('Perks → '+name,'ok');
+  }else if(act==='setadmin'){
+    const guid=ctxPlayer&&ctxPlayer.guid;
+    if(!guid){toast('No GUID for this player','err');return;}
+    _adminGuid=guid; localStorage.setItem('gf_admin_guid',guid);
+    await rcon('set gf_admin_guids '+guid,true);   // push live; re-pushed on every reconnect
+    actLog('Feedback admin → '+name+' ('+guid+')','ok'); toast('Private feedback → '+name,'ok');
+    if(_lastPlayers.length)renderPlayers();   // repaint the ★ marker
   }else if(act==='team_allies'||act==='team_axis'||act==='team_spec'){
     // Applies live during the prematch countdown / min-players hold; otherwise the mod
     // defers it to the start of the next round (never suicides a player mid-round).
     const code=act.slice(5);   // allies | axis | spec
     const lbl={allies:'Allies',axis:'Axis',spec:'Spectator'}[code];
-    await bridge(`pteam_${num}_${code}`);
+    await bridge(`pteam_${num}_${code}`,'Team → '+lbl+': '+name);
     actLog('Team → '+lbl+': '+name,code==='spec'?'wn':'ok');
   }else if(act==='pnoclip'){
     // noclip is a server console command, not GSC — send directly via RCON
@@ -1462,29 +1495,99 @@ async function applyFF(){
 }
 async function doPause(){
   const btn=g('pauseBtn');
-  const r=await rcon(`set gf_cmd ${paused?'resume':'pause'}`);
-  if(r.ok){
+  const want=paused?'resume':'pause';
+  const ok=await bridge(want,want==='pause'?'Pause match':'Resume match');
+  if(ok){
     paused=!paused;
     btn.textContent=paused?'▶  RESUME MATCH':'⏸  PAUSE MATCH';
     btn.className=paused?'b-ok b-lg ctrl':'b-wn b-lg ctrl';
     actLog(paused?'Match paused':'Match resumed',paused?'wn':'ok');
     toast(paused?'Paused':'Resumed',paused?'wn':'ok');
-  }else toast('Bridge error: '+r.error,'err');
+  }
 }
 async function endRound(team){
-  const r=await rcon(`set gf_cmd endround_${team}`);
-  r.ok?(actLog('End round → '+team,'wn'),toast('Ending round — '+team,'info')):toast(r.error,'err');
+  const ok=await bridge('endround_'+team,'End round → '+team);
+  if(ok){ actLog('End round → '+team,'wn'); toast('Ending round — '+team,'info'); }
 }
 async function cmd(c){
   const r=await rcon(c);
   r.ok?(actLog(c,'in'),clogAdd(r.response||'(ok)','li')):toast(r.error,'err');
 }
 
-// ─── Bridge helper ────────────────────────────────────────────────────────────
-async function bridge(bcmd){
-  const r=await rcon(`set gf_cmd ${bcmd}`);
-  if(!r.ok) toast('Bridge error: '+r.error,'err');
-  return r.ok;
+// ─── Bridge helper (seq-stamped, ack-tracked) ─────────────────────────────────
+// Each bridge command is stamped "<seq>:<cmd>" so the GSC bridge can echo the seq back in gf_ack.
+// The command shows in the bottom-left queue as ⏳ "sent" instantly, then flips to ✓ "received"
+// (with round-trip ms) once the ack lands — or ✗ if it never does. High-priority lane so the
+// click jumps ahead of background status/score polling.
+let _cmdSeq=parseInt(localStorage.getItem('gf_cmdseq')||'0')||0;
+// On connect, lift our seq counter above the game's current gf_ack. Without this, a panel whose
+// localStorage was cleared could send seq 1 while the game still reports a higher ack from an
+// earlier session, which would mark the new command "received" before it was even processed.
+async function seedCmdSeq(){
+  try{
+    const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
+    const r=await (await fetch(API+'/ack?'+p)).json();
+    if(r.ok && r.ack>=_cmdSeq){ _cmdSeq=r.ack; localStorage.setItem('gf_cmdseq',String(_cmdSeq)); }
+  }catch(_){}
+}
+async function bridge(bcmd,label){
+  const seq=++_cmdSeq; localStorage.setItem('gf_cmdseq',String(_cmdSeq));
+  cqAdd(seq,label||bcmd);
+  ensureAckPoll();
+  const r=await rcon(`set gf_cmd ${seq}:${bcmd}`,true);
+  if(!r.ok){ cqFail(seq,r.error||'send failed'); toast('Bridge error: '+r.error,'err'); return false; }
+  return true;
+}
+
+// ─── Command queue (sent → received tracker) ──────────────────────────────────
+const CQ_MAX=6;
+const _cmdQ=[];   // newest first: {seq,label,t0,state:'sent'|'ack'|'timeout'|'fail',ms,err}
+function cqAdd(seq,label){ _cmdQ.unshift({seq,label,t0:Date.now(),state:'sent',ms:0}); if(_cmdQ.length>CQ_MAX)_cmdQ.length=CQ_MAX; cqRender(); }
+function cqResolve(ack){
+  let ch=false;
+  for(const e of _cmdQ) if(e.state==='sent'&&e.seq<=ack){ e.state='ack'; e.ms=Date.now()-e.t0; ch=true; cqScheduleRemove(e.seq,4000); }
+  if(ch)cqRender();
+}
+function cqTimeout(seq){ const e=_cmdQ.find(x=>x.seq===seq); if(e&&e.state==='sent'){ e.state='timeout'; cqRender(); cqScheduleRemove(seq,6000); } }
+function cqFail(seq,err){ let e=_cmdQ.find(x=>x.seq===seq); if(!e){ cqAdd(seq,'cmd'); e=_cmdQ.find(x=>x.seq===seq); } if(e){ e.state='fail'; e.err=err; cqRender(); cqScheduleRemove(seq,6000); } }
+function cqScheduleRemove(seq,delay){ setTimeout(()=>{ const i=_cmdQ.findIndex(x=>x.seq===seq); if(i>=0){ _cmdQ.splice(i,1); cqRender(); } }, delay); }
+function cqRender(){
+  const c=g('cmdq'); if(!c)return;
+  if(!_cmdQ.length){ c.className='cmdq'; c.innerHTML=''; return; }
+  c.className='cmdq on';
+  c.innerHTML=_cmdQ.map(e=>{
+    const ic=e.state==='ack'?'✓':e.state==='timeout'?'✗':e.state==='fail'?'⚠':'⏳';
+    const st=e.state==='ack'?(e.ms?('received · '+(e.ms/1000).toFixed(1)+'s'):'confirmed')
+            :e.state==='timeout'?'no ack (timeout)'
+            :e.state==='fail'?('failed'+(e.err?' · '+e.err:''))
+            :'sent…';
+    return `<div class="cq-row cq-${e.state}"><span class="cq-ic">${ic}</span><span class="cq-lbl">${x(e.label||'cmd')}</span><span class="cq-st">${x(st)}</span></div>`;
+  }).join('');
+}
+// Ack poll: runs only while a command is pending. Reads gf_ack (high-priority lane) and resolves
+// every queued command whose seq ≤ the ack; marks any still-unacked command timed out after ~3.5s.
+let _ackPoll=null,_ackBusy=false;
+function ensureAckPoll(){ if(_ackPoll)return; _ackPoll=setInterval(ackTick,450); ackTick(); }
+async function ackTick(){
+  if(!_cmdQ.some(e=>e.state==='sent')){ clearInterval(_ackPoll); _ackPoll=null; return; }
+  const now=Date.now();
+  // Listen server: single-token telemetry reads (gf_ack, like gf_state) time out there, so we can't
+  // measure a real round-trip. The command still executed — confirm optimistically a beat after send.
+  if(_listenServer){
+    let ch=false;
+    for(const e of _cmdQ) if(e.state==='sent'&&now-e.t0>500){ e.state='ack'; e.ms=0; ch=true; cqScheduleRemove(e.seq,4000); }
+    if(ch)cqRender();
+    return;
+  }
+  for(const e of _cmdQ) if(e.state==='sent'&&now-e.t0>3500) cqTimeout(e.seq);   // timeout sweep (runs even if a read is in flight)
+  if(_ackBusy||!live)return;
+  _ackBusy=true;
+  try{
+    const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
+    const r=await (await fetch(API+'/ack?'+p)).json();
+    if(r.ok) cqResolve(r.ack);
+  }catch(_){}
+  finally{ _ackBusy=false; }
 }
 // FUN tab: broadcast a chat-style bold message to all players via gf_say + saymsg.
 // Both sets go in ONE chained rcon command so gf_say is guaranteed set in the same server
@@ -1941,10 +2044,10 @@ const GT_SECTIONS = {
     { n:'scr_gf_roundlimit',          lbl:'Max Rounds (0=off)',       type:'num', def:'0',    tip:'scr_gf_roundlimit\nHard round cap regardless of score. 0 = scorelimit only.' },
     { n:'scr_gf_roundswitch',         lbl:'Sides Switch Every (rounds)', type:'num', def:'2',    tip:'scr_gf_roundswitch\nSwap attacker/defender sides every N rounds. 0 = never.' },
     { n:'scr_gf_roundsperloadout',    lbl:'Rounds Per Loadout',       type:'num', def:'2', tip:'scr_gf_roundsperloadout\nRounds the shared random loadout stays before rotating to the next. Clamped 1-9. Independent of Side Switch.' },
-    { n:'scr_gf_teamspawnmode',       lbl:'Team Spawn Mode',          type:'sel', def:'auto', opts:[['auto','Auto (7+ → large)'],['large','Force Large'],['small','Force Small']], tip:'scr_gf_teamspawnmode\nauto = switch by total players (7+ → large); large/small = force the mode.' },
-    { n:'scr_gf_largemode_minplayers', lbl:'Large Mode At (players)', type:'num', def:'7',    tip:'scr_gf_largemode_minplayers\nTotal in-match players (both teams) at/above which spawns switch to LARGE (full-map). Default 7: 0-6 small, 7+ large. Clamped 2-12.' },
-    { n:'scr_gf_timelimit',           lbl:'Round Time — Small (min)', type:'num', def:'0.75', tip:'scr_gf_timelimit\nRound time for SMALL mode (≤6 players). 0 = no limit.' },
-    { n:'scr_gf_timelimit_large',     lbl:'Round Time — Large (min)', type:'num', def:'1.5',  tip:'scr_gf_timelimit_large\nRound time for LARGE mode (7+ players).' },
+    { n:'scr_gf_teamspawnmode',       lbl:'Team Spawn Mode',          type:'sel', def:'auto', opts:[['auto','Auto (5+/team → large)'],['large','Force Large'],['small','Force Small']], tip:'scr_gf_teamspawnmode\nauto = switch by the larger team (5+ on a team → large, matching the HUD skulls→readout switch); large/small = force the mode.' },
+    { n:'scr_gf_largemode_minplayers', lbl:'Large Mode At (per team)', type:'num', def:'5',    tip:'scr_gf_largemode_minplayers\nPER-TEAM roster size at/above which spawns switch to LARGE (full-map). Default 5 = health-panel skull cap (4) + 1, so large spawns and the alive/total readout switch together: <=4v4 small + skulls, any team of 5+ large + readout. Clamped 2-12.' },
+    { n:'scr_gf_timelimit',           lbl:'Round Time — Small (min)', type:'num', def:'0.75', tip:'scr_gf_timelimit\nRound time for SMALL mode (<=4v4). 0 = no limit.' },
+    { n:'scr_gf_timelimit_large',     lbl:'Round Time — Large (min)', type:'num', def:'1.5',  tip:'scr_gf_timelimit_large\nRound time for LARGE mode (any team of 5+).' },
     { n:'scr_gf_match_prematch_seconds', lbl:'Prematch (s)',          type:'num', def:'15', tip:'scr_gf_match_prematch_seconds\nIntro countdown before the first round of the match (MATCH STARTING IN). Clamped 2-30.' },
     { n:'scr_gf_prematch_seconds',    lbl:'Preround (s)',             type:'num', def:'7',  tip:'scr_gf_prematch_seconds\nCountdown before each later round (ROUND BEGINS IN). Clamped 2-20.' },
     { n:'scr_gf_roster_wait',         lbl:'Roster Wait (s, 0=no cap)', type:'num', def:'15', tip:'scr_gf_roster_wait\nMax seconds the round clock waits after the countdown for every teamed player to finish spawning (slow loaders, round-1 bot fill).\n0 = no cap: wait until everyone is in (a stuck client would only be released when the match ends). Clamped 0-120.' },

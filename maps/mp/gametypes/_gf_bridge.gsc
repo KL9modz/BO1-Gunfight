@@ -1,8 +1,10 @@
 // GSC Bridge -- RCON -> GSC dispatcher
-// RCON sends: set gf_cmd <command>
-// This poll loop reads, clears, and dispatches.
+// RCON sends: set gf_cmd <seq>:<command>   (the "<seq>:" prefix is optional; a bare <command>
+// still runs but isn't acked). This poll loop (20 Hz) reads, clears, dispatches, and writes the
+// processed <seq> into gf_ack so the panel can flip a command from "sent" to "received".
+// Feedback is PRIVATE: gf_bridgeNotify prints only to admins listed in gf_admin_guids (not everyone).
 //
-// Commands (send via RCON: set gf_cmd <cmd>):
+// Commands (send via RCON: set gf_cmd <seq>:<cmd>):
 //   pause              - freeze match clock + all player controls
 //   resume             - resume clock + unfreeze players
 //   botdiff_easy/normal/hard/fu  - set bot difficulty
@@ -49,8 +51,15 @@
 //   tpall              - teleport all players to Player 1 (host/anchor)
 //   saymsg             - iPrintLnBold the contents of dvar gf_say to everyone
 //
-// Telemetry dvars (read-only, updated every 2s):
-//   gf_state  -> "allies_wins:axis_wins:round:alive_allies:alive_axis"
+// Config dvar (panel-managed):
+//   gf_admin_guids -> comma-separated player GUID allowlist. gf_bridgeNotify prints command
+//                     feedback ONLY to these players (empty = nobody). Set via the panel's
+//                     right-click "Set as admin".
+//
+// Telemetry dvars (read-only):
+//   gf_ack    -> sequence id of the last processed gf_cmd (written the instant it's dispatched);
+//                the panel polls it to confirm a command was received. "0" = none yet.
+//   gf_state  -> "allies_wins:axis_wins:round:alive_allies:alive_axis"  (updated every 2s)
 //                e.g.  "3:2:5:2:1"
 //   gf_roster -> "<num>,<team>,<alive>,<pending>;..." per connected player, e.g.
 //                "1,a,1,-;2,x,0,x"  (team/pending code: a=allies x=axis s=spectator -=none;
@@ -64,12 +73,22 @@ gf_bridgeInit()
 {
     level endon( "game_ended" );
 
-    if ( getDvar( "gf_cmd" ) == "" )
-        setDvar( "gf_cmd", "" );
+    // Clear any stale command left in the slot by a previous match / map_restart (dvars persist
+    // across map_restart; a leftover value would fire once on the first poll below).
+    setDvar( "gf_cmd", "" );
     if ( getDvar( "gf_say" ) == "" )
         setDvar( "gf_say", "" );
     if ( getDvar( "gf_expbullets_radius" ) == "" )
         setDvar( "gf_expbullets_radius", "200" );   // RCON Blast Radius slider default
+
+    // Ack channel: the poll loop writes the sequence id of each processed command here so the
+    // RCON panel can flip a queued command from "sent" to "received" (closed loop). Starts at 0.
+    setDvar( "gf_ack", "0" );
+    // Admin GUID allowlist (comma-separated) for PRIVATE feedback: gf_bridgeNotify prints only to
+    // players whose getGuid() is in this list, instead of the old bare iPrintLnBold that showed
+    // everyone. Managed by the panel (Set as admin); a cfg-set value survives here (only seeded blank).
+    if ( getDvar( "gf_admin_guids" ) == "" )
+        setDvar( "gf_admin_guids", "" );
 
     setDvar( "gf_state", "0:0:1:0:0:" + level.gameType );
     setDvar( "gf_roster", "" );
@@ -102,15 +121,80 @@ gf_bridgeInit()
 
     level thread gf_bridgeTelemetry();
 
+    // 20 Hz poll (was 2 Hz): cuts up to ~450ms off the command latency floor for a single
+    // getDvar per tick. Read+clear are adjacent statements with no wait between, so the engine
+    // can't slot an incoming `set gf_cmd` in the gap — the take is race-free (no dedup needed).
     for ( ;; )
     {
-        wait 0.5;
-        cmd = getDvar( "gf_cmd" );
-        if ( cmd == "" )
+        wait 0.05;
+        raw = getDvar( "gf_cmd" );
+        if ( raw == "" )
             continue;
 
         setDvar( "gf_cmd", "" );
+
+        // The panel sends "<seq>:<cmd>" so it can match an ack; a bare "<cmd>" (manual console)
+        // parses to seq "0" and just isn't acked. Commands never contain ':', so the split is safe.
+        sc  = gf_bridgeSplitSeq( raw );
+        seq = sc[0];
+        cmd = sc[1];
+
         level thread gf_bridgeDispatch( cmd );
+
+        if ( seq != "0" )
+            setDvar( "gf_ack", seq );
+    }
+}
+
+// Split a "<seq>:<cmd>" command value into [ seq, cmd ]. A value with no leading "<digits>:"
+// (e.g. a hand-typed `set gf_cmd god_on`) returns seq "0" and the whole string as the command.
+// Commands in this bridge never contain ':', so any ':' present is the seq separator; extra ':'
+// (defensive) are rejoined into the command.
+gf_bridgeSplitSeq( raw )
+{
+    parts = strTok( raw, ":" );
+    out   = [];
+    if ( parts.size >= 2 )
+    {
+        out[0] = parts[0];
+        cmd    = parts[1];
+        for ( i = 2; i < parts.size; i++ )
+            cmd += ":" + parts[i];
+        out[1] = cmd;
+    }
+    else
+    {
+        out[0] = "0";
+        out[1] = raw;
+    }
+    return out;
+}
+
+// Private admin feedback. Prints `text` ONLY to connected players whose GUID is listed in the
+// gf_admin_guids allowlist, replacing the old bare iPrintLnBold that center-printed to EVERYONE.
+// Read live each call (cheap — only fires on an admin action). Empty allowlist => prints to nobody
+// (the panel still logs the action). getGuid() is coerced to a string so the compare is type-safe.
+gf_bridgeNotify( text )
+{
+    guids = getDvar( "gf_admin_guids" );
+    if ( guids == "" )
+        return;
+
+    admins  = strTok( guids, "," );
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p  = players[i];
+        pg = p getGuid();
+        pg = "" + pg;          // coerce to string (stock idiom) so the compare is type-safe
+        for ( j = 0; j < admins.size; j++ )
+        {
+            if ( admins[j] == pg )
+            {
+                p iPrintLnBold( text );
+                break;
+            }
+        }
     }
 }
 
@@ -177,10 +261,10 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "pause"  ) { gf_bridgePause();  return; }
     if ( cmd == "resume" ) { gf_bridgeResume(); return; }
 
-    if ( cmd == "botdiff_easy"   ) { maps\mp\gametypes\_bot::bot_set_difficulty( "easy"   ); iPrintLnBold( "^2Bot: Easy"   ); return; }
-    if ( cmd == "botdiff_normal" ) { maps\mp\gametypes\_bot::bot_set_difficulty( "normal" ); iPrintLnBold( "^2Bot: Normal" ); return; }
-    if ( cmd == "botdiff_hard"   ) { maps\mp\gametypes\_bot::bot_set_difficulty( "hard"   ); iPrintLnBold( "^1Bot: Hard"   ); return; }
-    if ( cmd == "botdiff_fu"     ) { maps\mp\gametypes\_bot::bot_set_difficulty( "fu"     ); iPrintLnBold( "^1Bot: FU"     ); return; }
+    if ( cmd == "botdiff_easy"   ) { maps\mp\gametypes\_bot::bot_set_difficulty( "easy"   ); gf_bridgeNotify( "^2Bot: Easy"   ); return; }
+    if ( cmd == "botdiff_normal" ) { maps\mp\gametypes\_bot::bot_set_difficulty( "normal" ); gf_bridgeNotify( "^2Bot: Normal" ); return; }
+    if ( cmd == "botdiff_hard"   ) { maps\mp\gametypes\_bot::bot_set_difficulty( "hard"   ); gf_bridgeNotify( "^1Bot: Hard"   ); return; }
+    if ( cmd == "botdiff_fu"     ) { maps\mp\gametypes\_bot::bot_set_difficulty( "fu"     ); gf_bridgeNotify( "^1Bot: FU"     ); return; }
 
     if ( cmd == "endround_allies" ) { maps\mp\gametypes\sd::sd_endGame( "allies", "" ); return; }
     if ( cmd == "endround_axis"   ) { maps\mp\gametypes\sd::sd_endGame( "axis",   "" ); return; }
@@ -203,8 +287,8 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "selfbar_on"  ) { gf_bridgeSelfBar( true );  return; }
     if ( cmd == "selfbar_off" ) { gf_bridgeSelfBar( false ); return; }
 
-    if ( cmd == "killstreaks_on"  ) { level.killstreaksenabled = true;  iPrintLnBold( "^3Killstreaks ON"  ); return; }
-    if ( cmd == "killstreaks_off" ) { level.killstreaksenabled = false; iPrintLnBold( "^7Killstreaks OFF" ); return; }
+    if ( cmd == "killstreaks_on"  ) { level.killstreaksenabled = true;  gf_bridgeNotify( "^3Killstreaks ON"  ); return; }
+    if ( cmd == "killstreaks_off" ) { level.killstreaksenabled = false; gf_bridgeNotify( "^7Killstreaks OFF" ); return; }
     if ( cmd == "regen_on"        ) { gf_bridgeRegen( true );          return; }
     if ( cmd == "regen_off"       ) { gf_bridgeRegen( false );         return; }
 
@@ -258,7 +342,7 @@ gf_bridgePause()
     if ( level.gf_paused ) return;
     level.gf_paused = true;
     maps\mp\gametypes\_gf_rounds::gf_pauseMatch();
-    iPrintLnBold( "^3-- MATCH PAUSED --" );
+    gf_bridgeNotify( "^3-- MATCH PAUSED --" );
 }
 
 gf_bridgeResume()
@@ -266,7 +350,7 @@ gf_bridgeResume()
     if ( !level.gf_paused ) return;
     level.gf_paused = false;
     maps\mp\gametypes\_gf_rounds::gf_resumeMatch();
-    iPrintLnBold( "^2-- MATCH RESUMED --" );
+    gf_bridgeNotify( "^2-- MATCH RESUMED --" );
 }
 
 // --- God mode ----------------------------------------------------------------
@@ -283,9 +367,9 @@ gf_bridgeGod( enable )
             players[i] disableInvulnerability();
     }
     if ( enable )
-        iPrintLnBold( "^3God Mode ON" );
+        gf_bridgeNotify( "^3God Mode ON" );
     else
-        iPrintLnBold( "^7God Mode OFF" );
+        gf_bridgeNotify( "^7God Mode OFF" );
 }
 
 // --- Perks -------------------------------------------------------------------
@@ -312,9 +396,9 @@ gf_bridgePerks( enable )
         }
     }
     if ( enable )
-        iPrintLnBold( "^2All Perks ON" );
+        gf_bridgeNotify( "^2All Perks ON" );
     else
-        iPrintLnBold( "^7Perks cleared" );
+        gf_bridgeNotify( "^7Perks cleared" );
 }
 
 // --- Perk override sync (rcon Perks tab) -------------------------------------
@@ -335,7 +419,7 @@ gf_bridgePerkSync()
         players[i] maps\mp\gametypes\_gf_loadouts::gf_applyPerkList( onList,  true  );
         players[i] maps\mp\gametypes\_gf_loadouts::gf_applyPerkList( offList, false );
     }
-    iPrintLnBold( "^2Perks synced" );
+    gf_bridgeNotify( "^2Perks synced" );
 }
 
 // --- Infinite ammo (native sv_FullAmmo + one-shot top-up) --------------------
@@ -359,12 +443,12 @@ gf_bridgeInfAmmo( enable )
             for ( j = 0; j < weapons.size; j++ )
                 p giveMaxAmmo( weapons[j] );
         }
-        iPrintLnBold( "^3Infinite Ammo ON" );
+        gf_bridgeNotify( "^3Infinite Ammo ON" );
     }
     else
     {
         setDvar( "sv_FullAmmo", 0 );
-        iPrintLnBold( "^7Infinite Ammo OFF" );
+        gf_bridgeNotify( "^7Infinite Ammo OFF" );
     }
 }
 
@@ -381,14 +465,14 @@ gf_bridgeRadar( enable )
         setDvar( "scr_game_forceradar", 1 );
         setMatchFlag( "radar_allies", 1 );
         setMatchFlag( "radar_axis",   1 );
-        iPrintLnBold( "^3Radar: Always ON" );
+        gf_bridgeNotify( "^3Radar: Always ON" );
     }
     else
     {
         setDvar( "scr_game_forceradar", 0 );
         setMatchFlag( "radar_allies", 0 );
         setMatchFlag( "radar_axis",   0 );
-        iPrintLnBold( "^7Radar: Normal" );
+        gf_bridgeNotify( "^7Radar: Normal" );
     }
 }
 
@@ -400,9 +484,9 @@ gf_bridgeHeadshots( enable )
 {
     level.gf_headshotsOnly = enable;
     if ( enable )
-        iPrintLnBold( "^3Headshots Only: ON" );
+        gf_bridgeNotify( "^3Headshots Only: ON" );
     else
-        iPrintLnBold( "^7Headshots Only: OFF" );
+        gf_bridgeNotify( "^7Headshots Only: OFF" );
 }
 
 // --- Self health bar ---------------------------------------------------------
@@ -422,9 +506,9 @@ gf_bridgeSelfBar( enable )
             p setClientDvar( "ui_gf_self_show", "0" );
     }
     if ( enable )
-        iPrintLnBold( "^2Self Bar: ON" );
+        gf_bridgeNotify( "^2Self Bar: ON" );
     else
-        iPrintLnBold( "^7Self Bar: OFF" );
+        gf_bridgeNotify( "^7Self Bar: OFF" );
 }
 
 // --- Visual tweaks -----------------------------------------------------------
@@ -457,7 +541,7 @@ gf_bridgeVisSet( dvar, value )
     players = level.players;
     for ( i = 0; i < players.size; i++ )
         players[i] setClientDvar( dvar, value );
-    iPrintLnBold( "^3Vis: " + dvar + " = " + value );
+    gf_bridgeNotify( "^3Vis: " + dvar + " = " + value );
 }
 
 // visreset -- return ALL persistent tweaks to stock in one shot: clear every
@@ -483,7 +567,7 @@ gf_bridgeVisReset()
         visionSetNaked( level.gf_defaultVision, 0.5 );
     }
 
-    iPrintLnBold( "^7Visuals: stock" );
+    gf_bridgeNotify( "^7Visuals: stock" );
 }
 
 // --- Health regen ------------------------------------------------------------
@@ -494,12 +578,12 @@ gf_bridgeRegen( enable )
     if ( enable )
     {
         setDvar( "scr_player_healthregentime", "5" );
-        iPrintLnBold( "^3Health Regen ON" );
+        gf_bridgeNotify( "^3Health Regen ON" );
     }
     else
     {
         setDvar( "scr_player_healthregentime", "0" );
-        iPrintLnBold( "^7Health Regen OFF" );
+        gf_bridgeNotify( "^7Health Regen OFF" );
     }
 }
 
@@ -522,9 +606,9 @@ gf_bridgePlayerCmd( action, numStr )
     if ( !isDefined( target ) ) return;
 
     name = target.name;
-    if ( action == "god"      ) { target enableInvulnerability(); iPrintLnBold( "^3God: "      + name ); }
-    if ( action == "freeze"   ) { target freezeControls( true );  iPrintLnBold( "^1Frozen: "   + name ); }
-    if ( action == "unfreeze" ) { target freezeControls( false ); iPrintLnBold( "^2Unfrozen: " + name ); }
+    if ( action == "god"      ) { target enableInvulnerability(); gf_bridgeNotify( "^3God: "      + name ); }
+    if ( action == "freeze"   ) { target freezeControls( true );  gf_bridgeNotify( "^1Frozen: "   + name ); }
+    if ( action == "unfreeze" ) { target freezeControls( false ); gf_bridgeNotify( "^2Unfrozen: " + name ); }
     if ( action == "perks"    )
     {
         target SetPerk( "specialty_longersprint"   );
@@ -532,7 +616,7 @@ gf_bridgePlayerCmd( action, numStr )
         target SetPerk( "specialty_gpsjammer"      );
         target SetPerk( "specialty_fastreload"     );
         target SetPerk( "specialty_bulletaccuracy" );
-        iPrintLnBold( "^2Perks: " + name );
+        gf_bridgeNotify( "^2Perks: " + name );
     }
 }
 
@@ -569,21 +653,21 @@ gf_bridgeTeamCmd( arg )
     // of letting the spawn overflow silently dump the player into spectator. Spectator is uncapped.
     if ( team != "spectator" && gf_bridgeTeamFull( target, team ) )
     {
-        iPrintLnBold( "^1Team full: " + gf_bridgeTeamLabel( team ) + " (scr_team_maxsize)" );
+        gf_bridgeNotify( "^1Team full: " + gf_bridgeTeamLabel( team ) + " (scr_team_maxsize)" );
         return;
     }
 
     if ( gf_bridgeTeamSafeNow() )
     {
         target gf_applyTeamMove( team );
-        iPrintLnBold( "^2Team: " + name + " ^7-> " + gf_bridgeTeamLabel( team ) );
+        gf_bridgeNotify( "^2Team: " + name + " ^7-> " + gf_bridgeTeamLabel( team ) );
     }
     else
     {
         // Live round / killcam / min-players hold: don't touch the player now (a switch would
         // suicide them and a pers["team"] flip would break friendly-fire). Queue for next round.
         target.pers["gf_pendingTeam"] = team;
-        iPrintLnBold( "^3Team: " + name + " ^7-> " + gf_bridgeTeamLabel( team ) + " ^3(next round)" );
+        gf_bridgeNotify( "^3Team: " + name + " ^7-> " + gf_bridgeTeamLabel( team ) + " ^3(next round)" );
     }
 }
 
@@ -779,7 +863,7 @@ gf_bridgeVision( vkey )
         setDvar( "gf_vis_vision", vkey );
 
     visionSetNaked( set, 0.5 );                // bare = global, all clients
-    iPrintLnBold( "^5Vision: " + vkey );
+    gf_bridgeNotify( "^5Vision: " + vkey );
 }
 
 // --- Explosive bullets -------------------------------------------------------
@@ -799,13 +883,13 @@ gf_bridgeExpBullets( enable )
         for ( i = 0; i < players.size; i++ )
             players[i] thread gf_expBulletsPlayer();
         level thread gf_expBulletsConnectWatch();
-        iPrintLnBold( "^1Explosive Bullets ON" );
+        gf_bridgeNotify( "^1Explosive Bullets ON" );
     }
     else
     {
         level.gf_expBullets = false;
         level notify( "gf_expbullets_stop" );
-        iPrintLnBold( "^7Explosive Bullets OFF" );
+        gf_bridgeNotify( "^7Explosive Bullets OFF" );
     }
 }
 
@@ -859,13 +943,13 @@ gf_bridgeDrunk( enable )
         if ( level.gf_drunk ) return;
         level.gf_drunk = true;
         level thread gf_drunkLoop();
-        iPrintLnBold( "^5Drunk Mode ON" );
+        gf_bridgeNotify( "^5Drunk Mode ON" );
     }
     else
     {
         level.gf_drunk = false;
         level notify( "gf_drunk_stop" );
-        iPrintLnBold( "^7Drunk Mode OFF" );
+        gf_bridgeNotify( "^7Drunk Mode OFF" );
     }
 }
 
@@ -900,9 +984,9 @@ gf_bridgeInvisible( enable )
             players[i] show();
     }
     if ( enable )
-        iPrintLnBold( "^5Players Invisible" );
+        gf_bridgeNotify( "^5Players Invisible" );
     else
-        iPrintLnBold( "^7Players Visible" );
+        gf_bridgeNotify( "^7Players Visible" );
 }
 
 // --- One-shot earthquake -----------------------------------------------------
@@ -912,7 +996,7 @@ gf_bridgeQuake()
     players = level.players;
     for ( i = 0; i < players.size; i++ )
         EarthQuake( 0.7, 2.0, players[i].origin, 1200 );
-    iPrintLnBold( "^1*** EARTHQUAKE ***" );
+    gf_bridgeNotify( "^1*** EARTHQUAKE ***" );
 }
 
 // --- Teleport all to anchor (Player 1 / host) -------------------------------
@@ -934,7 +1018,7 @@ gf_bridgeTeleportAll()
         p SetOrigin( org + ( randomInt( 40 ) - 20, randomInt( 40 ) - 20, 0 ) );
         p SetPlayerAngles( ang );
     }
-    iPrintLnBold( "^3Gathered all players -> " + anchor.name );
+    gf_bridgeNotify( "^3Gathered all players -> " + anchor.name );
 }
 
 // --- Broadcast message -------------------------------------------------------
@@ -944,5 +1028,5 @@ gf_bridgeBroadcast()
 {
     msg = getDvar( "gf_say" );
     if ( msg == "" ) return;
-    iPrintLnBold( msg );
+    iPrintLnBold( msg );   // intentional ALL-players broadcast (the panel's "say to everyone"), not admin-only feedback
 }

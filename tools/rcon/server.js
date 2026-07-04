@@ -69,26 +69,48 @@ function sendRcon(host, port, password, command, collectMs = COLLECT_MS, hardMs 
   });
 }
 
-// ── Global rcon send throttle ─────────────────────────────────────────────────
+// ── Global rcon send throttle (priority-aware) ────────────────────────────────
 // This server rate-limits rcon replies (~1 per 0.7s) and silently DROPS commands sent
 // faster. The web UI issues many concurrent rcon calls (dvar sweeps + status/score ticks
 // overlap on connect), so we serialize EVERY send through one queue with a minimum gap,
 // measured from the previous send's completion — the server is never outrun no matter how
 // many HTTP requests arrive at once. This is what makes the batched dvar sync land ~100%.
+//
+// PRIORITY: a user click (bridge command write) and its ack read go on a HIGH-priority lane so
+// they jump ahead of the background status/score/roster ticks and the ~100-dvar connect sweep —
+// otherwise a click could sit multiple seconds behind an in-flight read burst. The ≥850ms gap is
+// still enforced globally (it's a hard server limit); priority only reorders WHO goes next.
 const RCON_MIN_GAP = 850;
-let _rconQueue = Promise.resolve();
+let _rconActive = false;
 let _rconLastDone = 0;
-function sendRconQueued(...args) {
-  const run = async () => {
-    const gap = RCON_MIN_GAP - (Date.now() - _rconLastDone);
-    if (gap > 0) await sleep(gap);
-    try { return await sendRcon(...args); }
-    finally { _rconLastDone = Date.now(); }
-  };
-  const p = _rconQueue.then(run, run);      // run regardless of the previous call's outcome
-  _rconQueue = p.then(() => {}, () => {});   // keep the chain alive even if this send rejects
-  return p;
+let _rconSeq = 0;                 // tiebreak: FIFO within the same priority
+const _rconQ = [];               // pending jobs: { priority, seq, args, resolve, reject }
+function _rconEnqueue(priority, args) {
+  return new Promise((resolve, reject) => {
+    _rconQ.push({ priority, seq: _rconSeq++, args, resolve, reject });
+    _rconDrain();
+  });
 }
+async function _rconDrain() {
+  if (_rconActive || !_rconQ.length) return;
+  _rconActive = true;
+  // Pick the highest priority; oldest (lowest seq) wins ties → FIFO within a lane.
+  let bi = 0;
+  for (let i = 1; i < _rconQ.length; i++) {
+    const a = _rconQ[i], b = _rconQ[bi];
+    if (a.priority > b.priority || (a.priority === b.priority && a.seq < b.seq)) bi = i;
+  }
+  const job = _rconQ.splice(bi, 1)[0];
+  const gap = RCON_MIN_GAP - (Date.now() - _rconLastDone);
+  if (gap > 0) await sleep(gap);
+  try { job.resolve(await sendRcon(...job.args)); }
+  catch (e) { job.reject(e); }
+  finally { _rconLastDone = Date.now(); _rconActive = false; _rconDrain(); }
+}
+// Background reads (status/score/roster/dvar sweep) — normal lane.
+function sendRconQueued(...args)   { return _rconEnqueue(0, args); }
+// User clicks + ack reads — high lane, preempt background work at the next free slot.
+function sendRconPriority(...args) { return _rconEnqueue(10, args); }
 
 function parseRconResponse(buf) {
   const s  = buf.toString('utf8');
@@ -459,15 +481,34 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ── POST /api/rcon ──
+  // `priority:true` (bridge command writes) uses the high lane + short reply window: a `set`
+  // echoes nothing useful, so we don't hold the lane for the full RCON_TIMEOUT — the panel marks
+  // the command "sent" optimistically and confirms it via the gf_ack poll (/api/ack) anyway.
   if (req.method === 'POST' && pathname === '/api/rcon') {
     let body;
     try { body = JSON.parse(await readBody(req)); } catch (_) { return sendJson(res, { ok: false, error: 'Bad JSON' }, 400); }
-    const { host = '127.0.0.1', port = '28960', password = '', command } = body;
+    const { host = '127.0.0.1', port = '28960', password = '', command, priority = false } = body;
     if (!command) return sendJson(res, { ok: false, error: 'Missing command' }, 400);
     try {
-      const buf      = await sendRconQueued(host, parseInt(port), password, command);
+      const buf = priority
+        ? await sendRconPriority(host, parseInt(port), password, command, 150, 700)
+        : await sendRconQueued(host, parseInt(port), password, command);
       const response = parseRconResponse(buf);
       return sendJson(res, { ok: true, response });
+    } catch (err) {
+      return sendJson(res, { ok: false, error: err.message });
+    }
+  }
+
+  // ── GET /api/ack ── high-priority read of gf_ack (last processed command seq). The panel polls
+  // this right after sending a bridge command to flip it from "sent" to "received".
+  if (req.method === 'GET' && pathname === '/api/ack') {
+    const { host = '127.0.0.1', port = '28960', password = '' } = query;
+    try {
+      const buf  = await sendRconPriority(host, parseInt(port), password, 'gf_ack', 150, 700);
+      const text = parseRconResponse(buf);
+      const val  = parseDvarValue(text, 'gf_ack');
+      return sendJson(res, { ok: val !== null, ack: val !== null ? (parseInt(val) || 0) : 0 });
     } catch (err) {
       return sendJson(res, { ok: false, error: err.message });
     }
