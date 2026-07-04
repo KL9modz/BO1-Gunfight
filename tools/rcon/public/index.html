@@ -1639,7 +1639,10 @@ async function broadcastMsg(){
 // Perks the GF loadout already grants every spawn. Toggling one of these OFF
 // goes in the force-OFF list; toggling a non-base perk ON goes in force-ON.
 // The loadout applies base perks, then ON list, then OFF list (OFF wins).
-const BASE_PERKS=['specialty_movefaster','specialty_fallheight','specialty_longersprint','specialty_armorvest','specialty_flakjacket'];
+// Mirror of the hardcoded base perk set in _gf_loadouts.gsc gf_giveCustomLoadout (every player
+// gets these). Keep in sync with that SetPerk list — a base perk renders checked and unchecking it
+// adds it to gf_perk_off to remove it; a non-base perk checked adds it to gf_perk_on.
+const BASE_PERKS=['specialty_movefaster','specialty_fallheight','specialty_longersprint','specialty_armorvest','specialty_flakjacket','specialty_shades','specialty_stunprotection'];
 async function perkTog(){
   const on=[],off=[];
   document.querySelectorAll('[data-perk]').forEach(cb=>{
@@ -2002,8 +2005,8 @@ const SRV_SECTIONS = [
     { n:'specialty_twoattach',         lbl:'Warlord',                  type:'perk', def:'0', tip:'specialty_twoattach\nTwo attachments per weapon.' },
     { n:'specialty_detectexplosive',   lbl:'Hacker',                   type:'perk', def:'0', tip:'specialty_detectexplosive\nDetect enemy equipment.' },
     { n:'specialty_gas_mask',          lbl:'Tactical Mask',            type:'perk', def:'0', tip:'specialty_gas_mask\nReduces GAS (tabun) effect only. In this mod, flash/concussion resistance rides on the separate Flash Resist / Stun Resist perks below (the CAC Pro-upgrade that would grant them is bypassed here).' },
-    { n:'specialty_shades',            lbl:'Flash Resist',             type:'perk', def:'0', tip:'specialty_shades\nCuts flashbang blind DURATION to 10% (_flashgrenades.gsc keys off this perk). Give to all players to make flashes barely register.' },
-    { n:'specialty_stunprotection',    lbl:'Stun Resist',              type:'perk', def:'0', tip:'specialty_stunprotection\nCuts concussion-grenade stun DURATION to 10% (_weapons.gsc keys off this perk). Give to all players to neuter stun grenades.' },
+    { n:'specialty_shades',            lbl:'Flash Resist',             type:'perk', def:'1', tip:'specialty_shades\nCuts flashbang blind DURATION to 10% (_flashgrenades.gsc keys off this perk). BASE perk (on by default) — uncheck to remove it from everyone.' },
+    { n:'specialty_stunprotection',    lbl:'Stun Resist',              type:'perk', def:'1', tip:'specialty_stunprotection\nCuts concussion-grenade stun DURATION to 10% (_weapons.gsc keys off this perk). BASE perk (on by default) — uncheck to remove it from everyone.' },
     { n:'specialty_pistoldeath',       lbl:'Second Chance',            type:'perk', def:'0', tip:'specialty_pistoldeath\nDrop into last-stand with a pistol on death.' },
     { n:'specialty_blindeye',          lbl:'Cold Blooded',             type:'perk', def:'0', tip:'specialty_blindeye\nUndetectable by AI killstreaks; no red name.' },
     { n:'specialty_sprintrecovery',    lbl:'Extreme Conditioning',     type:'perk', def:'0', tip:'specialty_sprintrecovery\nFaster sprint recovery. Pairs with the Sprint Recovery slider.' },
@@ -2082,7 +2085,7 @@ const GT_SECTIONS = {
     { n:'scr_gf_timelimit_large',     lbl:'Round Time — Large (min)', type:'num', def:'1.5',  tip:'scr_gf_timelimit_large\nRound time for LARGE mode (any team of 5+).' },
     { n:'scr_gf_match_prematch_seconds', lbl:'Prematch (s)',          type:'num', def:'15', tip:'scr_gf_match_prematch_seconds\nIntro countdown before the first round of the match (MATCH STARTING IN). Clamped 2-30.' },
     { n:'scr_gf_prematch_seconds',    lbl:'Preround (s)',             type:'num', def:'7',  tip:'scr_gf_prematch_seconds\nCountdown before each later round (ROUND BEGINS IN). Clamped 2-20.' },
-    { n:'scr_gf_roster_wait',         lbl:'Roster Wait (s, 0=no cap)', type:'num', def:'15', tip:'scr_gf_roster_wait\nMax seconds the round clock waits after the countdown for every teamed player to finish spawning (slow loaders, round-1 bot fill).\n0 = no cap: wait until everyone is in (a stuck client would only be released when the match ends). Clamped 0-120.' },
+    { n:'scr_gf_roster_wait',         lbl:'Roster Wait (s, 0=60s cap)', type:'num', def:'15', tip:'scr_gf_roster_wait\nMax seconds the round clock waits after the countdown for every teamed HUMAN to finish spawning (slow loaders). Bots are excluded from the gate, so a lagging/failed bot spawn no longer stalls round start.\n0 no longer means "wait forever" (that could wedge the match on a stuck client) — it now falls back to a 60s hard ceiling. Always bounded. Clamped 0-120.' },
     { n:'scr_gf_min_players',         lbl:'Min Players to Start',      type:'num', def:'1',  tip:'scr_gf_min_players\nHold the FIRST round until at least this many HUMAN players are on a team (bots do not count). Match-start only — once the match is live it never re-holds, even if players leave.\nEveryone is frozen and damage is voided during the hold, so nobody dies into a not-yet-live round. 1 = effectively off. Clamped 1-8.' },
     { n:'scr_gf_overtimelimit',       lbl:'OT Duration — Small (s)',  type:'num', def:'15',   tip:'scr_gf_overtimelimit\nOT countdown for SMALL mode. Pauses while contested.' },
     { n:'scr_gf_overtimelimit_large', lbl:'OT Duration — Large (s)',  type:'num', def:'30',   tip:'scr_gf_overtimelimit_large\nOT countdown for LARGE mode. Pauses while contested.' },

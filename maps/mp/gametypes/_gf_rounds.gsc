@@ -421,21 +421,28 @@ gf_tryActivateRound()
     // + bot fill) to physically finish spawning.
     gf_waitForMinPlayers();
 
-    // Hold the round clock until every teamed player has actually spawned. The engine
+    // Hold the round clock until every teamed HUMAN has actually spawned. The engine
     // never waits for the roster itself — startGame()'s waitForPlayers() is an empty
-    // stub and prematch_over is pure wall clock — so round-1 bot fill and slow loaders
-    // land after it. Bounded by scr_gf_roster_wait so a stuck client can't stall the
-    // match — RCON-tunable, and 0 removes the cap entirely (wait forever, only broken
-    // by "game_ended" via the level endon above). Default 15s = a realistic slow-loader
-    // window; the old hard-coded 8s was often too short.
+    // stub and prematch_over is pure wall clock — so slow human loaders land after it.
+    // Bounded by scr_gf_roster_wait so a stuck client can't stall the match — RCON-tunable,
+    // always bounded (0 falls back to the hard ceiling below, never an infinite wait).
+    // Default 15s = a realistic slow-loader window; the old hard-coded 8s was often too
+    // short. (Bots are excluded from the gate — see gf_allTeamedPlayersSpawned — so a
+    // lagging/failed bot spawn can no longer produce a "stuck after prematch" freeze.)
     graceFloor = gettime() + 3000;
-    rosterWait = gf_cfgFloat( "scr_gf_roster_wait", 15, 0, 120 );   // seconds; 0 = no cap
-    unbounded  = ( rosterWait <= 0 );
-    deadline   = gettime() + int( rosterWait * 1000 );
+    // scr_gf_roster_wait = max seconds to hold for the present roster to spawn in. 0 no longer
+    // means "wait forever" — that was a footgun: a teamed client that never spawns would wedge
+    // the match until game_ended (which can't fire pre-start). 0 now falls back to a generous
+    // absolute ceiling so the round can always start. Bots are excluded from the gate (see
+    // gf_allTeamedPlayersSpawned), so this only ever holds on real players.
+    rosterWait = gf_cfgFloat( "scr_gf_roster_wait", 15, 0, 120 );   // seconds; 0 = use the hard ceiling
+    if ( rosterWait <= 0 )
+        rosterWait = 60;   // GF_ROSTER_HARD_CEILING — absolute cap; a stuck client can never wedge the match
+    deadline = gettime() + int( rosterWait * 1000 );
     if ( !gf_allTeamedPlayersSpawned() )
     {
         setGameEndTime( 0 );   // hide the native clock while holding (it would count down, then snap back to full)
-        while ( ( unbounded || gettime() < deadline ) && !gf_allTeamedPlayersSpawned() )
+        while ( gettime() < deadline && !gf_allTeamedPlayersSpawned() )
             wait 0.1;
     }
 
@@ -474,11 +481,20 @@ gf_closeGraceEarly( floorTime )
     level thread maps\mp\gametypes\_globallogic::updateTeamStatus();
 }
 
-// True once every connected player on a playing team has completed a spawn this round
-// (stock self.hasSpawned: reset false in Callback_PlayerConnect — which re-runs for
-// every client on the between-round map_restart — and set true in spawnPlayer).
-// Spectators and players still in team-select don't count: they can't spawn into this
-// round, so they must not hold the clock hostage.
+// True once every teamed HUMAN has completed a spawn this round (stock self.hasSpawned:
+// reset false in Callback_PlayerConnect — which re-runs for every client on the between-round
+// map_restart — and set true in spawnPlayer). Spectators and players still in team-select
+// don't count: they can't spawn into this round, so they must not hold the clock hostage.
+//
+// BOTS are also skipped on purpose. They connect AFTER onStartGameType and are teamed +
+// spawned asynchronously by the bot framework, so a bot teamed just before prematch_over —
+// or one that fails its first spawn (the open "bots die on spawn" issue) — would otherwise
+// keep this false for the whole scr_gf_roster_wait window, producing the intermittent
+// "stuck after prematch, no round timer" freeze. We hold the round only for real players to
+// spawn in; a lagging bot simply pops in mid-round when it spawns. The auto team-size
+// snapshot (gf_updateAutoTeamMode) reads level.playerCount, which already counts a teamed
+// bot regardless of spawn, so this doesn't hurt mode accuracy for teamed bots (a not-yet-
+// teamed straggler is the documented one-round auto-mode lag, not a new regression).
 gf_allTeamedPlayersSpawned()
 {
     players = level.players;
@@ -488,6 +504,9 @@ gf_allTeamedPlayersSpawned()
 
         team = player.pers["team"];
         if ( !isDefined( team ) || ( team != "allies" && team != "axis" ) )
+            continue;
+
+        if ( isDefined( player.pers["isBot"] ) && player.pers["isBot"] )
             continue;
 
         if ( !isDefined( player.hasSpawned ) || !player.hasSpawned )
@@ -512,6 +531,23 @@ gf_humanCount()
         team = p.pers["team"];
         if ( !isDefined( team ) || ( team != "allies" && team != "axis" ) )
             continue;
+        if ( isDefined( p.pers["isBot"] ) && p.pers["isBot"] )
+            continue;
+        n++;
+    }
+    return n;
+}
+
+// Count of connected HUMAN players regardless of team (incl. spectator / team-select).
+// Distinct from gf_humanCount, which counts only humans already on a playing team. Used
+// to detect a human-less (pure-bot) lobby so the min-players hold never wedges it.
+gf_connectedHumanCount()
+{
+    n = 0;
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
         if ( isDefined( p.pers["isBot"] ) && p.pers["isBot"] )
             continue;
         n++;
@@ -547,11 +583,24 @@ gf_waitForMinPlayers()
     if ( gf_humanCount() >= minP )
         return;
 
+    // Never wedge a human-less lobby. This gate waits for real players, but bots can't
+    // satisfy it (gf_humanCount excludes them), so a pure-bot test (0 humans connected)
+    // would freeze every bot and void all damage until game_ended — which can never fire
+    // because the round never goes live. If there's no human here to wait for, don't hold.
+    if ( gf_connectedHumanCount() == 0 )
+        return;
+
     level.gf_waitingForPlayers = true;
     setGameEndTime( 0 );   // hide the round clock during the hold
 
+    // Absolute safety ceiling: even with a human present (e.g. one sitting in spectator, or
+    // bounced there by scr_team_maxsize), release into the round after this long instead of
+    // freezing forever. On a public server with a deliberately raised scr_gf_min_players this
+    // is the "start anyway" fallback, not an eternal warmup.
+    deadline = gettime() + 90000;   // GF_MINPLAYERS_MAX_HOLD (90s)
+
     lastShown = -1;
-    while ( gf_humanCount() < minP )
+    while ( gf_humanCount() < minP && gettime() < deadline )
     {
         gf_setWaitFreeze( true );   // re-assert each tick so late joiners/bot fill are caught
 

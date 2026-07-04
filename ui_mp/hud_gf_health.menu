@@ -97,7 +97,7 @@
 		}
 
 		// ══ Team health panel rows (fully menu-rendered — 0 client hudelems) ══
-		// bg fade + 8 skulls (<=4/team) OR 2 "Alive: N" readouts (>4/team) + 2 bars + 2 numbers, anchored to ui_gf_panel_x/y (gf_pushPanelChrome),
+		// bg fade + EITHER 8 skulls (ui_gf_hp_mode 0) OR 2 "Alive: N" readouts (mode 1, both rows together) + 2 bars + 2 numbers, anchored to ui_gf_panel_x/y (gf_pushPanelChrome),
 		// faded by ui_gf_hp_alpha (gf_revealHealthPanel). Per-row data: ui_gf_rN_hp / _fw / _cnt /
 		// _alive (gf_pushHealthRow). Row 0 = friendly (green), row 1 = enemy (red). Skulls: an alive
 		// (team-colour) item + a dead (white) item per slot, gated by alive/cnt (forecolor R/G/B can't
@@ -174,7 +174,7 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		0.42 0.68 0.46 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_alive" ) > 0 ) && ( dvarInt( "ui_gf_r0_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_alive" ) > 0 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 		// skull slot 0 — dead (white)
@@ -188,7 +188,7 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		1 1 1 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_cnt" ) > 0 ) && ( dvarInt( "ui_gf_r0_alive" ) <= 0 ) && ( dvarInt( "ui_gf_r0_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_cnt" ) > 0 ) && ( dvarInt( "ui_gf_r0_alive" ) <= 0 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 		// skull slot 1 — alive
@@ -202,7 +202,7 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		0.42 0.68 0.46 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_alive" ) > 1 ) && ( dvarInt( "ui_gf_r0_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_alive" ) > 1 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 		// skull slot 1 — dead
@@ -216,7 +216,7 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		1 1 1 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_cnt" ) > 1 ) && ( dvarInt( "ui_gf_r0_alive" ) <= 1 ) && ( dvarInt( "ui_gf_r0_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_cnt" ) > 1 ) && ( dvarInt( "ui_gf_r0_alive" ) <= 1 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 		// skull slot 2 — alive
@@ -230,7 +230,7 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		0.42 0.68 0.46 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_alive" ) > 2 ) && ( dvarInt( "ui_gf_r0_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_alive" ) > 2 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 		// skull slot 2 — dead
@@ -244,7 +244,7 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		1 1 1 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_cnt" ) > 2 ) && ( dvarInt( "ui_gf_r0_alive" ) <= 2 ) && ( dvarInt( "ui_gf_r0_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_cnt" ) > 2 ) && ( dvarInt( "ui_gf_r0_alive" ) <= 2 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 		// skull slot 3 — alive
@@ -258,7 +258,7 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		0.42 0.68 0.46 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_alive" ) > 3 ) && ( dvarInt( "ui_gf_r0_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_alive" ) > 3 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 		// skull slot 3 — dead
@@ -272,13 +272,14 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		1 1 1 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_cnt" ) > 3 ) && ( dvarInt( "ui_gf_r0_alive" ) <= 3 ) && ( dvarInt( "ui_gf_r0_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_cnt" ) > 3 ) && ( dvarInt( "ui_gf_r0_alive" ) <= 3 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 
-		// "Alive: N" readout — shown INSTEAD of the 4-skull cluster when this team has
-		// more than 4 players (6v6). Small mode / <=4v4 never reaches this (cnt <= 4), so
-		// the skull cluster above stays byte-identical. Centered on the vacated skull footprint.
+		// "Alive: N" readout — shown INSTEAD of the 4-skull cluster when the shared ui_gf_hp_mode
+		// is 1 (either team > 4, so BOTH rows switch together — never one skulls / one readout).
+		// Small mode / <=4v4 stays in mode 0, so the skull cluster above is byte-identical.
+		// Centered on the vacated skull footprint.
 		itemDef
 		{
 			type			ITEM_TYPE_TEXT
@@ -292,7 +293,7 @@
 			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
 			forecolor		0.42 0.68 0.46 1
 			exp				forecolor A( dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r0_cnt" ) > 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_hp_mode" ) == 1 ) )
 			decoration
 		}
 
@@ -352,7 +353,7 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		0.73 0.29 0.19 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_alive" ) > 0 ) && ( dvarInt( "ui_gf_r1_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_alive" ) > 0 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 		// skull slot 0 — dead (white)
@@ -366,7 +367,7 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		1 1 1 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_cnt" ) > 0 ) && ( dvarInt( "ui_gf_r1_alive" ) <= 0 ) && ( dvarInt( "ui_gf_r1_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_cnt" ) > 0 ) && ( dvarInt( "ui_gf_r1_alive" ) <= 0 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 		// skull slot 1 — alive
@@ -380,7 +381,7 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		0.73 0.29 0.19 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_alive" ) > 1 ) && ( dvarInt( "ui_gf_r1_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_alive" ) > 1 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 		// skull slot 1 — dead
@@ -394,7 +395,7 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		1 1 1 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_cnt" ) > 1 ) && ( dvarInt( "ui_gf_r1_alive" ) <= 1 ) && ( dvarInt( "ui_gf_r1_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_cnt" ) > 1 ) && ( dvarInt( "ui_gf_r1_alive" ) <= 1 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 		// skull slot 2 — alive
@@ -408,7 +409,7 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		0.73 0.29 0.19 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_alive" ) > 2 ) && ( dvarInt( "ui_gf_r1_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_alive" ) > 2 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 		// skull slot 2 — dead
@@ -422,7 +423,7 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		1 1 1 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_cnt" ) > 2 ) && ( dvarInt( "ui_gf_r1_alive" ) <= 2 ) && ( dvarInt( "ui_gf_r1_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_cnt" ) > 2 ) && ( dvarInt( "ui_gf_r1_alive" ) <= 2 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 		// skull slot 3 — alive
@@ -436,7 +437,7 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		0.73 0.29 0.19 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_alive" ) > 3 ) && ( dvarInt( "ui_gf_r1_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_alive" ) > 3 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 		// skull slot 3 — dead
@@ -450,7 +451,7 @@
 			exp				material( dvarString( "ui_gf_skull_mat" ) );
 			forecolor		1 1 1 1
 			exp				forecolor A( 0.95 * dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_cnt" ) > 3 ) && ( dvarInt( "ui_gf_r1_alive" ) <= 3 ) && ( dvarInt( "ui_gf_r1_cnt" ) <= 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_cnt" ) > 3 ) && ( dvarInt( "ui_gf_r1_alive" ) <= 3 ) && ( dvarInt( "ui_gf_hp_mode" ) == 0 ) )
 			decoration
 		}
 
@@ -468,7 +469,7 @@
 			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
 			forecolor		0.73 0.29 0.19 1
 			exp				forecolor A( dvarFloat( "ui_gf_hp_alpha" ) )
-			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_r1_cnt" ) > 4 ) )
+			visible			when( dvarInt( "ui_gf_panel_show" ) && ( dvarInt( "ui_gf_hp_mode" ) == 1 ) )
 			decoration
 		}
 
