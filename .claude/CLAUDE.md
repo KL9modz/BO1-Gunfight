@@ -285,6 +285,16 @@ reply gap is still enforced (hard Plutonium limit), priority only reorders who g
 a bottom-left **command queue** (`cqAdd`/`cqResolve` etc.): ⏳ sent → ✓ received (round-trip ms) → ✗
 timeout. See the `_gf_bridge.gsc` header comment for the wire format.
 
+**Dropped-packet self-heal + forced team move (added 2026-07-03).** Plutonium silently drops rcon
+packets sent faster than ~1/0.7s, so a click could vanish with no effect. Two-part fix: (1) the panel
+**auto-retries** an unacked command — resends the SAME seq up to 3× ~1.5s apart (`ackTick`), showing
+"retry 2/3" — and the GSC bridge **dedups by a high-water `level.gf_ackSeq`**: a seq `<=` the mark is
+re-ACKed but NOT re-run, so a retry of an already-run command (e.g. `endround`, `quake`, `tpall`) can
+never double-fire. seq `0` (unstamped / manual console) skips dedup and always runs. (2) **`pteamforce_<num>_<team>`**
+(panel: **Shift+click** a move, with a confirm) bypasses the next-round defer and applies the switch
+immediately via the stock team-change — it **respawns** the player, so during a live round it costs them
+the round. The cap (`scr_team_maxsize`) still holds; plain `pteam_` keeps the safe next-round deferral.
+
 **RCON team management (dev bridge):** the RCON panel's per-player right-click menu moves a player
 between allies/axis/spectator via bridge command `pteam_<num>_<allies|axis|spec>`
 (`gf_bridgeTeamCmd` in `_gf_bridge.gsc`). A live switch would `suicide()` a "playing" player

@@ -131,6 +131,7 @@ tr.grp-u td{color:var(--dm);border-left-color:var(--bd)}
 .ctx-item:hover{background:var(--bd)}
 .ctx-item.red{color:var(--ng)}.ctx-item.green{color:var(--ok)}.ctx-item.yellow{color:var(--wn)}
 .ctx-sep{border-top:1px solid var(--bd);margin:3px 0}
+.ctx-hint{font-size:9px;color:var(--dm);font-style:italic;padding:2px 10px 3px}
 
 /* Main */
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
@@ -1276,7 +1277,7 @@ function showCtx(e,num,name,isBot){
   const guid=(!isBot && pl.guid && pl.guid!=='0')?pl.guid:'';   // stable id for the feedback-admin allowlist
   ctxPlayer={num,name,isBot,ip,guid};
   const ct=(_roster[num]||{}).team||'';   // current team (grays its own move item)
-  const teamItem=(t,code,label)=>`<div class="ctx-item ${ct===t?'cur':''}" onclick="ctxAction('team_${code}')">${label}</div>`;
+  const teamItem=(t,code,label)=>`<div class="ctx-item ${ct===t?'cur':''}" onclick="ctxAction('team_${code}',event)">${label}</div>`;
   const ipItems=ip?`<div class="ctx-sep"></div>
     <div class="ctx-item" onclick="ctxAction('copyip')">Copy IP</div>
     <div class="ctx-item" onclick="ctxAction('locate')">Locate (city)</div>`:'';
@@ -1291,6 +1292,7 @@ function showCtx(e,num,name,isBot){
     ${teamItem('allies','allies','<span class="tm tm-a">A</span> Move to Allies')}
     ${teamItem('axis','axis','<span class="tm tm-x">X</span> Move to Axis')}
     ${teamItem('spectator','spec','<span class="tm tm-s">S</span> Move to Spectator')}
+    <div class="ctx-hint">Shift+click a move = ⚠ force now (respawns)</div>
     <div class="ctx-sep"></div>
     <div class="ctx-item green" onclick="ctxAction('pgod')">God Mode</div>
     <div class="ctx-item yellow" onclick="ctxAction('pfreeze')">Freeze</div>
@@ -1305,7 +1307,7 @@ function showCtx(e,num,name,isBot){
   if(top+360>vh) top=Math.max(4,vh-364);
   m.style.left=lft+'px';m.style.top=top+'px';
 }
-async function ctxAction(act){
+async function ctxAction(act,ev){
   hideCtx();
   if(!ctxPlayer)return;
   const{num,name,ip}=ctxPlayer;
@@ -1332,12 +1334,14 @@ async function ctxAction(act){
     actLog('Feedback admin → '+name+' ('+guid+')','ok'); toast('Private feedback → '+name,'ok');
     if(_lastPlayers.length)renderPlayers();   // repaint the ★ marker
   }else if(act==='team_allies'||act==='team_axis'||act==='team_spec'){
-    // Applies live during the prematch countdown / min-players hold; otherwise the mod
-    // defers it to the start of the next round (never suicides a player mid-round).
+    // Normal: applies live during prematch, else the mod defers to the next round (never suicides
+    // a live player). Shift+click FORCES it now (pteamforce_) — respawns the player this round.
     const code=act.slice(5);   // allies | axis | spec
     const lbl={allies:'Allies',axis:'Axis',spec:'Spectator'}[code];
-    await bridge(`pteam_${num}_${code}`,'Team → '+lbl+': '+name);
-    actLog('Team → '+lbl+': '+name,code==='spec'?'wn':'ok');
+    const force=!!(ev&&ev.shiftKey);
+    if(force && !confirm(`Force ${name} to ${lbl} NOW?\nThis respawns them — during a live round it costs them the round.`))return;
+    await bridge(`${force?'pteamforce':'pteam'}_${num}_${code}`,(force?'⚠ Force → ':'Team → ')+lbl+': '+name);
+    actLog((force?'Force team → ':'Team → ')+lbl+': '+name,force?'wn':(code==='spec'?'wn':'ok'));
   }else if(act==='pnoclip'){
     // noclip is a server console command, not GSC — send directly via RCON
     await rcon(`noclip ${num}`);actLog('Noclip toggled: '+name,'ok');
@@ -1532,17 +1536,20 @@ async function seedCmdSeq(){
 }
 async function bridge(bcmd,label){
   const seq=++_cmdSeq; localStorage.setItem('gf_cmdseq',String(_cmdSeq));
-  cqAdd(seq,label||bcmd);
+  cqAdd(seq,label||bcmd,bcmd);
   ensureAckPoll();
   const r=await rcon(`set gf_cmd ${seq}:${bcmd}`,true);
   if(!r.ok){ cqFail(seq,r.error||'send failed'); toast('Bridge error: '+r.error,'err'); return false; }
   return true;
 }
 
-// ─── Command queue (sent → received tracker) ──────────────────────────────────
-const CQ_MAX=6;
-const _cmdQ=[];   // newest first: {seq,label,t0,state:'sent'|'ack'|'timeout'|'fail',ms,err}
-function cqAdd(seq,label){ _cmdQ.unshift({seq,label,t0:Date.now(),state:'sent',ms:0}); if(_cmdQ.length>CQ_MAX)_cmdQ.length=CQ_MAX; cqRender(); }
+// ─── Command queue (sent → received tracker, with auto-retry) ─────────────────
+// Auto-retry: an unacked command is resent with the SAME seq up to CQ_MAX_TRIES times, ~CQ_RETRY_AFTER
+// apart, to self-heal a dropped rcon packet. Safe because the GSC bridge dedups by seq (a resend of an
+// already-processed command is re-acked, not re-run) — so even endround/quake never double-fire.
+const CQ_MAX=6, CQ_RETRY_AFTER=1500, CQ_MAX_TRIES=3;
+const _cmdQ=[];   // newest first: {seq,label,bcmd,t0,tSent,tries,state:'sent'|'ack'|'timeout'|'fail',ms,err}
+function cqAdd(seq,label,bcmd){ _cmdQ.unshift({seq,label,bcmd,t0:Date.now(),tSent:Date.now(),tries:1,state:'sent',ms:0}); if(_cmdQ.length>CQ_MAX)_cmdQ.length=CQ_MAX; cqRender(); }
 function cqResolve(ack){
   let ch=false;
   for(const e of _cmdQ) if(e.state==='sent'&&e.seq<=ack){ e.state='ack'; e.ms=Date.now()-e.t0; ch=true; cqScheduleRemove(e.seq,4000); }
@@ -1560,7 +1567,7 @@ function cqRender(){
     const st=e.state==='ack'?(e.ms?('received · '+(e.ms/1000).toFixed(1)+'s'):'confirmed')
             :e.state==='timeout'?'no ack (timeout)'
             :e.state==='fail'?('failed'+(e.err?' · '+e.err:''))
-            :'sent…';
+            :('sent…'+(e.tries>1?(' · retry '+e.tries+'/'+CQ_MAX_TRIES):''));
     return `<div class="cq-row cq-${e.state}"><span class="cq-ic">${ic}</span><span class="cq-lbl">${x(e.label||'cmd')}</span><span class="cq-st">${x(st)}</span></div>`;
   }).join('');
 }
@@ -1579,15 +1586,29 @@ async function ackTick(){
     if(ch)cqRender();
     return;
   }
-  for(const e of _cmdQ) if(e.state==='sent'&&now-e.t0>3500) cqTimeout(e.seq);   // timeout sweep (runs even if a read is in flight)
-  if(_ackBusy||!live)return;
-  _ackBusy=true;
-  try{
-    const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
-    const r=await (await fetch(API+'/ack?'+p)).json();
-    if(r.ok) cqResolve(r.ack);
-  }catch(_){}
-  finally{ _ackBusy=false; }
+  // Read the ack (high-priority lane) and resolve any commands it covers.
+  if(!_ackBusy&&live){
+    _ackBusy=true;
+    try{
+      const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
+      const r=await (await fetch(API+'/ack?'+p)).json();
+      if(r.ok) cqResolve(r.ack);
+    }catch(_){}
+    finally{ _ackBusy=false; }
+  }
+  // Auto-retry unacked commands (dropped-packet self-heal), then give up after the last try's window.
+  let ch=false;
+  for(const e of _cmdQ){
+    if(e.state!=='sent') continue;
+    if(Date.now()-e.tSent < CQ_RETRY_AFTER) continue;   // still within this attempt's ack window
+    if(e.tries < CQ_MAX_TRIES && e.bcmd){
+      e.tries++; e.tSent=Date.now(); ch=true;
+      rcon(`set gf_cmd ${e.seq}:${e.bcmd}`,true).catch(()=>{});   // same seq → GSC dedups, never double-runs
+    }else if(Date.now()-e.t0 > CQ_RETRY_AFTER*CQ_MAX_TRIES + 600){
+      cqTimeout(e.seq);
+    }
+  }
+  if(ch)cqRender();
 }
 // FUN tab: broadcast a chat-style bold message to all players via gf_say + saymsg.
 // Both sets go in ONE chained rcon command so gf_say is guaranteed set in the same server

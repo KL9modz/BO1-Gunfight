@@ -31,6 +31,9 @@
 //                        that round's prematch, so a fighting player is never suicided and
 //                        friendly-fire teams are never flipped mid-round. Over-cap moves
 //                        (scr_team_maxsize) are refused with feedback.
+//   pteamforce_<num>_<allies|axis|spec> - same, but applied IMMEDIATELY even mid-round (stock
+//                        switch -> respawns the player, costing them the round). Admin override
+//                        for the next-round defer; cap still enforced. Panel: Shift+click a move.
 //
 // FUN / SILLY (mined from EnCoReV8 + iMCSx mod menus):
 //   vision_<set>       - VisionSetNaked all players: normal/enhance/bw/berserk/
@@ -84,6 +87,12 @@ gf_bridgeInit()
     // Ack channel: the poll loop writes the sequence id of each processed command here so the
     // RCON panel can flip a queued command from "sent" to "received" (closed loop). Starts at 0.
     setDvar( "gf_ack", "0" );
+    // Highest command seq processed so far (a "high-water mark"). The panel resends an unacked
+    // command with the SAME seq to self-heal a dropped packet; anything with seq <= this was already
+    // handled, so we re-ACK it but DON'T re-run it — that makes even non-idempotent commands
+    // (endround, quake, tpall) safe to retry. Resets per map_restart (level state); harmless because
+    // the panel's seq only climbs and the first command of the new round re-establishes the mark.
+    level.gf_ackSeq = 0;
     // Admin GUID allowlist (comma-separated) for PRIVATE feedback: gf_bridgeNotify prints only to
     // players whose getGuid() is in this list, instead of the old bare iPrintLnBold that showed
     // everyone. Managed by the panel (Set as admin); a cfg-set value survives here (only seeded blank).
@@ -135,14 +144,26 @@ gf_bridgeInit()
 
         // The panel sends "<seq>:<cmd>" so it can match an ack; a bare "<cmd>" (manual console)
         // parses to seq "0" and just isn't acked. Commands never contain ':', so the split is safe.
-        sc  = gf_bridgeSplitSeq( raw );
-        seq = sc[0];
-        cmd = sc[1];
+        sc   = gf_bridgeSplitSeq( raw );
+        seq  = sc[0];
+        cmd  = sc[1];
+        seqN = int( seq );
+
+        // Dedup by high-water seq: a resend of an already-processed command (seqN <= mark) is
+        // RE-ACKED but NOT re-run, so the panel's auto-retry of a dropped packet never double-fires
+        // a non-idempotent command. seq 0 (unstamped / manual console) has no dedup and always runs.
+        if ( seqN > 0 && seqN <= level.gf_ackSeq )
+        {
+            setDvar( "gf_ack", level.gf_ackSeq );
+            continue;
+        }
+        if ( seqN > 0 )
+            level.gf_ackSeq = seqN;
 
         level thread gf_bridgeDispatch( cmd );
 
-        if ( seq != "0" )
-            setDvar( "gf_ack", seq );
+        if ( seqN > 0 )
+            setDvar( "gf_ack", seqN );
     }
 }
 
@@ -326,8 +347,10 @@ gf_bridgeDispatch( cmd )
     if ( isSubStr( cmd, "punfreeze_" ) ) { gf_bridgePlayerCmd( "unfreeze", getSubStr( cmd, 10, cmd.size ) ); return; }
     if ( isSubStr( cmd, "pperks_"    ) ) { gf_bridgePlayerCmd( "perks",    getSubStr( cmd, 7,  cmd.size ) ); return; }
 
-    // Team move: pteam_<num>_<allies|axis|spec>
-    if ( isSubStr( cmd, "pteam_"     ) ) { gf_bridgeTeamCmd( getSubStr( cmd, 6, cmd.size ) ); return; }
+    // Team move: pteam_<num>_<team> (deferred to next round if unsafe) or pteamforce_<num>_<team>
+    // (applied NOW even mid-round — respawns the player). Check the longer prefix first.
+    if ( isSubStr( cmd, "pteamforce_" ) ) { gf_bridgeTeamCmd( getSubStr( cmd, 11, cmd.size ), true  ); return; }
+    if ( isSubStr( cmd, "pteam_"      ) ) { gf_bridgeTeamCmd( getSubStr( cmd, 6,  cmd.size ), false ); return; }
 }
 
 // --- Pause / Resume ----------------------------------------------------------
@@ -632,9 +655,13 @@ gf_bridgePlayerCmd( action, numStr )
 // gf_playerSpawnedCB's overflow rule) so an over-cap move is refused with feedback, not silently
 // bounced to spectator. Moving a bot is allowed.
 
-// arg = "<num>_<allies|axis|spec>"
-gf_bridgeTeamCmd( arg )
+// arg = "<num>_<allies|axis|spec>". force=true applies the move immediately even mid-round
+// (stock switch -> respawns the player), bypassing the next-round defer; the team-size cap still holds.
+gf_bridgeTeamCmd( arg, force )
 {
+    if ( !isDefined( force ) )
+        force = false;
+
     parts = strTok( arg, "_" );
     if ( parts.size < 2 )
         return;
@@ -657,10 +684,15 @@ gf_bridgeTeamCmd( arg )
         return;
     }
 
-    if ( gf_bridgeTeamSafeNow() )
+    // force applies immediately regardless of round state (admin override — the ⚠ in the panel warns
+    // it respawns a live player, costing them the round; during a live round that's a mid-round death).
+    if ( force || gf_bridgeTeamSafeNow() )
     {
         target gf_applyTeamMove( team );
-        gf_bridgeNotify( "^2Team: " + name + " ^7-> " + gf_bridgeTeamLabel( team ) );
+        if ( force )
+            gf_bridgeNotify( "^1Force team: " + name + " ^7-> " + gf_bridgeTeamLabel( team ) );
+        else
+            gf_bridgeNotify( "^2Team: " + name + " ^7-> " + gf_bridgeTeamLabel( team ) );
     }
     else
     {
