@@ -68,6 +68,225 @@ gf_nativePrematchTicker()
     tickObj delete();
 }
 
+// ─── Pre-prematch load gate ─────────────────────────────────────────────────
+// Clients carried across a map rotation connect while STILL ON THEIR LOADING
+// SCREEN: Callback_PlayerConnect fires immediately (statusicon
+// "hud_status_connecting", level notify "connecting"), and the engine fires
+// "begin" on the entity — clearing the icon, adding it to level.players, letting
+// it spawn — only when that client finishes loading (_globallogic_player.gsc:15).
+// The stock prematch never waits for any of that: startGame()'s waitForPlayers()
+// is an EMPTY STUB in T5 (matchStartTimer's "Waiting for teams..." phase exists
+// but is never seen), so the countdown starts on pure wall clock. Slow loaders
+// miss the shared countdown, and — because loading clients are invisible to the
+// roster poll, so gf_closeGraceEarly shuts maySpawn's first-spawn window ~3s
+// after prematch_over — a slow-enough loader used to SPECTATE the whole first
+// round.
+//
+// gf_waitForLoadingClients() runs as the LAST statement of onStartGameType (the
+// engine threads startGame() the moment that callback returns, so holding there
+// is exactly "the prematch has not started yet") and waits until every connected
+// HUMAN is off the loading screen. level.inPrematchPeriod is already true during
+// the hold, so players who finish loading spawn frozen with their own intro
+// VO/splash, and when the gate releases the FULL stock countdown plays for
+// everyone simultaneously. Match's first round only: between-round map_restarts
+// re-begin in ~1-2s and the roster spawn gate already covers those.
+//
+// Bounds: scr_gf_load_wait = ceiling in seconds (default 30, 0 = gate off,
+// clamped <=120), plus a 3s arrival floor so an early poll that runs before the
+// engine has delivered the first connect callbacks can't wave the gate through.
+// A first-time FastDL downloader (30-60s+ in-place engine rebuild) is
+// deliberately NOT absorbed — they land mid-round-1 like today. Bots are test
+// clients (begin instantly) and are excluded from both the wait and the readout,
+// so a wedged bot can never hold the gate — same lesson as the roster gate.
+//
+// "Still loading" is read from statusicon — its ONLY writer is the connect path,
+// and "begin" clears it — rather than racing the begin notify with a listener
+// that could arm one frame late. The "connecting" notify is only used to COLLECT
+// entities, because pre-begin clients exist nowhere else script-visible.
+
+// Threaded early in onStartGameType, BEFORE any helper that might yield the
+// Callback_StartGameType slice: the engine can only deliver the "connecting"
+// callbacks once that slice first yields, so arming here guarantees the tracker
+// is listening before the first one can fire.
+gf_armLoadGate()
+{
+    if ( game["roundsplayed"] > 0 )
+        return;
+    if ( gf_cfgFloat( "scr_gf_load_wait", 30, 0, 120 ) <= 0 )
+        return;
+
+    // Threads survive map_restart: retire any tracker a prior round left behind,
+    // and generation-stamp this arm (gettime() is monotonic across map_restart)
+    // so a gate thread orphaned by a mid-hold restart can detect it is stale.
+    level notify( "gf_load_gate_reset" );
+    level.gf_loadGateSeen = [];
+    level.gf_loadGateGen  = gettime();
+    level thread gf_loadGateTracker();
+}
+
+// Collects every client the engine announces on this map, including those still
+// loading. Retired by gf_load_gate_reset (gate release or next arm) / game_ended.
+gf_loadGateTracker()
+{
+    level endon( "game_ended" );
+    level endon( "gf_load_gate_reset" );
+
+    for ( ;; )
+    {
+        level waittill( "connecting", p );
+        if ( !isDefined( p ) )
+            continue;
+
+        // A quick disconnect+reconnect can hand back a reused entity — don't
+        // double-count it.
+        found = false;
+        for ( i = 0; i < level.gf_loadGateSeen.size; i++ )
+        {
+            if ( isDefined( level.gf_loadGateSeen[i] ) && level.gf_loadGateSeen[i] == p )
+            {
+                found = true;
+                break;
+            }
+        }
+        if ( !found )
+            level.gf_loadGateSeen[level.gf_loadGateSeen.size] = p;
+    }
+}
+
+// One yellow number/glyph in the countdown slot (mirrors matchStartTimer's elem
+// style); hidden until the gate has a real count to show.
+gf_loadGateCountElem( xOfs )
+{
+    e = createServerFontString( "extrabig", 1.5 );
+    e setPoint( "CENTER", "CENTER", xOfs, 0 );
+    e.sort           = 1001;
+    e.color          = ( 1, 1, 0 );
+    e.foreground     = false;
+    e.hidewheninmenu = true;
+    e.alpha          = 0;
+    return e;
+}
+
+// The hold itself — called (not threaded) as the last statement of
+// onStartGameType. See the block comment above for the full design.
+gf_waitForLoadingClients()
+{
+    if ( game["roundsplayed"] > 0 )
+        return;
+
+    holdSecs = gf_cfgFloat( "scr_gf_load_wait", 30, 0, 120 );
+    if ( holdSecs <= 0 )
+        return;
+    if ( !isDefined( level.gf_loadGateSeen ) )   // arm didn't run — nothing tracked, nothing to wait on
+        return;
+
+    myGen    = level.gf_loadGateGen;
+    start    = gettime();
+    deadline = start + int( holdSecs * 1000 );
+    floorEnd = start + 3000;   // arrival floor — see block comment
+
+    // Stock look: the exact "waiting for teams" element matchStartTimer() shows
+    // while its (stubbed) waitForPlayers() would wait, plus a live
+    // "loaded / total" readout in the slot the countdown number will take over.
+    // Counts are setValue-driven (no dynamic setText — configstring-safe); the
+    // "/" is the only new raw string, once per match.
+    elems = [];
+    waitText = createServerFontString( "extrabig", 1.5 );
+    waitText setPoint( "CENTER", "CENTER", 0, -40 );
+    waitText.sort           = 1001;
+    waitText.foreground     = false;
+    waitText.hidewheninmenu = true;
+    waitText setText( game["strings"]["waiting_for_teams"] );
+    elems[elems.size] = waitText;
+
+    cntLoaded = gf_loadGateCountElem( -24 );
+    cntSlash  = gf_loadGateCountElem( 0 );
+    cntSlash setText( "/" );
+    cntTotal  = gf_loadGateCountElem( 24 );
+    elems[elems.size] = cntLoaded;
+    elems[elems.size] = cntSlash;
+    elems[elems.size] = cntTotal;
+
+    shownCount   = false;
+    lastLoaded   = -1;
+    lastTotal    = -1;
+    stillLoading = 0;
+
+    for ( ;; )
+    {
+        // Superseded by a map_restart during the hold (threads survive it): the
+        // new round re-armed the gate and the restart wiped our elements — quit
+        // without teardown and WITHOUT the reset notify (that would kill the new
+        // round's tracker).
+        if ( !isDefined( level.gf_loadGateGen ) || level.gf_loadGateGen != myGen )
+            return;
+
+        stillLoading = 0;
+        humans       = 0;
+        for ( i = 0; i < level.gf_loadGateSeen.size; i++ )
+        {
+            p = level.gf_loadGateSeen[i];
+            if ( !isDefined( p ) )        // dropped while loading
+                continue;
+            if ( isDefined( p.statusicon ) && p.statusicon == "hud_status_connecting" )
+            {
+                // Still loading. istestclient() is only stock-precedented on begun
+                // clients, so don't classify yet — a pre-begin bot is transient
+                // (test clients begin within a frame) and at worst flickers the
+                // readout for one 0.25s poll.
+                humans++;
+                stillLoading++;
+            }
+            else if ( !( p istestclient() ) )   // begun: drop bots from wait + readout
+            {
+                humans++;
+            }
+        }
+
+        if ( humans > 0 )
+        {
+            loaded = humans - stillLoading;
+            if ( loaded != lastLoaded )
+            {
+                cntLoaded setValue( loaded );
+                lastLoaded = loaded;
+            }
+            if ( humans != lastTotal )
+            {
+                cntTotal setValue( humans );
+                lastTotal = humans;
+            }
+            if ( !shownCount )
+            {
+                cntLoaded.alpha = 1;
+                cntSlash.alpha  = 1;
+                cntTotal.alpha  = 1;
+                shownCount = true;
+            }
+        }
+
+        now = gettime();
+        if ( now >= deadline )
+            break;
+        if ( now >= floorEnd && stillLoading == 0 )
+            break;
+        if ( isDefined( level.gameEnded ) && level.gameEnded )
+            break;
+
+        wait 0.25;
+    }
+
+    logPrint( "GF_LOADGATE: released after " + ( gettime() - start ) + "ms, " + stillLoading + " client(s) still loading\n" );
+
+    for ( i = 0; i < elems.size; i++ )
+    {
+        if ( isDefined( elems[i] ) )
+            elems[i] destroyElem();
+    }
+
+    level notify( "gf_load_gate_reset" );   // gate done — retire the tracker
+}
+
 // ─── Team-Size Spawn/Barrier Mode ──────────────────────────────────────────
 // Resolves "large" (full-map TDM spawns, wager barriers deleted, OT flag at the
 // Domination B flag) vs "small" (curated gunfight spawns + wager barriers).

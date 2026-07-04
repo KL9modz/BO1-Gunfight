@@ -281,6 +281,8 @@ onStartGameType()
         setDvar( "scr_gf_roster_wait", "15" );   // max s to wait for the roster to spawn in (0 = no cap)
     if ( getDvar( "scr_gf_min_players" ) == "" )
         setDvar( "scr_gf_min_players", "1" );     // min HUMANS to start the match (1 = off)
+    if ( getDvar( "scr_gf_load_wait" ) == "" )
+        setDvar( "scr_gf_load_wait", "30" );      // max s to hold the prematch for map-loading clients (0 = off)
 
     // roundsplayed == 0 is the match's first round (longer intro); later rounds get the shorter one.
     if ( game["roundsplayed"] == 0 )
@@ -294,7 +296,14 @@ onStartGameType()
         // "MATCH STARTING IN", rounds 2+ say "ROUND BEGINS IN" (raw string is fine — no rebuild).
         game["strings"]["match_starting_in"] = "ROUND BEGINS IN";
     }
-    level thread gf_nativePrematchTicker();      // engine matchStartTimer is silent — re-add the per-second tick
+    // Arm the load-gate's connect tracker NOW: the engine delivers "connecting"
+    // callbacks (which fire for rotation-carried clients while they are STILL on
+    // their loading screen) as soon as this Callback_StartGameType slice first
+    // yields, so the tracker must be listening before any later helper can wait.
+    // The actual hold is the last statement of this function. (The per-second
+    // prematch tick also moved there: it loops on inPrematchPeriod, which is
+    // already true during the hold, and would have beeped through it from here.)
+    gf_armLoadGate();
 
     level.gf_roundActive     = false;
     level.gf_roundEnding     = false;
@@ -405,6 +414,18 @@ onStartGameType()
         thread maps\mp\gametypes\_bot::init();
     }
     // #strip-end
+
+    // Pre-prematch load gate — MUST be the last statement: the engine threads
+    // startGame() (prematch countdown -> prematch_over) the moment this callback
+    // returns, and everything above (spawn points, gameobjects, bridge, bots)
+    // must be in place before the first yield lets connect/spawn callbacks run.
+    // Holds the match's FIRST round until every rotation-carried client is off
+    // the loading screen (bounded by scr_gf_load_wait) so the full countdown and
+    // intro play for everyone at once, and slow loaders can no longer be
+    // grace-locked into spectating round 1. See _gf_rounds.gsc.
+    gf_waitForLoadingClients();
+
+    level thread gf_nativePrematchTicker();      // engine matchStartTimer is silent — re-add the per-second tick (start only now, post-hold)
 }
 
 // ─── Cosmodrome rocket: once per match, not once per round ───────────────────
