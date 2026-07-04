@@ -386,7 +386,7 @@ onStartGameType()
         gf_applyWagerZoneAssets();
 
     // #strip-begin - RCON bridge + bot init (dev/main only; stripped from public release)
-    thread gf_bridgeInit();   // per-round on purpose: re-threads to apply pending RCON team moves
+    thread gf_bridgeInit();   // per-round: re-seeds dvars/flags + re-arms the vision blend (level.* wiped by map_restart); its telemetry/poll/pending-team loops self-guard to once-per-match inside
     // The bot manager is once-per-MATCH, NOT once-per-round. onStartGameType re-runs on every
     // map_restart (SD round cycling), but _bot::init() threads PERSISTENT managers
     // (handleBots/addBots/diffBots/teamBots) that carry only "game_ended" endon (fires at match

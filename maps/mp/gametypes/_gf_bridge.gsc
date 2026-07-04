@@ -102,13 +102,13 @@ gf_bridgeInit()
     setDvar( "gf_state", "0:0:1:0:0:" + level.gameType );
     setDvar( "gf_roster", "" );
 
-    // Apply team moves that were queued mid-round (pers["gf_pendingTeam"], the only state that
-    // survives map_restart) at the START of the next round. It CANNOT be a synchronous sweep here:
-    // _spawnlogic::init empties level.players BEFORE onStartGameType, and Callback_PlayerConnect
-    // only repopulates it later (during prematch, behind the engine's per-client "begin"), so at
-    // gf_bridgeInit time level.players is empty. Instead we watch "spawned_player" and apply each
-    // pending move once that player has actually spawned (frozen) in the prematch window.
-    level thread gf_bridgeWatchPendingTeam();
+    // Deferred team moves queued mid-round (pers["gf_pendingTeam"], the only state that survives
+    // map_restart) are applied at the START of the next round. It CANNOT be a synchronous sweep
+    // here: _spawnlogic::init empties level.players BEFORE onStartGameType, and
+    // Callback_PlayerConnect only repopulates it later (during prematch, behind the engine's
+    // per-client "begin"), so at gf_bridgeInit time level.players is empty. Instead the watcher
+    // gf_bridgeWatchPendingTeam (started once-per-match in the guarded block below) applies each
+    // pending move when that player fires "spawned_player" (frozen) in the prematch window.
 
     level.gf_paused        = false;
     level.gf_infAmmo       = false;
@@ -128,11 +128,35 @@ gf_bridgeInit()
     // blend (a newer visionSetNaked call retargets the in-progress lerp).
     level thread gf_bridgeVisionPersist();
 
-    level thread gf_bridgeTelemetry();
+    // Persistent loops: ONCE PER MATCH, not once per round. gf_bridgeInit is re-threaded on every
+    // map_restart (gf.gsc) to re-seed the dvars/flags above (level.* is wiped by map_restart) and
+    // re-arm the per-round vision blend - but the telemetry loop, the 20 Hz command poll, and the
+    // pending-team watcher are for(;;) loops that only endon("game_ended") (match end, NOT a
+    // map_restart). Re-threading them every round STACKED one live copy per round: N pollers racing
+    // the gf_cmd read+clear (breaking the single-consumer take the poll relies on), N redundant
+    // telemetry writes, and an O(players^2) pending-team sweep x N on every spawn burst - all
+    // peaking exactly at the between-rounds transition (proven leak class; same one the bot manager
+    // had before its game[] guard). Gate on game[] (survives map_restart, resets on a real new-map
+    // load) so exactly ONE set runs per match. Same idiom as _bot::init / game["gf_botInit"].
+    // gf_ackSeq is still re-seeded per round above, so the surviving poll always reads a defined mark.
+    if ( !isDefined( game["gf_bridgeInit"] ) )
+    {
+        game["gf_bridgeInit"] = true;
+        level thread gf_bridgeWatchPendingTeam();
+        level thread gf_bridgeTelemetry();
+        level thread gf_bridgePoll();
+    }
+}
 
-    // 20 Hz poll (was 2 Hz): cuts up to ~450ms off the command latency floor for a single
-    // getDvar per tick. Read+clear are adjacent statements with no wait between, so the engine
-    // can't slot an incoming `set gf_cmd` in the gap — the take is race-free (no dedup needed).
+// 20 Hz command poll (was 2 Hz): cuts up to ~450ms off the command latency floor for a single
+// getDvar per tick. Runs exactly ONCE per match (game["gf_bridgeInit"] gate), so it is a single
+// consumer - read+clear are adjacent statements with no wait between, so the engine can't slot an
+// incoming `set gf_cmd` into the gap and the take is race-free. endon "game_ended" so it dies with
+// the match; the next match's gf_bridgeInit re-threads a fresh one.
+gf_bridgePoll()
+{
+    level endon( "game_ended" );
+
     for ( ;; )
     {
         wait 0.05;

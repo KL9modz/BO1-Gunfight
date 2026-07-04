@@ -428,7 +428,11 @@ gf_giveCustomLoadout()
     self gf_applyPerkList( getDvar( "gf_perk_on"  ), true  );
     self gf_applyPerkList( getDvar( "gf_perk_off" ), false );
 
-    self thread gf_showWeaponHUD( load );
+    // Humans only: gf_showWeaponHUD pushes ~21 setClientDvar (8 icons + 8 names + anchor/anim) to
+    // build the menu-rendered loadout overview. A bot has no client, so pushing to it is pure waste
+    // - and it fires for the whole bot fill in the round-start spawn wave, right at the transition.
+    if ( !isBot )
+        self thread gf_showWeaponHUD( load );
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────

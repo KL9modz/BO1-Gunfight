@@ -5,14 +5,36 @@
 
 gf_initCustomLocations()
 {
-    level.gf_customSpawns           = gf_getCustomSpawnLocations();
-    level.gf_customOvertimeLocation = gf_getCustomOvertimeLocation();
-    level.gf_customSpawnRound       = -1;
-    level.gf_customSpawnCursor      = [];
+    // The curated per-map spawn sets and OT flag spot are MAP-CONSTANT, but onStartGameType
+    // re-runs on every map_restart (SD round cycling), so this used to rebuild + re-normalize +
+    // re-validate them every round - redundant work landing on the exact frame the between-rounds
+    // snapshot gap ("Connection Interrupted") appears. Build once, cache in game[] (survives
+    // map_restart, resets on a real new-map load - same idiom as game["gf_init"] / game["gf_botInit"]),
+    // then just restore the reference on later rounds. Safe against GSC array aliasing: nothing
+    // mutates level.gf_customSpawns during a round (gf_getCustomSpawnPoint only advances the separate
+    // level.gf_customSpawnCursor), so the game[]/level[] shared reference is read-only in play.
+    if ( !isDefined( game["gf_customLocCached"] ) )
+    {
+        level.gf_customSpawns           = gf_getCustomSpawnLocations();
+        level.gf_customOvertimeLocation = gf_getCustomOvertimeLocation();
 
-    gf_normalizeCustomSpawnLocations();
-    gf_validateCustomLocations();
-    gf_validateCustomOvertimeLocation();
+        gf_normalizeCustomSpawnLocations();
+        gf_validateCustomLocations();
+        gf_validateCustomOvertimeLocation();
+
+        game["gf_customLocCached"]     = true;
+        game["gf_customSpawnsCache"]   = level.gf_customSpawns;
+        game["gf_customOvertimeCache"] = level.gf_customOvertimeLocation;   // may be undefined (map has no curated OT); restore preserves that
+    }
+    else
+    {
+        level.gf_customSpawns           = game["gf_customSpawnsCache"];
+        level.gf_customOvertimeLocation = game["gf_customOvertimeCache"];
+    }
+
+    // Per-round runtime state - always reset fresh (cheap; the round-robin cursor must restart).
+    level.gf_customSpawnRound  = -1;
+    level.gf_customSpawnCursor = [];
 }
 
 gf_getCustomSpawnLocations()
