@@ -320,7 +320,11 @@ gf_waitForLoadingClients()
                 humans++;
                 stillLoading++;
             }
-            else if ( !( p istestclient() ) )   // begun: drop bots from wait + readout
+            // begun: drop bots (istestclient) AND server-side demo clients
+            // (isdemoclient — e.g. "[3arc]democlient", guid 0). A demo client is NOT a
+            // test client, so without the isdemoclient check it was wrongly counted as a
+            // human, inflating the readout and satisfying scr_gf_min_players by itself.
+            else if ( !( p istestclient() ) && !( p isdemoclient() ) )
             {
                 humans++;
             }
@@ -460,7 +464,7 @@ gf_anyTrackedClientLoading()
         p = level.gf_loadGateSeen[i];
         if ( !isDefined( p ) )
             continue;
-        if ( p istestclient() )   // bots begin within a frame; never hold grace for them
+        if ( p istestclient() || p isdemoclient() )   // bots + demo clients: never hold grace for them
             continue;
         if ( isDefined( p.statusicon ) && p.statusicon == "hud_status_connecting" )
             return true;
