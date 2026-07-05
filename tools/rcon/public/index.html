@@ -177,6 +177,7 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .b-wn{background:var(--wn);color:#0d0f17;border-color:var(--wn)}.b-wn:hover:not(:disabled){opacity:.8}
 .b-gh{background:transparent;color:var(--tx);border-color:var(--bd)}.b-gh:hover:not(:disabled){background:var(--sf2);border-color:var(--ac)}
 .b-sm{padding:3px 8px;font-size:11px}.b-lg{width:100%;padding:11px;font-size:14px;letter-spacing:.05em}
+.lobbypulse{animation:lobbypulse 1.6s ease-in-out infinite}@keyframes lobbypulse{0%,100%{box-shadow:0 0 0 0 rgba(66,211,146,.55)}50%{box-shadow:0 0 0 6px rgba(66,211,146,0)}}
 #cBtn{background:var(--ac);color:#0d0f17;border-color:var(--ac);font-weight:700;padding:5px 14px}
 #cBtn:hover{opacity:.85}#cBtn.disc{background:transparent;color:var(--ng);border-color:var(--ng)}
 .set-all-row{display:flex;justify-content:flex-end;gap:6px;margin-top:6px}
@@ -427,6 +428,7 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
   <div class="block">
     <div class="btitle">MATCH CONTROL</div>
     <div style="display:flex;flex-direction:column;gap:8px">
+      <button id="startBtn" class="b-ok b-lg ctrl lobbypulse" style="display:none" data-tip="gf_cmd lobbystart (GSC bridge)&#10;Releases the pre-prematch LOBBY HOLD so the match-start countdown begins.&#10;Appears only while a hold is active (Lobby Hold = Manual, or a load / min-players hold).&#10;Arrange teams first (right-click players), then start." onclick="startMatch()">▶  START MATCH</button>
       <button id="pauseBtn" class="b-wn b-lg ctrl" data-tip="gf_cmd pause / gf_cmd resume (GSC bridge)&#10;Toggles pauseTimer() / resumeTimer() — freezes the round clock&#10;Button label and color flip on state change" onclick="doPause()">⏸  PAUSE MATCH</button>
       <div class="two">
         <button class="b-ok ctrl" data-tip="gf_cmd endround_allies (GSC bridge)&#10;Calls sd_endGame('allies','') — awards round win to Allies immediately" onclick="endRound('allies')">END ROUND → ALLIES</button>
@@ -1111,6 +1113,7 @@ function setLive(v){
     g('modeBadge').style.display='none';
     if(hr)hr.style.display='none';if(hk)hk.style.display='none';
     setCtrl(false);stopPoll();
+    setLobbyHold(false);   // don't leave START MATCH stuck visible after a disconnect
     _knownPlayers=null;   // re-seed the join baseline on next connect (no spam on reconnect)
   }
   updateSyncUI();
@@ -1165,6 +1168,7 @@ async function pollTick(gen){
         g('scAA').textContent=s.aliveAllies;
         g('scAX').textContent=s.aliveAxis;
         if(s.gametype) g('sGt').textContent=s.gametype;
+        setLobbyHold(s.lobbyHold);
       }
       if(d.roster){
         _roster={}; for(const e of d.roster) _roster[e.num]=e;
@@ -1526,6 +1530,21 @@ async function doPause(){
 async function endRound(team){
   const ok=await bridge('endround_'+team,'End round → '+team);
   if(ok){ actLog('End round → '+team,'wn'); toast('Ending round — '+team,'info'); }
+}
+// ─── Lobby hold (pre-prematch) ────────────────────────────────────────────────
+// The GSC gate holds the FIRST round before the prematch countdown when Lobby Hold=Manual
+// (or a load / min-players hold is up). gf_state's 7th field (lobbyHold) tells us it's live;
+// we reveal START MATCH so the admin can arrange teams, then release it via bridge lobbystart.
+let _lobbyHold=false;
+async function startMatch(){
+  const ok=await bridge('lobbystart','Start match');
+  if(ok){ actLog('Start match — release lobby hold','ok'); toast('Starting match…','info'); }
+}
+function setLobbyHold(active){
+  active=!!active;
+  if(active===_lobbyHold)return;   // churn guard — poll fires every 2.5s
+  _lobbyHold=active;
+  const b=g('startBtn'); if(b) b.style.display=active?'':'none';
 }
 async function cmd(c){
   const r=await rcon(c);
@@ -2086,7 +2105,8 @@ const GT_SECTIONS = {
     { n:'scr_gf_numlives',            lbl:'Lives / Round',            type:'num', def:'1',    tip:'scr_gf_numlives\nLives per player per round.' },
 
     { grp:'Match Start',
-      n:'scr_gf_min_players',         lbl:'Min Players to Start',      type:'num', def:'1',  tip:'scr_gf_min_players\nHold the FIRST round (BEFORE the prematch countdown) until at least this many HUMAN players are here (bots do not count). Match-start only — once live it never re-holds, even if players leave. Nobody is spawned yet during the hold, so there is no freeze/damage-void. 90s start-anyway ceiling; a pure-bot lobby never stalls. 1 = effectively off. Clamped 1-8.\n(This is Gunfight’s min-players gate. The SERVER-tab party_minplayers does NOT affect gf.)' },
+      n:'scr_gf_lobby_hold',          lbl:'Lobby Hold',                type:'sel', def:'0', opts:[['0','Auto (min-players)'],['1','Manual — wait for Start']], tip:'scr_gf_lobby_hold\nHow the FIRST round starts (before the prematch countdown):\n• Auto = start automatically once everyone is loaded and Min Players humans are in.\n• Manual = HOLD at "Waiting for teams" until you click START MATCH (Match Control rail) — arrange teams first, then start. 10-min backstop so a forgotten hold can’t wedge the server.\nEither mode: START MATCH is an instant override. Match-start only. Needs the RCON bridge (this panel).' },
+    { n:'scr_gf_min_players',         lbl:'Min Players to Start',      type:'num', def:'1',  tip:'scr_gf_min_players\nHold the FIRST round (BEFORE the prematch countdown) until at least this many HUMAN players are here (bots do not count). Match-start only — once live it never re-holds, even if players leave. Nobody is spawned yet during the hold, so there is no freeze/damage-void. 90s start-anyway ceiling; a pure-bot lobby never stalls. 1 = effectively off. Clamped 1-8.\n(This is Gunfight’s min-players gate. The SERVER-tab party_minplayers does NOT affect gf.)' },
     { n:'scr_gf_load_wait',           lbl:'Load Wait (s, 0=off)',      type:'num', def:'30', tip:'scr_gf_load_wait\nMax seconds the match FIRST round holds BEFORE the prematch countdown until every map-loading client is in, so everyone sees the intro/countdown together (and slow loaders are not grace-locked into spectating round 1). Bots excluded. Shows a "Waiting for teams N/M" readout. First-time FastDL downloaders are not fully absorbed. 0 = off. Clamped 0-120.\nSame hold also enforces Min Players above.' },
     { n:'scr_gf_match_prematch_seconds', lbl:'Prematch (s)',          type:'num', def:'15', tip:'scr_gf_match_prematch_seconds\nIntro countdown before the first round of the match (MATCH STARTING IN). Runs AFTER the Match Start hold. Clamped 2-30. (Stock scr_game_prematchperiod is overridden by this and has no effect.)' },
     { n:'scr_gf_prematch_seconds',    lbl:'Preround (s)',             type:'num', def:'7',  tip:'scr_gf_prematch_seconds\nCountdown before each later round (ROUND BEGINS IN). Clamped 2-20.' },

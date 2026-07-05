@@ -112,14 +112,21 @@ gf_armLoadGate()
 {
     if ( game["roundsplayed"] > 0 )
         return;
-    // Arm if EITHER purpose of the pre-prematch hold is active: the load gate
-    // (scr_gf_load_wait) OR the min-players gate (scr_gf_min_players > 1). The
-    // tracker snapshot feeds both — the min-players count includes still-loading
-    // humans, which only the tracker can see (pre-begin clients aren't in level.players).
-    loadOn = ( gf_cfgFloat( "scr_gf_load_wait", 30, 0, 120 ) > 0 );
-    minOn  = ( int( gf_cfgFloat( "scr_gf_min_players", 1, 1, 8 ) ) > 1 );
-    if ( !loadOn && !minOn )
+    // Arm if ANY purpose of the pre-prematch hold is active: the load gate
+    // (scr_gf_load_wait), the min-players gate (scr_gf_min_players > 1), OR the admin
+    // lobby hold (scr_gf_lobby_hold — manual "wait for Start"). The tracker snapshot
+    // feeds all three — the min-players count includes still-loading humans, which
+    // only the tracker can see (pre-begin clients aren't in level.players).
+    loadOn  = ( gf_cfgFloat( "scr_gf_load_wait", 30, 0, 120 ) > 0 );
+    minOn   = ( int( gf_cfgFloat( "scr_gf_min_players", 1, 1, 8 ) ) > 1 );
+    lobbyOn = ( int( gf_cfgFloat( "scr_gf_lobby_hold", 0, 0, 1 ) ) > 0 );
+    if ( !loadOn && !minOn && !lobbyOn )
         return;
+
+    // Fresh per match-start: a stale "Start Match" click (bridge lobbystart) from a
+    // prior match must never auto-release this hold. map_restart wipes level.* too,
+    // but clear explicitly so the guarantee doesn't lean on that.
+    level.gf_lobbyStart = false;
 
     // Threads survive map_restart: retire any tracker a prior round left behind,
     // and generation-stamp this arm (gettime() is monotonic across map_restart)
@@ -180,8 +187,8 @@ gf_waitForLoadingClients()
     if ( game["roundsplayed"] > 0 )
         return;
 
-    // This one pre-prematch hold serves TWO release conditions (min-players folded
-    // in 2026-07-04):
+    // This one pre-prematch hold serves THREE release conditions (min-players folded
+    // in 2026-07-04, admin lobby hold added 2026-07-05):
     //  (1) LOAD — every tracked client is off its loading screen (bounded by
     //      scr_gf_load_wait), so nobody misses the shared countdown/intro.
     //  (2) MIN-PLAYERS — at least scr_gf_min_players humans are here (bounded by
@@ -189,23 +196,30 @@ gf_waitForLoadingClients()
     //      prematch that froze players + voided all damage; in front of prematch it
     //      needs neither (nobody has spawned yet), and the intro no longer plays for
     //      a match that then stalls waiting for people to show up.
-    // Both are match-start only (the roundsplayed guard above). The min-players count
+    //  (3) LOBBY HOLD — when scr_gf_lobby_hold is set (manual mode), the hold does
+    //      NOT auto-release on load/headcount; it waits for the admin's "Start Match"
+    //      click (bridge lobbystart -> level.gf_lobbyStart), bounded by a 10-min
+    //      backstop. Lets an admin arrange teams before the countdown. In auto mode
+    //      (default) the Start click is still honored as an immediate override.
+    // All are match-start only (the roundsplayed guard above). The min-players count
     // reads the tracker snapshot (humans, computed in the loop) so it includes
     // still-loading humans — a loader still counts as "here".
     loadWait   = gf_cfgFloat( "scr_gf_load_wait", 30, 0, 120 );
     minP       = int( gf_cfgFloat( "scr_gf_min_players", 1, 1, 8 ) );
+    lobbyMode  = ( int( gf_cfgFloat( "scr_gf_lobby_hold", 0, 0, 1 ) ) > 0 );
     loadGateOn = ( loadWait > 0 );
     minGateOn  = ( minP > 1 );
-    if ( !loadGateOn && !minGateOn )
+    if ( !loadGateOn && !minGateOn && !lobbyMode )
         return;
     if ( !isDefined( level.gf_loadGateSeen ) )   // arm didn't run — nothing tracked, nothing to wait on
         return;
 
-    myGen        = level.gf_loadGateGen;
-    start        = gettime();
-    loadDeadline = start + int( loadWait * 1000 );   // stop waiting for loaders (only if loadGateOn)
-    minDeadline  = start + 90000;                     // GF_MINPLAYERS_MAX_HOLD — start-anyway fallback (only if minGateOn)
-    floorEnd     = start + 3000;                       // arrival floor — see block comment
+    myGen         = level.gf_loadGateGen;
+    start         = gettime();
+    loadDeadline  = start + int( loadWait * 1000 );   // stop waiting for loaders (only if loadGateOn)
+    minDeadline   = start + 90000;                     // GF_MINPLAYERS_MAX_HOLD — start-anyway fallback (only if minGateOn)
+    lobbyDeadline = start + 600000;                    // GF_LOBBY_MAX_HOLD — 10-min backstop so a forgotten manual hold can't wedge the box
+    floorEnd      = start + 3000;                       // arrival floor — see block comment
 
     // Stock look: the exact "waiting for teams" element matchStartTimer() shows
     // while its (stubbed) waitForPlayers() would wait, plus a live
@@ -233,6 +247,11 @@ gf_waitForLoadingClients()
     lastLoaded   = -1;
     lastTotal    = -1;
     stillLoading = 0;
+
+    // Live flag: true only while this hold is actively blocking. Read by the bridge
+    // (lobbystart feedback) and mirrored into gf_state telemetry so the panel can
+    // show/enable "Start Match" exactly when a hold is up. Cleared the instant we break.
+    level.gf_inLobbyHold = true;
 
     for ( ;; )
     {
@@ -291,19 +310,36 @@ gf_waitForLoadingClients()
         if ( isDefined( level.gameEnded ) && level.gameEnded )
             break;
 
-        // Load condition: everyone off the loading screen, or the load ceiling hit.
-        loadOk = ( !loadGateOn ) || ( stillLoading == 0 ) || ( now >= loadDeadline );
-        // Min-players condition: enough humans here, or none to wait for (pure-bot
-        // lobby — never stall it), or the start-anyway ceiling hit. humans counts
-        // tracked humans whether loaded or still loading; the load condition then
-        // waits for any of them still loading to finish.
-        minOk  = ( !minGateOn ) || ( humans >= minP ) || ( humans == 0 ) || ( now >= minDeadline );
+        // Admin "Start Match" click (bridge lobbystart) — an immediate override that
+        // releases the hold in EITHER mode. Cleared per match in gf_armLoadGate, so a
+        // stale click from a prior match can't leak in.
+        startClicked = ( isDefined( level.gf_lobbyStart ) && level.gf_lobbyStart );
 
-        if ( now >= floorEnd && loadOk && minOk )
-            break;
+        if ( lobbyMode )
+        {
+            // MANUAL: hold until the admin starts it (or the 10-min backstop),
+            // regardless of load state / headcount. No 3s floor — a deliberate click
+            // starts immediately.
+            if ( startClicked || now >= lobbyDeadline )
+                break;
+        }
+        else
+        {
+            // AUTO: everyone off the loading screen (or load ceiling hit) AND enough
+            // humans here (or none to wait for / start-anyway ceiling hit). humans
+            // counts tracked humans whether loaded or still loading; the load
+            // condition then waits for any still loading to finish. An admin Start
+            // click still force-releases (start now, even below min-players).
+            loadOk = ( !loadGateOn ) || ( stillLoading == 0 ) || ( now >= loadDeadline );
+            minOk  = ( !minGateOn ) || ( humans >= minP ) || ( humans == 0 ) || ( now >= minDeadline );
+            if ( startClicked || ( now >= floorEnd && loadOk && minOk ) )
+                break;
+        }
 
         wait 0.25;
     }
+
+    level.gf_inLobbyHold = false;   // hold is over — the panel's Start affordance hides
 
     // Released with someone still loading (ceiling hit — e.g. a first-time FastDL
     // downloader). Raise the grace ceiling so the first-spawn window stays open

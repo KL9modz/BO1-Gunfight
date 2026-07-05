@@ -264,7 +264,14 @@ gf_bridgeTelemetry()
         if ( isDefined( level.aliveCount["allies"] ) ) aA = level.aliveCount["allies"];
         if ( isDefined( level.aliveCount["axis"] ) )   aX = level.aliveCount["axis"];
 
-        setDvar( "gf_state", wA + ":" + wX + ":" + rn + ":" + aA + ":" + aX + ":" + level.gameType );
+        // 7th field: pre-prematch lobby hold active (1) or not (0) — drives the panel's
+        // "Start Match" affordance. Appended after gametype (no colons there), so the
+        // server's index-based parseGfState (guards length<5) stays back-compatible.
+        hold = 0;
+        if ( isDefined( level.gf_inLobbyHold ) && level.gf_inLobbyHold )
+            hold = 1;
+
+        setDvar( "gf_state", wA + ":" + wX + ":" + rn + ":" + aA + ":" + aX + ":" + level.gameType + ":" + hold );
         setDvar( "gf_roster", gf_bridgeRosterString() );
     }
 }
@@ -305,6 +312,7 @@ gf_bridgeDispatch( cmd )
 {
     if ( cmd == "pause"  ) { gf_bridgePause();  return; }
     if ( cmd == "resume" ) { gf_bridgeResume(); return; }
+    if ( cmd == "lobbystart" ) { gf_bridgeLobbyStart(); return; }
 
     if ( cmd == "botdiff_easy"   ) { maps\mp\gametypes\_bot::bot_set_difficulty( "easy"   ); gf_bridgeNotify( "^2Bot: Easy"   ); return; }
     if ( cmd == "botdiff_normal" ) { maps\mp\gametypes\_bot::bot_set_difficulty( "normal" ); gf_bridgeNotify( "^2Bot: Normal" ); return; }
@@ -398,6 +406,23 @@ gf_bridgeResume()
     level.gf_paused = false;
     maps\mp\gametypes\_gf_rounds::gf_resumeMatch();
     gf_bridgeNotify( "^2-- MATCH RESUMED --" );
+}
+
+// "Start Match" from the panel: release the pre-prematch lobby hold NOW. The hold
+// (gf_waitForLoadingClients in _gf_rounds) polls level.gf_lobbyStart every 0.25s; set
+// it and the countdown begins. Only meaningful while a hold is actively up (match's
+// first round, before the prematch countdown) — level.gf_inLobbyHold tells us that.
+// Harmless if clicked otherwise (gf_armLoadGate clears the flag at each match-start, so
+// it can't leak into a later match), but we give clear feedback instead of arming it.
+gf_bridgeLobbyStart()
+{
+    if ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold )
+    {
+        gf_bridgeNotify( "^3Start Match: no lobby hold is active right now" );
+        return;
+    }
+    level.gf_lobbyStart = true;
+    gf_bridgeNotify( "^2-- STARTING MATCH --" );
 }
 
 // --- God mode ----------------------------------------------------------------
@@ -746,10 +771,13 @@ gf_bridgeTeamFull( target, team )
     return count >= maxTeam;
 }
 
-// A live switch is only clean during the native prematch countdown: players are frozen and the
+// A live switch is only clean while level.inPrematchPeriod is true: players are frozen and the
 // round isn't scored, so the stock switch's suicide/respawn is the harmless warmup team-change.
-// The min-players hold is deliberately EXCLUDED — it enforces a strict "no deaths" invariant that
-// the suicide would violate, so a move during the hold defers to the next round instead.
+// This deliberately COVERS the pre-prematch lobby/load hold as well — the engine sets
+// inPrematchPeriod BEFORE onStartGameType (stock _globallogic sets it true at :1845; our hold is
+// the last statement of onStartGameType and it isn't cleared until prematchPeriod ends inside the
+// later-threaded startGame), so team moves made while arranging the lobby apply immediately on the
+// correct side. (The old POST-prematch min-players hold this once excluded was deleted 2026-07-04.)
 gf_bridgeTeamSafeNow()
 {
     return isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod;

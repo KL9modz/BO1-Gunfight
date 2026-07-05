@@ -262,7 +262,8 @@ function parseGfRoster(str) {
 }
 
 function parseGfState(stateStr) {
-  // format: "wA:wX:round:aliveA:aliveX:gametype"
+  // format: "wA:wX:round:aliveA:aliveX:gametype:hold"  (hold added 2026-07-05; older
+  // servers omit it → parts[6] undefined → lobbyHold false, so this stays back-compatible)
   const parts = String(stateStr).split(':');
   if (parts.length < 5) return null;
   return {
@@ -272,6 +273,7 @@ function parseGfState(stateStr) {
     aliveAllies:parseInt(parts[3]) || 0,
     aliveAxis:  parseInt(parts[4]) || 0,
     gametype:   (parts[5] || '').replace(/\^\d/g, ''),   // strip color codes (gf^7 -> gf)
+    lobbyHold:  parts[6] === '1',                          // pre-prematch admin/load hold is active
   };
 }
 
