@@ -140,7 +140,7 @@ gf_armLoadGate()
     // aren't in level.players).
     loadOn  = ( gf_cfgFloat( "scr_gf_load_wait", 30, 0, 120 ) > 0 );
     minOn   = ( int( gf_cfgFloat( "scr_gf_min_players", 1, 1, 8 ) ) > 1 );
-    lobbyOn = ( int( gf_cfgFloat( "scr_gf_lobby", 1, 0, 2 ) ) >= 1 );   // Auto or Manual
+    lobbyOn = ( int( gf_cfgFloat( "scr_gf_lobby", 0, 0, 2 ) ) >= 1 );   // Auto or Manual
     if ( !loadOn && !minOn && !lobbyOn )
         return;
 
@@ -238,7 +238,7 @@ gf_waitForLoadingClients()
     // still-loading humans — a loader still counts as "here".
     loadWait    = gf_cfgFloat( "scr_gf_load_wait", 30, 0, 120 );
     minP        = int( gf_cfgFloat( "scr_gf_min_players", 1, 1, 8 ) );
-    lobby       = int( gf_cfgFloat( "scr_gf_lobby", 1, 0, 2 ) );   // 0 = Normal, 1 = Auto lobby, 2 = Manual lobby
+    lobby       = int( gf_cfgFloat( "scr_gf_lobby", 0, 0, 2 ) );   // 0 = Normal (default), 1 = Auto lobby, 2 = Manual lobby
     restartMode = ( lobby >= 1 );   // Auto/Manual do the fast map_restart(false) on release
     manualMode  = ( lobby == 2 );   // Manual holds for the admin START click (no min-players auto-release)
     loadGateOn  = ( loadWait > 0 );

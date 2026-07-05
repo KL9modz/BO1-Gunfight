@@ -753,7 +753,7 @@ gf_welcomeMessage()
 
     self maps\mp\gametypes\_hud_message::oldNotifyMessage(
         "Welcome " + self.name + "!",          // title line (big, decode FX)
-        "visit us at ^4gunfight.us",           // ^4 = blue; ^5 = lighter cyan if 4 reads too dark
+        "visit us at ^5gunfight.us",           // ^5 = cyan; ^3 orange, ^4 blue
         undefined,                             // no icon
         undefined,                             // default (black) glow
         undefined,                             // no sound
