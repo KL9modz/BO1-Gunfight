@@ -31,7 +31,12 @@ param(
     [string] $RconPassword  = '',
     [string] $CfgPath       = '',
     [string] $LogDir        = '',
-    [int]    $RecvTimeoutMs = 1500
+    [int]    $RecvTimeoutMs = 1500,
+    # Loopback port of the RCON panel (tools\rcon\server.js). Polls prefer the panel's
+    # /api/status — its queue paces + coalesces ALL box-side rcon so independent pollers
+    # don't trip the server's ~1-reply-per-0.7s rcon limit and eat each other's replies.
+    # Direct rcon is the fallback when the panel isn't running.
+    [int]    $PanelPort     = 3000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -194,13 +199,25 @@ Write-Host $banner
 
 # --- Poll loop ----------------------------------------------------------------
 while ($true) {
+    # Panel-first (paced/coalesced box-wide rcon queue); direct rcon only if the panel is
+    # down. A panel reply of ok:false leaves $raw empty -> the 'map:' check below skips the
+    # diff, same as a failed direct poll.
     $raw = ''
+    $viaPanel = $false
     try {
-        $raw = Send-Rcon -ipHost $RconHost -port $RconPort -password $rconPw -command 'status' -timeoutMs $RecvTimeoutMs
-    } catch {
-        Write-Warning ("rcon send failed: {0}" -f $_.Exception.Message)
-        Start-Sleep -Seconds $IntervalSeconds
-        continue
+        $u = 'http://127.0.0.1:{0}/api/status?host={1}&port={2}&password={3}' -f $PanelPort, $RconHost, $RconPort, [uri]::EscapeDataString($rconPw)
+        $j = Invoke-RestMethod -UseBasicParsing -TimeoutSec 20 -Uri $u
+        $viaPanel = $true
+        if ($j.ok) { $raw = [string]$j.raw }
+    } catch { $viaPanel = $false }
+    if (-not $viaPanel) {
+        try {
+            $raw = Send-Rcon -ipHost $RconHost -port $RconPort -password $rconPw -command 'status' -timeoutMs $RecvTimeoutMs
+        } catch {
+            Write-Warning ("rcon send failed: {0}" -f $_.Exception.Message)
+            Start-Sleep -Seconds $IntervalSeconds
+            continue
+        }
     }
 
     # A valid status reply always contains "map:". Anything else = failed poll;

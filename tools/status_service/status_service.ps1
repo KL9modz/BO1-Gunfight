@@ -37,7 +37,12 @@ param(
     [string] $LogDir        = '',
     [int]    $AdminLogTail  = 40,
     [int]    $RecvTimeoutMs = 1200,
-    [int]    $RecentMax     = 15
+    [int]    $RecentMax     = 15,
+    # Loopback port of the RCON panel (tools\rcon\server.js). When the panel is running,
+    # this service reads through its /api/tick instead of sending raw rcon — the panel's
+    # queue paces + coalesces ALL box-side rcon, so independent pollers stop tripping the
+    # server's ~1-reply-per-0.7s rcon limit and eating each other's replies.
+    [int]    $PanelPort     = 3000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -214,31 +219,68 @@ while ($true) {
     $snapshot = $null
     $adminSnapshot = $null
     try {
-        # gf_state + gf_roster in one chained read; status separately (paced for the
-        # server's ~0.7s rcon reply rate limit).
-        $dvarReply = Send-Rcon -ipHost $RconHost -port $RconPort -password $rconPw -command 'gf_state;gf_roster' -timeoutMs $RecvTimeoutMs
-        Start-Sleep -Milliseconds 800
-        $statusReply = Send-Rcon -ipHost $RconHost -port $RconPort -password $rconPw -command 'status' -timeoutMs $RecvTimeoutMs
+        # PREFERRED SOURCE: the RCON panel's /api/tick on this box — status+gf_state+gf_roster
+        # in ONE rcon send through the panel's paced, coalescing queue (if the admin panel has
+        # the same read queued, they merge into a single send). Direct rcon only as fallback:
+        # a second unpaced sender races the panel for the server's ~1-reply-per-0.7s rcon
+        # limit and both randomly lose replies.
+        $tick = $null; $panelSaysDown = $false
+        try {
+            $u  = 'http://127.0.0.1:{0}/api/tick?host={1}&port={2}&password={3}' -f $PanelPort, $RconHost, $RconPort, [uri]::EscapeDataString($rconPw)
+            $pj = Invoke-RestMethod -UseBasicParsing -TimeoutSec 20 -Uri $u
+            if ($pj.ok) { $tick = $pj } else { $panelSaysDown = $true }   # panel reached rcon, server gave nothing -> down; don't double-poll
+        } catch { $tick = $null }
 
-        if ($statusReply -match 'map:') {
+        $mapRaw = ''; $players = @{}; $roster = @{}
+        $alliesWins = 0; $axisWins = 0; $round = 0; $aliveA = 0; $aliveX = 0; $gametype = ''
+
+        if ($tick) {
             $online = $true
-            $mapRaw = ''
-            $mm = [regex]::Match($statusReply, 'map:\s*(\S+)')
-            if ($mm.Success) { $mapRaw = $mm.Groups[1].Value }
+            $mapRaw = [string]$tick.map
+            # Same shapes the text parsers produce: STRING num keys; ip carries addr:port for
+            # humans / '' for bots; missing roster num -> team 'unknown'.
+            foreach ($p in @($tick.players)) {
+                if ($null -eq $p) { continue }
+                $players[[string]$p.num] = @{ name = [string]$p.name; ping = [int]$p.ping; bot = [bool]$p.bot;
+                                              ip = $(if ($p.bot) { '' } else { [string]$p.addr }) }
+            }
+            foreach ($e in @($tick.roster)) {
+                if ($null -eq $e) { continue }
+                $tm = if ([string]$e.team -ne '') { [string]$e.team } else { 'unknown' }
+                $roster[[string]$e.num] = @{ team = $tm; alive = [bool]$e.alive }
+            }
+            if ($tick.state) {
+                $alliesWins = [int]$tick.state.winsAllies; $axisWins = [int]$tick.state.winsAxis
+                $round      = [int]$tick.state.round
+                $aliveA     = [int]$tick.state.aliveAllies; $aliveX = [int]$tick.state.aliveAxis
+                $gametype   = [string]$tick.state.gametype
+            }
+        }
+        elseif (-not $panelSaysDown) {
+            # FALLBACK (panel not running): direct rcon — gf_state + gf_roster in one chained
+            # read; status separately (paced for the server's ~0.7s rcon reply rate limit).
+            $dvarReply = Send-Rcon -ipHost $RconHost -port $RconPort -password $rconPw -command 'gf_state;gf_roster' -timeoutMs $RecvTimeoutMs
+            Start-Sleep -Milliseconds 800
+            $statusReply = Send-Rcon -ipHost $RconHost -port $RconPort -password $rconPw -command 'status' -timeoutMs $RecvTimeoutMs
+            if ($statusReply -match 'map:') {
+                $online = $true
+                $mm = [regex]::Match($statusReply, 'map:\s*(\S+)')
+                if ($mm.Success) { $mapRaw = $mm.Groups[1].Value }
+                $state   = Get-DvarValue $dvarReply 'gf_state'
+                $rosterV = Get-DvarValue $dvarReply 'gf_roster'
+                $roster  = Parse-Roster $rosterV
+                $players = Parse-StatusPlayers $statusReply
+                $sf = $state -split ':'
+                $alliesWins = if ($sf.Count -ge 1 -and $sf[0] -ne '') { [int]$sf[0] } else { 0 }
+                $axisWins   = if ($sf.Count -ge 2 -and $sf[1] -ne '') { [int]$sf[1] } else { 0 }
+                $round      = if ($sf.Count -ge 3 -and $sf[2] -ne '') { [int]$sf[2] } else { 0 }
+                $aliveA     = if ($sf.Count -ge 4 -and $sf[3] -ne '') { [int]$sf[3] } else { 0 }
+                $aliveX     = if ($sf.Count -ge 5 -and $sf[4] -ne '') { [int]$sf[4] } else { 0 }
+                $gametype   = if ($sf.Count -ge 6) { $sf[5] } else { '' }
+            }
+        }
 
-            $state  = Get-DvarValue $dvarReply 'gf_state'
-            $rosterV = Get-DvarValue $dvarReply 'gf_roster'
-            $roster = Parse-Roster $rosterV
-            $players = Parse-StatusPlayers $statusReply
-
-            $sf = $state -split ':'
-            $alliesWins = if ($sf.Count -ge 1 -and $sf[0] -ne '') { [int]$sf[0] } else { 0 }
-            $axisWins   = if ($sf.Count -ge 2 -and $sf[1] -ne '') { [int]$sf[1] } else { 0 }
-            $round      = if ($sf.Count -ge 3 -and $sf[2] -ne '') { [int]$sf[2] } else { 0 }
-            $aliveA     = if ($sf.Count -ge 4 -and $sf[3] -ne '') { [int]$sf[3] } else { 0 }
-            $aliveX     = if ($sf.Count -ge 5 -and $sf[4] -ne '') { [int]$sf[4] } else { 0 }
-            $gametype   = if ($sf.Count -ge 6) { $sf[5] } else { '' }
-
+        if ($online) {
             # Build the public player list (humans only), merging team/alive from roster.
             # $adminList is the same list PLUS ip, used only for the protected admin snapshot.
             $list = @()

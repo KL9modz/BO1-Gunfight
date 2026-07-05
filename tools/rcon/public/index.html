@@ -1068,13 +1068,11 @@ async function fetchStatus(){
   const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
   return (await fetch(API+'/status?'+p)).json();
 }
-async function fetchGfState(){
+async function fetchTick(){
+  // ONE rcon send for the whole dashboard refresh (status + gf_state + gf_roster chained
+  // server-side). state/roster come back null on a listen server — status still lands.
   const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
-  return (await fetch(API+'/gfstate?'+p)).json();
-}
-async function fetchGfRoster(){
-  const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
-  return (await fetch(API+'/gfroster?'+p)).json();
+  return (await fetch(API+'/tick?'+p)).json();
 }
 async function fetchDvars(names){
   const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password,names:names.join(',')});
@@ -1104,14 +1102,13 @@ function setLive(v){
     setCtrl(true);
     // Default bot difficulty is normal — highlight until user changes it
     ['easy','normal','hard','fu'].forEach(k=>g('d-'+k).classList.toggle('sel',k==='normal'));
-    clearInterval(window._rt);window._rt=setInterval(autoTick,3000);
-    clearInterval(window._st);window._st=setInterval(scoreTick,2500);
+    startPoll();
   }else{
     btn.textContent='Connect';btn.className='';
     bdg.textContent='● Disconnected';bdg.className='bdg off';
     g('modeBadge').style.display='none';
     if(hr)hr.style.display='none';if(hk)hk.style.display='none';
-    setCtrl(false);clearInterval(window._rt);clearInterval(window._st);
+    setCtrl(false);stopPoll();
     _knownPlayers=null;   // re-seed the join baseline on next connect (no spam on reconnect)
   }
   updateSyncUI();
@@ -1138,43 +1135,46 @@ function disconnect(){
   g('scA').textContent=g('scX').textContent=g('scRound').textContent='—';
   g('scAA').textContent=g('scAX').textContent='—';
 }
-async function autoTick(){
-  if(!live)return;
+// ONE self-scheduling poll drives the whole dashboard: a single /api/tick per cycle, and the
+// next cycle is armed only after this one RESOLVES — the loop can never stack requests. The old
+// shape (status @3s + gf_state/gf_roster @2.5s on two setIntervals) enqueued three rcon sends
+// per cycle ≈ 1.4x what the 850ms-gap lane can drain on a dedicated server, so the rcon queue
+// grew without bound; the hanging fetches then exhausted the browser's 6-connection pool, which
+// stalled even the PRIORITY lane (clicks, ack polls) behind the backlog — commands took minutes.
+// A listen server returns state/roster null (score card stays muted, grouping stays off).
+let _pollGen=0,_pollTimer=null;
+function startPoll(){ stopPoll(); pollTick(_pollGen); }
+function stopPoll(){ _pollGen++; clearTimeout(_pollTimer); _pollTimer=null; }
+async function pollTick(gen){
+  if(gen!==_pollGen||!live)return;
   try{
-    const d=await fetchStatus();
+    const d=await fetchTick();
+    if(gen!==_pollGen||!live)return;
     if(d.ok){
       // Auto-advance map queue
       if(autoQ && lastMap && lastMap!==d.map && mapQueue.length>0) qSendNext();
       lastMap=d.map;
       tick(d);
+      if(d.state){
+        const s=d.state;
+        g('scA').textContent=s.winsAllies;
+        g('scX').textContent=s.winsAxis;
+        g('scRound').textContent='R '+s.round;
+        g('scAA').textContent=s.aliveAllies;
+        g('scAX').textContent=s.aliveAxis;
+        if(s.gametype) g('sGt').textContent=s.gametype;
+      }
+      if(d.roster){
+        _roster={}; for(const e of d.roster) _roster[e.num]=e;
+        // Only rebuild the table when the team/pending mapping actually changed (tick(d)'s
+        // status render already repaints on its own cadence).
+        const sig=d.roster.map(e=>e.num+':'+e.team+':'+(e.pending||'')).join('|');
+        if(sig!==_rosterSig){ _rosterSig=sig; renderPlayers(); }
+      }
     }else{g('badge').className='bdg err';}
   }catch(_){}
-}
-async function scoreTick(){
-  if(!live||_listenServer)return;
-  try{
-    const d=await fetchGfState();
-    if(d.ok && d.state){
-      const s=d.state;
-      g('scA').textContent=s.winsAllies;
-      g('scX').textContent=s.winsAxis;
-      g('scRound').textContent='R '+s.round;
-      g('scAA').textContent=s.aliveAllies;
-      g('scAX').textContent=s.aliveAxis;
-      if(s.gametype) g('sGt').textContent=s.gametype;
-    }
-  }catch(_){}
-  // Per-player team roster (dedicated only; listen server times out — grouping just stays off).
-  try{
-    const r=await fetchGfRoster();
-    if(r.ok){
-      _roster={}; for(const e of r.roster) _roster[e.num]=e;
-      // Only rebuild the table when the team/pending mapping actually changed (this ticks every
-      // 2.5s; the status tick already re-renders on its own cadence).
-      const sig=r.roster.map(e=>e.num+':'+e.team+':'+(e.pending||'')).join('|');
-      if(sig!==_rosterSig){ _rosterSig=sig; renderPlayers(); }
-    }
-  }catch(_){}
+  if(gen!==_pollGen||!live)return;
+  _pollTimer=setTimeout(()=>pollTick(gen),2500);
 }
 // num -> {num,team,alive,pending} from gf_roster; empty until first successful roster read.
 let _roster={}, _rosterSig='';
@@ -1222,7 +1222,7 @@ function buildPlayers(ps){ _lastPlayers=ps||[]; renderPlayers(); }
 // Render the PLAYERS table. With gf_roster team data (dedicated), players are grouped under
 // ALLIES / AXIS / SPECTATOR headers (with counts) so you can read the teams at a glance and
 // balance them. Without team data (listen server, or roster not read yet) it falls back to a
-// flat list. Called from both the status tick (buildPlayers) and the roster tick (scoreTick).
+// flat list. Called from the poll tick, both via buildPlayers (status) and on roster changes.
 function renderPlayers(){
   const tb=g('ptbody');
   const ps=_lastPlayers;

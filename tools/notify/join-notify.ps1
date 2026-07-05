@@ -54,6 +54,12 @@ function Read-RconPw {
 }
 
 # ── RCON (UDP OOB) ────────────────────────────────────────────────────────────
+# Loopback port of the RCON panel (tools\rcon\server.js). Polls prefer the panel's
+# /api/status — its queue paces + coalesces ALL box-side rcon so independent pollers
+# don't trip the server's ~1-reply-per-0.7s rcon limit and eat each other's replies.
+# Direct Send-Rcon below is the fallback when the panel isn't running.
+$script:PanelPort = 3000
+
 function Send-Rcon($ip, $port, $pw, $command, $timeoutMs = 3000, $collectMs = 300) {
   $udp = New-Object System.Net.Sockets.UdpClient
   try {
@@ -141,10 +147,20 @@ $script:lastOnline = 0
 $script:lastCtx    = ''
 
 function Do-Tick($cfg) {
-  try { $raw = Send-Rcon $cfg.host $cfg.port $cfg.password 'status' }
-  catch { Write-Log "status poll failed ($($_.Exception.Message)) - keeping last baseline"; return }
+  # Panel-first (paced/coalesced box-wide rcon queue), direct rcon only if the panel is down.
+  $text = $null
+  try {
+    $u = 'http://127.0.0.1:{0}/api/status?host={1}&port={2}&password={3}' -f $script:PanelPort, $cfg.host, $cfg.port, [uri]::EscapeDataString([string]$cfg.password)
+    $j = Invoke-RestMethod -UseBasicParsing -TimeoutSec 20 -Uri $u
+    if ($j.ok) { $text = [string]$j.raw }
+    else { Write-Log "status poll failed via panel ($($j.error)) - keeping last baseline"; return }
+  } catch { $text = $null }
+  if ($null -eq $text) {
+    try { $text = Parse-RconResponse (Send-Rcon $cfg.host $cfg.port $cfg.password 'status') }
+    catch { Write-Log "status poll failed ($($_.Exception.Message)) - keeping last baseline"; return }
+  }
 
-  $st   = Parse-Status (Parse-RconResponse $raw)
+  $st   = Parse-Status $text
   $real = @($st.players | Where-Object { -not $_.bot })
   $cur  = @{}
   foreach ($p in $real) { $cur[(P-Key $p)] = $p.name }

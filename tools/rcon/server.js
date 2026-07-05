@@ -84,10 +84,19 @@ const RCON_MIN_GAP = 850;
 let _rconActive = false;
 let _rconLastDone = 0;
 let _rconSeq = 0;                 // tiebreak: FIFO within the same priority
-const _rconQ = [];               // pending jobs: { priority, seq, args, resolve, reject }
-function _rconEnqueue(priority, args) {
+const _rconQ = [];               // pending jobs: { priority, seq, args, key, waiters, resolve, reject }
+function _rconEnqueue(priority, args, key) {
+  // COALESCE: an idempotent read (dashboard tick / ack poll) whose twin is already queued
+  // piggybacks on that job's reply instead of adding queue depth. The browser issues these on
+  // timers regardless of backlog, so without this a busy stretch (dvar sweep, packet loss)
+  // stacked identical reads faster than the 850ms-gap lane could drain them — the queue, and
+  // every click behind it, fell minutes behind and never recovered.
+  if (key) {
+    const twin = _rconQ.find((j) => j.key === key);
+    if (twin) return new Promise((resolve, reject) => twin.waiters.push({ resolve, reject }));
+  }
   return new Promise((resolve, reject) => {
-    _rconQ.push({ priority, seq: _rconSeq++, args, resolve, reject });
+    _rconQ.push({ priority, seq: _rconSeq++, args, key, waiters: [], resolve, reject });
     _rconDrain();
   });
 }
@@ -103,14 +112,17 @@ async function _rconDrain() {
   const job = _rconQ.splice(bi, 1)[0];
   const gap = RCON_MIN_GAP - (Date.now() - _rconLastDone);
   if (gap > 0) await sleep(gap);
-  try { job.resolve(await sendRcon(...job.args)); }
-  catch (e) { job.reject(e); }
+  try { const buf = await sendRcon(...job.args); job.resolve(buf); for (const w of job.waiters) w.resolve(buf); }
+  catch (e) { job.reject(e); for (const w of job.waiters) w.reject(e); }
   finally { _rconLastDone = Date.now(); _rconActive = false; _rconDrain(); }
 }
 // Background reads (status/score/roster/dvar sweep) — normal lane.
 function sendRconQueued(...args)   { return _rconEnqueue(0, args); }
 // User clicks + ack reads — high lane, preempt background work at the next free slot.
 function sendRconPriority(...args) { return _rconEnqueue(10, args); }
+// Keyed variants: same lanes, but identical queued reads coalesce (see _rconEnqueue).
+function sendRconQueuedKeyed(key, ...args)   { return _rconEnqueue(0, args, key); }
+function sendRconPriorityKeyed(key, ...args) { return _rconEnqueue(10, args, key); }
 
 function parseRconResponse(buf) {
   const s  = buf.toString('utf8');
@@ -412,12 +424,37 @@ const server = http.createServer(async (req, res) => {
     return serveFile(res, filePath);
   }
 
+  // ── GET /api/tick ── the whole dashboard refresh in ONE rcon send: `status;gf_state;gf_roster`
+  // chained into a single command (one reply carries all three, same trick as the batched dvar
+  // reads). Replaces three separate reads per UI tick — those alone demanded ~1.4x the queue's
+  // 850ms-gap drain rate on a dedicated server, so the rcon queue (and every click behind it)
+  // fell minutes behind. On a listen server the gf_* tokens echo nothing (state/roster → null);
+  // the status part still lands.
+  if (req.method === 'GET' && pathname === '/api/tick') {
+    const { host = '127.0.0.1', port = '28960', password = '' } = query;
+    const p = parseInt(port);
+    try {
+      const buf  = await sendRconQueuedKeyed(`tick:${host}:${p}`, host, p, password, 'status;gf_state;gf_roster');
+      const text = parseRconResponse(buf);
+      const data = parseStatusText(text);
+      const sv   = parseDvarValue(text, 'gf_state');
+      const rv   = parseDvarValue(text, 'gf_roster');
+      return sendJson(res, {
+        ok: true, ...data,
+        state:  sv ? parseGfState(sv) : null,
+        roster: rv !== null ? parseGfRoster(rv) : null,
+      });
+    } catch (err) {
+      return sendJson(res, { ok: false, error: err.message });
+    }
+  }
+
   // ── GET /api/status ──
   if (req.method === 'GET' && pathname === '/api/status') {
     const { host = '127.0.0.1', port = '28960', password = '' } = query;
     const p = parseInt(port);
     try {
-      const statusBuf = await sendRconQueued(host, p, password, 'status');
+      const statusBuf = await sendRconQueuedKeyed(`status:${host}:${p}`, host, p, password, 'status');
       const text = parseRconResponse(statusBuf);
       const data = parseStatusText(text);
       return sendJson(res, { ok: true, ...data, raw: text });
@@ -430,7 +467,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname === '/api/gfstate') {
     const { host = '127.0.0.1', port = '28960', password = '' } = query;
     try {
-      const buf  = await sendRconQueued(host, parseInt(port), password, 'gf_state');
+      const buf  = await sendRconQueuedKeyed(`gfstate:${host}:${port}`, host, parseInt(port), password, 'gf_state');
       const text = parseRconResponse(buf);
       const val  = parseDvarValue(text, 'gf_state');
       const state = val ? parseGfState(val) : null;
@@ -444,7 +481,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname === '/api/gfroster') {
     const { host = '127.0.0.1', port = '28960', password = '' } = query;
     try {
-      const buf  = await sendRconQueued(host, parseInt(port), password, 'gf_roster');
+      const buf  = await sendRconQueuedKeyed(`gfroster:${host}:${port}`, host, parseInt(port), password, 'gf_roster');
       const text = parseRconResponse(buf);
       const val  = parseDvarValue(text, 'gf_roster');
       return sendJson(res, { ok: val !== null, roster: val !== null ? parseGfRoster(val) : [] });
@@ -505,7 +542,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname === '/api/ack') {
     const { host = '127.0.0.1', port = '28960', password = '' } = query;
     try {
-      const buf  = await sendRconPriority(host, parseInt(port), password, 'gf_ack', 150, 700);
+      const buf  = await sendRconPriorityKeyed(`ack:${host}:${port}`, host, parseInt(port), password, 'gf_ack', 150, 700);
       const text = parseRconResponse(buf);
       const val  = parseDvarValue(text, 'gf_ack');
       return sendJson(res, { ok: val !== null, ack: val !== null ? (parseInt(val) || 0) : 0 });

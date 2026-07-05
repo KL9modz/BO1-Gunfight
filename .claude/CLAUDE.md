@@ -4,8 +4,15 @@
 bots :mistakes were made on spawn
 mod changes peoples settings
 unknown cmd cd
+Friendly Rire is in 2 rcon spots and turns on next round
 more ammo
-match starts too early
+less double akimbo
+lmg prime, smg sec
+reshape rcon windows
+increase loadout hud time
+min players keeps the match from starting AFTER the prematch timer ends. 
+need something that holds before the prematch starts. otherwise ill keep keep making prematch longer
+match starts too early. pre match countdown starts when first player connects
 fast restart sometimes makes the prematch timer look like its running at 1fps
 the prematch countdown is in slow motion
 the map que changes early 
@@ -24,7 +31,8 @@ fable website design
 - ship weapon files: ads fov/move speed
 - custom camos
 - add credit to Plutonium/bots, etc
-
+BO1 server role
+IW5 MW3 face-off gunfight - mwgunfight.com
 - On-brand live card (Discord)
 A card in the site's own orange 'Evolved Dark' theme showing the live online count (96 now) + a 'Join the Discord'
 button. Fetches widget.json client-side. Matches the site perfectly. CSP cost: add script-src 'self' 'unsafe-inline' +
@@ -129,6 +137,16 @@ DONE:
   IN-GAME VERIFY: (a) two-client rotation — slow client sees loading, fast client sees "Waiting
   for teams... N/M", countdown starts only when both in; (b) `GF_LOADGATE:` line in games_mp.log
   with sane hold ms; (c) solo + bots: gate releases at the 3s floor (bots never counted).
+  FOLLOW-UP 2026-07-04 — straggler grace extension (`scr_gf_load_grace`, default 20s): if the load
+  gate hits its ceiling with a client STILL loading (the FastDL first-timer case the gate
+  deliberately doesn't absorb), keep the grace period open up to `scr_gf_load_grace` seconds past
+  prematch_over so that client can still take its round-1 first spawn instead of spectating. Two
+  parts: `gf_waitForLoadingClients` raises `level.gracePeriod` at release (before onStartGameType
+  returns, so the stock `gracePeriod()` backstop honours it), and `gf_closeGraceEarly` holds (past
+  its 3s floor) while `gf_anyTrackedClientLoading()` is true, bounded by that ceiling. Tradeoff: a
+  round-1 wipe can't end the round until grace closes. `0` disables (straggler spectates). VERIFY:
+  join a 3rd client that loads slowly (or throttle FastDL) so it lands AFTER the countdown — it
+  should still spawn into the live round 1, and grace should close the moment it spawns.
 - "Match starts before all players spawned" + "bot fill issues" + "bots die on spawn" — FIXED
   2026-07-01 (pending in-game verify), one root cause: nothing ever waited for the roster.
   (1) `gf_tryActivateRound` now polls after `prematch_over` until every teamed player has
@@ -291,7 +309,8 @@ persists through `map_restart`.
 | ~~`scr_gf_largemode_minplayers`~~ | *(retired)* | **RETIRED 2026-07-03 — no longer read.** The small/large split is now hard-wired to the health-panel skull cap in `gf_autoLargeFromCounts()` (`<=4v4` small, any team of `5+` large). A tunable spawn threshold could only DEcouple it from the fixed menu `cnt > 4` gate, and the old TOTAL-vs-new-PER-TEAM reinterpretation was a live footgun (a stale `7` made large mode unreachable). Any stale cfg value is inert. Pin the mode with `scr_gf_teamspawnmode large\|small` |
 | `scr_gf_roster_wait` | 15 | Max seconds `gf_tryActivateRound` holds the round clock after `prematch_over` waiting for every teamed **HUMAN** to finish spawning (slow loaders). **Bots are excluded from the gate** (`gf_allTeamedPlayersSpawned` skips `pers["isBot"]`) as of 2026-07-03 — a bot teamed just before `prematch_over` or one that fails its first spawn ("bots die on spawn") used to hold this the full window, causing the intermittent "stuck after prematch, no round timer" freeze. **`0` no longer means "wait forever"** (that was a footgun — a never-spawning client wedged the match until `game_ended`); `0` now falls back to a 60s hard ceiling (`GF_ROSTER_HARD_CEILING`), always bounded. Clamped 0-120. Live-tunable (re-read each round) |
 | `scr_gf_min_players` | 1 | **Min HUMANS-to-start gate** (`gf_waitForMinPlayers`, `_gf_rounds.gsc`). Holds the match's FIRST round (`game["roundsplayed"]==0` only) until at least this many *human* players are on a team — bots (`pers["isBot"]`) don't count, so bot-fill can't satisfy it. During the hold everyone is frozen (`freeze_player_controls`) and **all damage is voided** via the `level.gf_waitingForPlayers` guard in `gf_onPlayerDamage` (so no one dies into a not-yet-live round → instant-wipe). **Two anti-wedge guards (2026-07-03):** (a) skips the hold entirely when **0 humans are connected** (`gf_connectedHumanCount()==0` — a pure-bot test can't ever satisfy a human gate, so don't freeze the bots forever); (b) an absolute **90s ceiling** (`GF_MINPLAYERS_MAX_HOLD`) releases into the round even with a human present but not on a team (e.g. spectating, or bounced by `scr_team_maxsize`) — the "start anyway" fallback, never an eternal warmup. Match-start only: never re-holds mid-match if a player leaves. `1` = effectively off. Clamped 1-8. Distinct from `scr_gf_roster_wait` (that waits for the present roster to *spawn in*; this waits for enough humans to *exist*) |
-| `scr_gf_load_wait` | 30 | **Pre-prematch LOAD gate** (`gf_armLoadGate`/`gf_waitForLoadingClients`, `_gf_rounds.gsc`; added 2026-07-03). Match's FIRST round only: holds at the END of `onStartGameType` — the engine threads `startGame()` (prematch countdown) only when that callback returns — until every rotation-carried HUMAN client has left the loading screen, so everyone sees the full countdown/intro together and slow loaders can't be grace-locked into spectating round 1. Works because clients connect while STILL LOADING (`Callback_PlayerConnect` fires pre-load; statusicon `hud_status_connecting` until the engine's `"begin"`, and only then do they enter `level.players`) — the stock `waitForPlayers()` hook for this is an empty stub in T5. Loading = statusicon check; entities collected via the level `"connecting"` notify (pre-begin clients exist nowhere else). Bots (`istestclient()`) excluded from wait + readout. This dvar = ceiling seconds (clamped 0-120, `0` = gate off); 3s arrival floor. Shows the stock "Waiting for teams..." string + a live yellow `loaded / total` readout (setValue-driven, configstring-safe) in the countdown's slot. FastDL first-time downloaders (30-60s+ engine rebuild) are deliberately NOT absorbed. Releases log `GF_LOADGATE:` to games_mp.log. Distinct from `scr_gf_roster_wait` (post-prematch, waits for *spawns*) and `scr_gf_min_players` (waits for humans to *exist*): this one waits for known clients to *finish loading the map* |
+| `scr_gf_load_wait` | 30 | **Pre-prematch LOAD gate** (`gf_armLoadGate`/`gf_waitForLoadingClients`, `_gf_rounds.gsc`; added 2026-07-03). Match's FIRST round only: holds at the END of `onStartGameType` — the engine threads `startGame()` (prematch countdown) only when that callback returns — until every rotation-carried HUMAN client has left the loading screen, so everyone sees the full countdown/intro together and slow loaders can't be grace-locked into spectating round 1. Works because clients connect while STILL LOADING (`Callback_PlayerConnect` fires pre-load; statusicon `hud_status_connecting` until the engine's `"begin"`, and only then do they enter `level.players`) — the stock `waitForPlayers()` hook for this is an empty stub in T5. Loading = statusicon check; entities collected via the level `"connecting"` notify (pre-begin clients exist nowhere else). Bots (`istestclient()`) excluded from wait + readout. This dvar = ceiling seconds (clamped 0-120, `0` = gate off); 3s arrival floor. Shows the stock "Waiting for teams..." string + a live yellow `loaded / total` readout (setValue-driven, configstring-safe) in the countdown's slot. FastDL first-time downloaders (30-60s+ engine rebuild) are deliberately NOT absorbed. Releases log `GF_LOADGATE:` to games_mp.log. Distinct from `scr_gf_roster_wait` (post-prematch, waits for *spawns*) and `scr_gf_min_players` (waits for humans to *exist*): this one waits for known clients to *finish loading the map*. A client STILL loading when this ceiling hits is then covered by `scr_gf_load_grace` (below) |
+| `scr_gf_load_grace` | 20 | **Straggler grace extension** (`gf_anyTrackedClientLoading`/`gf_closeGraceEarly`, `_gf_rounds.gsc`; added 2026-07-04). Companion to `scr_gf_load_wait`: when the load gate releases with a client STILL loading (it hit the `scr_gf_load_wait` ceiling — e.g. a first-time FastDL downloader taking 30-60s+), keep the grace period open this many seconds *past `prematch_over`* so that client can still take its round-1 first spawn (stock `maySpawn` only admits a late first-spawn while `inGracePeriod`) instead of spectating the whole round. Implemented by raising `level.gracePeriod` at gate release (so the stock `gracePeriod()` backstop doesn't close first) + a hold in `gf_closeGraceEarly` keyed off the same tracker snapshot. **Cost:** a round-1 team wipe can't END the round until grace closes (bounded by this ceiling and by round length) — the deliberate tradeoff for letting the loader play. `0` = off (straggler spectates round 1, the pre-2026-07-04 behavior). Round 1 only (tracker snapshot is `map_restart`-wiped); bots excluded (`istestclient()`); a straggler who disconnects mid-load releases the hold. Clamped 0-60 |
 | `scr_team_maxsize` | 0 (shipped cfg sets **6**) | `>0` caps players/team; overflow is sent to spectator on spawn (`gf_playerSpawnedCB`). `dedicated.cfg` ships `6` (up to 6v6); `sv_maxclients` 14 = 12 play + 2 spectator. Set `4` for a 4v4 server |
 | `perk_weapSwitchMultiplier` | (engine default) | Engine weapon-swap speed (lower = faster); gated by `specialty_fastweaponswitch`, which is **OFF by default** (no longer in the base loadout). NOT forced by the mod — stock by default. To use it: enable Fast Weapon Switch via the RCON Perks tab (`gf_perk_on`), then tune the slider; inert until the perk is on |
 | `gf_perk_on` / `gf_perk_off` | "" | Comma-separated perk override lists (RCON-managed) applied AFTER the base perk set in `gf_giveCustomLoadout` |
@@ -316,6 +335,28 @@ they preempt the background status/score/roster ticks and the ~100-dvar connect 
 reply gap is still enforced (hard Plutonium limit), priority only reorders who goes next. The panel shows
 a bottom-left **command queue** (`cqAdd`/`cqResolve` etc.): ⏳ sent → ✓ received (round-trip ms) → ✗
 timeout. See the `_gf_bridge.gsc` header comment for the wire format.
+
+**RCON transport rebuilt (2026-07-03 late — root cause of "panel commands took minutes on the VPS"):**
+TWO compounding causes, both fixed. (1) PANEL SELF-SATURATION: each background rcon read holds the
+panel's send lane ~1.25s (850ms enforced gap + reply collect), but the UI enqueued THREE reads per
+tick cycle (status @3s + gf_state + gf_roster @2.5s on two `setInterval`s) ≈ 1.4× the lane's drain
+rate — on a dedicated server the queue grew without bound (a listen server masked it: scoreTick
+early-returned there, which is why it only hurt on the VPS). Stacked hanging fetches then exhausted
+the browser's 6-per-origin connection pool, so even PRIORITY clicks (team moves, map restart, bots)
+waited minutes in the browser before the server's priority lane could see them, then their acks
+timed out → retry spam. Fix: ONE self-scheduling poll (`pollTick`, next cycle armed only after the
+previous resolves — can never stack) hitting a new **`/api/tick`** that chains `status;gf_state;gf_roster`
+into ONE rcon send; plus server-side **coalescing** (`_rconEnqueue` `key` arg) so identical queued
+reads piggyback on one send. Steady state ≈ 1 send / ~3.8s ≈ 35% of lane capacity. (2) COMPETING
+BOX-SIDE SENDERS: the VPS also ran status_service (2 raw sends / 5s), TWO join-notify tasks (duplicate
+"GF Join Notifier" task removed; canonical is GF-JoinNotify per register_services.ps1), and
+conn_logger (1 / 15s) — independent unpaced UDP senders racing the panel for the server's
+~1-reply-per-0.7s rcon limit; collisions silently ate replies (each eaten panel reply = a 3s timeout
+stall). All three services are now **panel-first**: they read via the panel's `/api/tick`/`/api/status`
+(sharing its paced, coalescing queue — status_service's read even merges with the admin panel's own
+tick when both are queued) and fall back to direct rcon only when the panel isn't running. RULE:
+never add another direct rcon poller on the box — go through the panel API on 127.0.0.1:3000 so
+exactly one process owns the pacing. Deployed live via scp 2026-07-03 (panel + 3 services restarted).
 
 **Dropped-packet self-heal + forced team move (added 2026-07-03).** Plutonium silently drops rcon
 packets sent faster than ~1/0.7s, so a click could vanish with no effect. Two-part fix: (1) the panel
