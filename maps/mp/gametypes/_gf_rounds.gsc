@@ -276,6 +276,21 @@ gf_waitForLoadingClients()
         wait 0.25;
     }
 
+    // Released with someone still loading (ceiling hit — e.g. a first-time FastDL
+    // downloader). Raise the grace ceiling so the first-spawn window stays open
+    // past prematch_over and they can still spawn INTO round 1 instead of
+    // spectating it: maySpawn only admits a late first-spawn while inGracePeriod,
+    // and gf_closeGraceEarly / the stock gracePeriod backstop otherwise shut that
+    // window ~3-15s in. onStartGameType hasn't returned yet, so this is seen by
+    // the stock gracePeriod() thread (threaded later, in startGame). The wait
+    // itself lives in gf_closeGraceEarly, keyed off the same tracker snapshot.
+    if ( stillLoading > 0 )
+    {
+        loadGrace = gf_cfgFloat( "scr_gf_load_grace", 20, 0, 60 );   // 0 = don't hold grace for loaders
+        if ( loadGrace > level.gracePeriod )
+            level.gracePeriod = loadGrace;
+    }
+
     logPrint( "GF_LOADGATE: released after " + ( gettime() - start ) + "ms, " + stillLoading + " client(s) still loading\n" );
 
     for ( i = 0; i < elems.size; i++ )
@@ -285,6 +300,31 @@ gf_waitForLoadingClients()
     }
 
     level notify( "gf_load_gate_reset" );   // gate done — retire the tracker
+}
+
+// True while any load-gate-tracked HUMAN still has the connecting statusicon
+// (i.e. is on its loading screen). Reads the frozen level.gf_loadGateSeen
+// snapshot the tracker built — the snapshot persists after gf_load_gate_reset
+// retires the tracker, and each entity's statusicon updates live (the engine
+// clears it on "begin"), so this reflects real-time load status. Undefined
+// array (rounds 2+, where map_restart wiped it) => false, so the grace hold is
+// inherently round-1-only. A client that disconnects mid-load goes undefined and
+// is skipped, so it can never wedge the hold.
+gf_anyTrackedClientLoading()
+{
+    if ( !isDefined( level.gf_loadGateSeen ) )
+        return false;
+    for ( i = 0; i < level.gf_loadGateSeen.size; i++ )
+    {
+        p = level.gf_loadGateSeen[i];
+        if ( !isDefined( p ) )
+            continue;
+        if ( p istestclient() )   // bots begin within a frame; never hold grace for them
+            continue;
+        if ( isDefined( p.statusicon ) && p.statusicon == "hud_status_connecting" )
+            return true;
+    }
+    return false;
 }
 
 // ─── Team-Size Spawn/Barrier Mode ──────────────────────────────────────────
@@ -695,6 +735,22 @@ gf_closeGraceEarly( floorTime )
 
     while ( gettime() < floorTime )
         wait 0.1;
+
+    // Keep grace open past the floor while a rotation-carried client is still
+    // loading the map, so it can still take its round-1 first spawn instead of
+    // spectating (see gf_waitForLoadingClients, which raised level.gracePeriod so
+    // the stock backstop won't close before us). Ceiling = prematch_over
+    // (floorTime - 3000) + scr_gf_load_grace. The cost of this hold is that a
+    // round-1 team wipe can't END the round until grace closes — bounded by the
+    // ceiling and by round length. No-op when nobody is loading (the common case),
+    // when scr_gf_load_grace is 0 (off), or on rounds 2+ (snapshot is wiped).
+    loadGrace = gf_cfgFloat( "scr_gf_load_grace", 20, 0, 60 );
+    if ( loadGrace > 0 )
+    {
+        graceCeiling = ( floorTime - 3000 ) + int( loadGrace * 1000 );
+        while ( gf_anyTrackedClientLoading() && gettime() < graceCeiling )
+            wait 0.2;
+    }
 
     level.inGracePeriod = false;
     level thread maps\mp\gametypes\_globallogic::updateTeamStatus();
