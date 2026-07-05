@@ -7,7 +7,8 @@
 # server.js Host-header allowlist). Reach it from your machine via an SSH tunnel:
 #
 #   ssh -i ~/.ssh/gf_vps -L 3000:127.0.0.1:3000 Administrator@94.72.121.4
-#   then browse http://localhost:3000  and pick the "Local (listen)" profile.
+#   then browse http://localhost:3000  and pick the "Local" profile
+#   (127.0.0.1:28960 = the VPS's own dedicated server, seen from the box).
 #
 # (Stop any laptop-side server.js on 3000 first, or the tunnel can't bind 3000.)
 #
@@ -58,8 +59,9 @@ if (-not (Test-Path $node)) {
 Write-Host ("Node: {0}  ({1})" -f $node, (& $node -v))
 
 # --- 2. secrets.local.json (loopback profile, password from dedicated.cfg) ----
-# server.js maps profile-name -> rcon_password. The panel's built-in loopback
-# profile is named "Local (listen)" (127.0.0.1:28960), so key the secret to that.
+# server.js maps profile-name -> rcon_password. On the VPS you'll use the "Local"
+# profile (loopback -> this box's own server); "VPS" (public IP) works too via hairpin.
+# Both get dedicated.cfg's rcon_password.
 if (Test-Path $secrets) {
     Write-Host "secrets.local.json already present - leaving it as-is."
 } else {
@@ -67,13 +69,13 @@ if (Test-Path $secrets) {
     $pw = ([regex]::Match((Get-Content $cfgPath -Raw), 'set\s+rcon_password\s+"([^"]*)"')).Groups[1].Value
     if ([string]::IsNullOrEmpty($pw)) { throw "No rcon_password found in dedicated.cfg." }
     # ConvertTo-Json is fine for the shape { profiles: { name: pw } }
-    $obj = @{ profiles = @{ 'Local (listen)' = $pw; 'VPS' = $pw } }
+    $obj = @{ profiles = @{ 'VPS' = $pw; 'Local' = $pw } }
     # NO-BOM UTF-8: PowerShell's `Set-Content -Encoding UTF8` writes a BOM, which makes
     # server.js's JSON.parse(fs.readFileSync(...)) THROW -> loadSecrets() returns {} ->
     # the panel has zero saved passwords -> clicking Connect silently fails auth. Write
     # without a BOM so Node can parse it.
     [System.IO.File]::WriteAllText($secrets, ($obj | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
-    Write-Host "Wrote secrets.local.json (profiles 'Local (listen)' + 'VPS')."
+    Write-Host "Wrote secrets.local.json (profiles 'VPS' + 'Local')."
 }
 
 # --- 3. GF-RconPanel boot-start task (SYSTEM, loopback, restart-on-exit) -------
@@ -98,4 +100,4 @@ Write-Host ""
 Write-Host "GF-RconPanel registered + started. Listening on 127.0.0.1:3000 = $listening"
 Write-Host "From your machine:"
 Write-Host "  ssh -i ~/.ssh/gf_vps -L 3000:127.0.0.1:3000 Administrator@94.72.121.4"
-Write-Host "  then open http://localhost:3000  and select the 'Local (listen)' profile."
+Write-Host "  then open http://localhost:3000  and select the 'Local' profile (127.0.0.1:28960)."

@@ -6,7 +6,11 @@ const fs   = require('fs');
 const path = require('path');
 const cp   = require('child_process');
 
-const WEB_PORT   = 3000;
+// Web UI port. Override with the PORT env var to run a 2nd instance alongside another (e.g. keep
+// an SSH tunnel to the VPS panel on 3000 while a local panel serves the laptop listen server on
+// 3001): `set PORT=3001 && node server.js`. The host/origin allowlist below derives from this,
+// so it adapts automatically. Falls back to 3000 if unset or not a valid port.
+const WEB_PORT   = (function(){ const p = parseInt(process.env.PORT, 10); return (p >= 1 && p <= 65535) ? p : 3000; })();
 const RCON_TIMEOUT = 3000;
 const COLLECT_MS   = 350;
 // This server RATE-LIMITS rcon replies to ~1 per 0.7s (measured): a command sent sooner than

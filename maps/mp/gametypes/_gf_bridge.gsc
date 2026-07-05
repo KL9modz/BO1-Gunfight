@@ -356,6 +356,7 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "radar_off"       ) { gf_bridgeRadar( false );       return; }
     if ( cmd == "headshots_on"    ) { gf_bridgeHeadshots( true );    return; }
     if ( cmd == "headshots_off"   ) { gf_bridgeHeadshots( false );   return; }
+    if ( isSubStr( cmd, "flinch_" ) ) { gf_bridgeFlinch( getSubStr( cmd, 7, cmd.size ) ); return; }
 
     // --- Fun / silly (EnCoReV8 + iMCSx) ---
     if ( isSubStr( cmd, "vision_"      ) ) { gf_bridgeVision( getSubStr( cmd, 7,  cmd.size ) ); return; }
@@ -559,6 +560,22 @@ gf_bridgeHeadshots( enable )
         gf_bridgeNotify( "^3Headshots Only: ON" );
     else
         gf_bridgeNotify( "^7Headshots Only: OFF" );
+}
+
+// --- Flinch (damage view-kick) -----------------------------------------------
+// value = multiplier of stock bg_viewKickScale (0.2): 1 = stock, 0 = no flinch.
+// Stores it in scr_gf_flinch (so onStartGameType re-applies it every round) and
+// applies bg_viewKickScale live via gf_applyFlinch. Server-side setDvar, so it
+// holds on a dedicated server. gf_applyFlinch re-reads + clamps to 0..3.
+
+gf_bridgeFlinch( value )
+{
+    setDvar( "scr_gf_flinch", value );
+    scale = maps\mp\gametypes\_gf_rounds::gf_applyFlinch();
+    if ( scale == 0 )
+        gf_bridgeNotify( "^2Flinch: OFF (no view kick)" );
+    else
+        gf_bridgeNotify( "^3Flinch: " + scale + "x stock" );
 }
 
 // --- Self health bar ---------------------------------------------------------

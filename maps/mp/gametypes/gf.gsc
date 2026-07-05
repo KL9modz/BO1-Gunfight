@@ -284,6 +284,14 @@ onStartGameType()
         setDvar( "scr_gf_load_wait", "30" );      // max s to hold the prematch for map-loading clients (0 = off)
     if ( getDvar( "scr_gf_load_grace" ) == "" )
         setDvar( "scr_gf_load_grace", "20" );     // s past prematch_over to keep grace open for a still-loading client so it spawns into round 1 (0 = off)
+    if ( getDvar( "scr_gf_lobby" ) == "" )
+        setDvar( "scr_gf_lobby", "1" );           // Match Start: 0 = Normal, 1 = Auto lobby (min-players -> fast-restart), 2 = Manual lobby (admin START -> fast-restart)
+
+    // Flinch (damage view-kick) scale — mult of stock bg_viewKickScale (0.2).
+    // Seeds scr_gf_flinch (default 1 = stock) and applies bg_viewKickScale each
+    // round so an RCON change persists across map_restart. Server-side, so it
+    // holds on the dedicated VPS. RCON bridge: flinch_<mult> for a live change.
+    gf_applyFlinch();
 
     // roundsplayed == 0 is the match's first round (longer intro); later rounds get the shorter one.
     if ( game["roundsplayed"] == 0 )

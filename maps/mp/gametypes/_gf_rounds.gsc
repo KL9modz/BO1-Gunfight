@@ -52,6 +52,21 @@ gf_cfgFloat( dvar, def, lo, hi )
     return clamped;
 }
 
+// Flinch (damage view-kick) scale. scr_gf_flinch is a MULTIPLIER of the stock
+// bg_viewKickScale (0.2): 1 = stock flinch, 0 = no flinch, >1 = more. Applied
+// SERVER-side via setDvar, which runs with engine authority and so bypasses the
+// sv_cheats gate that blocks console/rcon `set` of a cheat-protected dvar — i.e.
+// it holds on a DEDICATED server, unlike the client-pushed gf_vis_* tweaks. bg_
+// dvars replicate to clients, so the reduced kick is what each player feels.
+// Called each round from onStartGameType (persists) and live from the RCON
+// bridge (flinch_<mult>). Returns the clamped multiplier for feedback.
+gf_applyFlinch()
+{
+    scale = gf_cfgFloat( "scr_gf_flinch", 1, 0, 3 );   // seeds the dvar if unset
+    setDvar( "bg_viewKickScale", 0.2 * scale );        // 0.2 = stock bg_viewKickScale
+    return scale;
+}
+
 // The engine's native prematch (matchStartTimer) draws the countdown number but plays NO sound.
 // Mirror a per-second tick so the prematch has the same audible cadence as the overtime tick.
 // Loops while level.inPrematchPeriod, so it self-stops at prematch_over.
@@ -112,14 +127,20 @@ gf_armLoadGate()
 {
     if ( game["roundsplayed"] > 0 )
         return;
+    // The post-restart pass is the REAL match — skip the whole gate so it runs a normal
+    // prematch, no second lobby. The flag is a DVAR, not game[]: map_restart(false) (the
+    // fast-restart) WIPES game[]/pers[] — that's how it re-fires the fresh presentation —
+    // so a game[] flag wouldn't survive and the lobby would re-arm forever (infinite loop).
+    if ( getDvar( "gf_matchArmed" ) == "1" )
+        return;
     // Arm if ANY purpose of the pre-prematch hold is active: the load gate
-    // (scr_gf_load_wait), the min-players gate (scr_gf_min_players > 1), OR the admin
-    // lobby hold (scr_gf_lobby_hold — manual "wait for Start"). The tracker snapshot
-    // feeds all three — the min-players count includes still-loading humans, which
-    // only the tracker can see (pre-begin clients aren't in level.players).
+    // (scr_gf_load_wait), the min-players gate (scr_gf_min_players > 1), OR a fast-restart
+    // lobby (scr_gf_lobby = Auto/Manual). The tracker snapshot feeds all — the min-players
+    // count includes still-loading humans, which only the tracker can see (pre-begin clients
+    // aren't in level.players).
     loadOn  = ( gf_cfgFloat( "scr_gf_load_wait", 30, 0, 120 ) > 0 );
     minOn   = ( int( gf_cfgFloat( "scr_gf_min_players", 1, 1, 8 ) ) > 1 );
-    lobbyOn = ( int( gf_cfgFloat( "scr_gf_lobby_hold", 0, 0, 1 ) ) > 0 );
+    lobbyOn = ( int( gf_cfgFloat( "scr_gf_lobby", 1, 0, 2 ) ) >= 1 );   // Auto or Manual
     if ( !loadOn && !minOn && !lobbyOn )
         return;
 
@@ -186,9 +207,19 @@ gf_waitForLoadingClients()
 {
     if ( game["roundsplayed"] > 0 )
         return;
+    // Fast-restart lobby post-restart pass: the lobby already ran and fast-restarted the
+    // map; this pass is the REAL match, so CONSUME the flag + skip the gate and let
+    // onStartGameType return into a normal prematch -> gunfight. The flag is a DVAR (survives
+    // map_restart(false), which wipes game[]/pers[]); cleared HERE — the last gate touch — so
+    // the NEXT match's lobby arms again.
+    if ( getDvar( "gf_matchArmed" ) == "1" )
+    {
+        setDvar( "gf_matchArmed", "0" );
+        return;
+    }
 
     // This one pre-prematch hold serves THREE release conditions (min-players folded
-    // in 2026-07-04, admin lobby hold added 2026-07-05):
+    // in 2026-07-04, scr_gf_lobby Auto/Manual added 2026-07-05):
     //  (1) LOAD — every tracked client is off its loading screen (bounded by
     //      scr_gf_load_wait), so nobody misses the shared countdown/intro.
     //  (2) MIN-PLAYERS — at least scr_gf_min_players humans are here (bounded by
@@ -196,20 +227,25 @@ gf_waitForLoadingClients()
     //      prematch that froze players + voided all damage; in front of prematch it
     //      needs neither (nobody has spawned yet), and the intro no longer plays for
     //      a match that then stalls waiting for people to show up.
-    //  (3) LOBBY HOLD — when scr_gf_lobby_hold is set (manual mode), the hold does
-    //      NOT auto-release on load/headcount; it waits for the admin's "Start Match"
-    //      click (bridge lobbystart -> level.gf_lobbyStart), bounded by a 10-min
-    //      backstop. Lets an admin arrange teams before the countdown. In auto mode
-    //      (default) the Start click is still honored as an immediate override.
+    //  (3) LOBBY MODE — scr_gf_lobby: Normal (0, in-place hold, no restart), Auto (1,
+    //      release on load+min then FAST-RESTART), Manual (2, hold until the admin's
+    //      START click -> level.gf_lobbyStart, then fast-restart; 10-min backstop). Auto/
+    //      Manual paint the desaturated lobby vision and map_restart(false) on release so
+    //      the match begins fresh with its full presentation; START is an instant override
+    //      in every mode.
     // All are match-start only (the roundsplayed guard above). The min-players count
     // reads the tracker snapshot (humans, computed in the loop) so it includes
     // still-loading humans — a loader still counts as "here".
-    loadWait   = gf_cfgFloat( "scr_gf_load_wait", 30, 0, 120 );
-    minP       = int( gf_cfgFloat( "scr_gf_min_players", 1, 1, 8 ) );
-    lobbyMode  = ( int( gf_cfgFloat( "scr_gf_lobby_hold", 0, 0, 1 ) ) > 0 );
-    loadGateOn = ( loadWait > 0 );
-    minGateOn  = ( minP > 1 );
-    if ( !loadGateOn && !minGateOn && !lobbyMode )
+    loadWait    = gf_cfgFloat( "scr_gf_load_wait", 30, 0, 120 );
+    minP        = int( gf_cfgFloat( "scr_gf_min_players", 1, 1, 8 ) );
+    lobby       = int( gf_cfgFloat( "scr_gf_lobby", 1, 0, 2 ) );   // 0 = Normal, 1 = Auto lobby, 2 = Manual lobby
+    restartMode = ( lobby >= 1 );   // Auto/Manual do the fast map_restart(false) on release
+    manualMode  = ( lobby == 2 );   // Manual holds for the admin START click (no min-players auto-release)
+    loadGateOn  = ( loadWait > 0 );
+    minGateOn   = ( minP > 1 );
+    // Run the gate if there's anything to wait for OR a fast-restart lobby is active
+    // (Auto/Manual must run the gate so the release can fast-restart, even at min-players 1).
+    if ( !loadGateOn && !minGateOn && !restartMode )
         return;
     if ( !isDefined( level.gf_loadGateSeen ) )   // arm didn't run — nothing tracked, nothing to wait on
         return;
@@ -252,6 +288,12 @@ gf_waitForLoadingClients()
     // (lobbystart feedback) and mirrored into gf_state telemetry so the panel can
     // show/enable "Start Match" exactly when a hold is up. Cleared the instant we break.
     level.gf_inLobbyHold = true;
+
+    // Auto/Manual lobby: paint it with the desaturated pregame vision (the same "mpIntro"
+    // string the native prematch uses) so it reads as a staging screen. The post-restart
+    // prematch re-applies its own vision, so this doesn't linger.
+    if ( restartMode )
+        visionSetNaked( "mpIntro", 0 );
 
     for ( ;; )
     {
@@ -315,9 +357,9 @@ gf_waitForLoadingClients()
         // stale click from a prior match can't leak in.
         startClicked = ( isDefined( level.gf_lobbyStart ) && level.gf_lobbyStart );
 
-        if ( lobbyMode )
+        if ( manualMode )
         {
-            // MANUAL: hold until the admin starts it (or the 10-min backstop),
+            // MANUAL lobby: hold until the admin clicks START (or the 10-min backstop),
             // regardless of load state / headcount. No 3s floor — a deliberate click
             // starts immediately.
             if ( startClicked || now >= lobbyDeadline )
@@ -325,10 +367,10 @@ gf_waitForLoadingClients()
         }
         else
         {
-            // AUTO: everyone off the loading screen (or load ceiling hit) AND enough
-            // humans here (or none to wait for / start-anyway ceiling hit). humans
-            // counts tracked humans whether loaded or still loading; the load
-            // condition then waits for any still loading to finish. An admin Start
+            // AUTO / NORMAL: release once everyone is off the loading screen (or the load
+            // ceiling hit) AND enough humans are here (or none to wait for / start-anyway
+            // ceiling hit). humans counts tracked humans whether loaded or still loading;
+            // the load condition then waits for any still loading to finish. An admin START
             // click still force-releases (start now, even below min-players).
             loadOk = ( !loadGateOn ) || ( stillLoading == 0 ) || ( now >= loadDeadline );
             minOk  = ( !minGateOn ) || ( humans >= minP ) || ( humans == 0 ) || ( now >= minDeadline );
@@ -340,6 +382,40 @@ gf_waitForLoadingClients()
     }
 
     level.gf_inLobbyHold = false;   // hold is over — the panel's Start affordance hides
+
+    // ── FAST-RESTART LOBBY (scr_gf_lobby = Auto / Manual) ────────────────────────
+    // Normal mode holds mid-init: the engine already began the match (InitGame fired,
+    // level.inPrematchPeriod set at _globallogic.gsc:1845) BEFORE onStartGameType, so it's a
+    // paused-startup, not a true pregame lobby. Auto/Manual treat the hold as a real PREGAME
+    // LOBBY and, on release, FAST-RESTART the map so the actual gunfight begins FRESH — re-
+    // firing the full match-start presentation (weapon first-raise / "gun rack", spawn music,
+    // welcome splash) that the between-rounds restart suppresses.
+    //
+    // map_restart(FALSE) is the fresh reset (verified in-game 2026-07-05 — racks the gun,
+    // plays the music, fast, no map reload); map_restart(true) is the state-preserving one
+    // Gunfight uses BETWEEN rounds, which is exactly why the presentation doesn't fire there.
+    //
+    // Structured to NEVER RETURN: onStartGameType returning is what threads startGame() ->
+    // prematchPeriod()/gameTimer(). Those endon "game_ended" (fired each round to tear them
+    // down before re-threading — that's how they don't stack). We do NOT fire game_ended, so
+    // if startGame() threaded even briefly before the restart, that sliver would survive the
+    // map_restart and stack (double countdown). Blocking here forever means startGame() never
+    // threads in the lobby pass — nothing to stack. The gf_matchArmed DVAR (dvar, not game[]:
+    // map_restart(false) WIPES game[]/pers[], which is how it re-fires the fresh presentation
+    // but also why a game[] flag would loop forever) makes the post-restart pass skip this
+    // whole gate, so the real match threads its clocks exactly once.
+    if ( restartMode )
+    {
+        setDvar( "gf_matchArmed", "1" );
+        for ( i = 0; i < elems.size; i++ )
+            if ( isDefined( elems[i] ) )
+                elems[i] destroyElem();
+        level notify( "gf_load_gate_reset" );   // retire the tracker before the restart
+        logPrint( "GF_LOADGATE: lobby released -> map_restart(false) into match (roundsplayed=" + game["roundsplayed"] + ")\n" );
+        map_restart( false );
+        for ( ;; )
+            wait 1;   // never return: the restart aborts this thread; blocking keeps startGame() from threading a stale prematch
+    }
 
     // Released with someone still loading (ceiling hit — e.g. a first-time FastDL
     // downloader). Raise the grace ceiling so the first-spawn window stays open
@@ -512,13 +588,13 @@ gf_playerSpawnedCB()
     // engine's popup text is suppressed.
     self.enableText = false;
 
-    // ...and the CLIENT half of the same stock toggle (ui_xpText), which
-    // _persistence re-pushes "1" on every connect. Both halves stay as defense in
-    // depth, but on the ranked VPS a stock "+N" STILL got through with both off —
-    // every script gate checked out on paper (retail AND plutoniummod/t5-scripts),
-    // so the decisive fix is element-level: our popup now uses its OWN element
-    // (gf_popupElem) and the stock hud_rankscroreupdate is parked offscreen below.
-    self setClientDvar( "ui_xpText", "0" );
+    // NOTE: the CLIENT half of this toggle used to be pushed here every spawn
+    // (`self setClientDvar( "ui_xpText", "0" )`). REMOVED 2026-07-05 — ui_xpText is a
+    // stock SAVED dvar, and Plutonium blocks servers from writing saved dvars to
+    // clients; the rejected per-spawn write is the prime suspect for the client-side
+    // "Unknown command" spam every non-admin saw on every spawn on the VPS. It was
+    // redundant anyway: self.enableText = false (above) plus the element-level park
+    // below are the decisive suppression, so dropping the client push costs nothing.
 
     // Element-level backstop: park the stock rank-score element offscreen so any
     // stock "+N" that slips past the gates renders invisibly. No stock writer

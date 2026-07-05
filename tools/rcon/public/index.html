@@ -340,7 +340,7 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
     <div id="logoPicker"></div>
   </div>
   <div class="conn-row">
-    <select id="iProfile" data-tip="Saved server profiles. Each remembers its own host, port and rcon_password.&#10;Switch here to jump between the local listen server and the VPS." onchange="switchProfile()"></select>
+    <select id="iProfile" data-tip="Saved server profiles. Each remembers its own host, port and rcon_password.&#10;VPS = the remote VPS over its public IP (94.72.121.4) — used from your laptop.&#10;Local = THIS machine's own server over loopback (127.0.0.1). It adapts per machine: on the laptop that's your in-game listen (or local dedicated) server; on the VPS via RDP it's the VPS's own dedicated server. The password comes from that machine's secrets file, and listen-vs-dedicated is auto-detected from the server — so one loopback profile covers every case." onchange="switchProfile()"></select>
     <input id="iHost" type="text" placeholder="Host" value="127.0.0.1" onchange="captureToProfile()">
     <input id="iPort" type="number" placeholder="Port" value="28960" onchange="captureToProfile()">
     <input id="iPass" type="password" placeholder="rcon_password" value="" onchange="captureToProfile()">
@@ -589,6 +589,12 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       <span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbHS" onchange="bridge(cbHS.checked?'headshots_on':'headshots_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
       <span class="shint">non-hs dmg = 0</span>
+    </div>
+    <div class="slider-row" data-eff="live" data-per="dvar" data-tip="scr_gf_flinch → bg_viewKickScale&#10;Damage view-kick (flinch) as a MULTIPLIER of stock: 1 = stock, 0 = no flinch, >1 = more. Applied server-side via GSC setDvar, so it works on the dedicated VPS (not cheat-gated like the r_* Visual Tweaks). Persists across rounds (re-applied each onStartGameType). Bridge: flinch_&lt;mult&gt;">
+      <span class="slbl" style="min-width:120px">Flinch (view kick)</span>
+      <input type="range" id="sFlinch" min="0" max="2" step="0.05" value="1" oninput="sv('sFlinch','vFlinch')" onchange="bridge('flinch_'+this.value)" class="ctrl">
+      <input type="number" id="vFlinch" class="num ctrl" value="1" min="0" max="3" step="0.05" oninput="su('vFlinch','sFlinch',0,3)">
+      <button class="b-ac b-sm ctrl" onclick="bridge('flinch_'+g('vFlinch').value)">Set</button>      <button class="b-gh b-sm ctrl" onclick="bridge('flinch_1');g('vFlinch').value=g('sFlinch').value=1">↺</button>
     </div>
     <div class="srow" data-tip="RCON console command: noclip&#10;Toggles noclip for the host player. Requires sv_cheats 1&#10;(listen/host only — no host player on a dedicated server)">
       <span class="slbl">Noclip (host only)</span>
@@ -970,11 +976,18 @@ let live=false, paused=false, mapQueue=[], autoQ=false, hist=[], histI=-1, lastM
 // Each profile remembers its host/port in localStorage; the rcon_password lives in the
 // GITIGNORED secrets.local.json on the server side (keyed by profile name) and is fetched
 // over the loopback API — so a password NEVER sits in localStorage or in any tracked file.
-// Switch between the local listen server and the VPS with the dropdown.
+// Two profiles:
+//   VPS   = reach the remote VPS over its public IP (used from the laptop).
+//   Local = reach THIS machine's own server over loopback. It "just works" per machine — on the
+//           laptop that's your listen (or local dedicated) server; on the VPS (via RDP) it's the
+//           VPS's own dedicated server. The password comes from that machine's secrets.local.json,
+//           and listen-vs-dedicated is auto-detected from `status`, so one loopback profile covers
+//           every case. (A 2nd loopback profile would only make sense to store a 2nd password on the
+//           same machine — not needed here.)
 let _profiles=[], _activeProfile=0, _secrets={};
 function defaultProfiles(){return[
-  {name:'Local (listen)',host:'127.0.0.1',   port:'28960'},
-  {name:'VPS',           host:'94.72.121.4',port:'28960'},
+  {name:'VPS',   host:'94.72.121.4',port:'28960'},   // remote VPS (public IP), from the laptop
+  {name:'Local', host:'127.0.0.1',  port:'28960'},   // this machine's own server (loopback) — auto-detects mode
 ];}
 function loadProfiles(){
   try{
@@ -985,14 +998,28 @@ function loadProfiles(){
       _profiles=defaultProfiles();
       // migrate host/port from the legacy single-server blob into the Local profile
       const old=JSON.parse(localStorage.getItem('gf_rcon')||'{}');
-      if(old&&old.host){_profiles[0]={name:'Local (listen)',host:old.host,port:old.port||'28960'};}
+      if(old&&old.host){ const li=_profiles.findIndex(p=>p.name==='Local'); if(li>=0){_profiles[li].host=old.host;_profiles[li].port=old.port||'28960';} }
       _activeProfile=0;
     }
   }catch(_){_profiles=defaultProfiles();_activeProfile=0;}
-  if(_activeProfile>=_profiles.length)_activeProfile=0;
+  if(_activeProfile>=_profiles.length||_activeProfile<0)_activeProfile=0;
+  // remember the active profile by NAME so the fold/dedupe below can't point at the wrong one
+  let activeName=(_profiles[_activeProfile]||{}).name;
+  // legacy fold: the old loopback profiles ('Local (listen)' / 'Local VPS' / 'Client Listen') are
+  // all just "this machine's own server" — collapse them into one unified 'Local' profile.
+  const LEGACY_LOCAL={'Local (listen)':1,'Local VPS':1,'Client Listen':1};
+  _profiles.forEach(p=>{ if(LEGACY_LOCAL[p.name])p.name='Local'; });
+  if(LEGACY_LOCAL[activeName])activeName='Local';
+  // ensure every built-in profile exists, in canonical order; keep any custom profiles after them
+  const canon={}; defaultProfiles().forEach(d=>canon[d.name]=d);
+  const byName={}; _profiles.forEach(p=>byName[p.name]=p);
+  const ordered=[];
+  defaultProfiles().forEach(d=>ordered.push(byName[d.name]||{name:d.name,host:d.host,port:d.port}));
+  _profiles.forEach(p=>{ if(!canon[p.name])ordered.push(p); });
+  _profiles=ordered;
+  _activeProfile=Math.max(0,_profiles.findIndex(p=>p.name===activeName));
   _profiles.forEach(p=>{delete p.pass;});   // passwords never live in localStorage
   // backfill canonical host/port for built-in profiles if a stale entry lost them
-  const canon={}; defaultProfiles().forEach(d=>canon[d.name]=d);
   _profiles.forEach(p=>{ const d=canon[p.name]; if(d){ if(!p.host)p.host=d.host; if(!p.port)p.port=d.port; } });
 }
 function persistProfiles(){
@@ -1036,10 +1063,15 @@ function switchProfile(){
 async function loadCfg(){
   loadProfiles(); renderProfiles(); fillFromProfile();   // host/port immediately
   _secrets=await fetchSecrets();
-  // one-time migration: move any legacy localStorage password into the secrets file
+  // one-time migration: move any legacy password into the unified 'Local' secret key
   try{
+    // fold the first available old loopback secret ('Client Listen' / 'Local VPS' / 'Local (listen)') into 'Local'
+    if(_secrets['Local']==null){
+      const src=['Client Listen','Local VPS','Local (listen)'].find(k=>_secrets[k]!=null);
+      if(src){_secrets['Local']=_secrets[src];await saveSecret('Local',_secrets[src]);}
+    }
     const old=JSON.parse(localStorage.getItem('gf_rcon')||'{}');
-    if(old&&old.pass&&_secrets['Local (listen)']==null){_secrets['Local (listen)']=old.pass;await saveSecret('Local (listen)',old.pass);}
+    if(old&&old.pass&&_secrets['Local']==null){_secrets['Local']=old.pass;await saveSecret('Local',old.pass);}
     if(old&&(old.host||old.pass))localStorage.removeItem('gf_rcon');
   }catch(_){}
   fillFromProfile();                                     // now with the password
@@ -2105,7 +2137,7 @@ const GT_SECTIONS = {
     { n:'scr_gf_numlives',            lbl:'Lives / Round',            type:'num', def:'1',    tip:'scr_gf_numlives\nLives per player per round.' },
 
     { grp:'Match Start',
-      n:'scr_gf_lobby_hold',          lbl:'Lobby Hold',                type:'sel', def:'0', opts:[['0','Auto (min-players)'],['1','Manual — wait for Start']], tip:'scr_gf_lobby_hold\nHow the FIRST round starts (before the prematch countdown):\n• Auto = start automatically once everyone is loaded and Min Players humans are in.\n• Manual = HOLD at "Waiting for teams" until you click START MATCH (Match Control rail) — arrange teams first, then start. 10-min backstop so a forgotten hold can’t wedge the server.\nEither mode: START MATCH is an instant override. Match-start only. Needs the RCON bridge (this panel).' },
+      n:'scr_gf_lobby',               lbl:'Match Start',               type:'sel', def:'1', opts:[['0','Normal (no lobby)'],['1','Auto lobby (min-players)'],['2','Manual lobby (START)']], tip:'scr_gf_lobby\nHow the match FIRST round starts (before the prematch countdown):\n• Normal = no lobby; the match starts in place (still waits for loaders / Min Players, then the countdown plays).\n• Auto = hold a pregame lobby (desaturated screen) until everyone is loaded and Min Players humans are in, then FAST-RESTART into a fresh match — re-firing the full start presentation (gun-rack, music, welcome). ~1s, no map reload.\n• Manual = hold the lobby until you click START MATCH (Match Control rail) — arrange teams first — then fast-restart. 10-min backstop so a forgotten hold can’t wedge the server.\nAuto/Manual: START MATCH is an instant override. Match-start only. Manual needs the RCON bridge (this panel).' },
     { n:'scr_gf_min_players',         lbl:'Min Players to Start',      type:'num', def:'1',  tip:'scr_gf_min_players\nHold the FIRST round (BEFORE the prematch countdown) until at least this many HUMAN players are here (bots do not count). Match-start only — once live it never re-holds, even if players leave. Nobody is spawned yet during the hold, so there is no freeze/damage-void. 90s start-anyway ceiling; a pure-bot lobby never stalls. 1 = effectively off. Clamped 1-8.\n(This is Gunfight’s min-players gate. The SERVER-tab party_minplayers does NOT affect gf.)' },
     { n:'scr_gf_load_wait',           lbl:'Load Wait (s, 0=off)',      type:'num', def:'30', tip:'scr_gf_load_wait\nMax seconds the match FIRST round holds BEFORE the prematch countdown until every map-loading client is in, so everyone sees the intro/countdown together (and slow loaders are not grace-locked into spectating round 1). Bots excluded. Shows a "Waiting for teams N/M" readout. First-time FastDL downloaders are not fully absorbed. 0 = off. Clamped 0-120.\nSame hold also enforces Min Players above.' },
     { n:'scr_gf_match_prematch_seconds', lbl:'Prematch (s)',          type:'num', def:'15', tip:'scr_gf_match_prematch_seconds\nIntro countdown before the first round of the match (MATCH STARTING IN). Runs AFTER the Match Start hold. Clamped 2-30. (Stock scr_game_prematchperiod is overridden by this and has no effect.)' },
