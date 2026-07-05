@@ -239,7 +239,7 @@ Two Gunfight-specific touches matter:
 - `teamBots()` skips moving bots between teams while a round is live (`level.gf_roundActive`), because a mid-round team change respawns the bot and would drop it on the wrong side.
 - `bot_set_difficulty()` (`easy` / `normal` / `hard` / `fu`) is the dvar set behind the bridge's `botdiff_*` commands.
 
-Dedicated servers cannot spawn bots without an executable patch (documented in the `addBots()` comment); bots are intended for a local listen server.
+Bots run on both a local listen server and the dedicated VPS. The current Plutonium T5 build spawns test clients on a dedicated server without any executable patch (an older assumption — that dedicated needs the `SV_AddTestClient` byte patch noted in the `addBots()` comment block — no longer holds for this build, confirmed live 2026-07-04). On the VPS bots are enabled at **runtime via the RCON panel** (`bots_manage_fill` / `+Add Bot`, set over rcon), so they never appear in `dedicated.cfg` — a config grep does not prove "no bots." The byte-patch offsets in the `addBots()` comment are kept as historical reference only.
 
 ---
 

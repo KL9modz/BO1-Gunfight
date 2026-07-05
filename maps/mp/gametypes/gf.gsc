@@ -274,11 +274,10 @@ onStartGameType()
     if ( getDvar( "scr_gf_prematch_seconds" ) == "" )
         setDvar( "scr_gf_prematch_seconds", "7" );          // every later round
 
-    // Seed the round-start gate dvars here so they exist from boot (the RCON panel reads
-    // them, and they'd otherwise show "not read" until gf_tryActivateRound first touched
-    // them via gf_cfgFloat). Clamping still happens on read in _gf_rounds.gsc.
-    if ( getDvar( "scr_gf_roster_wait" ) == "" )
-        setDvar( "scr_gf_roster_wait", "15" );   // max s to wait for the roster to spawn in (0 = no cap)
+    // Seed the pre-prematch gate dvars here so they exist from boot (the RCON panel reads
+    // them, and they'd otherwise show "not read" until gf_waitForLoadingClients first
+    // touched them via gf_cfgFloat). Clamping still happens on read in _gf_rounds.gsc.
+    // Both feed the single pre-prematch hold in gf_waitForLoadingClients.
     if ( getDvar( "scr_gf_min_players" ) == "" )
         setDvar( "scr_gf_min_players", "1" );     // min HUMANS to start the match (1 = off)
     if ( getDvar( "scr_gf_load_wait" ) == "" )

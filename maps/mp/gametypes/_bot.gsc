@@ -536,10 +536,18 @@ addBots()
 			if(botsToAdd > 64)
 				botsToAdd = 64;
 				
+			// Spread the fill: each add_bot() is a connect + gf_giveCustomLoadout +
+			// HUD reveal, and the whole round-1 deficit drains here back-to-back. At
+			// 0.25s/bot a 6v6 fill packs ~3s of that into the wait(1.0)-driven prematch
+			// countdown, and on the VPS that spike stalls a few server frames -> the
+			// countdown dilates into visible slow-mo (the wait-scaled prematch is the one
+			// visible timer not gettime()-anchored). 0.5s halves the peak add-rate; safe
+			// now that bots are excluded from the roster + load gates, so the fill no
+			// longer has to beat prematch_over. (Real fix = gettime()-own the countdown.)
 			for(; botsToAdd > 0; botsToAdd--)
 			{
 				level add_bot();
-				wait 0.25;
+				wait 0.5;
 			}
 		}
 		

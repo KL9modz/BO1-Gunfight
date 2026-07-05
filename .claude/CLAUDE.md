@@ -8,15 +8,45 @@ Friendly Rire is in 2 rcon spots and turns on next round
 more ammo
 less double akimbo
 lmg prime, smg sec
-reshape rcon windows
 increase loadout hud time
-min players keeps the match from starting AFTER the prematch timer ends. 
-need something that holds before the prematch starts. otherwise ill keep keep making prematch longer
-match starts too early. pre match countdown starts when first player connects
 fast restart sometimes makes the prematch timer look like its running at 1fps
 the prematch countdown is in slow motion
+  DIAGNOSED 2026-07-04 (VPS): NOT the sv_fps-30 skew — verified NO `sv_fps` is set
+  anywhere on the box (dedicated.cfg, start_mp_server.bat, any exec'd cfg), so the VPS
+  runs the DEFAULT sv_fps 20 (the "VPS runs sv_fps 30 → fast countdown" claim in the
+  30-FPS TODO item below is STALE/never-deployed). Root cause = a TRANSIENT server-frame
+  hitch during the restart burst: the stock prematch countdown (matchStartTimer,
+  [_globallogic.gsc:396-435]) is the ONE visible timer still riding a wait(1.0)-driven
+  hudelem, and `wait` counts server GAME time (advances 1/sv_fps per server frame). When
+  the box drops a few frames per real second, game time dilates and the whole prematch
+  (number + freeze + gf_nativePrematchTicker beep) runs in real slow-mo / redraws at
+  "1fps", then snaps normal at prematch_over. Live play is immune because every live clock
+  we own (round/OT/roster/load gates) is gettime()-anchored (wall clock). "Random on
+  restarts" = the deterministic per-restart work (player connects on rotation + bridge
+  connect-sweep + the round-1 bot FILL burst) occasionally colliding with Contabo
+  shared-CPU contention. BOTS DO RUN ON THE VPS (corrected 2026-07-04 — this Pluto build
+  spawns test clients on dedicated w/o the exe patch docs/DEV.md assumed; enabled at
+  RUNTIME via the RCON panel — bots_manage_fill/+Add Bot over rcon — which is why they're
+  absent from dedicated.cfg). So the round-1 bot fill lands in the wait-driven prematch and
+  IS a contributor: addBots() drains the whole queued deficit back-to-back at 0.25s/bot
+  (12 bots = ~3s of connect+loadout+HUD-reveal in the countdown window). MITIGATION APPLIED
+  2026-07-04: widened the per-bot drain to 0.5s in _bot.gsc addBots() to halve the peak
+  add-rate (safe now that bots are excluded from the roster + load gates, so the fill no
+  longer has to beat prematch_over). REAL FIX = own the prematch countdown with gettime()
+  (the "fully custom timers"
+  test-branch item below); that makes a hitch degrade to a 1-frame stutter (number holds,
+  then jumps) instead of slow-mo, AND kills the sv_fps-30 fast-countdown deal-breaker if
+  30-fps perf is ever wanted. Interim: shave box-side contention during restart. Verify
+  in-game on the LOCAL dedi with `set sv_fps 10` to force-reproduce the dilation.
 the map que changes early 
 the auto task to launch server makes it so theres no server command window
+  DONE 2026-07-04: went fully MANUAL. The SYSTEM/boot GF-GameServer task ran the server in
+  Session 0 (invisible desktop) - that's why there was no console. Disabled that task
+  (reversible) and added a Desktop shortcut "Gunfight Launch" -> C:\gameserver\T5\gf_launch.bat:
+  kills stale plutonium-bootstrapper + node, bounces the GF-RconPanel task, then launches the
+  game server as a VISIBLE console in that window. No auto-logon / no stored credential (user's
+  choice); server stays down after a reboot until you log in and double-click the icon. Revert
+  with `schtasks /change /tn GF-GameServer /enable`. See memory [[vps-server-provisioned]].
 manage teams
 widen the spawns
 support 6v6
@@ -33,16 +63,31 @@ fable website design
 - add credit to Plutonium/bots, etc
 BO1 server role
 IW5 MW3 face-off gunfight - mwgunfight.com
+- Mid-round bot backfill (DESIGNED 2026-07-04, ~25 lines, dev/VPS-only — not built): let a bot
+  added after round start spawn INTO the live round instead of waiting for next round. Feasible
+  because blocked clients never retry (stock `spawnClient` one-shots into spectate on a closed
+  `maySpawn`), so a targeted re-spawn can't leak to others. Impl: in `_bot.gsc` `addBots` path,
+  once the bot is teamed — guard round live (+ not `gf_roundEnding`), `!level.inOvertime`, and
+  bot's team has `>=1` alive (one-life integrity: reinforce, never resurrect a wiped team) —
+  flip `level.inGracePeriod = true`, `[[level.spawnClient]]` the bot, flip back next frame, then
+  `level thread updateTeamStatus()` (same mirror `gf_closeGraceEarly` does — closes the one race:
+  grace suppresses wipe detection for that frame). Already handled elsewhere: late-spawn facing
+  uses curated points (2026-07-01 fix), bots excluded from roster gate, OT double-blocked inside
+  `maySpawn`. Lives in dev-only bot files (stripped from public builds). TEST: add bots mid-round
+  → they drop in; team wipe during the flick frame → round still ends; during OT → blocked.
 - On-brand live card (Discord)
 A card in the site's own orange 'Evolved Dark' theme showing the live online count (96 now) + a 'Join the Discord'
 button. Fetches widget.json client-side. Matches the site perfectly. CSP cost: add script-src 'self' 'unsafe-inline' +
 connect-src https://discord.com (same script/connect relaxation status.html already needs). No avatars - img-src
 untouched.
 
-- support 30 FPS Server tick rate (sv_fps 30) — investigated 2026-07-02. WHY IT'S NOT JUST A DVAR:
+- support 30 FPS Server tick rate (sv_fps 30) — investigated 2026-07-02. NOTE 2026-07-04: the
+  VPS is NOT actually running sv_fps 30 — verified no `sv_fps` set on the box; it runs default 20.
+  This item is planning only; wherever it says "the VPS countdown runs 1.5x fast", that's the
+  PREDICTED behavior if 30 were set, not the current live state. WHY IT'S NOT JUST A DVAR:
   T5/CoD scales GSC `wait` by 20/sv_fps, so at sv_fps 30 every wait-driven timer runs ~1.5x fast
   (0.667x real duration). Our round/OT clocks are IMMUNE (gettime()-delta anchored + setGameEndTime,
-  self-correcting) and so are the roster gate + gf_closeGraceEarly (gettime deadlines). The ONE
+  self-correcting) and so are the pre-prematch load/min-players gate + gf_closeGraceEarly (gettime deadlines). The ONE
   visible casualty is the STOCK prematch countdown: matchStartTimer() ([_globallogic.gsc:396-435])
   decrements a local hudelem on `wait(1.0)`, and its number + the freeze/hold + prematch_over are all
   welded to level.prematchPeriod (can't peel off just the number — direct `thread` call, unreachable
@@ -53,7 +98,7 @@ untouched.
   gf_tryActivateRound using STOCK primitives — freeze_player_controls() for the freeze (stock spawn
   only auto-freezes while inPrematchPeriod, [_globallogic_spawn.gsc:191-193], which we'd be
   shortening, so we freeze late/gate spawners ourselves), leaderDialog() for intro VO, gettime() for
-  an honest countdown number + per-second beep — positioned where the roster gate already holds, so
+  an honest countdown number + per-second beep — positioned where the pre-prematch gate already holds, so
   the two compose into one frozen window. gettime itself is native-friendly (stock waveSpawnTimer
   [_globallogic.gsc:448-456] uses getTime() deltas too); caveats: ignores pauseTimer (raw wall clock
   — that's the immunity), keeps counting across map_restart (baseline per-window). New surface we'd
@@ -147,6 +192,27 @@ DONE:
   round-1 wipe can't end the round until grace closes. `0` disables (straggler spectates). VERIFY:
   join a 3rd client that loads slowly (or throttle FastDL) so it lands AFTER the countdown — it
   should still spawn into the live round 1, and grace should close the moment it spawns.
+  FOLLOW-UP 2026-07-04 — GATE CONSOLIDATION (user: "min-players after prematch is too late"): the
+  old post-prematch `gf_waitForMinPlayers` (freeze + damage-void warmup) and the `gf_allTeamedPlayersSpawned`
+  roster wait (`scr_gf_roster_wait`) are DELETED. Min-players is now a second release condition on the
+  SAME pre-prematch hold as the load gate (`gf_waitForLoadingClients` releases when: all tracked clients
+  loaded AND >= scr_gf_min_players humans present, each bounded). Moving it in front of prematch means
+  nobody has spawned during the hold, so the freeze + `level.gf_waitingForPlayers` damage-void are gone
+  (also removed the fresh-spawn freeze in `gf_onSpawned` and the void in `gf_onPlayerDamage`). Net: 5
+  helper funcs + 1 dvar retired, and the intro never plays for a match that then stalls waiting for
+  people. Roster wait dropped as redundant — loaded-before-prematch implies spawned-by-prematch_over.
+  Panel: swapped the `scr_gf_roster_wait` control for `scr_gf_load_wait`/`scr_gf_load_grace`, fixed the
+  min-players tip. gf_armLoadGate now arms when EITHER load OR min-players is active.
+  RCON PANEL RESHAPE 2026-07-04 (user: "make rcon control simple", "reshape rcon windows"): the flat
+  gf settings list (GT_SECTIONS.gf) is now grouped into fire-order sub-sections — **Match** / **Match
+  Start** / **Spawns & Round Time** / **Overtime** — so the 5 match-start knobs (Min Players, Load Wait,
+  Prematch, Preround, Load Grace[adv]) sit together in the order they act instead of scattered. Done via
+  an optional `grp:'Label'` on the first var of each group + a header emit in `srvBlock` (purely additive:
+  every other consumer still sees normal entries with `.n`, so no read/set path can break; `.sgroup` CSS
+  added). Also FIXED the misleading duplicate: the SERVER tab's `party_minplayers` was labeled "Min
+  Players to Start" with a tip claiming it gates the match — relabeled "Lobby Min Players (pregame)" +
+  tip corrected to say it does NOT affect gf (points to scr_gf_min_players). Prematch/Preround labels
+  kept (user: "the names prematch and preround are fine").
 - "Match starts before all players spawned" + "bot fill issues" + "bots die on spawn" — FIXED
   2026-07-01 (pending in-game verify), one root cause: nothing ever waited for the roster.
   (1) `gf_tryActivateRound` now polls after `prematch_over` until every teamed player has
@@ -307,9 +373,9 @@ persists through `map_restart`.
 | `gf_capture_time_large` | 5 | OT zone hold-to-capture seconds, LARGE |
 | `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (see Team-Size Mode) |
 | ~~`scr_gf_largemode_minplayers`~~ | *(retired)* | **RETIRED 2026-07-03 — no longer read.** The small/large split is now hard-wired to the health-panel skull cap in `gf_autoLargeFromCounts()` (`<=4v4` small, any team of `5+` large). A tunable spawn threshold could only DEcouple it from the fixed menu `cnt > 4` gate, and the old TOTAL-vs-new-PER-TEAM reinterpretation was a live footgun (a stale `7` made large mode unreachable). Any stale cfg value is inert. Pin the mode with `scr_gf_teamspawnmode large\|small` |
-| `scr_gf_roster_wait` | 15 | Max seconds `gf_tryActivateRound` holds the round clock after `prematch_over` waiting for every teamed **HUMAN** to finish spawning (slow loaders). **Bots are excluded from the gate** (`gf_allTeamedPlayersSpawned` skips `pers["isBot"]`) as of 2026-07-03 — a bot teamed just before `prematch_over` or one that fails its first spawn ("bots die on spawn") used to hold this the full window, causing the intermittent "stuck after prematch, no round timer" freeze. **`0` no longer means "wait forever"** (that was a footgun — a never-spawning client wedged the match until `game_ended`); `0` now falls back to a 60s hard ceiling (`GF_ROSTER_HARD_CEILING`), always bounded. Clamped 0-120. Live-tunable (re-read each round) |
-| `scr_gf_min_players` | 1 | **Min HUMANS-to-start gate** (`gf_waitForMinPlayers`, `_gf_rounds.gsc`). Holds the match's FIRST round (`game["roundsplayed"]==0` only) until at least this many *human* players are on a team — bots (`pers["isBot"]`) don't count, so bot-fill can't satisfy it. During the hold everyone is frozen (`freeze_player_controls`) and **all damage is voided** via the `level.gf_waitingForPlayers` guard in `gf_onPlayerDamage` (so no one dies into a not-yet-live round → instant-wipe). **Two anti-wedge guards (2026-07-03):** (a) skips the hold entirely when **0 humans are connected** (`gf_connectedHumanCount()==0` — a pure-bot test can't ever satisfy a human gate, so don't freeze the bots forever); (b) an absolute **90s ceiling** (`GF_MINPLAYERS_MAX_HOLD`) releases into the round even with a human present but not on a team (e.g. spectating, or bounced by `scr_team_maxsize`) — the "start anyway" fallback, never an eternal warmup. Match-start only: never re-holds mid-match if a player leaves. `1` = effectively off. Clamped 1-8. Distinct from `scr_gf_roster_wait` (that waits for the present roster to *spawn in*; this waits for enough humans to *exist*) |
-| `scr_gf_load_wait` | 30 | **Pre-prematch LOAD gate** (`gf_armLoadGate`/`gf_waitForLoadingClients`, `_gf_rounds.gsc`; added 2026-07-03). Match's FIRST round only: holds at the END of `onStartGameType` — the engine threads `startGame()` (prematch countdown) only when that callback returns — until every rotation-carried HUMAN client has left the loading screen, so everyone sees the full countdown/intro together and slow loaders can't be grace-locked into spectating round 1. Works because clients connect while STILL LOADING (`Callback_PlayerConnect` fires pre-load; statusicon `hud_status_connecting` until the engine's `"begin"`, and only then do they enter `level.players`) — the stock `waitForPlayers()` hook for this is an empty stub in T5. Loading = statusicon check; entities collected via the level `"connecting"` notify (pre-begin clients exist nowhere else). Bots (`istestclient()`) excluded from wait + readout. This dvar = ceiling seconds (clamped 0-120, `0` = gate off); 3s arrival floor. Shows the stock "Waiting for teams..." string + a live yellow `loaded / total` readout (setValue-driven, configstring-safe) in the countdown's slot. FastDL first-time downloaders (30-60s+ engine rebuild) are deliberately NOT absorbed. Releases log `GF_LOADGATE:` to games_mp.log. Distinct from `scr_gf_roster_wait` (post-prematch, waits for *spawns*) and `scr_gf_min_players` (waits for humans to *exist*): this one waits for known clients to *finish loading the map*. A client STILL loading when this ceiling hits is then covered by `scr_gf_load_grace` (below) |
+| ~~`scr_gf_roster_wait`~~ | *(retired)* | **RETIRED 2026-07-04 — no longer read.** Was a post-prematch hold of the round clock until every teamed human had spawned. Made redundant by the pre-prematch load gate (`scr_gf_load_wait`): once every client is confirmed loaded *before* prematch, they've all spawned (frozen) *by* `prematch_over`, so there was nothing left to wait for. `gf_allTeamedPlayersSpawned` deleted with it. Any stale cfg value is inert |
+| `scr_gf_min_players` | 1 | **Min-HUMANS-to-start gate** — **folded into the pre-prematch load gate 2026-07-04** (`gf_waitForLoadingClients`, `_gf_rounds.gsc`; the old standalone `gf_waitForMinPlayers` is gone). Holds the match's FIRST round (`game["roundsplayed"]==0`) *before* the prematch countdown until at least this many *humans* are here (bots — `istestclient()` — don't count). Because it now runs BEFORE anyone spawns, it needs **no freeze and no damage-void** (the old `level.gf_waitingForPlayers` machinery is deleted) — nobody is in the world yet to die, and the intro no longer plays for a match that then stalls. Counts tracked humans (loaded **or** still loading — a loader counts as "here"). Anti-wedge: a **pure-bot lobby** (0 humans) never holds, and a **90s** `GF_MINPLAYERS_MAX_HOLD` ceiling is the "start anyway" fallback. Match-start only. `1` = effectively off. Clamped 1-8. Shares the "Waiting for teams…" screen with the load gate. Distinct from `scr_gf_load_wait` only in *what* it waits for (enough humans to exist vs. the known roster finishing its map load) — same hold, two release conditions |
+| `scr_gf_load_wait` | 30 | **Pre-prematch gate — LOAD condition** (`gf_armLoadGate`/`gf_waitForLoadingClients`, `_gf_rounds.gsc`; added 2026-07-03, min-players folded in 2026-07-04). Match's FIRST round only: holds at the END of `onStartGameType` — the engine threads `startGame()` (prematch countdown) only when that callback returns — until every rotation-carried HUMAN client has left the loading screen, so everyone sees the full countdown/intro together and slow loaders can't be grace-locked into spectating round 1. Works because clients connect while STILL LOADING (`Callback_PlayerConnect` fires pre-load; statusicon `hud_status_connecting` until the engine's `"begin"`, and only then do they enter `level.players`) — the stock `waitForPlayers()` hook for this is an empty stub in T5. Loading = statusicon check; entities collected via the level `"connecting"` notify (pre-begin clients exist nowhere else). Bots (`istestclient()`) excluded from wait + readout. This dvar = ceiling seconds (clamped 0-120, `0` = gate off); 3s arrival floor. Shows the stock "Waiting for teams..." string + a live yellow `loaded / total` readout (setValue-driven, configstring-safe) in the countdown's slot. FastDL first-time downloaders (30-60s+ engine rebuild) are deliberately NOT absorbed. Releases log `GF_LOADGATE:` to games_mp.log. The SAME hold also enforces `scr_gf_min_players` (the humans-exist condition); a client STILL loading when the load ceiling hits is then covered by `scr_gf_load_grace` (below) |
 | `scr_gf_load_grace` | 20 | **Straggler grace extension** (`gf_anyTrackedClientLoading`/`gf_closeGraceEarly`, `_gf_rounds.gsc`; added 2026-07-04). Companion to `scr_gf_load_wait`: when the load gate releases with a client STILL loading (it hit the `scr_gf_load_wait` ceiling — e.g. a first-time FastDL downloader taking 30-60s+), keep the grace period open this many seconds *past `prematch_over`* so that client can still take its round-1 first spawn (stock `maySpawn` only admits a late first-spawn while `inGracePeriod`) instead of spectating the whole round. Implemented by raising `level.gracePeriod` at gate release (so the stock `gracePeriod()` backstop doesn't close first) + a hold in `gf_closeGraceEarly` keyed off the same tracker snapshot. **Cost:** a round-1 team wipe can't END the round until grace closes (bounded by this ceiling and by round length) — the deliberate tradeoff for letting the loader play. `0` = off (straggler spectates round 1, the pre-2026-07-04 behavior). Round 1 only (tracker snapshot is `map_restart`-wiped); bots excluded (`istestclient()`); a straggler who disconnects mid-load releases the hold. Clamped 0-60 |
 | `scr_team_maxsize` | 0 (shipped cfg sets **6**) | `>0` caps players/team; overflow is sent to spectator on spawn (`gf_playerSpawnedCB`). `dedicated.cfg` ships `6` (up to 6v6); `sv_maxclients` 14 = 12 play + 2 spectator. Set `4` for a 4v4 server |
 | `perk_weapSwitchMultiplier` | (engine default) | Engine weapon-swap speed (lower = faster); gated by `specialty_fastweaponswitch`, which is **OFF by default** (no longer in the base loadout). NOT forced by the mod — stock by default. To use it: enable Fast Weapon Switch via the RCON Perks tab (`gf_perk_on`), then tune the slider; inert until the perk is on |
@@ -373,8 +439,8 @@ between allies/axis/spectator via bridge command `pteam_<num>_<allies|axis|spec>
 (`gf_bridgeTeamCmd` in `_gf_bridge.gsc`). A live switch would `suicide()` a "playing" player
 (stock `menuAllies`/`menuAxis`/`menuSpectator` = `level.allies`/`axis`/`spectator`), so it's applied
 **immediately only during the native prematch countdown** (`level.inPrematchPeriod` — players frozen,
-round unscored, so the suicide/respawn is the harmless warmup switch). **Any other time — live round,
-killcam, or the min-players hold — it DEFERS** via `self.pers["gf_pendingTeam"]` (the only state that
+round unscored, so the suicide/respawn is the harmless warmup switch). **Any other time — live round or
+killcam — it DEFERS** via `self.pers["gf_pendingTeam"]` (the only state that
 survives `map_restart`) and is applied in the **next round's prematch**. Two subtleties drove this
 (both caught by adversarial review): (1) it can't sweep at `gf_bridgeInit`, because `_spawnlogic::init`
 empties `level.players` *before* `onStartGameType` and `Callback_PlayerConnect` only repopulates it
@@ -383,8 +449,7 @@ later — so the deferred apply is driven by a `gf_bridgeWatchPendingTeam` watch
 `pers["team"]` on a live player, because `gf_onPlayerDamage` reads it for friendly-fire — deferral
 keeps the pending team in a *separate* `pers` key until the prematch apply. `gf_applyTeamMove` then
 branches on `sessionstate`: `"playing"` (spawned/frozen) → full stock switch; otherwise a quiet
-`pers["team"]`/`team`/`sessionteam` reassign the spawn honors. The min-players hold is excluded from
-the immediate window on purpose — its "no deaths" invariant forbids the switch's suicide. Team-size
+`pers["team"]`/`team`/`sessionteam` reassign the spawn honors. Team-size
 caps are enforced up front in `gf_bridgeTeamCmd` (`gf_bridgeTeamFull` mirrors `gf_playerSpawnedCB`'s
 overflow count) so an over-cap move is refused with feedback instead of a silent spectator-bounce. The
 panel reads a new **`gf_roster`** telemetry dvar (`<num>,<team>,<alive>,<pending>;…`, codes `a/x/s/-`)
@@ -1616,10 +1681,12 @@ gf_overtimeCountdown()
 > **The live (non-OT) round timer is ALSO mod-owned now (added 2026-06-18).**
 > `gf_startRoundClock` / `gf_roundClock` / `gf_syncRoundRemaining` / `gf_updateRoundWarning` in
 > `_gf_rounds.gsc` mirror the OT clock for the main round. `gf_tryActivateRound` calls
-> `gf_startRoundClock()` once the round goes live — uniform every round: after `prematch_over`,
-> then a bounded (8s) wait until every teamed player has spawned (`gf_allTeamedPlayersSpawned`),
-> at which point grace is closed early (stock `level.gracePeriod` stays 15 as the ceiling; see
-> the roster-gated activation in `gf_tryActivateRound`, added 2026-07-01).
+> `gf_startRoundClock()` once the round goes live — uniform every round: after `prematch_over`
+> it pauses the native clock, threads `gf_closeGraceEarly` (3s floor past prematch_over; stock
+> `level.gracePeriod` stays 15 as the ceiling), and starts the clock. The former post-prematch
+> "wait until every teamed player has spawned" roster hold was RETIRED 2026-07-04 — the roster is
+> now confirmed loaded by the pre-prematch load/min-players gate (`gf_waitForLoadingClients`), so
+> everyone has spawned by `prematch_over` and there is nothing left to wait for.
 > It `pauseTimer()`s — which gates off the stock `_globallogic::timeLimitClock` warning
 > loop (`if ( !level.timerStopped && level.timeLimit )`) so NONE of the native time-out sequence fires
 > (no announcer, no `TIME_OUT` music, no 30s/12s/1-min beeps or client cues) — sets

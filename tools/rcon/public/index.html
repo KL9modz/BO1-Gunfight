@@ -191,6 +191,8 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .block.collapsed .btitle::after{transform:rotate(-90deg)}
 .block.collapsed .btitle{margin-bottom:0;padding-bottom:0;border-bottom:none}
 .block.collapsed>*:not(.btitle){display:none}
+.sgroup{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ac);margin:12px 0 3px;padding-top:9px;border-top:1px solid var(--bd)}
+.btitle + .sgroup{margin-top:2px;padding-top:0;border-top:none}
 .srow{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd)}
 .srow:last-child{border-bottom:none;padding-bottom:0}.srow:first-child{padding-top:0}
 .slbl{flex:1;font-size:13px}.shint{color:var(--dm);font-size:11px;min-width:110px;text-align:right}
@@ -1936,7 +1938,7 @@ const SRV_SECTIONS = [
     { n:'g_password',               lbl:'Join Password',          type:'text',   def:'',    tip:'g_password\nServer join password. Blank = open to all.' },
     { n:'g_allowvote',              lbl:'Allow Voting',           type:'tog',    def:'1',   tip:'g_allowvote\nLet players call /callvote in console. GF default: 1' },
     { n:'g_inactivity',             lbl:'AFK Kick Timer (s)',     type:'num',    def:'190', tip:'g_inactivity\nSeconds of inactivity before auto-kick. 0 = disabled.' },
-    { n:'party_minplayers',         lbl:'Min Players to Start',   type:'num',    def:'2',   tip:'party_minplayers\nMinimum connected players before the match begins. GF default: 2 (set 1 for solo testing).' },
+    { n:'party_minplayers',         lbl:'Lobby Min Players (pregame)', type:'num', def:'2',   tip:'party_minplayers\nEngine PREGAME-lobby dvar — does NOT gate the Gunfight match (stock waitForPlayers() is an empty stub; party_minplayers only affects the _pregame lobby gametype + the wager bet calc). For Gunfight’s min-players-to-start, use Min Players in the MATCH tab (scr_gf_min_players). Left here for non-gf gametypes.' },
     { n:'sv_maxclients',            lbl:'Max Players',            type:'num',    def:'14',  eff:'restart', tip:'sv_maxclients\nMaximum simultaneous connections the server accepts. GF: 14 = 12 playing (up to 6v6) + 2 spectator headroom.' },
     { n:'sv_floodProtect',          lbl:'Chat Flood Protection',  type:'num',    def:'4',   tip:'sv_floodProtect\nThrottle rapid chat messages. Set to 20 when using an RCON tool.' },
     { n:'sv_kickBanTime',           lbl:'Kick Ban Duration (s)',  type:'num',    def:'300', tip:'sv_kickBanTime\nHow long a kicked player must wait before reconnecting.' },
@@ -2076,20 +2078,28 @@ const SRV_SECTIONS = [
 // expose few unique dvars; seeded values are best-effort and confirmed live by the Read button.
 const GT_SECTIONS = {
   gf: [
-    { n:'scr_gf_scorelimit',          lbl:'Rounds to Win',            type:'num', def:'6',    tip:'scr_gf_scorelimit\nRound wins needed to win the match.' },
+    { grp:'Match',
+      n:'scr_gf_scorelimit',          lbl:'Rounds to Win',            type:'num', def:'6',    tip:'scr_gf_scorelimit\nRound wins needed to win the match.' },
     { n:'scr_gf_roundlimit',          lbl:'Max Rounds (0=off)',       type:'num', def:'0',    tip:'scr_gf_roundlimit\nHard round cap regardless of score. 0 = scorelimit only.' },
     { n:'scr_gf_roundswitch',         lbl:'Sides Switch Every (rounds)', type:'num', def:'2',    tip:'scr_gf_roundswitch\nSwap attacker/defender sides every N rounds. 0 = never.' },
     { n:'scr_gf_roundsperloadout',    lbl:'Rounds Per Loadout',       type:'num', def:'2', tip:'scr_gf_roundsperloadout\nRounds the shared random loadout stays before rotating to the next. Clamped 1-9. Independent of Side Switch.' },
-    { n:'scr_gf_teamspawnmode',       lbl:'Team Spawn Mode',          type:'sel', def:'auto', opts:[['auto','Auto (5+/team → large)'],['large','Force Large'],['small','Force Small']], tip:'scr_gf_teamspawnmode\nauto = switch by the larger team (5+ on a team → large, hard-wired to the HUD skulls→readout switch); large/small = force the mode. (scr_gf_largemode_minplayers is retired.)' },
+    { n:'scr_gf_numlives',            lbl:'Lives / Round',            type:'num', def:'1',    tip:'scr_gf_numlives\nLives per player per round.' },
+
+    { grp:'Match Start',
+      n:'scr_gf_min_players',         lbl:'Min Players to Start',      type:'num', def:'1',  tip:'scr_gf_min_players\nHold the FIRST round (BEFORE the prematch countdown) until at least this many HUMAN players are here (bots do not count). Match-start only — once live it never re-holds, even if players leave. Nobody is spawned yet during the hold, so there is no freeze/damage-void. 90s start-anyway ceiling; a pure-bot lobby never stalls. 1 = effectively off. Clamped 1-8.\n(This is Gunfight’s min-players gate. The SERVER-tab party_minplayers does NOT affect gf.)' },
+    { n:'scr_gf_load_wait',           lbl:'Load Wait (s, 0=off)',      type:'num', def:'30', tip:'scr_gf_load_wait\nMax seconds the match FIRST round holds BEFORE the prematch countdown until every map-loading client is in, so everyone sees the intro/countdown together (and slow loaders are not grace-locked into spectating round 1). Bots excluded. Shows a "Waiting for teams N/M" readout. First-time FastDL downloaders are not fully absorbed. 0 = off. Clamped 0-120.\nSame hold also enforces Min Players above.' },
+    { n:'scr_gf_match_prematch_seconds', lbl:'Prematch (s)',          type:'num', def:'15', tip:'scr_gf_match_prematch_seconds\nIntro countdown before the first round of the match (MATCH STARTING IN). Runs AFTER the Match Start hold. Clamped 2-30. (Stock scr_game_prematchperiod is overridden by this and has no effect.)' },
+    { n:'scr_gf_prematch_seconds',    lbl:'Preround (s)',             type:'num', def:'7',  tip:'scr_gf_prematch_seconds\nCountdown before each later round (ROUND BEGINS IN). Clamped 2-20.' },
+    { n:'scr_gf_load_grace',          lbl:'Load Grace (s, adv)',       type:'num', def:'20', tip:'scr_gf_load_grace\nADVANCED / edge case. When Load Wait gives up with a client still loading (e.g. a FastDL first-timer), keep the grace period open this many seconds past the countdown so they can still spawn INTO round 1 instead of spectating. Cost: a round-1 team wipe cannot end the round until grace closes. 0 = off (they spectate). Clamped 0-60.' },
+
+    { grp:'Spawns &amp; Round Time',
+      n:'scr_gf_teamspawnmode',       lbl:'Team Spawn Mode',          type:'sel', def:'auto', opts:[['auto','Auto (5+/team → large)'],['large','Force Large'],['small','Force Small']], tip:'scr_gf_teamspawnmode\nauto = switch by the larger team (5+ on a team → large, hard-wired to the HUD skulls→readout switch); large/small = force the mode. (scr_gf_largemode_minplayers is retired.)' },
     { n:'scr_gf_timelimit',           lbl:'Round Time — Small (min)', type:'num', def:'0.75', tip:'scr_gf_timelimit\nRound time for SMALL mode (<=4v4). 0 = no limit.' },
     { n:'scr_gf_timelimit_large',     lbl:'Round Time — Large (min)', type:'num', def:'1.5',  tip:'scr_gf_timelimit_large\nRound time for LARGE mode (any team of 5+).' },
-    { n:'scr_gf_match_prematch_seconds', lbl:'Prematch (s)',          type:'num', def:'15', tip:'scr_gf_match_prematch_seconds\nIntro countdown before the first round of the match (MATCH STARTING IN). Clamped 2-30.' },
-    { n:'scr_gf_prematch_seconds',    lbl:'Preround (s)',             type:'num', def:'7',  tip:'scr_gf_prematch_seconds\nCountdown before each later round (ROUND BEGINS IN). Clamped 2-20.' },
-    { n:'scr_gf_roster_wait',         lbl:'Roster Wait (s, 0=60s cap)', type:'num', def:'15', tip:'scr_gf_roster_wait\nMax seconds the round clock waits after the countdown for every teamed HUMAN to finish spawning (slow loaders). Bots are excluded from the gate, so a lagging/failed bot spawn no longer stalls round start.\n0 no longer means "wait forever" (that could wedge the match on a stuck client) — it now falls back to a 60s hard ceiling. Always bounded. Clamped 0-120.' },
-    { n:'scr_gf_min_players',         lbl:'Min Players to Start',      type:'num', def:'1',  tip:'scr_gf_min_players\nHold the FIRST round until at least this many HUMAN players are on a team (bots do not count). Match-start only — once the match is live it never re-holds, even if players leave.\nEveryone is frozen and damage is voided during the hold, so nobody dies into a not-yet-live round. 1 = effectively off. Clamped 1-8.' },
-    { n:'scr_gf_overtimelimit',       lbl:'OT Duration — Small (s)',  type:'num', def:'15',   tip:'scr_gf_overtimelimit\nOT countdown for SMALL mode. Pauses while contested.' },
+
+    { grp:'Overtime',
+      n:'scr_gf_overtimelimit',       lbl:'OT Duration — Small (s)',  type:'num', def:'15',   tip:'scr_gf_overtimelimit\nOT countdown for SMALL mode. Pauses while contested.' },
     { n:'scr_gf_overtimelimit_large', lbl:'OT Duration — Large (s)',  type:'num', def:'30',   tip:'scr_gf_overtimelimit_large\nOT countdown for LARGE mode. Pauses while contested.' },
-    { n:'scr_gf_numlives',            lbl:'Lives / Round',            type:'num', def:'1',    tip:'scr_gf_numlives\nLives per player per round.' },
     { n:'gf_capture_time',            lbl:'OT Capture — Small (s)',   type:'num', def:'3',    tip:'gf_capture_time\nSeconds to capture the OT zone in SMALL mode.' },
     { n:'gf_capture_time_large',      lbl:'OT Capture — Large (s)',   type:'num', def:'5',    tip:'gf_capture_time_large\nSeconds to capture the OT zone in LARGE mode.' },
   ],
@@ -2307,7 +2317,9 @@ function srvRow(v, prefix, dEff, dPer) {
 // Build a titled .block from a vars array (adds a Set All row when it has number/text fields).
 // dEff/dPer = section-level behavior-pill defaults (per-var v.eff / v.per override them).
 function srvBlock(title, vars, prefix, dEff, dPer) {
-  const rows = vars.map(v => srvRow(v, prefix, dEff, dPer)).join('');
+  // A var may carry an optional grp:'Label' to open a sub-group header before its row
+  // (purely additive — every consumer still sees normal dvar entries with .n intact).
+  const rows = vars.map(v => (v.grp ? `<div class="sgroup">${v.grp}</div>` : '') + srvRow(v, prefix, dEff, dPer)).join('');
   const hasSetAll = vars.some(v => v.type === 'text' || v.type === 'num' || v.type === 'flt');
   const setAllRow = hasSetAll ? '<div class="set-all-row"><button class="b-gh b-sm ctrl" data-tip="Write this block&#39;s values to dedicated.cfg (persists across restarts).&#10;A .bak backup is made; takes effect on next server start or `exec dedicated.cfg`." onclick="saveBlockToCfg(this)">💾 Save</button><button class="b-ac b-sm ctrl" onclick="setAllInBlock(this)">Set All</button></div>' : '';
   return `<div class="block"><div class="btitle">${title}</div>${rows}${setAllRow}</div>`;
