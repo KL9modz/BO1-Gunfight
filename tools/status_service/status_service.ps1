@@ -36,6 +36,14 @@ param(
     [string] $AdminOutFile  = '',
     [string] $LogDir        = '',
     [int]    $AdminLogTail  = 40,
+    # Multi-day searchable connect history (with IPs) for the admin page. Written next
+    # to $AdminOutFile as admin_history.json (same folder, same .secured gate). It only
+    # reads the static players_*.log day-files, so it is rebuilt every
+    # $AdminHistoryEverySec seconds - NOT every poll - and adds zero rcon load.
+    [int]    $AdminHistoryDays     = 60,
+    [int]    $AdminHistoryMax      = 5000,
+    [int]    $AdminHistoryEverySec = 60,
+    [string] $AdminHistoryFile     = '',
     [int]    $RecvTimeoutMs = 1200,
     [int]    $RecentMax     = 15,
     # Loopback port of the RCON panel (tools\rcon\server.js). When the panel is running,
@@ -52,6 +60,11 @@ $storageT5 = $PSScriptRoot
 for ($i = 0; $i -lt 4; $i++) { $storageT5 = Split-Path -Parent $storageT5 }
 if ([string]::IsNullOrEmpty($CfgPath)) { $CfgPath = Join-Path $storageT5 'dedicated.cfg' }
 if ([string]::IsNullOrEmpty($LogDir))  { $LogDir  = Join-Path $storageT5 'logs' }
+# admin_history.json lives beside the admin snapshot (same .secured-gated folder), so
+# it inherits the exact same IIS Basic-auth protection and never leaks IPs unprotected.
+if ([string]::IsNullOrEmpty($AdminHistoryFile) -and -not [string]::IsNullOrEmpty($AdminOutFile)) {
+    $AdminHistoryFile = Join-Path (Split-Path -Parent $AdminOutFile) 'admin_history.json'
+}
 
 # --- RCON password ------------------------------------------------------------
 function Get-RconPassword {
@@ -119,6 +132,7 @@ function Parse-StatusPlayers {
         $tok = $t -split '\s+'
         if ($tok.Count -lt 8) { continue }
         $num  = $tok[0]
+        $guid = $tok[3]
         $ping = $tok[2]
         $address = $tok[$tok.Count - 3]
         $nameEnd = $tok.Count - 5
@@ -128,7 +142,7 @@ function Parse-StatusPlayers {
         if ($name -eq '') { continue }
         $isHuman = ($address -match '^\d{1,3}(\.\d{1,3}){3}:\d+$')
         $ip = if ($isHuman) { $address } else { '' }
-        $byNum[$num] = @{ name = $name; ping = [int]$ping; bot = (-not $isHuman); ip = $ip }
+        $byNum[$num] = @{ name = $name; ping = [int]$ping; bot = (-not $isHuman); ip = $ip; guid = $guid }
     }
     return $byNum
 }
@@ -184,6 +198,38 @@ function Get-LogTail {
     return $lines
 }
 
+# Parse the last $days players_*.log day-files into a flat, NEWEST-FIRST event list
+# (each line: "<date> <time>  <VERB> ip=... name="..." guid=... ping=... [session=...]").
+# Banner "----- conn_logger started -----" lines never match the verb group -> skipped.
+# Capped at $maxEvents so the JSON stays small (events are ~120 bytes each).
+$script:ConnLineRx = [regex]'^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})\s+(ONLINE|CONNECT|LEFT)\s+ip=(\S+)\s+name="(.*?)"\s+guid=(\S+)\s+ping=(\S+)(?:\s+session=(\S+))?\s*$'
+function Build-ConnHistory {
+    param([string]$dir, [int]$days, [int]$maxEvents)
+    $events = New-Object System.Collections.ArrayList
+    $files = @(Get-ChildItem (Join-Path $dir 'players_*.log') -ErrorAction SilentlyContinue |
+               Sort-Object Name -Descending | Select-Object -First $days)   # newest day first
+    foreach ($f in $files) {
+        $lines = @(Get-Content -Path $f.FullName -ErrorAction SilentlyContinue)
+        for ($i = $lines.Count - 1; $i -ge 0; $i--) {   # bottom-up = newest line first
+            $m = $script:ConnLineRx.Match($lines[$i])
+            if (-not $m.Success) { continue }
+            [void]$events.Add([ordered]@{
+                date    = $m.Groups[1].Value
+                time    = $m.Groups[2].Value
+                event   = $m.Groups[3].Value
+                ip      = $m.Groups[4].Value
+                name    = $m.Groups[5].Value
+                guid    = $m.Groups[6].Value
+                ping    = $m.Groups[7].Value
+                session = $m.Groups[8].Value
+            })
+            if ($events.Count -ge $maxEvents) { break }
+        }
+        if ($events.Count -ge $maxEvents) { break }
+    }
+    return @($events.ToArray())
+}
+
 function Map-Name {
     param([string]$raw)
     switch ($raw) {
@@ -214,6 +260,8 @@ if (-not (Test-Path (Split-Path -Parent $OutFile))) {
 }
 Write-Host ("status_service -> $OutFile (host $RconHost`:$RconPort, every ${IntervalSeconds}s)")
 
+$lastHistoryBuild = $null   # rebuild the multi-day admin history at most every $AdminHistoryEverySec
+
 while ($true) {
     $online = $false
     $snapshot = $null
@@ -242,6 +290,7 @@ while ($true) {
             foreach ($p in @($tick.players)) {
                 if ($null -eq $p) { continue }
                 $players[[string]$p.num] = @{ name = [string]$p.name; ping = [int]$p.ping; bot = [bool]$p.bot;
+                                              guid = [string]$p.guid;
                                               ip = $(if ($p.bot) { '' } else { [string]$p.addr }) }
             }
             foreach ($e in @($tick.roster)) {
@@ -289,11 +338,16 @@ while ($true) {
             foreach ($num in $players.Keys) {
                 $p = $players[$num]
                 if ($p.bot) { continue }
+                # A real human has an ip:port (or a listen-server host's local/loopback). Skip
+                # bots the panel's guid/'unknown' check missed AND clients still connecting
+                # (guid 0, the address column holding a lastmsg value) - otherwise they inflate
+                # the human count and log spurious connects.
+                if ([string]$p.ip -ne 'local' -and [string]$p.ip -ne 'loopback' -and [string]$p.ip -notmatch '^\d{1,3}(\.\d{1,3}){3}:\d+$') { continue }
                 $r = $roster[$num]
                 $team = if ($r) { $r.team } else { 'unknown' }
                 $alive = if ($r) { $r.alive } else { $true }
                 $list      += ,([ordered]@{ name = $p.name; team = $team; alive = $alive; ping = $p.ping })
-                $adminList += ,([ordered]@{ name = $p.name; team = $team; alive = $alive; ping = $p.ping; ip = $p.ip })
+                $adminList += ,([ordered]@{ name = $p.name; team = $team; alive = $alive; ping = $p.ping; ip = $p.ip; guid = $p.guid })
                 $humanNames[$p.name] = $true
             }
 
@@ -364,6 +418,24 @@ while ($true) {
     # provably auth-protected (.secured marker). Otherwise it is never written.
     if (Test-AdminEnabled $AdminOutFile) {
         try { Write-Snapshot -path $AdminOutFile -obj $adminSnapshot } catch { Write-Warning ("admin write failed: {0}" -f $_.Exception.Message) }
+
+        # Multi-day searchable history (same .secured gate as the admin snapshot).
+        # Static day-files, so rebuild on a slow cadence rather than every poll.
+        if (-not [string]::IsNullOrEmpty($AdminHistoryFile)) {
+            $now = Get-Date
+            if ($null -eq $lastHistoryBuild -or ($now - $lastHistoryBuild).TotalSeconds -ge $AdminHistoryEverySec) {
+                try {
+                    $ev = Build-ConnHistory -dir $LogDir -days $AdminHistoryDays -maxEvents $AdminHistoryMax
+                    Write-Snapshot -path $AdminHistoryFile -obj ([ordered]@{
+                        updated = $now.ToString('o')
+                        days    = $AdminHistoryDays
+                        count   = $ev.Count
+                        events  = $ev
+                    })
+                    $lastHistoryBuild = $now
+                } catch { Write-Warning ("history write failed: {0}" -f $_.Exception.Message) }
+            }
+        }
     }
 
     Start-Sleep -Seconds $IntervalSeconds

@@ -46,6 +46,18 @@
     .foot{color:#6b7482;font-size:12px;text-align:center;margin-top:10px}
     .warn{font-size:12px;color:#e8b339;border:1px solid rgba(232,179,57,.35);
       background:rgba(232,179,57,.06);border-radius:8px;padding:8px 10px;margin-bottom:14px}
+    .search{width:100%;margin:2px 0 10px;padding:9px 11px;font-size:14px;color:var(--tx);
+      background:#0c0f13;border:1px solid var(--bd);border-radius:8px;outline:none}
+    .search:focus{border-color:var(--accent)}
+    .search::placeholder{color:#5f6874}
+    .hcount{color:var(--dm);font-size:12px;margin:0 0 8px}
+    .hfoot{color:#6b7482;font-size:11px;margin-top:8px}
+    .htable{overflow-x:auto}
+    td.gid{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:11px;color:#9aa4b2}
+    .ev{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px}
+    .ev.connect{color:var(--ok);border:1px solid rgba(46,198,83,.4)}
+    .ev.left{color:var(--dm);border:1px solid var(--bd)}
+    .ev.online{color:var(--accent);border:1px solid rgba(255,122,26,.4)}
   </style>
 </head>
 <body>
@@ -59,6 +71,7 @@
     <div class="warn">Private view &mdash; contains player IP addresses. Do not share screenshots.</div>
 
     <div id="content"></div>
+    <div id="history"></div>
     <p class="foot" id="foot">&nbsp;</p>
   </main>
 

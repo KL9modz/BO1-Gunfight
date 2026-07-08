@@ -208,20 +208,48 @@ function parseDvarValue(text, dvarName) {
 // OOB rcon packets, so an 8-wide concurrent sweep lost ~90% of reads to timeout. A ~100-dvar
 // sweep now takes a few seconds but the reads actually land. Timeout/parse-miss yields null
 // (frontend keeps its default and flags the field "not read").
-async function readDvars(host, port, password, names) {
+// Persistent per-profile cache of dvars this server rejects as "Unknown command". Reading a dvar
+// by bare name over rcon makes the GAME server print `Unknown cmd <name>` for any UNregistered one
+// (the panel sweeps ~100 controls, and stock/Plutonium dvars not present on a given build error) —
+// which renders on a listen-host's screen as connect spam. We can't know registered-ness without
+// sending, so the FIRST sweep of a fresh profile still probes them once; the reply echoes the
+// `Unknown cmd` line, we learn the exact names, cache them (keyed by host:port, file-backed so it
+// survives a panel restart) and never bare-send them again. The panel's ↻ Read passes fresh=1 to
+// clear the cache and re-probe (so a dvar that later becomes registered is picked back up).
+const DVAR_DEAD_FILE = path.join(__dirname, '.dvarcache.json');
+const deadDvarCache = (function loadDeadDvarCache() {
+  try {
+    const obj = JSON.parse(fs.readFileSync(DVAR_DEAD_FILE, 'utf8'));
+    const m = new Map();
+    for (const k of Object.keys(obj)) if (Array.isArray(obj[k])) m.set(k, new Set(obj[k]));
+    return m;
+  } catch (_) { return new Map(); }
+})();
+function saveDeadDvarCache() {
+  try {
+    const obj = {};
+    for (const [k, set] of deadDvarCache) obj[k] = [...set];
+    fs.writeFileSync(DVAR_DEAD_FILE, JSON.stringify(obj));
+  } catch (_) {}
+}
+
+async function readDvars(host, port, password, names, fresh) {
+  const key = host + ':' + port;
+  if (fresh) { deadDvarCache.delete(key); saveDeadDvarCache(); }
+  const cached = deadDvarCache.get(key) || new Set();
+
   const values = {};
   for (const n of names) values[n] = null;
   const DBG = process.env.GF_RCON_DEBUG;
   const T0 = Date.now();
   const ts = () => '+' + (Date.now() - T0) + 'ms';
 
-  // Each round compacts the still-missing names into chained rcon commands (one reply carries
-  // every value in the command). Re-query rounds recover genuine packet loss / split replies.
-  // A name that comes back UNparsed from a small served batch is an unknown/unset dvar (e.g.
-  // the *_large mode dvars while in small mode, or dev-only gf_debug*) — it's marked dead so it
-  // doesn't burn every round. Command pacing (the server's rcon rate limit) is enforced globally
-  // by sendRconQueued, so concurrent sweeps don't outrun the limit between them.
-  const dead = new Set();
+  // `dead` = names to skip for the rest of THIS call (seeded from the persistent cache so known
+  // unknowns are never re-sent by bare name). `confirmed` = names the server EXPLICITLY rejected
+  // this call (from the reply's `Unknown cmd` echo) — only these get persisted, so a real dvar
+  // that merely dropped a packet can never be permanently skipped.
+  const dead = new Set(cached);
+  const confirmed = new Set();
   for (let round = 0; round < DVAR_BATCH_ROUNDS; round++) {
     const pending = names.filter((n) => values[n] === null && !dead.has(n));
     if (!pending.length) break;
@@ -232,17 +260,38 @@ async function readDvars(host, port, password, names) {
         const text = parseRconResponse(buf);
         let hit = 0;
         for (const name of need) { const v = parseDvarValue(text, name); if (v !== null) { values[name] = v; hit++; } }
-        // Reply arrived (no timeout). In a batch small enough not to truncate, anything still
-        // unparsed is a genuine unknown/unset dvar → stop retrying it.
-        if (hit < need.length && need.length <= DVAR_DEAD_BATCH_MAX)
-          for (const name of need) if (values[name] === null) dead.add(name);
-        if (DBG) console.error(ts() + ' [r' + round + '] need=' + need.length + ' bytes=' + (buf ? buf.length : 0) + ' hit=' + hit + ' dead=' + dead.size);
+        // Authoritative: the reply echoes `Unknown cmd <name>` / `Unknown command "<name>"` for
+        // each unregistered dvar. Mark exactly those (intersected with this batch) dead + persist.
+        if (/Unknown\s+(?:command|cmd)/i.test(text)) {
+          const unknown = new Set();
+          let mm; const re = /Unknown\s+(?:command|cmd)\s+"?([A-Za-z0-9_]+)"?/gi;
+          while ((mm = re.exec(text)) !== null) unknown.add(mm[1]);
+          for (const name of need) if (unknown.has(name)) { dead.add(name); confirmed.add(name); }
+        }
+        // Secondary signal (in case a build doesn't echo the "Unknown cmd" text into the reply):
+        // in a small batch where at least one name DID parse, the reply provably arrived intact,
+        // so any still-null name is genuinely unknown — safe to skip AND persist. `hit > 0` is
+        // what distinguishes this from a whole-batch timeout (which must NOT be treated as dead).
+        if (hit < need.length && need.length <= DVAR_DEAD_BATCH_MAX) {
+          for (const name of need) if (values[name] === null) {
+            dead.add(name);
+            if (hit > 0) confirmed.add(name);
+          }
+        }
+        if (DBG) console.error(ts() + ' [r' + round + '] need=' + need.length + ' bytes=' + (buf ? buf.length : 0) + ' hit=' + hit + ' dead=' + dead.size + ' confirmed=' + confirmed.size);
       } catch (e) {
         if (DBG) console.error(ts() + ' [r' + round + '] need=' + need.length + ' ERR ' + (e && e.message));
       }
     }
   }
-  if (DBG) { const miss = names.filter((n) => values[n] === null); console.error(ts() + ' [done] got ' + (names.length - miss.length) + '/' + names.length + (miss.length ? ' MISSING: ' + miss.join(',') : '')); }
+  // Persist any newly-confirmed unknowns for this profile so the next sweep skips them.
+  if (confirmed.size) {
+    const set = deadDvarCache.get(key) || new Set();
+    let grew = false;
+    for (const n of confirmed) if (!set.has(n)) { set.add(n); grew = true; }
+    if (grew) { deadDvarCache.set(key, set); saveDeadDvarCache(); }
+  }
+  if (DBG) { const miss = names.filter((n) => values[n] === null); console.error(ts() + ' [done] got ' + (names.length - miss.length) + '/' + names.length + ' cachedSkip=' + cached.size + (miss.length ? ' MISSING: ' + miss.join(',') : '')); }
   return values;
 }
 
@@ -261,6 +310,27 @@ function parseGfRoster(str) {
       alive:   f[2] === '1',
       pending: map[f[3]] || '',
     });
+  }
+  return out;
+}
+
+// Parse a CoD map-rotation string ("gametype gf map mp_array gametype gf map mp_cairo …") into
+// [{ gametype, map }]. Tolerates a bare leading `map` (inherits the last gametype, else '') and
+// stray tokens. Used for both sv_maprotation (the full configured order) and sv_maprotationcurrent
+// (the not-yet-played remainder — its head is the next map the engine will load).
+function parseMapRotation(str) {
+  // Split on whitespace, then sanitize each token to [A-Za-z0-9_]. Rotation keywords/map ids are
+  // all word-chars, so this is lossless for clean data — but it also strips stray bytes that creep
+  // into a hand-edited sv_maprotation (observed live: 0x93/0x94 Windows-1252 smart-quotes from a doc
+  // paste) which would otherwise glue onto a `map` keyword (dropping the next map) or a map id
+  // (corrupting it, then persisting the corruption on save). A token that was all garbage → '' → dropped.
+  const toks = String(str).trim().split(/\s+/).map(t => t.replace(/[^A-Za-z0-9_]/g, '')).filter(Boolean);
+  const out = [];
+  let gt = '';
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i].toLowerCase();
+    if (t === 'gametype' && i + 1 < toks.length) gt = toks[++i];
+    else if (t === 'map' && i + 1 < toks.length) out.push({ gametype: gt, map: toks[++i] });
   }
   return out;
 }
@@ -496,6 +566,31 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ── GET /api/maprotation ── the live server rotation. Reads two plain engine dvars in one send:
+  //   sv_maprotation        — the full configured order ("gametype gf map mp_array …")
+  //   sv_maprotationcurrent — the not-yet-played remainder; its HEAD is the next map the engine
+  //                           loads at match end. Both are writable over rcon, so the panel drives
+  //                           the engine's own rotation instead of racing it with a reactive `map`.
+  // Answers on dedicated AND listen (engine dvars, unlike gf_state). Coalesced under a keyed lane.
+  if (req.method === 'GET' && pathname === '/api/maprotation') {
+    const { host = '127.0.0.1', port = '28960', password = '' } = query;
+    try {
+      const buf  = await sendRconQueuedKeyed(`maprot:${host}:${port}`, host, parseInt(port), password, 'sv_maprotation;sv_maprotationcurrent');
+      const text = parseRconResponse(buf);
+      const full = parseDvarValue(text, 'sv_maprotation');
+      const cur  = parseDvarValue(text, 'sv_maprotationcurrent');
+      return sendJson(res, {
+        ok: full !== null,
+        rotation:    full !== null ? parseMapRotation(full) : [],
+        current:     cur  !== null ? parseMapRotation(cur)  : [],
+        rawRotation: full || '',
+        rawCurrent:  cur  || '',
+      });
+    } catch (err) {
+      return sendJson(res, { ok: false, error: err.message });
+    }
+  }
+
   // ── GET /api/geoip ── on-demand city lookup for ONE player IP (right-click "Locate").
   // Admin-initiated only (never bulk/automatic). Uses ip-api.com free tier (HTTP, no key,
   // 45 req/min). The player IP already shows in the panel; this just annotates it with a city.
@@ -512,11 +607,11 @@ const server = http.createServer(async (req, res) => {
 
   // ── GET /api/dvars ── batch-read dvar values: ?names=a,b,c (read-only, chunked)
   if (req.method === 'GET' && pathname === '/api/dvars') {
-    const { host = '127.0.0.1', port = '28960', password = '', names = '' } = query;
+    const { host = '127.0.0.1', port = '28960', password = '', names = '', fresh = '' } = query;
     const list = names.split(',').map(s => s.trim()).filter(Boolean);
     if (!list.length) return sendJson(res, { ok: false, error: 'No dvar names' }, 400);
     try {
-      const values = await readDvars(host, parseInt(port), password, list);
+      const values = await readDvars(host, parseInt(port), password, list, fresh === '1' || fresh === 'true');
       return sendJson(res, { ok: true, values });
     } catch (err) {
       return sendJson(res, { ok: false, error: err.message });
@@ -564,9 +659,12 @@ const server = http.createServer(async (req, res) => {
     const rawDvars = body.dvars || {};
     // Only accept identifier-shaped dvar names, and strip quotes/newlines from values, so a
     // crafted name/value can't inject extra cfg lines or break out of the quoted value.
+    // 1024-char cap (raised from 256): sv_maprotation is a legit long value (~600 chars for a full
+    // 26-map rotation). Injection safety comes from stripping " \r \n ; — a longer value still can't
+    // break out of the quoted `set x "v"` line or chain a second command — not from the length.
     const dvars = {};
     for (const k of Object.keys(rawDvars)) {
-      if (/^[A-Za-z0-9_]+$/.test(k)) dvars[k] = String(rawDvars[k]).replace(/["\r\n;]/g, '').slice(0, 256);
+      if (/^[A-Za-z0-9_]+$/.test(k)) dvars[k] = String(rawDvars[k]).replace(/["\r\n;]/g, '').slice(0, 1024);
     }
     const cfgPath = CFG_PATH;   // pinned: never honor a caller-supplied path (arbitrary-write guard)
     if (!Object.keys(dvars).length) return sendJson(res, { ok: false, error: 'No valid dvars to save' }, 400);

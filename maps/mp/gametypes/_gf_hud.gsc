@@ -575,7 +575,7 @@ gf_showWeaponHUD( load )
     self setClientDvar( "ui_gf_lo_alpha", 1 );
     self setClientDvar( "ui_gf_lo_show", 1 );
 
-    wait 7;
+    wait 8;
 
     // Slide back out + fade (off 0 -> 70, alpha 1 -> 0) over 0.5s. The intro is a snap now, so this
     // is the only loadout animation left.

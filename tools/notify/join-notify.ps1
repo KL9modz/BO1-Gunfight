@@ -111,8 +111,9 @@ function Parse-Status($text) {
       $p = $line -split '\s+'
       if ($p.Length -lt 7 -or $p[0] -notmatch '^\d+$') { continue }
       $isBot = ($p[3] -eq '0' -and $p[6] -eq 'unknown')
+      $pg = $null; if ($p[2] -match '^\d+$') { $pg = [int]$p[2] }   # "CNCT"/"ZMBI" -> null
       [void]$players.Add([pscustomobject]@{
-        num = [int]$p[0]; guid = $p[3]; name = (Strip-Colors $p[4]); addr = $p[6]; bot = $isBot
+        num = [int]$p[0]; guid = $p[3]; name = (Strip-Colors $p[4]); addr = $p[6]; ping = $pg; bot = $isBot
       })
     }
   }
@@ -141,8 +142,58 @@ function Send-Ntfy($cfg, $title, $message, $priority, $tags) {
   catch { Write-Log "[ntfy] error: $($_.Exception.Message)"; return $false }
 }
 
+# ── GeoIP (region from IP) ──────────────────────────────────────────────────────
+# One HTTP GET to ip-api.com per UNIQUE IP, cached for the process lifetime. 2s timeout
+# + graceful '' fallback: a slow/down lookup never delays a push by more than 2s (and
+# never at all for a repeat IP). LAN/loopback/link-local IPs are skipped.
+$script:geoCache = @{}
+function Get-Region($addr) {
+  $ip = ([string]$addr).Split(':')[0]
+  if (-not $ip -or $ip -eq 'unknown') { return '' }
+  if ($ip -match '^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)') { return '' }
+  if ($script:geoCache.ContainsKey($ip)) { return $script:geoCache[$ip] }
+  $region = ''
+  try {
+    $r = Invoke-RestMethod -UseBasicParsing -TimeoutSec 2 -Uri "http://ip-api.com/json/${ip}?fields=status,country,city"
+    if ($r.status -eq 'success') {
+      $parts = @($r.city, $r.country | Where-Object { $_ })
+      $region = ($parts -join ', ')
+    }
+  } catch { $region = '' }
+  $script:geoCache[$ip] = $region
+  return $region
+}
+
+# Human-readable session length. 45 -> "45s", 1830000ms -> "30m 30s", 3720000 -> "1h 2m".
+function Format-Duration($ms) {
+  $s = [int][Math]::Max(0, [Math]::Round($ms / 1000))
+  if ($s -lt 60) { return "${s}s" }
+  $m = [int][Math]::Floor($s / 60)
+  if ($m -lt 60) { $r = $s % 60; if ($r) { return "${m}m ${r}s" } else { return "${m}m" } }
+  $h = [int][Math]::Floor($m / 60); $rm = $m % 60
+  if ($rm) { return "${h}h ${rm}m" } else { return "${h}h" }
+}
+
+# region + ping -> parts appended to a JOIN alert (empty array if we have neither).
+function Get-DetailBits($region, $ping) {
+  $bits = New-Object System.Collections.ArrayList
+  if ($region) { [void]$bits.Add([string]$region) }
+  if ($null -ne $ping) { [void]$bits.Add("${ping}ms") }
+  return $bits
+}
+function Get-JoinDetail($region, $ping) {
+  $bits = Get-DetailBits $region $ping
+  if ($bits.Count -gt 0) { return "`n" + ($bits -join '  |  ') }
+  return ''
+}
+function Get-LogDetail($region, $ping) {
+  $bits = Get-DetailBits $region $ping
+  if ($bits.Count -gt 0) { return "  [" + ($bits -join ', ') + "]" }
+  return ''
+}
+
 # ── Poll tick ─────────────────────────────────────────────────────────────────
-$script:known      = $null   # hashtable key->name; $null until first poll seeds it
+$script:known      = $null   # hashtable key-> {name,joinedAt,ping,addr}; $null until first poll seeds it
 $script:lastOnline = 0
 $script:lastCtx    = ''
 
@@ -161,9 +212,15 @@ function Do-Tick($cfg) {
   }
 
   $st   = Parse-Status $text
+  $now  = Get-Date
   $real = @($st.players | Where-Object { -not $_.bot })
   $cur  = @{}
-  foreach ($p in $real) { $cur[(P-Key $p)] = $p.name }
+  foreach ($p in $real) {
+    $k = P-Key $p
+    $joined = $now
+    if ($null -ne $script:known -and $script:known.ContainsKey($k)) { $joined = $script:known[$k].joinedAt }
+    $cur[$k] = [pscustomobject]@{ name = $p.name; joinedAt = $joined; ping = $p.ping; addr = $p.addr }
+  }
 
   $ctx = ''
   if ($st.map) { $ctx = $st.map; if ($st.gametype) { $ctx = "$($st.map) / $($st.gametype)" } }
@@ -185,28 +242,33 @@ function Do-Tick($cfg) {
   foreach ($p in $real) {
     $k = P-Key $p
     if (-not $script:known.ContainsKey($k)) {
+      $region = ''
+      if ($cfg.geoLookup) { $region = Get-Region $p.addr }   # <=2s, cached per IP
+      $detail = Get-JoinDetail $region $p.ping
+      $logd   = Get-LogDetail  $region $p.ping
       if ($wasEmpty -and -not $firstDone) {
         $firstDone = $true
-        Write-Log "FIRST $($p.name)  (server now active, $($cur.Count) online)"
+        Write-Log "FIRST $($p.name)  (server now active, $($cur.Count) online)$logd"
         if ($cfg.notifyFirstJoin) {
           [void](Send-Ntfy $cfg "$($cfg.serverName) - server now active" `
-            "$($p.name) joined an empty server$ctxSuffix" 'high' 'green_circle,bust_in_silhouette')
+            "$($p.name) joined an empty server$ctxSuffix$detail" 'high' 'green_circle,bust_in_silhouette')
           continue
         }
       }
-      Write-Log "JOIN  $($p.name)  ($($cur.Count) online)"
+      Write-Log "JOIN  $($p.name)  ($($cur.Count) online)$logd"
       [void](Send-Ntfy $cfg "$($cfg.serverName) - player joined" `
-        "$($p.name) joined  ($($cur.Count) online)$ctxSuffix" 'default' 'bust_in_silhouette')
+        "$($p.name) joined  ($($cur.Count) online)$ctxSuffix$detail" 'default' 'bust_in_silhouette')
     }
   }
 
   if ($cfg.notifyLeaves) {
     foreach ($k in @($script:known.Keys)) {
       if (-not $cur.ContainsKey($k)) {
-        $nm = $script:known[$k]
-        Write-Log "LEAVE $nm  ($($cur.Count) online)"
+        $info = $script:known[$k]
+        $sess = Format-Duration (($now - $info.joinedAt).TotalMilliseconds)
+        Write-Log "LEAVE $($info.name)  ($($cur.Count) online, played $sess)"
         [void](Send-Ntfy $cfg "$($cfg.serverName) - player left" `
-          "$nm left  ($($cur.Count) online)" 'low' 'wave')
+          "$($info.name) left after $sess  ($($cur.Count) online)" 'low' 'wave')
       }
     }
   }
@@ -242,6 +304,7 @@ $cfg = [pscustomobject]@{
   heartbeatMins   = [int](Get-CfgVal $fileCfg 'GF_HEARTBEAT_MINS' 'heartbeatMins' 0)
   serverName      = Get-CfgVal $fileCfg 'GF_SERVER_NAME' 'serverName' 'Gunfight'
   quiet           = As-Bool (Get-CfgVal $fileCfg 'GF_QUIET_START' 'quietStart' $false) $false
+  geoLookup       = As-Bool (Get-CfgVal $fileCfg 'GF_GEO_LOOKUP' 'geoLookup' $true) $true
 }
 $pw = Get-CfgVal $fileCfg 'GF_RCON_PW' 'password' ''
 if (-not $pw) { $pw = Read-RconPw }
@@ -254,6 +317,7 @@ Write-Log "  rcon pw    $(if ($pwLen) { "($pwLen chars)" } else { 'MISSING' })"
 Write-Log "  ntfy       $($cfg.ntfyServer)/$(if ($cfg.ntfyTopic) { $cfg.ntfyTopic } else { '(NO TOPIC SET)' })"
 Write-Log "  poll       $($cfg.pollMs)ms   leaves=$($cfg.notifyLeaves)  firstJoin=$($cfg.notifyFirstJoin)  empty=$($cfg.notifyEmpty)"
 Write-Log "  heartbeat  $(if ($cfg.heartbeatMins -gt 0) { "$($cfg.heartbeatMins) min" } else { 'off' })"
+Write-Log "  geo        $(if ($cfg.geoLookup) { 'on (ip-api.com)' } else { 'off' })"
 
 if (-not $cfg.ntfyTopic) { Write-Host "`nFATAL: no ntfy topic set. Put ntfyTopic in config.json or env GF_NTFY_TOPIC.`n"; exit 1 }
 if (-not $cfg.password)  { Write-Host "`nFATAL: no rcon_password (not in config/env, not found in dedicated.cfg).`n"; exit 1 }

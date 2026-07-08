@@ -67,6 +67,7 @@ function loadConfig() {
     heartbeatMins:   parseInt(pick('GF_HEARTBEAT_MINS', 'heartbeatMins', 0), 10),
     serverName:      pick('GF_SERVER_NAME', 'serverName', 'Gunfight'),
     quiet:           asBool(pick('GF_QUIET_START', 'quietStart', false), false),
+    geoLookup:       asBool(pick('GF_GEO_LOOKUP', 'geoLookup', true), true),
   };
 }
 
@@ -118,7 +119,8 @@ function parseStatus(text) {
       const p = line.split(/\s+/);
       if (p.length < 7 || !/^\d+$/.test(p[0])) continue;
       const isBot = p[3] === '0' && p[6] === 'unknown';
-      out.players.push({ num: parseInt(p[0], 10), guid: p[3], name: stripColors(p[4]), addr: p[6], bot: isBot });
+      const ping  = /^\d+$/.test(p[2]) ? parseInt(p[2], 10) : null;   // "CNCT"/"ZMBI" → null
+      out.players.push({ num: parseInt(p[0], 10), guid: p[3], name: stripColors(p[4]), addr: p[6], ping: ping, bot: isBot });
     }
   }
   return out;
@@ -153,6 +155,58 @@ function sendNtfy(cfg, { title, message, priority, tags }) {
   });
 }
 
+// ─── GeoIP (region from IP) ───────────────────────────────────────────────────
+// One HTTP GET to ip-api.com per UNIQUE IP, cached for the process lifetime. A 2s
+// timeout + graceful '' fallback means a slow/down lookup never delays a push by more
+// than 2s (and never at all for a repeat IP). LAN/loopback/link-local IPs are skipped.
+const geoCache = new Map();   // ip -> region string ('' = looked up, nothing useful)
+function geoLookup(addr) {
+  return new Promise((resolve) => {
+    const ip = String(addr || '').split(':')[0];
+    if (!ip || ip === 'unknown' ||
+        /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip)) {
+      return resolve('');
+    }
+    if (geoCache.has(ip)) return resolve(geoCache.get(ip));
+    let settled = false;
+    const finish = (val) => { if (settled) return; settled = true; geoCache.set(ip, val); resolve(val); };
+    let req;
+    try {
+      req = http.get('http://ip-api.com/json/' + ip + '?fields=status,country,city', (res) => {
+        let data = '';
+        res.on('data', (c) => { data += c; });
+        res.on('end', () => {
+          try {
+            const j = JSON.parse(data);
+            if (j && j.status === 'success') finish([j.city, j.country].filter(Boolean).join(', '));
+            else finish('');
+          } catch (_) { finish(''); }
+        });
+      });
+    } catch (_) { return finish(''); }
+    req.on('error', () => finish(''));
+    req.setTimeout(2000, () => { try { req.destroy(); } catch (_) {} finish(''); });
+  });
+}
+
+// Human-readable session length. 45 → "45s", 1830000ms → "30m 30s", 3720000 → "1h 2m".
+function fmtDuration(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return (s % 60) ? m + 'm ' + (s % 60) + 's' : m + 'm';
+  const h = Math.floor(m / 60);
+  return (m % 60) ? h + 'h ' + (m % 60) + 'm' : h + 'h';
+}
+
+// region + ping → the parts appended to a JOIN alert (empty if we have neither).
+function detailBits(region, ping) {
+  const bits = [];
+  if (region) bits.push(region);
+  if (ping != null && !isNaN(ping)) bits.push(ping + 'ms');
+  return bits;
+}
+
 // ─── Poll loop ──────────────────────────────────────────────────────────────
 function log(msg) {
   const t = new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -160,7 +214,7 @@ function log(msg) {
 }
 function pKey(p) { return (p.guid && p.guid !== '0') ? 'g:' + p.guid : 'n:' + p.name; }
 
-let known = null;      // Map(key -> name); null until first successful poll seeds it
+let known = null;      // Map(key -> {name, joinedAt, ping, addr}); null until first poll seeds it
 let lastOnline = 0;    // last human count (for heartbeat)
 let lastCtx = '';      // last "map / gametype" string (for message context)
 
@@ -172,8 +226,15 @@ async function tick(cfg) {
     log('status poll failed (' + e.message + ') — keeping last baseline');
     return;   // don't reset baseline on a transient miss → no false joins on recovery
   }
+  const now  = Date.now();
   const real = st.players.filter(p => !p.bot);
-  const cur = new Map(real.map(p => [pKey(p), p.name]));
+  // Carry each staying player's joinedAt forward; stamp newly-seen players with `now`.
+  const cur = new Map();
+  for (const p of real) {
+    const k = pKey(p);
+    const prev = known && known.get(k);
+    cur.set(k, { name: p.name, joinedAt: prev ? prev.joinedAt : now, ping: p.ping, addr: p.addr });
+  }
   const ctx = st.map ? (st.map + (st.gametype ? ' / ' + st.gametype : '')) : '';
   const ctxSuffix = ctx ? '  —  ' + ctx : '';
   lastOnline = cur.size;
@@ -190,33 +251,39 @@ async function tick(cfg) {
   const departed  = [...known].filter(([k]) => !cur.has(k));
 
   for (let i = 0; i < newJoins.length; i++) {
-    const nm = newJoins[i][1];
+    const info = newJoins[i][1];
+    const nm = info.name;
+    const region = cfg.geoLookup ? await geoLookup(info.addr) : '';   // ≤2s, cached per IP
+    const bits = detailBits(region, info.ping);
+    const detail = bits.length ? '\n' + bits.join('  |  ') : '';
+    const logd   = bits.length ? '  [' + bits.join(', ') + ']' : '';
     const first = wasEmpty && i === 0;      // first human onto a previously empty server
     if (first) {
-      log('FIRST ' + nm + '  (server now active, ' + cur.size + ' online)');
+      log('FIRST ' + nm + '  (server now active, ' + cur.size + ' online)' + logd);
       if (cfg.notifyFirstJoin) {
         await sendNtfy(cfg, {
           title: cfg.serverName + ' — server now active',
-          message: nm + ' joined an empty server' + ctxSuffix,
+          message: nm + ' joined an empty server' + ctxSuffix + detail,
           priority: 'high', tags: 'green_circle,bust_in_silhouette',
         });
         continue;   // this player already announced by the "active" alert
       }
     }
-    log('JOIN  ' + nm + '  (' + cur.size + ' online)');
+    log('JOIN  ' + nm + '  (' + cur.size + ' online)' + logd);
     await sendNtfy(cfg, {
       title: cfg.serverName + ' — player joined',
-      message: nm + ' joined  (' + cur.size + ' online)' + ctxSuffix,
+      message: nm + ' joined  (' + cur.size + ' online)' + ctxSuffix + detail,
       priority: 'default', tags: 'bust_in_silhouette',
     });
   }
 
   if (cfg.notifyLeaves) {
-    for (const [, nm] of departed) {
-      log('LEAVE ' + nm + '  (' + cur.size + ' online)');
+    for (const [, info] of departed) {
+      const sess = fmtDuration(now - info.joinedAt);
+      log('LEAVE ' + info.name + '  (' + cur.size + ' online, played ' + sess + ')');
       await sendNtfy(cfg, {
         title: cfg.serverName + ' — player left',
-        message: nm + ' left  (' + cur.size + ' online)',
+        message: info.name + ' left after ' + sess + '  (' + cur.size + ' online)',
         priority: 'low', tags: 'wave',
       });
     }
@@ -243,6 +310,7 @@ async function main() {
   log(`  ntfy       ${cfg.ntfyServer}/${cfg.ntfyTopic || '(NO TOPIC SET)'}`);
   log(`  poll       ${cfg.pollMs}ms   leaves=${cfg.notifyLeaves}  firstJoin=${cfg.notifyFirstJoin}  empty=${cfg.notifyEmpty}`);
   log(`  heartbeat  ${cfg.heartbeatMins > 0 ? cfg.heartbeatMins + ' min' : 'off'}`);
+  log(`  geo        ${cfg.geoLookup ? 'on (ip-api.com)' : 'off'}`);
 
   if (!cfg.ntfyTopic) {
     console.error('\nFATAL: no ntfy topic set. Put your topic in config.json (ntfyTopic) or env GF_NTFY_TOPIC.\n');

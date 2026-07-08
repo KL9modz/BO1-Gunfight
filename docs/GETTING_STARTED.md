@@ -46,7 +46,7 @@ Black Ops is old, but with Plutonium it can be optimized for modern systems. Her
 | Aspect ratio | **Auto** |
 | Screen refresh rate | **Highest** (e.g. 144 / 240) |
 | No border (borderless fullscreen window) | **Yes** |
-| Sync every frame (V-Sync) | **No** (unless you don't have G-Sync) |
+| Sync every frame (V-Sync) | **Yes** |
 | Anti-Aliasing | **8x** |
 | Anisotropic filtering | **16 (max)** |
 | Texture filtering | **Trilinear** |

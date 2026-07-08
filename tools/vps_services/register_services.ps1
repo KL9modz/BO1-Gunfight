@@ -31,7 +31,9 @@ $toolsRoot = Split-Path -Parent $PSScriptRoot   # ...\mp_gunfight\tools
 $services = @(
     @{ Name = 'GF-ConnLogger'
        Script = Join-Path $toolsRoot 'conn_logger\conn_logger.ps1'
-       Args = '-IntervalSeconds 15'
+       # Reads status_service's admin.json (no rcon of its own), so it matches that
+       # service's 5s cadence instead of the old 15s direct-rcon poll.
+       Args = '-IntervalSeconds 5'
        RequiresConfig = '' }
     @{ Name = 'GF-JoinNotify'
        Script = Join-Path $toolsRoot 'notify\join-notify.ps1'

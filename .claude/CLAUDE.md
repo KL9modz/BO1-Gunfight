@@ -1,20 +1,26 @@
 ﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 ---
 ### TODO
+Fix sensitivity
+fast retsart clears the bots
 I THINK THERE IS A BOT BUG WHERE AS BOTS CONNECT 1 BY 1, THEY SOMETIMES SUICIDE. my guess is they do this to balence teams becuase at that exact second maybe the teams are inbalanced? 
 mod changes peoples settings
 unknown cmd cd
 Friendly Rire is in 2 rcon spots and turns on next round
+manage teams
+widen the spawns
+show feature we support every map
+add general visual improvemts to the feature list 
+fable website design
+- edit gamemode to Gunfight not GF?
+- server advertisements 
+- Adjust spawns & flags
+- ship weapon files: ads fov/move speed
+- add credit to Plutonium/bots, etc
+BO1 server role
+IW5 MW3 face-off gunfight - mwgunfight.com
 
-more ammo
-less double akimbo
-lmg prime, smg sec
-less camera spikes
-tomohawks on sniper classes 
-edit that one class with exploves to be LMK not Sniper
-put RPG on a sniper class
 
-increase loadout hud time
 fast restart sometimes makes the prematch timer look like its running at 1fps
 the prematch countdown is in slow motion
   DIAGNOSED 2026-07-04 (VPS): NOT the sv_fps-30 skew — verified NO `sv_fps` is set
@@ -44,8 +50,6 @@ the prematch countdown is in slow motion
   then jumps) instead of slow-mo, AND kills the sv_fps-30 fast-countdown deal-breaker if
   30-fps perf is ever wanted. Interim: shave box-side contention during restart. Verify
   in-game on the LOCAL dedi with `set sv_fps 10` to force-reproduce the dilation.
-the map que changes early 
-the auto task to launch server makes it so theres no server command window
   DONE 2026-07-04: went fully MANUAL. The SYSTEM/boot GF-GameServer task ran the server in
   Session 0 (invisible desktop) - that's why there was no console. Disabled that task
   (reversible) and added a Desktop shortcut "Gunfight Launch" -> C:\gameserver\T5\gf_launch.bat:
@@ -53,22 +57,6 @@ the auto task to launch server makes it so theres no server command window
   game server as a VISIBLE console in that window. No auto-logon / no stored credential (user's
   choice); server stays down after a reboot until you log in and double-click the icon. Revert
   with `schtasks /change /tn GF-GameServer /enable`. See memory [[vps-server-provisioned]].
-manage teams
-widen the spawns
-support 6v6
-auto run notify
-show feature we support every map
-add general visual improvemts to the feature list 
-fable website design
-- edit gamemode to Gunfight not GF?
-- server advertisements 
-- Refine loadouts
-- Adjust spawns & flags
-- ship weapon files: ads fov/move speed
-- custom camos
-- add credit to Plutonium/bots, etc
-BO1 server role
-IW5 MW3 face-off gunfight - mwgunfight.com
 - Mid-round bot backfill (DESIGNED 2026-07-04, ~25 lines, dev/VPS-only — not built): let a bot
   added after round start spawn INTO the live round instead of waiting for next round. Feasible
   because blocked clients never retry (stock `spawnClient` one-shots into spectate on a closed
@@ -418,7 +406,17 @@ persists through `map_restart`.
 (only head/helmet hits deal damage). The bridge is dev-only (stripped from public builds), so this is off in release.
 
 **Dev/debug dvars** (callers are strip-wrapped, so only active on `main`): `gf_debug_spawns`,
-`gf_debug_hud_pool`, `gf_debug_elem_probe`.
+`gf_debug_hud_pool`, `gf_debug_elem_probe`. Loadout test aids (`_gf_loadouts.gsc`): `gf_force_loadout`
+(lock a specific pool index every spawn, `-1`/unset = off — inspect any 1 of the 54 without waiting
+for the rotation) and `gf_force_camo` (force a camo index 0-15 on BOTH guns every spawn, `-1`/unset =
+off — e.g. `set gf_force_camo 15` to check gold-camo visibility per weapon). Both read via `getDvar`,
+so a listen host sets them straight from the console.
+
+**Loadout camo is now per-slot.** `gf_load()` takes a 7th arg `camoSec` (secondary-gun camo, `0-15`
+or `-1` random), independent of the primary `camo`. Old 6-arg calls still work (secondary follows the
+primary). Visibility caveat unchanged: only real-base secondaries (crossbow; maybe pistols w/ solid
+colors/Gold) actually render camo. `ks23_mp` is a dud (finger-gun fallback) — dropped from the editor;
+`hs10_mp` is the real single shotgun. See [[invalid-weapon-finger-gun-fallback]].
 
 **RCON bridge command protocol (private feedback + sent/received acks, added 2026-07-03):** the panel
 sends every bridge command as `set gf_cmd <seq>:<cmd>` (monotonic seq, persisted in the panel's
@@ -454,6 +452,18 @@ stall). All three services are now **panel-first**: they read via the panel's `/
 tick when both are queued) and fall back to direct rcon only when the panel isn't running. RULE:
 never add another direct rcon poller on the box — go through the panel API on 127.0.0.1:3000 so
 exactly one process owns the pacing. Deployed live via scp 2026-07-03 (panel + 3 services restarted).
+**UPDATE 2026-07-05 — conn_logger no longer rcon-polls at all.** It now diffs `status_service`'s
+`admin.json` FILE (the auth-gated admin snapshot, which carries per-player IP + GUID), so it does
+zero rcon of its own and inherits the 5s cadence (was a 15s direct poll). status_service is the
+single box-side rcon reader for both the snapshot AND the connect log. `admin.json` is written
+atomically (temp + Move), reads are never torn; a missing/stale (>30s)/offline snapshot makes
+conn_logger skip that tick (never a mass-LEFT). Both status_service (`$adminList`) and conn_logger
+also require a real `ip:port` (or listen `local`/`loopback`) per player, so bots the panel's
+`guid==0 && addr=='unknown'` check misses (and still-connecting clients whose address column holds a
+lastmsg value) no longer inflate the human count or spam the log. The admin page (`/admin/admin.html`)
+gained a searchable multi-day **Connection history** card, fed by `admin_history.json` (built by
+status_service from the `players_*.log` day-files every 60s, last 60 days, capped 5000 events, same
+`.secured` gate + guid now included).
 
 **Dropped-packet self-heal + forced team move (added 2026-07-03).** Plutonium silently drops rcon
 packets sent faster than ~1/0.7s, so a click could vanish with no effect. Two-part fix: (1) the panel

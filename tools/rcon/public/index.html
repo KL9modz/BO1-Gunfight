@@ -273,14 +273,29 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
 .csel-item:hover{background:var(--bd);color:var(--ac)}
 .csel-item.active{color:var(--ac)}
 
-/* Queue */
-.queue-list{display:flex;flex-direction:column;gap:4px;min-height:32px}
-.qi{display:flex;align-items:center;gap:8px;background:var(--sf2);border:1px solid var(--bd);border-radius:4px;padding:5px 8px;font-size:12px}
-.qi-map{flex:1;font-weight:600}
-.qi-gt{color:var(--dm);font-size:11px}
-.qi-rm{background:none;border:none;color:var(--ng);font-size:14px;padding:0 2px;cursor:pointer}
-.qi-rm:hover{color:#ff6666}
-.queue-empty{color:var(--dm);font-style:italic;font-size:12px;padding:4px}
+/* Rotation editor */
+.rot-list{display:flex;flex-direction:column;gap:4px;min-height:32px;max-height:340px;overflow-y:auto}
+.ri{display:flex;align-items:center;gap:8px;background:var(--sf2);border:1px solid var(--bd);border-radius:4px;padding:5px 8px;font-size:12px}
+.ri-idx{color:var(--dm);font-size:10px;width:20px;flex-shrink:0;text-align:right}
+.ri-map{flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ri-id{color:var(--dm);font-size:10px;font-family:monospace;font-weight:400;margin-left:5px}
+.ri-gt{color:var(--dm);font-size:11px;flex-shrink:0}
+.ri-badge{font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;flex-shrink:0;letter-spacing:.04em}
+.ri.cur{border-color:var(--ok);background:rgba(46,198,83,.08)}
+.ri.cur .ri-badge{background:rgba(46,198,83,.18);color:var(--ok);border:1px solid rgba(46,198,83,.35)}
+.ri.next{border-color:rgba(0,180,255,.5)}
+.ri.next .ri-badge{background:rgba(0,180,255,.12);color:var(--ac);border:1px solid rgba(0,180,255,.3)}
+.ri-btns{display:flex;gap:2px;align-items:center;flex-shrink:0}
+.ri-btns button{background:none;border:1px solid transparent;color:var(--dm);font-size:12px;padding:1px 5px;cursor:pointer;border-radius:3px;line-height:1.35}
+.ri-btns button:hover{border-color:var(--bd);color:var(--tx);background:var(--bg)}
+.ri-btns button.ri-nx:hover{color:var(--ac);border-color:var(--ac)}
+.ri-btns button.ri-now:hover{color:var(--ok);border-color:var(--ok)}
+.ri-btns button.ri-rm:hover{color:#ff6666;border-color:var(--ng)}
+.rot-empty{color:var(--dm);font-style:italic;font-size:12px;padding:4px}
+.rot-note{color:var(--dm);font-size:10px;margin-top:7px;line-height:1.6}
+/* current map highlight on the palette grid */
+.mt.mt-cur{border-color:var(--ok);background:rgba(46,198,83,.1)}
+.mt-live{display:inline-block;font-size:9px;font-weight:700;padding:0 4px;border-radius:3px;background:rgba(46,198,83,.2);color:var(--ok);border:1px solid rgba(46,198,83,.35);vertical-align:middle}
 
 /* Mods tab */
 .mod-section{margin-bottom:4px}
@@ -348,7 +363,7 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
   </div>
   <span id="badge" class="bdg off">● Disconnected</span>
   <span id="modeBadge" class="bdg off" style="display:none" data-tip="Detected from the server's status output (loopback = listen).&#10;DEDICATED: live scoreboard + Kill Server available.&#10;LISTEN: Noclip (host) available; scoreboard has no live data.">—</span>
-  <button id="hdrRead" class="b-gh b-sm" style="display:none" data-tip="Re-reads every live dvar (SERVER + MATCH tabs) from the server and fills the fields.&#10;Runs automatically on connect. Takes a few seconds — the server rate-limits rcon, so reads are paced.&#10;Fields whose read misses keep their default and show a NOT READ flag." onclick="readAllFromServer()">↻ Read</button>
+  <button id="hdrRead" class="b-gh b-sm" style="display:none" data-tip="Re-reads every live dvar (SERVER + MATCH tabs) from the server and fills the fields.&#10;Runs automatically on connect. Takes a few seconds — the server rate-limits rcon, so reads are paced.&#10;Fields whose read misses keep their default and show a NOT READ flag." onclick="readAllFromServer(true)">↻ Read</button>
   <button id="hdrKill" class="b-ng b-sm ded-only" style="display:none" data-tip="killserver (RCON console command)&#10;Shuts down the dedicated server process immediately.&#10;(dedicated only — greyed on a listen server)" onclick="cmd('killserver')">Kill Server</button>
   <button class="b-gh b-sm" onclick="copyExecAutoexec()" data-tip="Copies 'exec autoexec' to the clipboard.&#10;Paste it into the IN-GAME (client) console to re-apply your MOUSE2 ADS bind + view-bob after a restart.&#10;This is a CLIENT command — it is NOT sent over RCON.">Copy exec autoexec</button>
   <div id="syncBar" class="syncbar"></div>
@@ -758,16 +773,18 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
   </div>
 
   <div class="block">
-    <div class="btitle">QUEUE <span id="qAutoLbl" style="font-weight:400;font-size:10px"></span></div>
-    <div id="qList" class="queue-list"><div class="queue-empty">Queue is empty — click a map below to add</div></div>
+    <div class="btitle">MAP ROTATION <span id="rotStatus" style="font-weight:400;font-size:10px;color:var(--dm)"></span></div>
+    <div id="rotList" class="rot-list"><div class="rot-empty">Connect to load the live server rotation…</div></div>
     <div class="row" style="margin-top:8px">
-      <button class="b-ac ctrl" data-tip="set g_gametype + map <id> (RCON commands)&#10;Sends gametype then map load for the first entry in the queue" onclick="qSendNext()">▶ Send Next</button>
-      <button class="b-gh ctrl" data-tip="Clears the local map queue (no server command sent)&#10;Removes all pending maps from the queue list" onclick="qClear()">Clear Queue</button>
-      <span class="tlbl" style="margin-left:auto;margin-right:6px;font-size:11px">Auto-advance</span>
-      <label class="tog" title="Auto-send on map change">
-        <input type="checkbox" id="cbAuto" onchange="toggleAutoQ()">
-        <span class="tog-t"></span><span class="tog-th"></span>
-      </label>
+      <button class="b-ac ctrl" data-tip="set sv_maprotation + sv_maprotationcurrent (RCON)&#10;Writes the edited order to the LIVE server rotation. Takes effect from the next map — no restart, no wrong-map flash (the engine's own rotation loads it). The current map keeps running. Does NOT survive a server restart unless you also Save to cfg." onclick="rotSaveOrder()">&#128190; Save Order (live)</button>
+      <button class="b-gh ctrl" data-tip="Save Order live, then also write sv_maprotation into dedicated.cfg so it survives a server restart." onclick="rotSaveOrderCfg()">Save to cfg</button>
+      <button class="b-gh ctrl" data-tip="Re-read sv_maprotation from the server (discards unsaved edits)." onclick="loadRotation(1)">&#8635; Reload</button>
+      <span class="tlbl" id="rotDirty" style="margin-left:auto;font-size:11px;color:var(--wn);display:none">&#9679; unsaved edits</span>
+    </div>
+    <div class="rot-note">
+      <b style="color:var(--ok)">&#9679; LIVE</b> = current map &nbsp;·&nbsp; <b style="color:var(--ac)">NEXT</b> = loads on match end &nbsp;·&nbsp;
+      <b>&#9197;</b> set as next (no flash) &nbsp; <b>&#9654;</b> load now &nbsp; <b>&#8593;&#8595;</b> reorder &nbsp; <b>&#10005;</b> remove.
+      Click a map below to add it to the rotation.
     </div>
   </div>
 
@@ -970,7 +987,11 @@ async function saveBlockToCfg(btn){
 }
 
 // ─── State ───────────────────────────────────────────────────────────────────
-let live=false, paused=false, mapQueue=[], autoQ=false, hist=[], histI=-1, lastMap=null;
+let live=false, paused=false, hist=[], histI=-1, lastMap=null;
+// Map-rotation editor state. `rotation` is the working copy of sv_maprotation ([{gametype,map}]);
+// `rotCurrentHead` is the map id at the head of sv_maprotationcurrent (what the engine loads next);
+// `rotLoadedSig` snapshots the server-loaded order so we can flag unsaved edits.
+let rotation=[], rotCurrentHead='', rotLoadedSig='';
 
 // ─── Persistence (server profiles) ────────────────────────────────────────────
 // Each profile remembers its host/port in localStorage; the rcon_password lives in the
@@ -986,8 +1007,8 @@ let live=false, paused=false, mapQueue=[], autoQ=false, hist=[], histI=-1, lastM
 //           same machine — not needed here.)
 let _profiles=[], _activeProfile=0, _secrets={};
 function defaultProfiles(){return[
-  {name:'VPS',   host:'94.72.121.4',port:'28960'},   // remote VPS (public IP), from the laptop
-  {name:'Local', host:'127.0.0.1',  port:'28960'},   // this machine's own server (loopback) — auto-detects mode
+  {name:'Local', host:'127.0.0.1',  port:'28960'},   // DEFAULT: this machine's own server (loopback) — laptop listen server OR VPS dedicated server, whichever box the panel runs on
+  {name:'VPS',   host:'94.72.121.4',port:'28960'},   // optional: drive the remote VPS directly over public rcon (from the laptop, no tunnel)
 ];}
 function loadProfiles(){
   try{
@@ -1110,8 +1131,10 @@ async function fetchTick(){
   const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
   return (await fetch(API+'/tick?'+p)).json();
 }
-async function fetchDvars(names){
-  const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password,names:names.join(',')});
+async function fetchDvars(names,fresh){
+  const c=conn();const q={host:c.host,port:c.port,password:c.password,names:names.join(',')};
+  if(fresh)q.fresh='1';   // re-probe: server clears its cached "unregistered" set for this profile
+  const p=new URLSearchParams(q);
   return (await fetch(API+'/dvars?'+p)).json();
 }
 
@@ -1122,7 +1145,7 @@ async function doConn(){
   const btn=g('cBtn');btn.disabled=true;btn.textContent='…';
   try{
     const d=await fetchStatus();
-    if(d.ok){setLive(true);tick(d);actLog('Connected to '+((_profiles[_activeProfile]||{}).name||conn().host)+' ('+conn().host+')','ok');reqNotifyPerm();pushAdminGuid();seedCmdSeq();readServerDvars();readMatchDvars();}
+    if(d.ok){setLive(true);tick(d);actLog('Connected to '+((_profiles[_activeProfile]||{}).name||conn().host)+' ('+conn().host+')','ok');reqNotifyPerm();pushAdminGuid();seedCmdSeq();readServerDvars();readMatchDvars();loadRotation();}
     else{toast('Failed: '+d.error,'err');setLive(false);}
   }catch(e){toast('Error: '+e.message,'err');setLive(false);}
   btn.disabled=false;
@@ -1163,7 +1186,10 @@ function updateSyncUI(){
   const bdg=g('badge'); if(bdg&&live) bdg.textContent=on?'● Syncing…':'● Connected';
 }
 // Header ↻ Read: refresh every live dvar block (SERVER + MATCH), same as on connect.
-function readAllFromServer(){ readServerDvars(); readMatchDvars(); }
+// fresh=true (the ↻ Read button) tells the server to CLEAR its cached "unregistered dvar" set for
+// this profile and re-probe every name — so a dvar that became registered since connect is picked
+// back up. Connect (doConn) calls the no-arg readServerDvars/readMatchDvars → cached (quiet).
+function readAllFromServer(fresh){ readServerDvars(fresh); readMatchDvars(fresh); }
 function disconnect(){
   setLive(false);
   _roster={};_rosterSig='';_lastPlayers=[];_grouped=false;
@@ -1188,9 +1214,15 @@ async function pollTick(gen){
     const d=await fetchTick();
     if(gen!==_pollGen||!live)return;
     if(d.ok){
-      // Auto-advance map queue
-      if(autoQ && lastMap && lastMap!==d.map && mapQueue.length>0) qSendNext();
-      lastMap=d.map;
+      // Map changed → the engine advanced its own rotation. Refresh the "next" badge from the live
+      // sv_maprotationcurrent, but only while the Maps tab is open (event-driven, not a poll). The
+      // grid/list LIVE highlight follows d.map every tick via tick()→markCurrentMap(); no reactive
+      // `map` override here — the rotation editor drives the engine's rotation directly instead.
+      if(lastMap!==d.map){
+        const first=(lastMap===null); lastMap=d.map;
+        if(rotation.length) renderRotation();
+        if(!first && live && g('p-maps').classList.contains('active')) loadRotation();
+      }
       tick(d);
       if(d.state){
         const s=d.state;
@@ -1220,6 +1252,7 @@ let _listenServer=false;
 function tick(d){
   _listenServer=!!d.listenServer;
   g('sMap').textContent=d.map||'—';
+  markCurrentMap(d.map);
   g('sGt').textContent=d.gametype||(d.listenServer?'Listen Server':'—');
   g('sPl').textContent=d.players.length+' online';
   buildPlayers(d.players);
@@ -1422,6 +1455,7 @@ function tab(n){
   g('p-'+n).classList.add('active');
   const i=TABS.indexOf(n);
   document.querySelectorAll('.tab')[i].classList.add('active');
+  if(n==='maps' && live) loadRotation();
 }
 
 // ─── Global settings search ───────────────────────────────────────────────────
@@ -1740,24 +1774,28 @@ async function botDiff(d){
 }
 
 // ─── Maps ────────────────────────────────────────────────────────────────────
+const MAP_BY_ID={}; MAPS.forEach(m=>MAP_BY_ID[m.id]=m);
+function mapName(id){return (MAP_BY_ID[id]&&MAP_BY_ID[id].n)||id;}
 function buildMapGrid(){
   g('mgrid').innerHTML=MAPS.map(m=>{
     const bs=(m.gf?'<span class="mb gfb">GF ★</span>':'')+(m.dlc?'<span class="mb dlcb">DLC</span>':'');
-    return`<div class="mt${m.gf?' mgf':''}" data-gf="${m.gf}" onclick="mapClick('${m.id}','${m.n}')">
-      <div class="mn">${m.n}</div><div class="mi">${m.id}</div><div class="mbs">${bs}</div></div>`;
+    return`<div class="mt${m.gf?' mgf':''}" id="mt-${m.id}" data-gf="${m.gf}" onclick="rotAdd('${m.id}')" title="Add ${m.n} to the rotation">
+      <div class="mn">${m.n} <span class="mt-live" id="mtl-${m.id}" style="display:none">● LIVE</span></div><div class="mi">${m.id}</div><div class="mbs">${bs}</div></div>`;
   }).join('');
 }
 function mf(f){
   g('fall').classList.toggle('active',f==='all');g('fgf').classList.toggle('active',f==='gf');
   document.querySelectorAll('.mt').forEach(t=>t.classList.toggle('hidden',f==='gf'&&t.dataset.gf!=='1'));
 }
-function mapClick(id,name){
-  const gt=_gtVal;
-  // Add to queue (shift+click) or go directly?
-  mapQueue.push({id,name,gt});
-  renderQueue();
-  actLog('Queued: '+name+' ('+gt+')','in');
-  toast('Added '+name+' to queue','info');
+// Highlight the current live map on the palette grid (● LIVE badge + border).
+function markCurrentMap(map){
+  const cur=(map||'').toLowerCase();
+  MAPS.forEach(m=>{
+    const is=m.id.toLowerCase()===cur;
+    const tile=g('mt-'+m.id), lbl=g('mtl-'+m.id);
+    if(tile)tile.classList.toggle('mt-cur',is);
+    if(lbl)lbl.style.display=is?'':'none';
+  });
 }
 // Wager gametypes (codes match the "— Wager —" group in GT_OPTS) need
 // xblive_wagermatch 1 set BEFORE the map loads — the map's main() reads it to pick
@@ -1767,24 +1805,125 @@ function mapClick(id,name){
 const WAGER_GTS=['gun','oic','shrp','hlnd'];
 function wagerFlag(gt){return WAGER_GTS.indexOf(gt)>=0?'1':'0';}
 async function setGt(){await sdvv('xblive_wagermatch',wagerFlag(_gtVal));await sdvv('g_gametype',_gtVal);}
-async function qSendNext(){
-  if(!mapQueue.length){toast('Queue empty','info');return;}
-  const{id,name,gt}=mapQueue.shift();
-  renderQueue();
-  const r=await batchCmds([`set xblive_wagermatch ${wagerFlag(gt)}`,`set g_gametype ${gt}`,`map ${id}`],200);
-  r.ok?(actLog('Map → '+name+' ('+gt+') wager='+wagerFlag(gt),'ok'),toast('Loading '+name+'…','info')):toast('Failed','err');
+
+// ─── Map rotation editor ──────────────────────────────────────────────────────
+// Reads/edits the LIVE server rotation directly (sv_maprotation) instead of the old browser-side
+// queue that reactively fired `map` AFTER the engine had already rotated (the double-load / wrong-
+// map-flash that felt "too late"). Saving writes sv_maprotation + sv_maprotationcurrent so the new
+// order drives the engine's own next rotation — one clean load, no flash.
+async function fetchMapRotation(){
+  const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
+  return (await fetch(API+'/maprotation?'+p)).json();
 }
-function qClear(){mapQueue=[];renderQueue();toast('Queue cleared','info');}
-function toggleAutoQ(){autoQ=g('cbAuto').checked;g('qAutoLbl').textContent=autoQ?'(auto-advance on)':'';}
-function renderQueue(){
-  const el=g('qList');
-  if(!mapQueue.length){el.innerHTML='<div class="queue-empty">Queue is empty — click a map below to add</div>';return;}
-  el.innerHTML=mapQueue.map((q,i)=>
-    `<div class="qi"><span class="qi-map">${i+1}. ${q.name}</span><span class="qi-gt">${q.gt}</span>
-    <button class="qi-rm" onclick="qRemove(${i})">✕</button></div>`
-  ).join('');
+async function loadRotation(force){
+  if(!live)return;
+  let d; try{ d=await fetchMapRotation(); }catch(_){ if(force)toast('Rotation read failed','err'); return; }
+  if(!d||!d.ok){ if(force)toast('Could not read rotation','err'); return; }
+  rotation=(d.rotation||[]).map(e=>({gametype:e.gametype||'gf',map:e.map}));
+  rotCurrentHead=(d.current&&d.current.length)?d.current[0].map:(rotation[0]?rotation[0].map:'');
+  rotLoadedSig=rotSig();
+  renderRotation();
+  if(force)toast('Rotation loaded ('+rotation.length+' maps)','ok');
 }
-function qRemove(i){mapQueue.splice(i,1);renderQueue();}
+function rotSig(){return rotation.map(e=>e.gametype+':'+e.map).join('|');}
+function renderRotation(){
+  const el=g('rotList'); if(!el)return;
+  const cur=(lastMap||'').toLowerCase();
+  const dirty=rotSig()!==rotLoadedSig;
+  g('rotDirty').style.display=dirty?'':'none';
+  if(!rotation.length){
+    el.innerHTML='<div class="rot-empty">Rotation is empty — click a map below to add it, then Save Order.</div>';
+    g('rotStatus').textContent=''; return;
+  }
+  g('rotStatus').textContent=rotation.length+' maps';
+  let nextShown=false;
+  el.innerHTML=rotation.map((e,i)=>{
+    const isCur=e.map.toLowerCase()===cur;
+    const isNext=!isCur && !nextShown && rotCurrentHead!=='' && e.map===rotCurrentHead;
+    if(isNext)nextShown=true;
+    const badge=isCur?'<span class="ri-badge">● LIVE</span>':(isNext?'<span class="ri-badge">NEXT</span>':'');
+    return `<div class="ri${isCur?' cur':''}${isNext?' next':''}">
+      <span class="ri-idx">${i+1}</span>
+      <span class="ri-map">${mapName(e.map)}<span class="ri-id">${e.map}</span></span>
+      <span class="ri-gt">${e.gametype}</span>${badge}
+      <span class="ri-btns">
+        <button class="ri-nx" title="Play next — sets sv_maprotationcurrent so this loads at the next match end (no flash)" onclick="rotPlayNext(${i})">⏭</button>
+        <button class="ri-now" title="Load this map NOW (hard change, resets the current match)" onclick="rotLoadNow(${i})">▶</button>
+        <button title="Move up" onclick="rotMove(${i},-1)">↑</button>
+        <button title="Move down" onclick="rotMove(${i},1)">↓</button>
+        <button class="ri-rm" title="Remove from rotation" onclick="rotRemove(${i})">✕</button>
+      </span></div>`;
+  }).join('');
+}
+function rotAdd(id){
+  const gt=_gtVal||'gf';
+  rotation.push({gametype:gt,map:id});
+  renderRotation();
+  actLog('Added to rotation: '+mapName(id)+' ('+gt+')','in');
+  toast('Added '+mapName(id)+' — Save Order to apply','info');
+}
+function rotMove(i,dir){
+  const j=i+dir; if(j<0||j>=rotation.length)return;
+  const t=rotation[i]; rotation[i]=rotation[j]; rotation[j]=t;
+  renderRotation();
+}
+function rotRemove(i){ rotation.splice(i,1); renderRotation(); }
+// Serialize back to a rotation string. Omit the `gametype` token when an entry has none, so a
+// server whose rotation is the bare `map X map Y` form (no per-entry gametype — relies on
+// g_gametype) round-trips unchanged instead of getting malformed `gametype  map X` (empty gametype).
+// Grid-added entries carry _gtVal (e.g. 'gf') so they emit an explicit `gametype gf map X`.
+function buildRotStr(entries){return entries.map(e=>e.gametype?`gametype ${e.gametype} map ${e.map}`:`map ${e.map}`).join(' ');}
+// The remainder to write to sv_maprotationcurrent so the edited order takes effect from the NEXT
+// map while the current one keeps running: everything AFTER the current map's slot (or the whole
+// list if the current map isn't in the rotation). Empty → engine refills from sv_maprotation.
+function rotRemainderAfterCurrent(){
+  const cur=(lastMap||'').toLowerCase();
+  const idx=rotation.findIndex(e=>e.map.toLowerCase()===cur);
+  return idx>=0?rotation.slice(idx+1):rotation.slice(0);
+}
+async function rotSaveOrder(){
+  if(!rotation.length){toast('Rotation is empty','info');return;}
+  const full=buildRotStr(rotation);
+  const rest=rotRemainderAfterCurrent();
+  // Write the persistent template AND the live remainder. Writing only sv_maprotation would defer
+  // the change a whole cycle (the engine drains sv_maprotationcurrent first); writing the remainder
+  // too makes the new order effective on the very next rotation.
+  const r=await batchCmds([`set sv_maprotation "${full}"`,`set sv_maprotationcurrent "${buildRotStr(rest)}"`],150);
+  if(r&&r.ok){
+    rotLoadedSig=rotSig();
+    rotCurrentHead=rest.length?rest[0].map:(rotation[0]?rotation[0].map:'');
+    renderRotation();
+    actLog('Saved rotation ('+rotation.length+' maps) — live','ok');
+    toast('Rotation saved (live)','ok');
+    return true;
+  }
+  toast('Save failed','err'); return false;
+}
+async function rotSaveOrderCfg(){
+  if(!(await rotSaveOrder()))return;
+  const r=await saveCfgDvars({sv_maprotation:buildRotStr(rotation)});
+  if(r&&r.ok){actLog('Saved rotation to dedicated.cfg ('+r.updated+' updated, '+r.added+' added)','ok');toast('Saved to dedicated.cfg','ok');}
+  else toast('cfg save failed: '+((r&&r.error)||'?'),'err');
+}
+// Set an entry as the next map WITHOUT loading now: sv_maprotationcurrent = the order starting at
+// entry i. The engine loads it at the next match end (exitLevel → map_rotate) — one clean load.
+async function rotPlayNext(i){
+  if(i<0||i>=rotation.length)return;
+  const rest=rotation.slice(i);
+  const r=await rcon(`set sv_maprotationcurrent "${buildRotStr(rest)}"`,true);
+  if(r&&r.ok){
+    rotCurrentHead=rotation[i].map; renderRotation();
+    actLog('Next map → '+mapName(rotation[i].map)+' (loads on match end)','ok');
+    toast('Next: '+mapName(rotation[i].map),'ok');
+  } else toast('Failed','err');
+}
+// Hard-load an entry immediately (resets the current match). Sets the wager flag + gametype first.
+async function rotLoadNow(i){
+  if(i<0||i>=rotation.length)return;
+  const e=rotation[i];
+  const r=await batchCmds([`set xblive_wagermatch ${wagerFlag(e.gametype)}`,`set g_gametype ${e.gametype}`,`map ${e.map}`],200);
+  r.ok?(actLog('Map → '+mapName(e.map)+' ('+e.gametype+') now','ok'),toast('Loading '+mapName(e.map)+'…','info')):toast('Failed','err');
+}
 
 // ─── Mods ────────────────────────────────────────────────────────────────────
 function sv(sid,vid){g(vid).value=g(sid).value;}
@@ -1981,7 +2120,7 @@ buildMapGrid();
 setCtrl(false);
 clogAdd('GF RCON Tool ready. Enter server details and click Connect.','ls');
 renderAct();
-renderQueue();
+renderRotation();
 
 // ─── Server CFG panel ────────────────────────────────────────────────────────
 const SRV_SECTIONS = [
@@ -2079,10 +2218,11 @@ const SRV_SECTIONS = [
   ]},
   { title: 'TEAMS', eff: 'live', per: 'dvar', vars: [
     { n:'scr_team_maxsize',           lbl:'Max Players / Team',      type:'num', def:'6',   tip:'scr_team_maxsize\nCaps players per team; overflow is sent to spectator on spawn (gf_playerSpawnedCB). 0 = no cap. GF ships 6 (up to 6v6). Takes effect on next spawn.' },
-    { n:'scr_teamchange',             lbl:'Allow Team Change',       type:'tog', def:'1',   tip:'scr_teamchange\n1 = players can switch teams freely.' },
     { n:'scr_teambalance',            lbl:'Block Joining Larger Team',type:'tog',def:'0',   tip:'scr_teambalance\nPrevent players from joining the already-larger team. GF default: 0.' },
-    { n:'scr_autobalanceteams',       lbl:'Auto-Balance at Round End',type:'tog',def:'0',   tip:'scr_autobalanceteams\nMove one player to even teams at the end of each round.' },
-    { n:'scr_teamup',                 lbl:'Team-Up Period (s)',      type:'num', def:'10',  tip:'scr_teamup\nSeconds players have to team up before the match starts. 0 = no delay.' },
+    // NOTE: scr_teamchange / scr_autobalanceteams / scr_teamup were removed 2026-07-06 — they are
+    // CoD4/WaW dvar names that do NOT exist in Black Ops (T5). Nothing reads them (setting is a
+    // no-op) and the connect-sweep's bare-name READ of an unregistered dvar prints "Unknown cmd
+    // <name>" to the server console / listen-host screen. Only real T5 team dvars stay here.
     { n:'scr_team_fftype',            lbl:'Friendly Fire',           type:'sel', def:'0',   opts:[['0','Off'],['1','On'],['2','Reflect'],['3','Shared']], tip:'scr_team_fftype\n0=off, 1=on, 2=damage reflected to shooter, 3=damage shared with team.' },
     { n:'scr_team_kickteamkillers',   lbl:'Kick Team Killers',       type:'tog', def:'0',   tip:'scr_team_kickteamkillers\nAuto-kick players who team kill.' },
     { n:'scr_team_teamkillspawndelay',lbl:'TK Spawn Penalty (s)',    type:'num', def:'20',  tip:'scr_team_teamkillspawndelay\nExtra respawn delay imposed on team killers.' },
@@ -2090,10 +2230,14 @@ const SRV_SECTIONS = [
     { n:'scr_teamKillPunishCount',    lbl:'TK Kick Threshold',       type:'num', def:'4',   tip:'scr_teamKillPunishCount\nNumber of team kills before automatic punishment.' },
   ]},
   { title: 'DEBUG', eff: 'live', per: 'dvar', vars: [
-    { n:'gf_debug',               lbl:'Debug Level',          type:'sel', def:'0', opts:[['0','Off'],['1','Basic'],['2','Verbose']], tip:'gf_debug\n0 = off, 1 = basic iPrintLn logging, 2 = verbose (spawns, rounds, HUD).' },
+    // gf_debug (Debug Level) removed 2026-07-06 — the mod reads it nowhere (dead control; its
+    // bare-name read just printed "Unknown cmd gf_debug"). The gf_debug_* toggles below ARE read
+    // (getDvarInt) and are now seeded to 0 by the mod so they read cleanly.
     { n:'gf_debug_spawns',        lbl:'Spawn Debug',          type:'tog', def:'0', tip:'gf_debug_spawns\nDraw spawn point entities + team assignments each round.' },
     { n:'gf_debug_hud_pool',      lbl:'HUD Pool Debug',       type:'tog', def:'0', tip:'gf_debug_hud_pool\nLog HUD element pool allocation counts each round.' },
     { n:'gf_debug_elem_probe',    lbl:'Elem Probe',           type:'tog', def:'0', tip:'gf_debug_elem_probe\nProbe available client HUD element slots; prints count.' },
+    { n:'gf_force_camo',          lbl:'Force Camo (test)',    type:'sel', def:'-1', opts:[['-1','Off'],['0','Default'],['1','Dusty'],['2','Ice'],['3','Red'],['4','OD Green'],['5','Desert Nevada'],['6','Desert Sahara'],['7','Jungle ERDL'],['8','Jungle Tiger'],['9','Urban German'],['10','Urban Warsaw'],['11','Winter Siberia'],['12','Winter Yukon'],['13','Woodland'],['14','Woodland Flora'],['15','Gold']], tip:'gf_force_camo\nDEV/TEST: force this camo index on BOTH guns every spawn, overriding each loadout’s own camo. Off = use the loadout camo. Handy for checking which secondaries actually RENDER camo (e.g. set Gold and watch the pistols). Works on the dedicated server too — no sv_cheats needed.' },
+    { n:'gf_force_loadout',       lbl:'Force Loadout (-1=off)', type:'num', def:'-1', tip:'gf_force_loadout\nDEV/TEST: lock ONE loadout on every spawn instead of the round rotation, to inspect it without waiting. Value = index into the live (SHUFFLED) pool, 0-53 — NOT the editor row number, so cycle 0,1,2… and read the on-screen loadout HUD to find the one you want. -1 = off (normal rotation).' },
     { n:'scr_game_allowkillcam',  lbl:'Killcam',              type:'tog', def:'1', tip:'scr_game_allowkillcam\n1 = show killcam after death, 0 = skip.' },
     { n:'compass',                lbl:'Minimap',              type:'tog', def:'1', tip:'compass\n1 = show minimap, 0 = hide.' },
     { n:'sv_cheats',              lbl:'Allow Cheat Commands', type:'tog', def:'1', tip:'sv_cheats\nAllow cheat-protected console commands (noclip, god, etc.).' },
@@ -2451,7 +2595,7 @@ function srvApplyValues(vars, values, prefix) {
   });
 }
 // Read every shared dvar + the currently-shown gametype block from the server.
-async function readServerDvars() {
+async function readServerDvars(fresh) {
   if (!live) return;
   let vars = [];
   SRV_SECTIONS.forEach(s => { vars = vars.concat(s.vars); });
@@ -2462,7 +2606,7 @@ async function readServerDvars() {
   actLog('Reading ' + names.length + ' server dvars…', 'in');
   syncBegin();
   try {
-    const r = await fetchDvars(names);
+    const r = await fetchDvars(names, fresh);
     if (r && r.ok) {
       srvApplyValues(vars, r.values);
       const got = Object.values(r.values).filter(x => x !== null).length;
@@ -2501,12 +2645,12 @@ async function resetModifiers() {
   actLog('Game modifiers reset', 'ok'); toast('Modifiers reset', 'ok');
 }
 // Live-read the gunfight + modifier dvars into their MATCH blocks (mirror of readGtDvars).
-async function readMatchDvars() {
+async function readMatchDvars(fresh) {
   if (!live) return;
   const vars = GT_SECTIONS.gf.concat(MATCH_MODIFIERS);
   const names = vars.filter(v => v.type !== 'btn').map(v => v.n);
   syncBegin();
-  try { const r = await fetchDvars(names); if (r && r.ok) srvApplyValues(vars, r.values, 'mt'); } catch (_) {}
+  try { const r = await fetchDvars(names, fresh); if (r && r.ok) srvApplyValues(vars, r.values, 'mt'); } catch (_) {}
   finally { syncEnd(); }
 }
 

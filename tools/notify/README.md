@@ -24,8 +24,20 @@ Both read the same `config.json` and `GF_*` env vars. Zero external dependencies
 | **Heartbeat** | periodic "still alive — N online" | min (silent) | `heartbeatMins` (0 = off) |
 
 The "server now active" alert comes through at **high** priority so it cuts through Do-Not-
-Disturb; the heartbeat is **min** priority so it lands silently as a health check. Messages
-include the current `map / gametype`.
+Disturb; the heartbeat is **min** priority so it lands silently as a health check.
+
+**Details in each alert:** every message carries the current `map / gametype`. A **join**
+alert also adds the player's **region** (city, country — geolocated from their IP) and
+**ping** on a second line, e.g. `Berlin, Germany  |  84ms`. A **leave** alert reports how
+long they were on, e.g. `PlayerX left after 34m 10s`.
+
+> **Region lookup** is one HTTP GET to `ip-api.com` per unique IP, cached for the process
+> lifetime with a 2s timeout — so it never delays a push by more than 2s, and not at all for
+> a repeat IP (the poll interval already adds up to `pollMs`, so this is negligible). It sends
+> each joiner's IP to that third-party service; set `geoLookup: false` to disable it (ping and
+> session time still work — they're computed locally). Session length is measured from when
+> the notifier first *sees* a player, so it resets if the notifier restarts mid-session and
+> undercounts anyone already online when it started.
 
 ## 1. Phone setup (once)
 
@@ -107,6 +119,7 @@ Unregister-ScheduledTask -TaskName "GF Join Notifier" -Confirm:$false
 | `heartbeatMins` | `GF_HEARTBEAT_MINS` | `0` | Minutes between silent "still alive — N online" pushes; `0` = off |
 | `serverName` | `GF_SERVER_NAME` | `Gunfight` | Shown in the push title |
 | `quietStart` | `GF_QUIET_START` | `false` | Skip the "notifier online" push at launch |
+| `geoLookup` | `GF_GEO_LOOKUP` | `true` | Add region (city, country) to join alerts via `ip-api.com`; `false` = off (no third-party IP lookup) |
 
 **Currently deployed on the VPS:** topic `gunfight`, `notifyLeaves`/`notifyFirstJoin`/
 `notifyEmpty` on, `heartbeatMins` 60. Running as scheduled task "GF Join Notifier".

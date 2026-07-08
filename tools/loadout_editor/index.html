@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gunfight — Loadout Editor</title>
+<style>
+  :root{
+    --bg:#14110d; --panel:#1e1a14; --panel2:#262019; --line:#3a3025;
+    --text:#f0e6d8; --muted:#a8987f; --accent:#ff7a1a; --accent2:#ffb066;
+    --good:#5fd08a; --bad:#ff6b5f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 "Segoe UI",system-ui,sans-serif}
+  header{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#1e1a14,#1a1610);
+    border-bottom:1px solid var(--line);padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header h1{font-size:16px;margin:0;letter-spacing:.3px}
+  header h1 span{color:var(--accent)}
+  .spacer{flex:1}
+  button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--text);
+    padding:7px 14px;border-radius:7px}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#1a1206;font-weight:600}
+  button.primary:disabled{opacity:.4;cursor:default;filter:grayscale(.4)}
+  #status{font-size:13px;color:var(--muted);min-width:120px}
+  #status.ok{color:var(--good)} #status.err{color:var(--bad)}
+  .hint{padding:8px 16px;color:var(--muted);font-size:12px;border-bottom:1px solid var(--line);background:#171310}
+  .hint code{background:#000;padding:1px 5px;border-radius:4px;color:var(--accent2)}
+  main{padding:14px;display:grid;gap:12px;max-width:1500px;margin:0 auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+    display:grid;grid-template-columns:44px 1fr;gap:10px;align-items:start}
+  .card.dirty{border-color:var(--accent)}
+  .idx{font-weight:700;color:var(--accent);font-size:18px;text-align:center;padding-top:4px}
+  .slots{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:8px 12px}
+  @media(max-width:820px){.slots{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.slots{grid-template-columns:1fr}}
+  .slot{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .slot > label{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  .row{display:flex;gap:6px;flex-wrap:wrap}
+  .row > select:first-child{flex:1 1 100%}
+  select{font:inherit;background:var(--panel2);color:var(--text);border:1px solid var(--line);
+    border-radius:6px;padding:5px 6px;min-width:0;flex:1;max-width:100%}
+  select:hover{border-color:#5a4a35}
+  select.att{flex:1 1 46%}
+  .preview{grid-column:2;font-family:"Cascadia Code",Consolas,monospace;font-size:11.5px;color:#c9b48f;
+    background:#100d09;border:1px solid var(--line);border-radius:6px;padding:5px 8px;overflow-x:auto;white-space:nowrap}
+  footer{padding:20px;text-align:center;color:var(--muted);font-size:12px}
+  /* distribution panel */
+  #stats{border-bottom:1px solid var(--line);background:#161210}
+  .stats-head{display:flex;align-items:center;gap:12px;padding:6px 16px}
+  #statsToggle{background:transparent;border:none;color:var(--accent);font-weight:600;font-size:13px;padding:4px 0;cursor:pointer}
+  .stats-note{color:var(--muted);font-size:12px}
+  .stats-body{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;padding:2px 16px 14px;align-items:start}
+  .stats-body.collapsed{display:none}
+  .stat-col h3{margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--accent2);
+    border-bottom:1px solid var(--line);padding-bottom:3px;display:flex;justify-content:space-between}
+  .stat-col h3 em{font-style:normal;color:var(--accent)}
+  .stat-cat{display:flex;justify-content:space-between;font-size:12.5px;margin-top:6px;color:var(--text)}
+  .stat-cat b{color:var(--accent)}
+  .stat-items{display:flex;flex-wrap:wrap;gap:1px 10px;padding:2px 0 0 8px}
+  .stat-items.flat{padding-left:0;margin-top:3px}
+  .stat-items span{font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .stat-items span b{color:var(--text);font-weight:600;margin-left:3px}
+  .stat-items span.zero{opacity:.5}
+  .stat-items span.zero b{color:var(--bad)}
+  .stat-col.wide{grid-column:span 2}
+  .wpn-row{display:flex;justify-content:space-between;gap:8px;font-size:12px;margin-top:5px}
+  .wpn-row > span{color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .wpn-row > b{color:var(--text);font-weight:600;flex:none}
+  .wpn-row.zero{opacity:.5}
+  .wpn-row.zero > b{color:var(--bad)}
+  .wpn-atts{font-size:10.5px;color:var(--muted);padding-left:10px;margin-top:1px;line-height:1.4}
+</style>
+</head>
+<body>
+<header>
+  <h1><span>Gunfight</span> · Loadout Editor</h1>
+  <span id="status">loading…</span>
+  <div class="spacer"></div>
+  <button id="reload">Reload from file</button>
+  <button id="save" class="primary" disabled>Save all</button>
+</header>
+<div class="hint">
+  Edit any slot on any of the 54 loadouts, then <b>Save all</b> — it writes
+  <code>maps/mp/gametypes/_gf_loadouts.gsc</code> for you (a backup goes to
+  <code>_gf_loadouts.gsc.editorbak</code>). Camo <code>Random</code> re-rolls each match.
+  After saving, redeploy / <code>map_restart</code> to see it in-game.
+  <br><b>2 attachments:</b> pick a second attachment to build a combo (e.g. Reflex + Ext Mag).
+  Not every combo has a game asset &mdash; verify a new one in-game with <code>give &lt;token&gt;</code> before relying on it.
+</div>
+<section id="stats">
+  <div class="stats-head">
+    <button id="statsToggle" type="button">&#9662; Distribution</button>
+    <span class="stats-note">live counts across all 54 loadouts &mdash; each section totals 54</span>
+  </div>
+  <div id="statsBody" class="stats-body"></div>
+</section>
+<main id="cards"></main>
+<footer>Local tool · 127.0.0.1:3100 · order is shuffled per match, so slot order here doesn't decide round order.</footer>
+
+<script>
+// ── Weapon catalog (authoritative valid tokens; token = base + suffix + "_mp") ──
+const AR   = ["","_acog","_dualclip","_elbit","_extclip","_ft","_gl","_ir","_mk","_reflex","_silencer"];
+const M14A = ["","_acog","_elbit","_extclip","_ft","_gl","_grip","_ir","_mk","_reflex","_silencer"];
+const SNIP = ["","_acog","_extclip","_ir","_silencer","_vzoom"];
+const NONE = [""];
+
+const GROUPS = [
+  { label:"Assault Rifles", weps:[
+    ["ak47","AK-47",AR],["aug","AUG",AR],["commando","Commando",AR],["enfield","Enfield",AR],
+    ["famas","FAMAS",AR],["fnfal","FN FAL",AR],["g11","G11",["","_lps","_vzoom"]],
+    ["galil","Galil",AR],["m14","M14",M14A],["m16","M16",AR] ]},
+  { label:"SMGs", weps:[
+    ["ak74u","AK-74u",["","_acog","_dualclip","_elbit","_extclip","_gl","_grip","_reflex","_rf","_silencer"]],
+    ["kiparis","Kiparis",["","_acog","_elbit","_extclip","_grip","_reflex","_rf","_silencer"]],
+    ["mac11","MAC-11",["","_elbit","_extclip","_grip","_reflex","_rf","_silencer"]],
+    ["mp5k","MP5K",["","_acog","_elbit","_extclip","_reflex","_rf","_silencer"]],
+    ["mpl","MPL",["","_acog","_dualclip","_elbit","_grip","_reflex","_rf","_silencer"]],
+    ["pm63","PM63",["","_extclip","_grip","_rf"]],
+    ["skorpion","Skorpion",["","_extclip","_grip","_rf","_silencer"]],
+    ["spectre","Spectre",["","_acog","_elbit","_extclip","_grip","_reflex","_rf","_silencer"]],
+    ["uzi","Uzi",["","_acog","_elbit","_extclip","_grip","_reflex","_rf","_silencer"]] ]},
+  { label:"LMGs", weps:[
+    ["hk21","HK21",["","_acog","_elbit","_extclip","_ir","_reflex"]],
+    ["m60","M60",["","_acog","_elbit","_extclip","_grip","_ir","_reflex"]],
+    ["rpk","RPK",["","_acog","_dualclip","_elbit","_extclip","_ir","_reflex"]],
+    ["stoner63","Stoner63",["","_acog","_elbit","_extclip","_ir","_reflex"]] ]},
+  { label:"Snipers", weps:[
+    ["dragunov","Dragunov",SNIP],["l96a1","L96A1",SNIP],["psg1","PSG-1",SNIP],["wa2000","WA2000",SNIP] ]},
+  { label:"Shotguns", weps:[
+    ["spas","SPAS-12",["","_silencer"]],["ithaca","Stakeout",["_grip"]],["hs10","HS-10",NONE],["rottweil72","Olympia",NONE] ]},
+  { label:"Pistols", weps:[
+    ["asp","ASP",NONE],
+    ["cz75","CZ75",["","_auto","_extclip","_silencer","_upgradesight"]],
+    ["m1911","M1911",["","_extclip","_silencer","_upgradesight"]],
+    ["makarov","Makarov",["","_extclip","_silencer","_upgradesight"]],
+    ["python","Python",["","_acog","_snub","_speed"]] ]},
+  { label:"Dual-Wield", weps:[
+    ["pythondw","Dual Python",NONE],["cz75dw","Dual CZ75",NONE],["m1911dw","Dual M1911",NONE],
+    ["makarovdw","Dual Makarov",NONE],["aspdw","Dual ASP",NONE],["hs10dw","Dual HS10",NONE],
+    ["kiparisdw","Dual Kiparis",NONE],["mac11dw","Dual MAC-11",NONE],["pm63dw","Dual PM63",NONE],["skorpiondw","Dual Skorpion",NONE] ]},
+  { label:"Launchers / Special", weps:[
+    ["china_lake","China Lake",NONE],["crossbow_explosive","Crossbow",NONE],["m72_law","M72 LAW",NONE],
+    ["rpg","RPG",NONE],["knife_ballistic","Ballistic Knife",NONE],
+    ["minigun","Death Machine",["_wager"]],["m202_flash","Grim Reaper",["_wager"]] ]},
+  { label:"Fun", weps:[
+    ["fingergun","Finger Gun (invalid)",NONE] ]}
+];
+
+const ATT_LABEL = {
+  "":"Stock","_acog":"ACOG","_reflex":"Reflex","_elbit":"Reflex (Elbit)","_ir":"Infrared",
+  "_silencer":"Suppressor","_extclip":"Extended Mag","_dualclip":"Dual Mag","_grip":"Grip",
+  "_gl":"Grenade Launcher","_mk":"Masterkey","_ft":"Flamethrower","_rf":"Rapid Fire",
+  "_vzoom":"Variable Zoom","_lps":"Low-Power Scope","_snub":"Snub Nose","_speed":"Speed Reloader",
+  "_upgradesight":"Upgraded Sight","_auto":"Full Auto","_acog_grip":"ACOG + Grip","_ir_grip":"IR + Grip",
+  "_grip_extclip":"Grip + Ext Mag","_grip_dualclip":"Grip + Dual Mag","_wager":"Wager"
+};
+
+const EQUIP  = [["camera_spike_mp","Camera Spike"],["scrambler_mp","Jammer"],["acoustic_sensor_mp","Motion Sensor"],["claymore_mp","Claymore"],["satchel_charge_mp","C4"]];
+const LETHAL = [["frag_grenade_mp","Frag"],["sticky_grenade_mp","Semtex"],["hatchet_mp","Tomahawk"]];
+const TAC    = [["flash_grenade_mp","Flash"],["concussion_grenade_mp","Stun"],["willy_pete_mp","Smoke"],["tabun_gas_mp","Gas"],["nightingale_mp","Decoy"]];
+const CAMO   = [[-1,"Random (per match)"],[0,"Default"],[1,"Dusty"],[2,"Ice"],[3,"Red"],[4,"OD Green"],[5,"Desert Nevada"],[6,"Desert Sahara"],[7,"Jungle ERDL"],[8,"Jungle Tiger"],[9,"Urban German"],[10,"Urban Warsaw"],[11,"Winter Siberia"],[12,"Winter Yukon"],[13,"Woodland"],[14,"Woodland Flora"],[15,"Gold"]];
+
+// Flat base -> {name, atts}
+const FLAT = {};
+for (const g of GROUPS) for (const w of g.weps) FLAT[w[0]] = { name:w[1], atts:w[2] };
+
+// base -> category label, and category display order (for the dropdown groups)
+const BASE_CAT = {}, CAT_ORDER = [];
+for (const g of GROUPS){ CAT_ORDER.push(g.label); for (const w of g.weps) BASE_CAT[w[0]] = g.label; }
+
+// Distribution weapon TYPES — the panel splits the weapon tally into one section per
+// type. Independent of the dropdown groups above; dual-wields fold into their base type.
+const WTYPE_ORDER = ["AR","SMG","LMG","Sniper","Shotgun","Pistol","Launcher","Special"];
+const WTYPE = {
+  ak47:'AR',aug:'AR',commando:'AR',enfield:'AR',famas:'AR',fnfal:'AR',g11:'AR',galil:'AR',m14:'AR',m16:'AR',
+  ak74u:'SMG',kiparis:'SMG',mac11:'SMG',mp5k:'SMG',mpl:'SMG',pm63:'SMG',skorpion:'SMG',spectre:'SMG',uzi:'SMG',
+  kiparisdw:'SMG',mac11dw:'SMG',pm63dw:'SMG',skorpiondw:'SMG',
+  hk21:'LMG',m60:'LMG',rpk:'LMG',stoner63:'LMG',
+  dragunov:'Sniper',l96a1:'Sniper',psg1:'Sniper',wa2000:'Sniper',
+  spas:'Shotgun',ithaca:'Shotgun',hs10:'Shotgun',rottweil72:'Shotgun',hs10dw:'Shotgun',
+  asp:'Pistol',cz75:'Pistol',m1911:'Pistol',makarov:'Pistol',python:'Pistol',
+  pythondw:'Pistol',cz75dw:'Pistol',m1911dw:'Pistol',makarovdw:'Pistol',aspdw:'Pistol',
+  china_lake:'Launcher',crossbow_explosive:'Launcher',m72_law:'Launcher',rpg:'Launcher',
+  knife_ballistic:'Special',minigun:'Special',m202_flash:'Special',fingergun:'Special'
+};
+// type -> [display names], for 0-seeding every weapon in every type section
+const TYPE_NAMES = {};
+for (const base in WTYPE){
+  const t = WTYPE[base];
+  (TYPE_NAMES[t] = TYPE_NAMES[t] || []).push((FLAT[base] && FLAT[base].name) || base);
+}
+
+// Attachment slot ranks. The engine assembles a name as base_optic_grip_trigger_muzzle_mp
+// (see _class.gsc getFullWeaponName), so two attachments must sit in DIFFERENT slots
+// (no two optics, no grip+GL, etc.). Whether a given combo has a compiled game asset
+// still needs an in-game `give` test — the tool just emits a correctly-ordered name.
+const SLOT = {
+  "":9, "_acog":1,"_reflex":1,"_elbit":1,"_ir":1,"_vzoom":1,"_lps":1,"_upgradesight":1,
+  "_grip":2,"_gl":2,"_mk":2,
+  "_extclip":3,"_dualclip":3,"_rf":3,"_auto":3,"_speed":3,
+  "_silencer":4,"_ft":4,"_snub":4,
+  "_wager":5
+};
+function slotOf(s){ return SLOT[s] !== undefined ? SLOT[s] : 8; }
+
+// longest base in FLAT that prefixes core (exact, or base_...)
+function findBase(core){
+  let best = null;
+  for (const b in FLAT)
+    if ((core === b || core.startsWith(b + "_")) && (!best || b.length > best.length)) best = b;
+  return best;
+}
+// token -> { base, suffixes:[ "_x", ... ] slot-ordered } or null if the base is unknown
+function parseToken(token){
+  if (!token) return null;
+  const core = token.endsWith("_mp") ? token.slice(0, -3) : token;
+  const base = findBase(core);
+  if (!base) return null;
+  const rest = core === base ? "" : core.slice(base.length + 1);
+  const suffixes = rest === "" ? [] : rest.split("_").map(s => "_" + s);
+  suffixes.sort((a, b) => slotOf(a) - slotOf(b));
+  return { base, suffixes };
+}
+// base + chosen suffixes -> canonical (slot-ordered) token
+function buildToken(base, suffixes){
+  const ordered = suffixes.filter(s => s).sort((a, b) => slotOf(a) - slotOf(b));
+  return base + "_" + ordered.map(s => s.slice(1) + "_").join("") + "mp";
+}
+function attLabel(s){ return s === "" ? "Stock" : (ATT_LABEL[s] || s); }
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function optionsHTML(pairs, sel){
+  return pairs.map(([v,l]) => `<option value="${esc(v)}"${String(v)===String(sel)?" selected":""}>${esc(l)}</option>`).join("");
+}
+function weaponOptionsHTML(selBase, rawToken){
+  let h = "";
+  if (rawToken) h += `<optgroup label="(unrecognized — kept as-is)"><option value="__raw" selected>${esc(rawToken)}</option></optgroup>`;
+  for (const g of GROUPS){
+    h += `<optgroup label="${esc(g.label)}">`;
+    for (const w of g.weps) h += `<option value="${esc(w[0])}"${(!rawToken && w[0]===selBase)?" selected":""}>${esc(w[1])}</option>`;
+    h += `</optgroup>`;
+  }
+  return h;
+}
+function attOptsHTML(atts, sel, firstLabel){
+  return atts.map((s, i) =>
+    `<option value="${esc(s)}"${s===sel?" selected":""}>${esc(i===0 && firstLabel ? firstLabel : attLabel(s))}</option>`).join("");
+}
+
+// A weapon slot = weapon <select> + up to two attachment <select>s. Attachment 2 only
+// offers attachments in a DIFFERENT slot than #1, and get() emits a canonical token.
+function makeWeaponCtrl(token, onChange){
+  const parsed = parseToken(token);
+  const raw = parsed ? null : token;
+
+  const wrap = document.createElement("div"); wrap.className = "row";
+  const wsel = document.createElement("select");
+  const a1   = document.createElement("select"); a1.className = "att";
+  const a2   = document.createElement("select"); a2.className = "att";
+  wsel.innerHTML = weaponOptionsHTML(parsed ? parsed.base : "", raw);
+  wrap.appendChild(wsel); wrap.appendChild(a1); wrap.appendChild(a2);
+
+  const attsOf = base => (FLAT[base] ? FLAT[base].atts : [""]).slice();
+
+  function fillA1(want){
+    let atts = attsOf(wsel.value);
+    if (want && atts.indexOf(want) === -1) atts = atts.concat([want]);
+    a1.innerHTML = attOptsHTML(atts, want, null);
+  }
+  function fillA2(want){
+    const cands = attsOf(wsel.value).filter(s => s !== "" && slotOf(s) !== slotOf(a1.value));
+    if (cands.length === 0 && !want){ a2.style.display = "none"; a2.innerHTML = ""; return; }
+    let opts = [""].concat(cands);
+    if (want && opts.indexOf(want) === -1) opts = opts.concat([want]);
+    a2.style.display = "";
+    a2.innerHTML = attOptsHTML(opts, want, "+ none");
+  }
+
+  if (raw){
+    a1.style.display = "none"; a2.style.display = "none";
+  } else {
+    fillA1(parsed.suffixes[0] !== undefined ? parsed.suffixes[0] : "");
+    fillA2(parsed.suffixes[1] !== undefined ? parsed.suffixes[1] : "");
+  }
+
+  wsel.addEventListener("change", () => {
+    if (wsel.value === "__raw") return;
+    a1.style.display = "";
+    fillA1(attsOf(wsel.value)[0]); fillA2("");   // fresh weapon -> its default attachment, no 2nd
+    onChange();
+  });
+  a1.addEventListener("change", () => {
+    const keep = (a2.value && slotOf(a2.value) !== slotOf(a1.value)) ? a2.value : "";
+    fillA2(keep); onChange();
+  });
+  a2.addEventListener("change", onChange);
+
+  return {
+    root: wrap,
+    get(){
+      if (raw && wsel.value === "__raw") return raw;
+      const sfx = [];
+      if (a1.value) sfx.push(a1.value);
+      if (a2.value) sfx.push(a2.value);
+      return buildToken(wsel.value, sfx);
+    }
+  };
+}
+
+// ── App state ──
+let data = [];      // live edited entries
+let original = "";  // JSON snapshot for dirty check
+const ctrls = [];   // per-card getters
+const statusEl = document.getElementById("status");
+const saveBtn  = document.getElementById("save");
+const cardsEl  = document.getElementById("cards");
+
+function setStatus(txt, cls){ statusEl.textContent = txt; statusEl.className = cls || ""; }
+
+function collect(){
+  return data.map((_, i) => ({
+    primary:   ctrls[i].primary.get(),
+    secondary: ctrls[i].secondary.get(),
+    equip:     ctrls[i].equip.value,
+    lethal:    ctrls[i].lethal.value,
+    tactical:  ctrls[i].tactical.value,
+    camo:      parseInt(ctrls[i].camo.value, 10),
+    camoSec:   parseInt(ctrls[i].camoSec.value, 10)
+  }));
+}
+
+// ── Distribution panel ──
+function labelFor(list, val){ for (const p of list) if (String(p[0]) === String(val)) return p[1]; return String(val); }
+
+// Combined primary + secondary weapon tally, with a per-gun attachment breakdown.
+// items[name] = { total, atts:{ attachmentLabel: count } }
+function tallyWeaponsCombined(entries){
+  const byCat = {};
+  const add = (token) => {
+    const p    = parseToken(token);
+    const base = p ? p.base : token;
+    const cat  = WTYPE[base] || "Other";
+    const name = (FLAT[base] && FLAT[base].name) || base;
+    const att  = (p && p.suffixes.length) ? p.suffixes.map(s => ATT_LABEL[s] || s).join(" + ") : "Stock";
+    if (!byCat[cat]) byCat[cat] = { total:0, items:{} };
+    if (!byCat[cat].items[name]) byCat[cat].items[name] = { total:0, atts:{} };
+    byCat[cat].total++;
+    byCat[cat].items[name].total++;
+    byCat[cat].items[name].atts[att] = (byCat[cat].items[name].atts[att] || 0) + 1;
+  };
+  for (const e of entries){ add(e.primary); add(e.secondary); }
+  // Seed every weapon of every type at 0 so a missing/forgotten gun shows in its
+  // type section instead of being silently absent.
+  for (const t of WTYPE_ORDER){
+    if (!byCat[t]) byCat[t] = { total:0, items:{} };
+    for (const nm of (TYPE_NAMES[t] || []))
+      if (byCat[t].items[nm] === undefined) byCat[t].items[nm] = { total:0, atts:{} };
+  }
+  return byCat;
+}
+function tallyItems(entries, slot, list){
+  const items = {};
+  for (const p of list) items[p[1]] = 0;   // seed every option at 0 so an unused one shows
+  for (const e of entries){ const n = labelFor(list, e[slot]); items[n] = (items[n] || 0) + 1; }
+  return items;
+}
+function tallyCamo(entries, key){
+  const items = {};
+  for (const e of entries){ const v = e[key]; const n = v < 0 ? "Random" : labelFor(CAMO, v); items[n] = (items[n] || 0) + 1; }
+  return items;
+}
+function itemsHTML(items, flat){
+  const names = Object.keys(items).sort((a,b) => items[b]-items[a] || a.localeCompare(b));
+  return `<div class="stat-items${flat?" flat":""}">` +
+    names.map(n => `<span${items[n]===0?' class="zero"':''}>${esc(n)}<b>&times;${items[n]}</b></span>`).join("") + `</div>`;
+}
+// One distribution section for a single weapon type. data = { total, items }.
+function weaponSectionHTML(type, data){
+  let h = `<div class="stat-col"><h3><span>${esc(type)}</span><em>${data.total}</em></h3>`;
+  const names = Object.keys(data.items).sort((a,b) => data.items[b].total - data.items[a].total || a.localeCompare(b));
+  for (const n of names){
+    const it = data.items[n];
+    h += `<div class="wpn-row${it.total===0?' zero':''}"><span>${esc(n)}</span><b>&times;${it.total}</b></div>`;
+    const ak = Object.keys(it.atts).sort((a,b) => it.atts[b] - it.atts[a] || a.localeCompare(b));
+    if (it.total > 0 && !(ak.length === 1 && ak[0] === "Stock"))   // hide a lone "Stock" (nothing to show)
+      h += `<div class="wpn-atts">` + ak.map(a => `${esc(a)}&nbsp;&times;${it.atts[a]}`).join(" · ") + `</div>`;
+  }
+  return h + `</div>`;
+}
+function itemSectionHTML(title, items){
+  const total = Object.keys(items).reduce((a,k) => a + items[k], 0);
+  return `<div class="stat-col"><h3><span>${esc(title)}</span><em>${total}</em></h3>` + itemsHTML(items, true) + `</div>`;
+}
+function renderStats(entries){
+  const byType = tallyWeaponsCombined(entries);   // counts across primary + secondary
+  let html = "";
+  for (const t of WTYPE_ORDER) if (byType[t]) html += weaponSectionHTML(t, byType[t]);
+  if (byType["Other"]) html += weaponSectionHTML("Other", byType["Other"]);   // unrecognized tokens
+  html +=
+    itemSectionHTML("Equipment", tallyItems(entries, "equip",    EQUIP))  +
+    itemSectionHTML("Lethal",    tallyItems(entries, "lethal",   LETHAL)) +
+    itemSectionHTML("Tactical",  tallyItems(entries, "tactical", TAC))    +
+    itemSectionHTML("Camo · primary", tallyCamo(entries, "camo")) +
+    itemSectionHTML("Camo · 2nd",     tallyCamo(entries, "camoSec"));
+  document.getElementById("statsBody").innerHTML = html;
+}
+
+function refreshDirty(){
+  const now = collect();
+  const dirty = JSON.stringify(now) !== original;
+  saveBtn.disabled = !dirty;
+  now.forEach((lo, i) => {
+    const card = cardsEl.children[i];
+    card.classList.toggle("dirty", JSON.stringify(lo) !== JSON.stringify(JSON.parse(original)[i]));
+    ctrls[i].preview.textContent =
+      `gf_load( "${lo.primary}", "${lo.secondary}", "${lo.equip}", "${lo.lethal}", "${lo.tactical}", ${lo.camo}, ${lo.camoSec} );`;
+  });
+  renderStats(now);
+  setStatus(dirty ? "unsaved changes" : "up to date", dirty ? "" : "ok");
+}
+
+function buildCard(lo, i){
+  const card = document.createElement("div");
+  card.className = "card";
+  const idx = String(i+1).padStart(2,"0");
+  card.innerHTML = `<div class="idx">${idx}</div>`;
+  const slots = document.createElement("div");
+  slots.className = "slots";
+
+  const c = {};
+  // Primary
+  let s = document.createElement("div"); s.className="slot";
+  s.innerHTML = `<label>Primary</label>`;
+  c.primary = makeWeaponCtrl(lo.primary, refreshDirty); s.appendChild(c.primary.root); slots.appendChild(s);
+  // Secondary
+  s = document.createElement("div"); s.className="slot";
+  s.innerHTML = `<label>Secondary</label>`;
+  c.secondary = makeWeaponCtrl(lo.secondary, refreshDirty); s.appendChild(c.secondary.root); slots.appendChild(s);
+  // Equipment / Lethal / Tactical / Camo
+  const simple = [["Equipment",EQUIP,lo.equip,"equip"],["Lethal",LETHAL,lo.lethal,"lethal"],["Tactical",TAC,lo.tactical,"tactical"],["Camo · primary",CAMO,lo.camo,"camo"],["Camo · 2nd",CAMO,lo.camoSec,"camoSec"]];
+  for (const [label,list,val,key] of simple){
+    s = document.createElement("div"); s.className="slot";
+    const sel = document.createElement("select");
+    sel.innerHTML = optionsHTML(list, val);
+    sel.addEventListener("change", refreshDirty);
+    s.innerHTML = `<label>${label}</label>`;
+    s.appendChild(sel); slots.appendChild(s);
+    c[key] = sel;
+  }
+  card.appendChild(slots);
+
+  const pv = document.createElement("div");
+  pv.className = "preview";
+  card.appendChild(pv);
+  c.preview = pv;
+
+  ctrls[i] = c;
+  return card;
+}
+
+async function load(){
+  setStatus("loading…");
+  try{
+    const r = await fetch("/api/loadouts");
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || "failed");
+    data = j.loadouts;
+    original = JSON.stringify(data);
+    ctrls.length = 0;
+    cardsEl.innerHTML = "";
+    data.forEach((lo,i) => cardsEl.appendChild(buildCard(lo,i)));
+    refreshDirty();
+    setStatus(`${data.length} loadouts loaded`, "ok");
+  }catch(e){
+    setStatus("load error: " + e.message, "err");
+  }
+}
+
+async function save(){
+  const payload = { loadouts: collect() };
+  setStatus("saving…");
+  saveBtn.disabled = true;
+  try{
+    const r = await fetch("/api/loadouts", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || "failed");
+    original = JSON.stringify(payload.loadouts);
+    data = payload.loadouts;
+    refreshDirty();
+    setStatus(`saved ${j.written} loadouts ✓  (redeploy / map_restart to apply)`, "ok");
+  }catch(e){
+    setStatus("save error: " + e.message, "err");
+    saveBtn.disabled = false;
+  }
+}
+
+document.getElementById("reload").addEventListener("click", load);
+saveBtn.addEventListener("click", save);
+document.getElementById("statsToggle").addEventListener("click", () => {
+  const body = document.getElementById("statsBody");
+  const collapsed = body.classList.toggle("collapsed");
+  document.getElementById("statsToggle").innerHTML = (collapsed ? "&#9656;" : "&#9662;") + " Distribution";
+});
+load();
+</script>
+</body>
+</html>

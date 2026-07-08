@@ -12,5 +12,6 @@
   "notifyEmpty": false,
   "heartbeatMins": 0,
   "serverName": "Gunfight",
-  "quietStart": false
+  "quietStart": false,
+  "geoLookup": true
 }

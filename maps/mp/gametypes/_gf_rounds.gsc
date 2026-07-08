@@ -279,6 +279,14 @@ gf_waitForLoadingClients()
     elems[elems.size] = cntSlash;
     elems[elems.size] = cntTotal;
 
+    // In the Auto/Manual lobby the custom lobby HUD (gf_lobby_hud menuDef) owns the "waiting" message
+    // + count, so hide this stock load-gate readout to avoid the doubled dead-center text. Keep it in
+    // Normal mode (scr_gf_lobby 0), where it's the only start feedback. The count-update logic below
+    // still runs on the now-invisible elems (harmless — setValue on a 0-alpha element is a no-op look).
+    if ( restartMode )
+        for ( ei = 0; ei < elems.size; ei++ )
+            elems[ei].alpha = 0;
+
     shownCount   = false;
     lastLoaded   = -1;
     lastTotal    = -1;
@@ -290,10 +298,50 @@ gf_waitForLoadingClients()
     level.gf_inLobbyHold = true;
 
     // Auto/Manual lobby: paint it with the desaturated pregame vision (the same "mpIntro"
-    // string the native prematch uses) so it reads as a staging screen. The post-restart
-    // prematch re-applies its own vision, so this doesn't linger.
+    // string the native prematch uses) AND float everyone in the intermission camera (the
+    // locked, bodyless "postgame" map-overview cam) so it reads as a real pregame staging
+    // screen instead of players frozen at their spawns. Both are wiped for FREE by the
+    // map_restart(false) on release (players re-spawn fresh into the match), so no teardown
+    // is needed — which is exactly why this is scoped to restartMode (Normal has no restart
+    // and would need explicit per-player camera reversal).
     if ( restartMode )
+    {
         visionSetNaked( "mpIntro", 0 );
+        // Hide the stock spectator overlay ("SPECTATING <name>" + the follow-key instructions) for a
+        // clean lobby — the exact matchflag the stock game-end uses (_globallogic.gsc:685). Level-wide,
+        // one call; restored at the release + reset by the map_restart(false) anyway.
+        setmatchflag( "cg_drawSpectatorMessages", 0 );
+        // Strip the scoreboard to the minimum this builtin can produce for the lobby: NAME + SCORE +
+        // PING. setscoreboardcolumns controls only the 4 MIDDLE columns (Score + Ping are engine-fixed
+        // and can't be removed without editing the scoreboard .menu). No restore call needed — main()
+        // re-runs setscoreboardcolumns("kills","deaths","assists","captures") (gf.gsc) on the
+        // post-restart onStartGameType pass, so the real match gets its normal columns back.
+        setscoreboardcolumns( "none", "none", "none", "none" );
+        // Force teamless connectors to AUTO-ASSIGN instead of popping the team-select menu
+        // (_globallogic_player.gsc:338 -> autoassign when forceAutoAssign is set, else openMenu team).
+        // This lets the lobby cam drop ALL per-tick menu suppression — the old closeMenu()/
+        // g_scriptMainMenu="" swatted the team menu but also killed the ESC/pause overlay every tick.
+        // Nobody needs the team menu in the lobby; the fast-restart does the real pick. Wiped by
+        // map_restart(false) on release, so the real match (Pass 2) keeps normal team behavior.
+        level.forceAutoAssign = true;
+        // Restart-lobby ONLY flag. Gates the throwaway-spawn optimizations (skip the spawn music +
+        // the whole loadout build) — safe here because map_restart(false) rebuilds everything fresh for
+        // the real match. It must NOT key off gf_inLobbyHold: a non-restart Normal-mode hold (load/
+        // min-players gate with scr_gf_lobby 0) frozen-spawns players whose spawn IS the match spawn,
+        // so skipping their loadout would leave them weaponless. map_restart(false) wipes this level var;
+        // the release below clears it for the gameEnded / no-restart exits.
+        level.gf_lobbyRestartHold = true;
+        // Suppress the stock "You will respawn next round" lower-third the maySpawn-false spectator path
+        // sets: livesDoNotReset=true makes shouldShowRespawnMessage false (_globallogic_spawn.gsc:572), so
+        // the message is never set (cleaner than clearing it after — the stock auto-clear is aborted by
+        // an "end_respawn" notify, which is why it persisted). Safe: gunfight never uses livesDoNotReset,
+        // the first-connect lives reset is forced by the isDefined() clause (_globallogic_player.gsc:235),
+        // and map_restart(false) wipes level.* + pers[] so the match resets lives normally.
+        level.livesDoNotReset = true;
+        level thread gf_lobbyCamWatcher();
+        level thread gf_lobbyRosterLoop();
+        level thread gf_lobbyIconCycler();
+    }
 
     for ( ;; )
     {
@@ -343,7 +391,7 @@ gf_waitForLoadingClients()
                 cntTotal setValue( humans );
                 lastTotal = humans;
             }
-            if ( !shownCount )
+            if ( !shownCount && !restartMode )   // Auto/Manual: keep counts hidden — custom lobby HUD owns the readout
             {
                 cntLoaded.alpha = 1;
                 cntSlash.alpha  = 1;
@@ -386,6 +434,25 @@ gf_waitForLoadingClients()
     }
 
     level.gf_inLobbyHold = false;   // hold is over — the panel's Start affordance hides
+    level.gf_lobbyRestartHold = false;   // clear the throwaway-spawn gate (map_restart(false) also wipes it, but the gameEnded / no-restart paths need it explicit)
+    level.livesDoNotReset = false;       // undo the lobby respawn-message suppression (gunfight never uses it; map_restart also wipes it, explicit for the gameEnded / no-restart path)
+
+    // Restore the lobby-only presentation tweaks (compass + spectator overlay). The map_restart(false)
+    // path also resets both (matchflags reset on re-init; a fresh spawn's reset_clientdvars re-sets
+    // compass=1), but restore explicitly so the non-restart / gameEnded path is clean and the compass
+    // push has a chance to land before the restart.
+    if ( restartMode )
+    {
+        setmatchflag( "cg_drawSpectatorMessages", 1 );
+        for ( ri = 0; ri < level.players.size; ri++ )
+        {
+            if ( getDvarInt( "gf_diag_cd_no_lobby_dvars" ) != 1 )
+            {
+                level.players[ri] setClientDvar( "compass", "1" );
+                level.players[ri] setClientDvar( "ui_gf_lobby_show", "0" );   // hide the lobby HUD for the match
+            }
+        }
+    }
 
     // ── FAST-RESTART LOBBY (scr_gf_lobby = Auto / Manual) ────────────────────────
     // Normal mode holds mid-init: the engine already began the match (InitGame fired,
@@ -408,7 +475,9 @@ gf_waitForLoadingClients()
     // map_restart(false) WIPES game[]/pers[], which is how it re-fires the fresh presentation
     // but also why a game[] flag would loop forever) makes the post-restart pass skip this
     // whole gate, so the real match threads its clocks exactly once.
-    if ( restartMode )
+    // Skip the restart if the game ended during the hold (the loop's gameEnded break) — don't
+    // fast-restart an already-ended match; fall through to the normal teardown/return instead.
+    if ( restartMode && !( isDefined( level.gameEnded ) && level.gameEnded ) )
     {
         setDvar( "gf_matchArmed", "1" );
         for ( i = 0; i < elems.size; i++ )
@@ -470,6 +539,300 @@ gf_anyTrackedClientLoading()
             return true;
     }
     return false;
+}
+
+// ─── Lobby camera (Auto/Manual pregame lobby) ──────────────────────────────
+// During the Auto/Manual pregame hold, float every begun HUMAN in the INTERMISSION camera — the fixed
+// map-overview the engine uses at match end — so the lobby reads as a real staging screen instead of
+// players frozen at their gunfight spawns. Started (restartMode only) from gf_waitForLoadingClients
+// right after level.gf_inLobbyHold=true; retires with the hold via the same notifies the load tracker
+// uses. Teardown is FREE: the map_restart(false) on release wipes level/pers/entity state and
+// re-spawns everyone fresh into the match, so we never un-apply the cam. Mechanism: spawnIntermission
+// -> sessionstate "intermission" at mp_global_intermission, follows NOBODY (no "SPECTATING <name>"
+// overlay, unlike the spectator variants which stay an active spectate + draw the panel/minimap). It
+// auto-shows the scoreboard, which we EMBRACE as the live lobby roster and wrap with the custom HUD.
+// See gf_lobbyCamPut. Only ever acts on fully-begun players (a still-loading client is never
+// spawn-ready — we poll spawned players, never "connecting").
+gf_lobbyCamWatcher()
+{
+    level endon( "game_ended" );
+    level endon( "gf_load_gate_reset" );
+
+    // The orbit cam hard-requires an mp_global_intermission entity (every stock MP map ships one;
+    // a custom map lacking it makes no-origin spawnSpectator assert inside default_onSpawnSpectator).
+    // If absent, skip the cam entirely — players just stay in the stock frozen-in-world lobby.
+    if ( getEntArray( "mp_global_intermission", "classname" ).size == 0 )
+        return;
+
+    // Poll every begun player into the cam each tick. gf_lobbyCamPut is once-per-player
+    // (self.gf_inLobbyCam) and skips still-unspawned clients / bots, so re-sweeping is a cheap
+    // no-op after the first pass. We POLL rather than key off "spawned_player" because that
+    // notify carries no entity (gf_playerSpawnedCB fires a bare `level notify`), so a listener
+    // couldn't identify who spawned — the bridge's pending-team watcher re-sweeps for the same
+    // reason. Polling reliably catches everyone, incl. a late loader who begins mid-hold.
+    while ( isDefined( level.gf_inLobbyHold ) && level.gf_inLobbyHold )
+    {
+        for ( i = 0; i < level.players.size; i++ )
+            level.players[i] thread gf_lobbyCamPut();
+        wait 0.25;
+    }
+}
+
+// Move ONE begun player into the intermission overview cam + keep the lobby clean (no team menu, no HUD).
+gf_lobbyCamPut()
+{
+    self endon( "disconnect" );
+
+    if ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold )   // hold already released
+        return;
+    if ( self istestclient() || self isdemoclient() )                    // bots + demo clients stay put
+        return;
+
+    // Every-tick backstop: keep the gunfight HUD hidden for the whole hold. We no longer touch the menu
+    // state here — the old per-tick closeMenu()/g_scriptMainMenu="" swatted the team-select menu but
+    // clearing g_scriptMainMenu also killed the ESC/pause overlay every tick. The team menu is now
+    // prevented at the source (level.forceAutoAssign at the hold start makes teamless connectors
+    // auto-assign, so it never opens), which leaves ESC fully usable during the lobby.
+    self gf_hideLobbyHUD();
+
+    // NOTE: the maySpawn-false spectator path (spawnClient, _globallogic_spawn.gsc:578) briefly sets the
+    // stock "spawn next round" lower-third. Stock already threads removeSpawnMessageShortly(3), so it
+    // self-clears in ~3s — left alone here so the compile stays clean (clearLowerMessage is NOT callable
+    // from a mod script). If it reads badly in the lobby, clear it via the full-path wrapper
+    // maps\mp\gametypes\_globallogic_ui::removeSpawnMessageShortly(0).
+
+    if ( isDefined( self.gf_inLobbyCam ) && self.gf_inLobbyCam )          // cam move: once per player
+        return;
+    self.gf_inLobbyCam = true;
+
+    // Hide the minimap/compass for a clean lobby (stock HUD-hide path uses this exact dvar,
+    // _utility.gsc:8414). Client dvar, so restored at the hold release (loop below). CAVEAT: `compass`
+    // may be a saved dvar Plutonium blocks servers from writing on a dedicated server — works on a
+    // listen server; verify on the VPS (same class as the gf_vis_* r_* tweaks).
+    if ( getDvarInt( "gf_diag_cd_no_lobby_dvars" ) != 1 )
+        self setClientDvar( "compass", "0" );
+
+    // Vision (desaturation) is LEVEL-scope only in T5 MP — visionSetNaked has no per-player self-method
+    // form (it's applied bare at the hold start in gf_waitForLoadingClients), so there's nothing to
+    // re-apply per client here.
+
+    // FREE-LOOK SPECTATOR camera — sessionstate "spectator", which (unlike intermission) keeps the HUD
+    // layer ON, so our custom lobby HUD menuDef actually renders. Intermission was tried and abandoned:
+    // it force-shows the scoreboard and HARD-hides the entire HUD layer client-side (hud_visible can't
+    // be held on), so no custom HUD can live there. A no-origin spawnSpectator drops the player at a
+    // random mp_global_intermission point (a map overview); we then disable team-follow + force freelook
+    // so the engine doesn't auto-attach to a teammate (that auto-follow is the "SPECTATING <name>"
+    // overlay). The stock minimap + spectator messages are suppressed separately (compass 0 +
+    // cg_drawSpectatorMessages 0); the roster is our own menu list, not the engine scoreboard.
+    self [[level.spawnSpectator]]();
+    self allowSpectateTeam( "allies",   false );
+    self allowSpectateTeam( "axis",     false );
+    self allowSpectateTeam( "freelook", true  );
+    self allowSpectateTeam( "none",     true  );
+    self.spectatorclient = -1;   // force FREE-LOOK, not following any player. allowSpectateTeam only
+                                 // gates manual cycling, not the initial auto-attach — the engine still
+                                 // latched onto KL9 ("SPECTATING KL9" + that player's minimap). -1 breaks
+                                 // the follow and drops the view to the free intermission-point overview.
+
+    // Push the custom lobby HUD content (menu-rendered by the "gf_lobby_hud" menuDef in
+    // hud_gf_health.menu, gated on ui_gf_lobby_show). That menuDef is intentionally NOT gated on
+    // BIT_HUD_VISIBLE (the engine clears it entering intermission), so ui_gf_lobby_show is the sole
+    // gate. Welcome is per-player; map/status are the same for everyone but must go via setClientDvar
+    // (a dedicated server's setDvar doesn't replicate). Rules + ad copy are static text in the menu.
+    if ( getDvarInt( "gf_diag_cd_no_lobby_dvars" ) != 1 )
+    {
+        // Static header — every branding line is pushed in FULL (the typewriter reveal was removed).
+        statusText = "The match will begin shortly";
+        if ( int( gf_cfgFloat( "scr_gf_lobby", 0, 0, 2 ) ) == 2 )
+            statusText = "Waiting for the host to start";
+
+        self setClientDvar( "ui_gf_lobby_eyebrow", "PREGAME LOBBY" );
+        self setClientDvar( "ui_gf_lobby_title",   "GUNFIGHT" );
+        self setClientDvar( "ui_gf_lobby_map",     gf_mapDisplayName( getDvar( "mapname" ) ) );
+        self setClientDvar( "ui_gf_lobby_welcome", "Welcome, " + self.name );
+        self setClientDvar( "ui_gf_lobby_status",  statusText );
+        self setClientDvar( "ui_gf_lobby_icon",    "menu_mp_weapons_famas" );   // seed a valid material before the icon items show
+        self setClientDvar( "ui_gf_lobby_icon_on", "1" );                        // header is instant now — reveal the flanking icons immediately
+        self setClientDvar( "ui_gf_lobby_ic_home", "rank_prestige14" );          // ad-rail emblem: 14th-prestige badge (homepage) — faction crests aren't loaded on every map
+        self setClientDvar( "ui_gf_lobby_ic_disc", "rank_prestige15" );          // ad-rail emblem: 15th-prestige badge (Discord)
+        self setClientDvar( "ui_gf_lobby_show",    "1" );   // reveal the fully-populated menuDef
+    }
+}
+
+// ─── Lobby roster ("IN THE LOBBY" name list) ───────────────────────────────
+// Live combined player+bot list for the custom lobby HUD. Level-scope; runs for the Auto/Manual hold
+// only (started from gf_waitForLoadingClients alongside gf_lobbyCamWatcher). Rebuilds the roster each
+// tick and pushes it — ONLY on change — to every begun human via setClientDvar (menus read CLIENT
+// dvars, and a dedicated server's setDvar doesn't replicate). 12 fixed name slots (ui_gf_lobby_p0..11)
+// + a count (ui_gf_lobby_pcount) that gates each slot's menu visibility. Retires with the hold via the
+// same notifies the load tracker / cam watcher use. Respects the gf_diag_cd_no_lobby_dvars diagnostic
+// (skips all pushes when set). Still-connecting + demo clients are excluded; bots are listed with a
+// "(bot)" tag per the combined-list design.
+gf_lobbyRosterLoop()
+{
+    level endon( "game_ended" );
+    level endon( "gf_load_gate_reset" );
+
+    lastSig = "___init___";
+    while ( isDefined( level.gf_inLobbyHold ) && level.gf_inLobbyHold )
+    {
+        if ( getDvarInt( "gf_diag_cd_no_lobby_dvars" ) == 1 )
+        {
+            wait 0.5;
+            continue;
+        }
+
+        names = [];
+        for ( i = 0; i < level.players.size; i++ )
+        {
+            p = level.players[i];
+            if ( !isDefined( p ) )
+                continue;
+            if ( p isdemoclient() )
+                continue;
+            if ( isDefined( p.statusicon ) && p.statusicon == "hud_status_connecting" )
+                continue;   // still loading — not standing in the lobby yet
+            nm = p.name;
+            if ( p istestclient() )
+                nm = nm + "  (bot)";
+            names[ names.size ] = nm;
+        }
+
+        // Push only when the roster actually changes (a join/leave/rename) so we're not spraying ~13
+        // client dvars every half-second at a static lobby.
+        sig = "" + names.size;
+        for ( i = 0; i < names.size; i++ )
+            sig = sig + "|" + names[i];
+
+        if ( sig != lastSig )
+        {
+            lastSig = sig;
+            for ( i = 0; i < level.players.size; i++ )
+            {
+                pl = level.players[i];
+                if ( !isDefined( pl ) || pl istestclient() || pl isdemoclient() )
+                    continue;   // bots/demo render no HUD — don't push to them
+                pl setClientDvar( "ui_gf_lobby_pcount", "" + names.size );
+                for ( s = 0; s < 12; s++ )
+                {
+                    if ( s < names.size )
+                        pl setClientDvar( "ui_gf_lobby_p" + s, names[s] );
+                    else
+                        pl setClientDvar( "ui_gf_lobby_p" + s, "" );
+                }
+            }
+        }
+
+        wait 0.5;
+    }
+}
+
+// ─── Lobby flanking weapon icons ───────────────────────────────────────────
+// Cycles the pair of weapon icons flanking the GUNFIGHT title through the arsenal, in sync for
+// every viewer (one shared client dvar, pushed to all begun humans each step). Shader names are the
+// VERIFIED menu_mp_weapons_* set the loadout overview already renders (incl. the two odd bases:
+// colt = M1911, stoner63a = Stoner63). Level-scope; started with the roster loop for the Auto/Manual
+// hold only; retires with the hold via the same notifies. Respects the gf_diag_cd_no_lobby_dvars
+// diagnostic. The first icon is seeded in gf_lobbyCamPut (before the menuDef reveals), and the items
+// stay hidden until the typewriter finishes the title (ui_gf_lobby_icon_on).
+gf_lobbyIconCycler()
+{
+    level endon( "game_ended" );
+    level endon( "gf_load_gate_reset" );
+
+    icons = [];
+    icons[icons.size] = "menu_mp_weapons_famas";
+    icons[icons.size] = "menu_mp_weapons_python";
+    icons[icons.size] = "menu_mp_weapons_spas";
+    icons[icons.size] = "menu_mp_weapons_l96a1";
+    icons[icons.size] = "menu_mp_weapons_ak47";
+    icons[icons.size] = "menu_mp_weapons_mp5k";
+    icons[icons.size] = "menu_mp_weapons_crossbow";
+    icons[icons.size] = "menu_mp_weapons_m60";
+    icons[icons.size] = "menu_mp_weapons_m16";
+    icons[icons.size] = "menu_mp_weapons_ak74u";
+    icons[icons.size] = "menu_mp_weapons_ithaca";
+    icons[icons.size] = "menu_mp_weapons_dragunov";
+    icons[icons.size] = "menu_mp_weapons_galil";
+    icons[icons.size] = "menu_mp_weapons_uzi";
+    icons[icons.size] = "menu_mp_weapons_rpk";
+    icons[icons.size] = "menu_mp_weapons_colt";
+    icons[icons.size] = "menu_mp_weapons_aug";
+    icons[icons.size] = "menu_mp_weapons_spectre";
+    icons[icons.size] = "menu_mp_weapons_wa2000";
+    icons[icons.size] = "menu_mp_weapons_commando";
+    icons[icons.size] = "menu_mp_weapons_hk21";
+    icons[icons.size] = "menu_mp_weapons_cz75";
+    icons[icons.size] = "menu_mp_weapons_g11";
+    icons[icons.size] = "menu_mp_weapons_rottweil72";
+    icons[icons.size] = "menu_mp_weapons_fnfal";
+    icons[icons.size] = "menu_mp_weapons_stoner63a";
+
+    idx = 0;   // seeded value (famas) is icons[0] — first advance shows icons[1]
+    while ( isDefined( level.gf_inLobbyHold ) && level.gf_inLobbyHold )
+    {
+        wait 1.2;
+        if ( getDvarInt( "gf_diag_cd_no_lobby_dvars" ) == 1 )
+            continue;
+
+        idx++;
+        if ( idx >= icons.size )
+            idx = 0;
+
+        for ( i = 0; i < level.players.size; i++ )
+        {
+            pl = level.players[i];
+            if ( !isDefined( pl ) || pl istestclient() || pl isdemoclient() )
+                continue;   // bots/demo render no HUD — don't push to them
+            pl setClientDvar( "ui_gf_lobby_icon", icons[idx] );
+        }
+    }
+}
+
+// mp_ map code -> the map's display name (user-supplied table). Falls back to the raw code for any
+// map not listed (e.g. a custom map), so an unknown map shows its code rather than nothing.
+gf_mapDisplayName( code )
+{
+    if ( code == "mp_array" )       return "Array";
+    if ( code == "mp_cairo" )       return "Havana";
+    if ( code == "mp_cosmodrome" )  return "Launch";
+    if ( code == "mp_cracked" )     return "Cracked";
+    if ( code == "mp_crisis" )      return "Crisis";
+    if ( code == "mp_duga" )        return "Grid";
+    if ( code == "mp_firingrange" ) return "Firing Range";
+    if ( code == "mp_hanoi" )       return "Hanoi";
+    if ( code == "mp_havoc" )       return "Jungle";
+    if ( code == "mp_mountain" )    return "Summit";
+    if ( code == "mp_nuked" )       return "Nuketown";
+    if ( code == "mp_radiation" )   return "Radiation";
+    if ( code == "mp_russianbase" ) return "WMD";
+    if ( code == "mp_villa" )       return "Villa";
+    if ( code == "mp_berlinwall2" ) return "Berlin Wall";
+    if ( code == "mp_discovery" )   return "Discovery";
+    if ( code == "mp_kowloon" )     return "Kowloon";
+    if ( code == "mp_stadium" )     return "Stadium";
+    if ( code == "mp_gridlock" )    return "Convoy";
+    if ( code == "mp_hotel" )       return "Hotel";
+    if ( code == "mp_outskirts" )   return "Stockpile";
+    if ( code == "mp_zoo" )         return "Zoo";
+    if ( code == "mp_drivein" )     return "Drive-In";
+    if ( code == "mp_area51" )      return "Hangar 18";
+    if ( code == "mp_golfcourse" )  return "Hazard";
+    return code;
+}
+
+// Hide the whole gunfight HUD for this player during the lobby (menu-driven; 0 = hidden). No
+// teardown needed — the normal spawn flow re-raises these show gates on the next real spawn after
+// map_restart(false). Loadout overview / team health panel / self bar / kill popup.
+gf_hideLobbyHUD()
+{
+    if ( getDvarInt( "gf_diag_cd_no_lobby_dvars" ) == 1 )
+        return;
+
+    self setClientDvar( "ui_gf_lo_show",    "0" );
+    self setClientDvar( "ui_gf_panel_show", "0" );
+    self setClientDvar( "ui_gf_self_show",  "0" );
+    self setClientDvar( "ui_gf_popup_show", "0" );
 }
 
 // ─── Team-Size Spawn/Barrier Mode ──────────────────────────────────────────
@@ -610,8 +973,12 @@ gf_playerSpawnedCB()
     // so a rejoiner is greeted again; the between-round map_restart is not a
     // re-greet). Humans only — bots draw no HUD and their names would burn
     // setText configstrings for nothing.
+    // Held off during the pregame lobby hold so it fires once — on the match's fresh-start spawn
+    // (map_restart(false) wipes pers, so gf_welcomed re-clears) — instead of flashing in the lobby
+    // AND again in the match. The lobby's own ads/info will live in the dedicated lobby HUD.
     if ( ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
-        && !isDefined( self.pers["gf_welcomed"] ) )
+        && !isDefined( self.pers["gf_welcomed"] )
+        && ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold ) )
     {
         self.pers["gf_welcomed"] = true;
         self thread gf_welcomeMessage();
@@ -651,12 +1018,17 @@ gf_playerSpawnedCB()
     self.pers["gf_spawnedRound"] = game["roundsplayed"];
 
     // Level-side stats publisher — start once per round; the player panels read its output.
-    if ( !isDefined( level.gf_healthHudStartRound ) || level.gf_healthHudStartRound != game["roundsplayed"] )
+    // Skipped during the pregame lobby hold (no panels are shown then, and it would leave an orphaned
+    // update loop across the map_restart(false) release); the match's first spawn starts it fresh.
+    if ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold )
     {
-        level.gf_healthHudStartRound = game["roundsplayed"];
-        level thread gf_startHealthHUD();
+        if ( !isDefined( level.gf_healthHudStartRound ) || level.gf_healthHudStartRound != game["roundsplayed"] )
+        {
+            level.gf_healthHudStartRound = game["roundsplayed"];
+            level thread gf_startHealthHUD();
+        }
+        gf_queueHealthHUDUpdate();
     }
-    gf_queueHealthHUDUpdate();
     // Video tweaks: STOCK by default — nothing is pushed unless a gf_vis_* dvar has
     // been set (the RCON Visuals sliders persist into them via the bridge), so
     // players keep their own video settings out of the box. Replaces the old
@@ -670,8 +1042,11 @@ gf_playerSpawnedCB()
 
     // Drive the entire per-player health panel in the PLAYER's own context (create +
     // update + destroy) — T5 client HUD elements don't network if created from a level
-    // thread. Mirrors the loadout HUD pattern.
-    if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+    // thread. Mirrors the loadout HUD pattern. Suppressed during the pregame lobby hold
+    // (the panel would flash in on the frozen spawn then get hidden by the lobby cam move).
+    if ( ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+        && ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold )
+        && getDvarInt( "gf_diag_cd_no_health_hud" ) != 1 )
         self thread gf_runHealthHUD();
 
     // #strip-begin - spawn recorder + HUD-pool overlays (dev/main only; stripped from public release)
@@ -743,12 +1118,28 @@ gf_applyVisTweaks()
 gf_onSpawnSpectator( origin, angles )
 {
     maps\mp\gametypes\_globallogic_defaults::default_onSpawnSpectator( origin, angles );
+
+    // ── Pregame lobby (Auto/Manual) ──────────────────────────────────────────
+    // Keep this a CLEAN spectator: hide the whole gunfight HUD. The team-select menu the engine would
+    // open for a teamless connector is prevented upstream by level.forceAutoAssign (set at the hold
+    // start), so there's nothing to swat here — which is what keeps the ESC/pause overlay usable. Do
+    // NOT thread the health HUD in this branch (that re-shows the panel). Desaturation is the
+    // level-scope visionSetNaked("mpIntro") applied at the hold start (no per-player self-method form
+    // in T5 MP). No teardown: map_restart(false) on lobby release respawns everyone fresh.
+    if ( isDefined( level.gf_inLobbyHold ) && level.gf_inLobbyHold
+        && !( self istestclient() ) && !( self isdemoclient() ) )
+    {
+        self gf_hideLobbyHUD();
+        return;
+    }
+
     gf_queueHealthHUDUpdate();
 
     // Spectators always see the whole health HUD. The panel is fully menu-rendered and the
     // intro is a snap now, so re-threading gf_runHealthHUD on each spectator spawn is cheap
     // and harmless (it re-pushes the per-client dvars).
-    if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+    if ( ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+        && getDvarInt( "gf_diag_cd_no_health_hud" ) != 1 )
         self thread gf_runHealthHUD();
 }
 
@@ -773,6 +1164,13 @@ gf_tryActivateRound()
 
     level.gf_activatingRound = true;
     level endon( "game_ended" );
+    // Auto/Manual lobby: a frozen prematch spawn during the Pass-1 hold threads this, and it then
+    // parks on the waittill("prematch_over") below. map_restart(false) on release does NOT fire
+    // game_ended and threads survive it, so without this endon the stale Pass-1 activator would
+    // wake alongside the fresh Pass-2 one when the real prematch fires prematch_over — a double
+    // gf_startRoundClock/gf_closeGraceEarly. gf_load_gate_reset (fired at every gate release) kills
+    // it here; inert for Normal/round-2+ (the notify has already fired / never fires by then).
+    level endon( "gf_load_gate_reset" );
 
     // 0.2s dedup so a single activation thread wins the spawn burst.
     wait 0.2;

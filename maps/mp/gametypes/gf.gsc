@@ -234,6 +234,17 @@ onStartGameType()
     level.killstreaksenabled             = 0;
     level.healthRegenDisabled            = true;
     level.playerHealth_RegularRegenDelay = 99999;
+
+    // Restart-lobby: route the throwaway "spawn" straight to spectator. maySpawn() calls this hook
+    // FIRST (_globallogic_spawn.gsc:28), and a false sends the engine down its own maySpawn-false
+    // path (:566-583) — self thread [[level.spawnSpectator]] — instead of a full frozen spawnPlayer.
+    // That skips the loadout build, spawn music, team-name splash, AND score bar in one shot: the
+    // lobby becomes pure spectators. gf_lobbyMaySpawn returns false ONLY while gf_lobbyRestartHold is
+    // set, so the real match after map_restart (and every normal round) spawns exactly as before and
+    // the stock maySpawn grace/lives logic is untouched. Re-set here every onStartGameType because
+    // map_restart wipes level.*.
+    level.maySpawn = ::gf_lobbyMaySpawn;
+
     gf_registerLoadoutCycleDvar(); // also sets level.gf_cfg_roundsPerLoadout
     gf_registerOvertimeLimitDvar(); // also sets level.gf_cfg_overtimeLimit
     gf_initDamageScoring(); // relies on level.gf_cfg_roundsPerLoadout
@@ -286,6 +297,38 @@ onStartGameType()
         setDvar( "scr_gf_load_grace", "20" );     // s past prematch_over to keep grace open for a still-loading client so it spawns into round 1 (0 = off)
     if ( getDvar( "scr_gf_lobby" ) == "" )
         setDvar( "scr_gf_lobby", "0" );           // Match Start: 0 = Normal (default, off), 1 = Auto lobby (min-players -> fast-restart), 2 = Manual lobby (admin START -> fast-restart)
+    // Register scr_team_maxsize with its documented default (0 = no cap) so it always exists
+    // in the dvar table. The mod reads it via getDvarInt (0 when unset), but an UNregistered
+    // dvar echoes "Unknown cmd scr_team_maxsize" when the RCON panel's connect-sweep reads it
+    // by bare name — spam the host sees on a listen server. dedicated.cfg still overrides this.
+    if ( getDvar( "scr_team_maxsize" ) == "" )
+        setDvar( "scr_team_maxsize", "0" );       // max players/team (0 = no cap); cfg ships 6
+
+    // Seed BOTH team-size-mode variants of every mode-specific dvar so they ALWAYS exist in the
+    // dvar table, even the variant for the mode not currently active. Each is otherwise only
+    // registered (gf_cfgFloat's seed-if-empty) when ITS mode runs — so in small mode the *_large
+    // dvars (and vice-versa) are unregistered, and the RCON panel's connect-sweep reads them by
+    // bare name → the engine prints "Unknown cmd <name>" (a burst of them on the listen-host
+    // screen / server console). Defaults mirror the read sites (round-length above,
+    // gf_getOvertimeLimit, gf_getCaptureTime). scr_gf_timelimit + scr_gf_teamspawnmode are
+    // already always-registered (registerTimeLimitDvar / gf_resolveTeamMode).
+    gtp = "scr_" + level.gameType;
+    if ( getDvar( gtp + "_timelimit" ) == "" )           setDvar( gtp + "_timelimit", "0.75" );
+    if ( getDvar( gtp + "_timelimit_large" ) == "" )     setDvar( gtp + "_timelimit_large", "1.5" );
+    if ( getDvar( gtp + "_overtimelimit" ) == "" )       setDvar( gtp + "_overtimelimit", "15" );
+    if ( getDvar( gtp + "_overtimelimit_large" ) == "" ) setDvar( gtp + "_overtimelimit_large", "30" );
+    if ( getDvar( "gf_capture_time" ) == "" )            setDvar( "gf_capture_time", "3" );
+    if ( getDvar( "gf_capture_time_large" ) == "" )      setDvar( "gf_capture_time_large", "5" );
+
+    // #strip-begin - dev debug dvars: seed to 0 so the RCON panel's DEBUG section reads them
+    // cleanly (they're otherwise read via getDvarInt, which never registers them → "Unknown cmd"
+    // on the panel's bare-name sweep). Dev-only; the reader blocks are strip-wrapped too.
+    if ( getDvar( "gf_debug_spawns" ) == "" )    setDvar( "gf_debug_spawns", "0" );
+    if ( getDvar( "gf_debug_hud_pool" ) == "" )  setDvar( "gf_debug_hud_pool", "0" );
+    if ( getDvar( "gf_debug_elem_probe" ) == "" ) setDvar( "gf_debug_elem_probe", "0" );
+    if ( getDvar( "gf_force_loadout" ) == "" )    setDvar( "gf_force_loadout", "-1" );   // loadout test aids (read in _gf_loadouts.gsc)
+    if ( getDvar( "gf_force_camo" ) == "" )       setDvar( "gf_force_camo", "-1" );
+    // #strip-end
 
     // Flinch (damage view-kick) scale — mult of stock bg_viewKickScale (0.2).
     // Seeds scr_gf_flinch (default 1 = stock) and applies bg_viewKickScale each
@@ -491,6 +534,13 @@ gf_registerLoadoutCycleDvar()
 
 onSpawnPlayer( teamOverride )
 {
+    // Restart-lobby: pre-arm the stock spawn-music flag so the prematch spawn sting
+    // (_globallogic_spawn.gsc ~line 199) is skipped for the throwaway lobby spawn. map_restart(false)
+    // on release wipes pers, so the real match's first spawn still plays the music fresh. Gated on the
+    // RESTART hold (not gf_inLobbyHold) so a non-restart Normal-mode hold still gets its music.
+    if ( isDefined( level.gf_lobbyRestartHold ) && level.gf_lobbyRestartHold && isDefined( self.pers["music"] ) )
+        self.pers["music"].spawn = true;
+
     self.sessionstate = "playing";
     self.usingObj     = undefined;
     self.maxhealth    = 100;
@@ -545,6 +595,12 @@ onSpawnPlayer( teamOverride )
 
 onSpawnPlayerUnified()
 {
+    // Restart-lobby: suppress the stock prematch spawn-music sting for the throwaway lobby spawn
+    // (see onSpawnPlayer). Also covers large mode, which routes to _spawning::onSpawnPlayer_Unified
+    // instead of our onSpawnPlayer.
+    if ( isDefined( level.gf_lobbyRestartHold ) && level.gf_lobbyRestartHold && isDefined( self.pers["music"] ) )
+        self.pers["music"].spawn = true;
+
     self.usingObj = undefined;
 
     if ( level.useStartSpawns && !level.inGracePeriod )
@@ -564,5 +620,18 @@ onSpawnPlayerUnified()
     }
 
     maps\mp\gametypes\_spawning::onSpawnPlayer_Unified();
+}
+
+// level.maySpawn hook. Returns false ONLY during the restart-lobby hold, so maySpawn()
+// (_globallogic_spawn.gsc:28) short-circuits and the engine routes the player to spawnSpectator
+// (:581) instead of a frozen spawnPlayer — no loadout, spawn music, team splash, or score bar. Any
+// other time returns true, leaving the full stock maySpawn (grace/lives/overtime) logic to run. Kept
+// deliberately strict (single flag) because a stray false during the live match would block ALL
+// spawning.
+gf_lobbyMaySpawn()
+{
+    if ( isDefined( level.gf_lobbyRestartHold ) && level.gf_lobbyRestartHold )
+        return false;
+    return true;
 }
 

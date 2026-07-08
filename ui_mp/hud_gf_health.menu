@@ -1009,4 +1009,398 @@
 			decoration
 		}
 	}
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// Pregame lobby HUD — SEPARATE menuDef, deliberately NOT gated on BIT_HUD_VISIBLE.
+	// The engine clears hud_visible=0 entering the intermission state (the lobby cam uses
+	// spawnIntermission), which would blank the whole gf_health menuDef above — so the lobby
+	// chrome lives here, gated ONLY by !BIT_IN_KILLCAM !BIT_UI_ACTIVE at the menu level and by
+	// ui_gf_lobby_show per item. Do NOT add !BIT_SCOREBOARD_OPEN — the intermission scoreboard
+	// sets that bit and would hide us. GSC (gf_lobbyCamPut) pushes ui_gf_lobby_show/welcome/map/
+	// status per client. This band wraps the stock intermission scoreboard (which is the roster);
+	// left rules + right server/ads columns are added once this band is confirmed to render.
+	// ═══════════════════════════════════════════════════════════════════════════
+	menuDef
+	{
+		name			"gf_lobby_hud"
+		rect			0 0 640 480 HORIZONTAL_ALIGN_FULLSCREEN VERTICAL_ALIGN_FULLSCREEN
+		fullScreen		0
+		visible			1
+		visibilityBits	bits( !BIT_IN_KILLCAM )
+
+		// -- TOP-CENTER branding: eyebrow / wordmark / map (centered, clear of the top-left minimap) --
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			-160 4 320 10 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_eyebrow" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.2
+			textalign		ITEM_ALIGN_TOP_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 0.42 0.1 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			-160 16 320 26 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_title" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.55
+			textalign		ITEM_ALIGN_TOP_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 1 1 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) )
+			decoration
+		}
+		// Cycling weapon icons flanking the GUNFIGHT title — same dvar-driven material idiom as the
+		// loadout overview / panel skulls. GSC (gf_lobbyIconCycler) walks ui_gf_lobby_icon through the
+		// arsenal; ui_gf_lobby_icon_on flips 1 only after the typewriter finishes the title line, so the
+		// pair pops in when the wordmark settles. Natural (white) tint. The LEFT icon uses a NEGATIVE
+		// rect width — the engine's mirrored draw (stock precedent: hud_rps.menu draws its border art
+		// with -38/-220 widths) — so the two guns face each other.
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			-118 15 -56 28 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_TOP
+			exp				material( dvarString( "ui_gf_lobby_icon" ) );
+			forecolor		1 1 1 0.95
+			visible			when( dvarInt( "ui_gf_lobby_show" ) && dvarInt( "ui_gf_lobby_icon_on" ) )
+			decoration
+		}
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			62 15 56 28 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_TOP
+			exp				material( dvarString( "ui_gf_lobby_icon" ) );
+			forecolor		1 1 1 0.95
+			visible			when( dvarInt( "ui_gf_lobby_show" ) && dvarInt( "ui_gf_lobby_icon_on" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			-160 50 320 12 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_map" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.3
+			textalign		ITEM_ALIGN_TOP_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.66 0.69 0.72 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) )
+			decoration
+		}
+
+		// -- DEAD-CENTER: welcome + status (screen middle, clear of everything) --
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			-160 202 320 14 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_welcome" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.3
+			textalign		ITEM_ALIGN_TOP_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 1 1 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			-160 224 320 10 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_status" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.22
+			textalign		ITEM_ALIGN_TOP_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 0.42 0.1 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) )
+			decoration
+		}
+
+		// -- BOTTOM info block: rules line + every-map line, dropped just ABOVE the stock
+		//    "SPECTATING <name>" overlay (~y399) that can't be suppressed on a listen host --
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			-300 366 600 12 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_TOP
+			text			"^3No respawns   ^0|^3   No health regen   ^0|^3   Shared loadouts rotate every 2 rounds   ^0|^3   First to 6 rounds wins"
+			textfont		UI_FONT_NORMAL
+			textscale		0.23
+			textalign		ITEM_ALIGN_TOP_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 0.42 0.1 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			-300 381 600 10 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_TOP
+			text			"^3All 24 maps supported with smaller wager map sizes   ^0|^3   Damage dealt = player 'score'"
+			textfont		UI_FONT_NORMAL
+			textscale		0.2
+			textalign		ITEM_ALIGN_TOP_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 0.42 0.1 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) )
+			decoration
+		}
+
+		// -- RIGHT rail: homepage + Discord (grey titles / orange links), each with a square emblem to
+		//    the right of its two lines. Emblem materials are dvar-driven (linker-safe) and seeded in
+		//    gf_lobbyCamPut: the Black Ops faction crest (faction_128_specops) for the homepage, the
+		//    15th-prestige badge for Discord. "Every map supported" now lives in the bottom info block. --
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			-252 124 200 14 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_TOP
+			text			"Visit our homepage"
+			textfont		UI_FONT_NORMAL
+			textscale		0.3
+			textalign		ITEM_ALIGN_MIDDLE_RIGHT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.72 0.75 0.78 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			-252 141 200 12 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_TOP
+			text			"gunfight.us"
+			textfont		UI_FONT_NORMAL
+			textscale		0.24
+			textalign		ITEM_ALIGN_MIDDLE_RIGHT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 0.42 0.1 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			-46 124 30 30 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_TOP
+			exp				material( dvarString( "ui_gf_lobby_ic_home" ) );
+			forecolor		1 0.42 0.1 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			-252 176 200 14 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_TOP
+			text			"Join us on Discord"
+			textfont		UI_FONT_NORMAL
+			textscale		0.3
+			textalign		ITEM_ALIGN_MIDDLE_RIGHT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.72 0.75 0.78 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			-252 193 200 12 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_TOP
+			text			"discord.gg/blackops"
+			textfont		UI_FONT_NORMAL
+			textscale		0.24
+			textalign		ITEM_ALIGN_MIDDLE_RIGHT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 0.42 0.1 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) )
+			decoration
+		}
+		itemDef
+		{
+			style			WINDOW_STYLE_SHADER
+			type			ITEM_TYPE_IMAGE
+			rect			-46 176 30 30 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_TOP
+			exp				material( dvarString( "ui_gf_lobby_ic_disc" ) );
+			forecolor		1 0.42 0.1 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) )
+			decoration
+		}
+
+		// -- LEFT rail: live roster ("LOBBY:" + up to 12 names, below the top-left minimap). Names +
+		//    count are pushed per-client by gf_lobbyRosterLoop (GSC); each row is gated on the count so
+		//    empty slots stay hidden, and on ui_gf_lobby_show so the list clears the instant the hold
+		//    releases. Mirrors the right-side ads rail for a balanced broadcast look. --
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			24 120 240 12 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			text			"LOBBY:"
+			textfont		UI_FONT_NORMAL
+			textscale		0.3
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 0.42 0.1 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) && ( dvarInt( "ui_gf_lobby_pcount" ) > 0 ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			28 138 240 12 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_p0" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.25
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.85 0.87 0.9 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) && ( dvarInt( "ui_gf_lobby_pcount" ) > 0 ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			28 153 240 12 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_p1" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.25
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.85 0.87 0.9 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) && ( dvarInt( "ui_gf_lobby_pcount" ) > 1 ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			28 168 240 12 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_p2" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.25
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.85 0.87 0.9 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) && ( dvarInt( "ui_gf_lobby_pcount" ) > 2 ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			28 183 240 12 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_p3" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.25
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.85 0.87 0.9 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) && ( dvarInt( "ui_gf_lobby_pcount" ) > 3 ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			28 198 240 12 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_p4" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.25
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.85 0.87 0.9 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) && ( dvarInt( "ui_gf_lobby_pcount" ) > 4 ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			28 213 240 12 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_p5" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.25
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.85 0.87 0.9 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) && ( dvarInt( "ui_gf_lobby_pcount" ) > 5 ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			28 228 240 12 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_p6" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.25
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.85 0.87 0.9 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) && ( dvarInt( "ui_gf_lobby_pcount" ) > 6 ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			28 243 240 12 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_p7" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.25
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.85 0.87 0.9 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) && ( dvarInt( "ui_gf_lobby_pcount" ) > 7 ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			28 258 240 12 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_p8" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.25
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.85 0.87 0.9 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) && ( dvarInt( "ui_gf_lobby_pcount" ) > 8 ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			28 273 240 12 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_p9" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.25
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.85 0.87 0.9 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) && ( dvarInt( "ui_gf_lobby_pcount" ) > 9 ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			28 288 240 12 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_p10" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.25
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.85 0.87 0.9 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) && ( dvarInt( "ui_gf_lobby_pcount" ) > 10 ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			28 303 240 12 HORIZONTAL_ALIGN_LEFT VERTICAL_ALIGN_TOP
+			exp				text( dvarString( "ui_gf_lobby_p11" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.25
+			textalign		ITEM_ALIGN_MIDDLE_LEFT
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		0.85 0.87 0.9 1
+			visible			when( dvarInt( "ui_gf_lobby_show" ) && ( dvarInt( "ui_gf_lobby_pcount" ) > 11 ) )
+			decoration
+		}
+	}
 }

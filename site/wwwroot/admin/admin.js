@@ -75,3 +75,82 @@ function tick(){
 }
 function updFoot(){ document.getElementById('foot').textContent=(lastUpdated?'Updated '+ago(lastUpdated)+'  ·  ':'')+'auto-refreshes every 5s'; }
 tick(); setInterval(tick,5000); setInterval(updFoot,1000);
+
+// ---- Connection history (multi-day, searchable) --------------------------
+// Lives in its OWN container (#history), NOT #content — so the 5s roster
+// re-render never wipes the search box / steals focus. Fetches the separate
+// admin_history.json (IPs, same .secured-gated folder), refreshed every 60s.
+var HURL = 'live/admin_history.json';
+var HIST_SHOW = 300;
+var histAll = [];
+var histInput = null, histResults = null, histCount = null, histFoot = null;
+
+function evClass(ev){ return ev==='CONNECT'?'connect':ev==='LEFT'?'left':'online'; }
+
+function renderHist(){
+  if (!histResults) return;
+  var q = (histInput.value||'').trim().toLowerCase();
+  var matches = !q ? histAll : histAll.filter(function(e){
+    return (e.name||'').toLowerCase().indexOf(q)>=0
+        || (e.ip||'').toLowerCase().indexOf(q)>=0
+        || (e.guid||'').toLowerCase().indexOf(q)>=0;
+  });
+  var shown = Math.min(matches.length, HIST_SHOW);
+  histCount.textContent = 'Showing '+shown+' of '+matches.length+
+    (q ? ' match'+(matches.length===1?'':'es') : ' events')+
+    (matches.length>HIST_SHOW ? ' (refine to see older)' : '')+
+    '  ·  '+histAll.length+' on file';
+  histResults.innerHTML='';
+  if(!matches.length){ histResults.appendChild(el('div','empty', q?'No matches.':'No history yet.')); return; }
+  var tbl=el('table');
+  var thead=el('tr');
+  ['When','Event','Player','IP address','GUID','Session'].forEach(function(h){ thead.appendChild(el('th',null,h)); });
+  tbl.appendChild(thead);
+  matches.slice(0,HIST_SHOW).forEach(function(e){
+    var tr=el('tr');
+    tr.appendChild(el('td',null,(e.date||'')+' '+(e.time||'')));
+    var te=el('td'); te.appendChild(el('span','ev '+evClass(e.event), e.event||'')); tr.appendChild(te);
+    tr.appendChild(el('td','name', e.name||''));
+    tr.appendChild(el('td','ip', e.ip||''));
+    tr.appendChild(el('td','gid', e.guid||''));
+    tr.appendChild(el('td',null, e.session||''));
+    tbl.appendChild(tr);
+  });
+  histResults.appendChild(tbl);
+}
+
+function fetchHist(){
+  fetch(HURL+'?t='+Date.now(),{cache:'no-store'})
+    .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(d){
+      histAll = (d && d.events) ? d.events : [];
+      if (histFoot) histFoot.textContent = 'History '+(d&&d.updated?ago(d.updated):'')+
+        '  ·  spans up to '+((d&&d.days)||'?')+' days  ·  refreshes every 60s';
+      renderHist();
+    })
+    .catch(function(){
+      if (histAll.length) return;   // keep last good data on a transient error
+      if (histResults){ histResults.innerHTML=''; histResults.appendChild(
+        el('div','empty','History file not available yet — it is written after the status service picks up the update.')); }
+    });
+}
+
+function initHist(){
+  var host=document.getElementById('history');
+  if(!host) return;
+  var card=el('div','card');
+  card.appendChild(el('p','kick','Connection history — search name / IP / GUID across every day on file'));
+  histInput=document.createElement('input');
+  histInput.type='search'; histInput.className='search';
+  histInput.placeholder='Search a player name, IP, or GUID…';
+  histInput.setAttribute('autocomplete','off'); histInput.spellcheck=false;
+  card.appendChild(histInput);
+  histCount=el('div','hcount'); card.appendChild(histCount);
+  histResults=el('div','htable'); card.appendChild(histResults);
+  histFoot=el('div','hfoot'); card.appendChild(histFoot);
+  host.appendChild(card);
+  var deb=null;
+  histInput.addEventListener('input',function(){ if(deb)clearTimeout(deb); deb=setTimeout(renderHist,120); });
+  fetchHist(); setInterval(fetchHist,60000);
+}
+initHist();

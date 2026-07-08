@@ -227,8 +227,8 @@ set con_displayRconOutput "0"                       // Print the output of comma
 //set scr_team_kickteamkillers "0"                  // kick team killers?
 //set scr_team_teamkillpointloss "1"                // Point penalty for teamkills?
 //set scr_team_teamkillspawndelay "20"              // Delay spawns of teamkillers?
-set scr_teambalance "1"                             // Autobalance teams?
-set scr_teamup "10"                                 // Seconds players have to team up before the match starts. 0 = no delay.
+set scr_teambalance "1"                             // Block joining the already-larger team (real T5 dvar; _teams.gsc reads it).
+// scr_teamup removed: it's a CoD4/WaW dvar that does NOT exist in Black Ops (T5) — nothing reads it, and a bare RCON read of it prints "Unknown cmd".
 //set scr_teamKillPunishCount "4"                   // After how many teamkills are players punished?
 
 //set scr_hardpoint_allowdogs "1"                   // Enable/Disable Attack Dogs Killstreak.

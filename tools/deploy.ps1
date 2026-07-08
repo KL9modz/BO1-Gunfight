@@ -60,7 +60,9 @@ $ErrorActionPreference = "Stop"
 #     site; it is never copied to wwwroot.
 #   - FastDL publishes ONLY mod.ff (the public artifact players already get),
 #     never the mod tree - so .git/tools/notes/etc. are never world-readable.
-#   - -Web's /MIR excludes mods\ + usermaps\ so it never purges the FastDL copy.
+#   - -Web's /MIR excludes mods\ + usermaps\ (FastDL copy), live\/admin\live\
+#     (status snapshots), and downloads\ (hand-placed public file drop) so it
+#     never purges box-local files that aren't in the repo.
 # ---------------------------------------------------------------------------
 
 # Secrets that must never reach the world-readable marketing page. These are
@@ -206,6 +208,9 @@ function Deploy-Web {
     # .secured marker (created by setup_admin_auth.ps1). Purging it would silently disable
     # the admin view. admin\admin.html itself IS tracked and mirrors normally.
     $extra += @("/XD", (Join-Path $WebDest "admin\live"))
+    # Never purge downloads\ - a hand-placed public file drop (large zips etc.) that lives
+    # on the box, not in the repo. Without this /MIR would delete it on the next -Web deploy.
+    $extra += @("/XD", (Join-Path $WebDest "downloads"))
 
     Invoke-Robocopy -Source $webSrc -Destination $WebDest -ExtraArgs $extra
     Write-Host "Website deployed$(if ($DryRun) { ' (dry run - nothing changed)' }). No restart needed (static IIS content)."
