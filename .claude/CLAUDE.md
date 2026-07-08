@@ -1,25 +1,60 @@
 ﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 ---
 ### TODO
-lobby ends on its own at some point 
-Fix sensitivity
-fast retsart clears the bots
-I THINK THERE IS A BOT BUG WHERE AS BOTS CONNECT 1 BY 1, THEY SOMETIMES SUICIDE. my guess is they do this to balence teams becuase at that exact second maybe the teams are inbalanced? 
-mod changes peoples settings
-unknown cmd cd
-Friendly Rire is in 2 rcon spots and turns on next round
-manage teams
-widen the spawns
-show feature we support every map
-add general visual improvemts to the feature list 
-fable website design
-- edit gamemode to Gunfight not GF?
-- server advertisements 
-- Adjust spawns & flags
-- ship weapon files: ads fov/move speed
-- add credit to Plutonium/bots, etc
-BO1 server role
-IW5 MW3 face-off gunfight - mwgunfight.com
+
+**Bugs**
+- "Pregame lobby" ends on its own at some point (should only end via load/min-players gate or admin start)
+- Fast restart clears the bots
+- Sometimes too many bots appear — make default fill 3v3
+- Bot bug: as bots connect one by one, they sometimes suicide — suspect they're self-balancing teams mid-connect while counts are momentarily uneven
+- Mod changes people's client settings
+- 'Unknown cmd cd' (client-side console print)
+- Democlient round-cam lag
+- Fingergun not working
+- Start music killed by ambient music
+- Log thinks some bots are people (bot/human miscount in logs)
+- Map size change (large/small mode) takes effect a round late
+- Minimap compass not showing wager mode size for some DLC maps
+
+**Bots**
+- Rename "democlient"
+
+**RCON / Admin panel**
+- Manage teams from RCON — combined ask: team switching, a "balance teams now" button, and allowing changing teams before countdown without forcing spectate
+- Mantle/climb speed control
+- Sensitivity adjuster / FOV scale control
+- Friendly Fire setting exists in 2 RCON spots and re-enables itself next round (dedup/fix)
+- Gas/stun/flash intensity sliders
+
+**Gameplay / Spawns**
+- Allow players to spawn in late to a round if teams are uneven
+- Preserve players from lobby (don't re-shuffle/reset on transition)
+- Lobby ready up or team picking?
+- Widen the spawns
+- Adjust spawns & flags generally
+- Berlin Wall: move flag away from the building
+- Add min-players-to-start option that includes bots in the count
+- Hockey gamemode on Arena (map-specific mode idea)
+- Lobby fly cam controls
+- Ship weapon files: ADS FOV / move speed tuning
+
+**HUD / Visual**
+- Persistent clean "gunfight.us" text on HUD
+- General visual improvements (tracked against the feature list)
+
+**Site / Branding**
+- Fable-style website design pass
+- Server advertisements
+- Add credit to Plutonium/bots/etc.
+- Show which features are supported on every map
+- Consider renaming gametype display to "Gunfight" instead of "GF"
+
+**Setup guide additions**
+- Recommend `cg_fov 65`, `cg_fovScale 1.4`
+
+**Ideas / Future**
+- BO1 server "role" (Discord role tied to server activity?)
+- IW5/MW3 face-off Gunfight — reference: mwgunfight.com
 
 
 fast restart sometimes makes the prematch timer look like its running at 1fps

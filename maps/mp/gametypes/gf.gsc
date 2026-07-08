@@ -174,6 +174,14 @@ onPrecacheGameType()
     PrecacheItem( "tabun_gas_mp"        );
     PrecacheItem( "nightingale_mp"      );
 
+    // Finger Gun easter egg primary. "fingergun_mp" is not a real weapon (an
+    // invalid token was relying on the engine's silent fallback, which never
+    // actually gives anything without precache — same GiveWeapon-no-op as the
+    // special weapons above). "defaultweapon" IS a real weapon def (raw\weapons\sp,
+    // stock devgui uses it the same way: raw\maps\_debug.gsc precacheItem+GiveWeapon)
+    // — precache it here so the loadout pool entry actually delivers the gun.
+    PrecacheItem( "defaultweapon"       );
+
     // OT apron FX — initial registration. NOTE: these handles are wiped by the
     // map_restart(true) that _globallogic::endGame runs between rounds, and
     // onPrecacheGameType only runs once per match — so gf_createOvertimeZone calls

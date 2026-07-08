@@ -28,6 +28,9 @@ tools/rcon/secrets.local.json
 # (so the connect-sweep stops bare-sending them). Machine/server-specific; regenerated on demand.
 tools/rcon/.dvarcache.json
 
+# Watchdog — box-local alert-state (down/recovered transitions), regenerated on demand
+tools/vps_services/watchdog_state.json
+
 # Loadout editor — rolling backup written next to the edited .gsc on each save
 *.editorbak
 

@@ -12,10 +12,21 @@
 #   GF-ConnLogger    tools\conn_logger\conn_logger.ps1     private IP connect/leave log
 #   GF-JoinNotify    tools\notify\join-notify.ps1          ntfy phone alerts (needs config.json)
 #   GF-StatusService tools\status_service\status_service.ps1  public status JSON for the website
+#   GF-Watchdog      tools\vps_services\watchdog.ps1        periodic health check + auto-restart
+#                                                            + ntfy alert for all of the above
+#                                                            (see watchdog.ps1 header)
 #
 # All run as SYSTEM (no stored password, survive reboot). Each helper resolves its
 # own files by paths relative to its script location, so SYSTEM finds them fine.
 # GF-JoinNotify is skipped unless tools\notify\config.json exists (it needs a topic).
+#
+# GF-Watchdog is different in kind from the other three: they are infinite-loop
+# processes restarted by Task Scheduler's own RestartOnFailure (999 tries, 1 min
+# apart), which EXHAUSTS after ~16.6h of back-to-back failures and then just sits
+# dead (State=Ready) until a human notices. GF-Watchdog is instead a short-lived
+# script re-invoked on its OWN repeating trigger (every 3 min, forever) - each
+# run gets a fresh check, so there's no retry budget to exhaust. It in turn
+# restarts any of the other three (or GF-GameServer) that it finds not Running.
 # ------------------------------------------------------------------------------
 
 [CmdletBinding()]
@@ -45,6 +56,11 @@ $services = @(
        # the .secured marker (fail-safe: no IP data reaches the web root before auth).
        Args = '-IntervalSeconds 5 -AdminOutFile "C:\inetpub\wwwroot\admin\live\admin.json"'
        RequiresConfig = '' }
+    @{ Name = 'GF-Watchdog'
+       Script = Join-Path $toolsRoot 'vps_services\watchdog.ps1'
+       Args = ''
+       RequiresConfig = ''
+       Periodic = $true }
 )
 
 if ($Only) { $services = $services | Where-Object { $Only -contains $_.Name } }
@@ -84,6 +100,17 @@ $settings  = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit ([TimeSpan]::Zero)
 $trigger = New-ScheduledTaskTrigger -AtStartup
 
+# Periodic tasks (currently just GF-Watchdog) are short-lived scripts re-run on
+# their own schedule rather than infinite loops kept alive by RestartOnFailure -
+# see the header comment for why that distinction matters.
+$periodicSettings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
+# RepetitionDuration must fit the scheduler's XML duration range - 10 years, not
+# [TimeSpan]::MaxValue, which Register-ScheduledTask rejects as out of range.
+$periodicTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+    -RepetitionInterval (New-TimeSpan -Minutes 3) -RepetitionDuration (New-TimeSpan -Days 3650)
+
 foreach ($svc in $services) {
     if (-not (Test-Path $svc.Script)) {
         Write-Warning "Skipping $($svc.Name): script not found ($($svc.Script))."
@@ -101,9 +128,16 @@ foreach ($svc in $services) {
     if (Get-ScheduledTask -TaskName $svc.Name -ErrorAction SilentlyContinue) {
         Unregister-ScheduledTask -TaskName $svc.Name -Confirm:$false
     }
-    Register-ScheduledTask -TaskName $svc.Name `
-        -Action $action -Trigger $trigger -Principal $principal -Settings $settings `
-        -Description ("Gunfight VPS service: {0}" -f $svc.Name) | Out-Null
+
+    if ($svc.Periodic) {
+        Register-ScheduledTask -TaskName $svc.Name `
+            -Action $action -Trigger $periodicTrigger -Principal $principal -Settings $periodicSettings `
+            -Description ("Gunfight VPS service: {0}" -f $svc.Name) | Out-Null
+    } else {
+        Register-ScheduledTask -TaskName $svc.Name `
+            -Action $action -Trigger $trigger -Principal $principal -Settings $settings `
+            -Description ("Gunfight VPS service: {0}" -f $svc.Name) | Out-Null
+    }
     Start-ScheduledTask -TaskName $svc.Name
     Write-Host "Registered + started $($svc.Name)."
 }

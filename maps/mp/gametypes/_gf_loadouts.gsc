@@ -101,7 +101,7 @@ gf_initLoadouts()
 
     // ── Dual-wield SMG ×5 ──
     pool[n] = gf_load( "mac11_grip_silencer_mp",    "m1911dw_mp",              "satchel_charge_mp",   "hatchet_mp",        "flash_grenade_mp",       -1,  -1 ); n++;
-    pool[n] = gf_load( "fingergun_mp",              "knife_ballistic_mp",      "scrambler_mp",        "frag_grenade_mp",   "concussion_grenade_mp",  -1,  -1 ); n++;
+    pool[n] = gf_load( "defaultweapon",             "knife_ballistic_mp",      "scrambler_mp",        "frag_grenade_mp",   "concussion_grenade_mp",  -1,  -1 ); n++;
     pool[n] = gf_load( "ithaca_grip_mp",            "pm63dw_mp",               "acoustic_sensor_mp",  "sticky_grenade_mp", "willy_pete_mp",          -1,  -1 ); n++;
     pool[n] = gf_load( "l96a1_mp",                  "rpg_mp",                  "camera_spike_mp",     "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1 ); n++;
     pool[n] = gf_load( "aug_elbit_dualclip_mp",     "python_acog_mp",          "scrambler_mp",        "frag_grenade_mp",   "nightingale_mp",         -1,  -1 ); n++;
@@ -404,7 +404,7 @@ gf_buildWeaponDB()
     gf_regFamily( "stoner63",   "Stoner63",   "menu_mp_weapons_stoner63a" );   // icon base has trailing 'a'
     gf_regFamily( "spas",       "SPAS-12",    "menu_mp_weapons_spas" );
     gf_regFamily( "ithaca",     "Stakeout",   "menu_mp_weapons_ithaca" );
-    gf_regFamily( "fingergun",  "Finger Gun", "menu_mp_weapons_knife" );   // invalid weapon -> engine's default finger gun (easter egg)
+    gf_regFamily( "defaultweapon", "Finger Gun", "menu_mp_weapons_knife" );   // real weapon (raw\weapons\sp\defaultweapon, precached in gf.gsc) -> engine's finger-gun easter egg
     gf_regFamily( "rottweil72", "Olympia",    "menu_mp_weapons_rottweil72" );
     gf_regFamily( "l96a1",      "L96A1",      "menu_mp_weapons_l96a1" );
     gf_regFamily( "wa2000",     "WA2000",     "menu_mp_weapons_wa2000" );

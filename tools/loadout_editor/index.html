@@ -144,7 +144,7 @@ const GROUPS = [
     ["rpg","RPG",NONE],["knife_ballistic","Ballistic Knife",NONE],
     ["minigun","Death Machine",["_wager"]],["m202_flash","Grim Reaper",["_wager"]] ]},
   { label:"Fun", weps:[
-    ["fingergun","Finger Gun (invalid)",NONE] ]}
+    ["defaultweapon","Finger Gun",NONE] ]}
 ];
 
 const ATT_LABEL = {
@@ -182,7 +182,7 @@ const WTYPE = {
   asp:'Pistol',cz75:'Pistol',m1911:'Pistol',makarov:'Pistol',python:'Pistol',
   pythondw:'Pistol',cz75dw:'Pistol',m1911dw:'Pistol',makarovdw:'Pistol',aspdw:'Pistol',
   china_lake:'Launcher',crossbow_explosive:'Launcher',m72_law:'Launcher',rpg:'Launcher',
-  knife_ballistic:'Special',minigun:'Special',m202_flash:'Special',fingergun:'Special'
+  knife_ballistic:'Special',minigun:'Special',m202_flash:'Special',defaultweapon:'Special'
 };
 // type -> [display names], for 0-seeding every weapon in every type section
 const TYPE_NAMES = {};
@@ -224,6 +224,7 @@ function parseToken(token){
 }
 // base + chosen suffixes -> canonical (slot-ordered) token
 function buildToken(base, suffixes){
+  if (base === "defaultweapon") return base;   // no _mp variant — real token is bare "defaultweapon"
   const ordered = suffixes.filter(s => s).sort((a, b) => slotOf(a) - slotOf(b));
   return base + "_" + ordered.map(s => s.slice(1) + "_").join("") + "mp";
 }
