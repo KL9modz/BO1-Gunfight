@@ -588,22 +588,19 @@ gf_lobbyCamPut()
     if ( self istestclient() || self isdemoclient() )                    // bots + demo clients stay put
         return;
 
-    // Every-tick backstop: keep the gunfight HUD hidden for the whole hold. We no longer touch the menu
-    // state here — the old per-tick closeMenu()/g_scriptMainMenu="" swatted the team-select menu but
-    // clearing g_scriptMainMenu also killed the ESC/pause overlay every tick. The team menu is now
-    // prevented at the source (level.forceAutoAssign at the hold start makes teamless connectors
-    // auto-assign, so it never opens), which leaves ESC fully usable during the lobby.
-    self gf_hideLobbyHUD();
-
-    // NOTE: the maySpawn-false spectator path (spawnClient, _globallogic_spawn.gsc:578) briefly sets the
-    // stock "spawn next round" lower-third. Stock already threads removeSpawnMessageShortly(3), so it
-    // self-clears in ~3s — left alone here so the compile stays clean (clearLowerMessage is NOT callable
-    // from a mod script). If it reads badly in the lobby, clear it via the full-path wrapper
-    // maps\mp\gametypes\_globallogic_ui::removeSpawnMessageShortly(0).
-
-    if ( isDefined( self.gf_inLobbyCam ) && self.gf_inLobbyCam )          // cam move: once per player
+    // CRITICAL: everything below runs ONCE per player (guarded by self.gf_inLobbyCam). It must NOT run
+    // every watcher tick. setClientDvar is a reliable server command; re-pushing the HUD-hide (4 dvars)
+    // + the content block every 0.25s to every player piled up reliable commands faster than a just-
+    // connecting client could ack, overflowing its buffer -> "server command overflow" + disconnect on a
+    // first-time join. Once is enough: the pure-spectator lobby never spawns anyone, so nothing re-shows
+    // the gunfight HUD or moves the cam mid-hold. The team-select menu is prevented at the source
+    // (level.forceAutoAssign at the hold start), so there's no per-tick menu-swat to do here either.
+    if ( isDefined( self.gf_inLobbyCam ) && self.gf_inLobbyCam )          // once per player
         return;
     self.gf_inLobbyCam = true;
+
+    // Hide any stale gunfight HUD once on lobby entry (a reconnect could carry ui_gf_panel_show=1 etc.).
+    self gf_hideLobbyHUD();
 
     // Hide the minimap/compass for a clean lobby (stock HUD-hide path uses this exact dvar,
     // _utility.gsc:8414). Client dvar, so restored at the hold release (loop below). CAVEAT: `compass`
@@ -713,13 +710,12 @@ gf_lobbyRosterLoop()
                 if ( !isDefined( pl ) || pl istestclient() || pl isdemoclient() )
                     continue;   // bots/demo render no HUD — don't push to them
                 pl setClientDvar( "ui_gf_lobby_pcount", "" + names.size );
-                for ( s = 0; s < 12; s++ )
-                {
-                    if ( s < names.size )
-                        pl setClientDvar( "ui_gf_lobby_p" + s, names[s] );
-                    else
-                        pl setClientDvar( "ui_gf_lobby_p" + s, "" );
-                }
+                // Push only OCCUPIED slots. Menu rows are gated on pcount > N, so any slot past the count
+                // is hidden regardless of leftover text — no need to clear empties. ~names.size+1 client
+                // dvars per change instead of a flat 13; reliable-command volume matters (see the
+                // "server command overflow" note in gf_lobbyCamPut).
+                for ( s = 0; s < names.size; s++ )
+                    pl setClientDvar( "ui_gf_lobby_p" + s, names[s] );
             }
         }
 
@@ -944,6 +940,16 @@ gf_playerSpawnedCB()
 {
     level notify( "spawned_player" );
 
+    // Late-joiner / reconnect backstop: force the lobby HUD off for anyone spawning into the LIVE match.
+    // The pregame lobby is pure-spectator (nobody spawns during it), so reaching here is always a real
+    // match spawn — clear any stale ui_gf_lobby_show=1 a reconnecting client carried in. gf_onSpawnSpectator
+    // already covers the pre-first-spawn spectate window; this catches the spawn path itself. One dvar,
+    // humans only, gated !inLobbyHold + the diag flag (spawns are infrequent — no overflow concern).
+    if ( ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+        && ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold )
+        && getDvarInt( "gf_diag_cd_no_lobby_dvars" ) != 1 )
+        self setClientDvar( "ui_gf_lobby_show", "0" );
+
     // Silence the stock "+N" XP popups. _rank::giveRankXP pushes them onto the SAME
     // element our Elimination/Assist popup reuses (self.hud_rankscroreupdate), gated
     // only by self.enableText — the stock per-player "XP text" preference, re-set true
@@ -1132,6 +1138,15 @@ gf_onSpawnSpectator( origin, angles )
         self gf_hideLobbyHUD();
         return;
     }
+
+    // Mid-match spectator (a late joiner or a REJOIN): clear any stale lobby HUD. A client that was in a
+    // prior lobby got ui_gf_lobby_show=1; if it left before the release that zeroes it, that 1 persists on
+    // the client and nothing outside the lobby clears it — so the whole lobby chrome sticks over their
+    // view. The inLobbyHold branch above already returned for real lobby spectators, so reaching here (as
+    // a human) means the LIVE match. Humans only; skipped under the diag flag like every other lobby push.
+    if ( !( self istestclient() ) && !( self isdemoclient() )
+        && getDvarInt( "gf_diag_cd_no_lobby_dvars" ) != 1 )
+        self setClientDvar( "ui_gf_lobby_show", "0" );
 
     gf_queueHealthHUDUpdate();
 

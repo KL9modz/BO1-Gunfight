@@ -1,6 +1,7 @@
 ﻿# mp_gunfight â€” Plutonium T5 (Black Ops 1 MP) Gunfight Mod
 ---
 ### TODO
+lobby ends on its own at some point 
 Fix sensitivity
 fast retsart clears the bots
 I THINK THERE IS A BOT BUG WHERE AS BOTS CONNECT 1 BY 1, THEY SOMETIMES SUICIDE. my guess is they do this to balence teams becuase at that exact second maybe the teams are inbalanced? 
