@@ -347,13 +347,18 @@ function Deploy-Mod {
         (Join-Path $RepoRoot ".git"),
         (Join-Path $RepoRoot "site"),
         (Join-Path $RepoRoot "tools\dist"),
-        (Join-Path $RepoRoot "raw")
+        (Join-Path $RepoRoot "raw"),
+        # Runtime log dir written by the live server (untracked); see console_mp.log* below.
+        (Join-Path $ModDest "logs")
     )
     # Gitignored per-box secret stores live IN the mod tree but aren't tracked, so the
     # source (deploy clone) doesn't have them; without /XF, /MIR would DELETE the copies
     # a box operator placed by hand. Exclude them by name so they survive every deploy.
     # (config.example.json / secrets.local.json.example are different names and still ship.)
-    $xf = @("config.json", "secrets.local.json")
+    # console_mp.log* (+ logs\games_mp.log above) are the running server's own log files -
+    # untracked, and held open by the process /MIR just restarted around, so purging them
+    # is both wrong (not part of the deploy) and unreliable (ERROR 32, file in use).
+    $xf = @("config.json", "secrets.local.json", "console_mp.log*")
     Invoke-Robocopy -Source $RepoRoot -Destination $ModDest -ExtraArgs (@("/XD") + $xd + @("/XF") + $xf)
     Write-Host "Mod tree + mod.ff deployed$(if ($DryRun) { ' (dry run - nothing changed)' }) to $ModDest"
 
