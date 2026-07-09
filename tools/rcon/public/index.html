@@ -453,6 +453,7 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
         <button class="b-gh ctrl" data-tip="fast_restart (RCON console command)&#10;Restarts current round instantly — round state resets, scores carry over" onclick="cmd('fast_restart')">Fast Restart</button>
         <button class="b-gh ctrl" data-tip="map_restart (RCON console command)&#10;Full map reload — resets all scores, round state, and game entities" onclick="cmd('map_restart')">Map Restart</button>
       </div>
+      <button class="b-gh ctrl" data-tip="gf_cmd balanceteams (GSC bridge)&#10;Evens out allies vs axis, moving from the larger team to the smaller.&#10;Prefers moving BOTS first. Applies now during prematch/lobby; mid-round moves defer to next round (so live humans aren't killed)." onclick="balanceTeams()">⚖  Balance Teams</button>
     </div>
   </div>
 </div>
@@ -483,19 +484,22 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
   <div class="block">
     <div class="btitle">BOT MANAGEMENT</div>
     <div class="row" style="margin-bottom:10px">
-      <button class="b-ac ctrl" data-tip="set bots_manage_add 1 (RCON dvar)&#10;Triggers the engine to spawn one bot immediately&#10;Engine assigns team and class automatically" onclick="addBot()">+ Add Bot</button>
+      <button class="b-ac ctrl" data-tip="Bridge: botadd&#10;Spawns one autoassigned bot immediately.&#10;With Fill (per team) on, this is transient — the reconciler owns counts. Set Fill to 0 for manual bots." onclick="addBot()">+ Add Bot</button>
       <button class="b-ng ctrl" data-tip="clientkick <num> per bot (RCON command)&#10;Reads status, finds players with guid=0 and addr=unknown, kicks each one" onclick="kickBots()">Kick All Bots</button>
     </div>
-    <div class="srow" data-tip="bots_manage_fill&#10;Target total number of bots on the server. Engine adds/removes bots to hit this count"><span class="slbl">Auto-fill count</span>
-      <input id="vFl" class="num ctrl" type="number" value="0" min="0" max="12">
-      <button class="b-gh b-sm ctrl" onclick="applyFill()">Apply</button>
-      <span class="shint">total bots</span></div>
-    <div class="srow" data-tip="bots_team&#10;Which team bots are assigned to. Default: autoassign (engine balances)"><span class="slbl">Bots team</span>
-      <span style="flex:1"></span>
-      <select id="vBT" class="ctrl" onchange="sdvv('bots_team',this.value)">
-        <option value="autoassign">Auto-assign</option>
-        <option value="allies">Allies</option><option value="axis">Axis</option>
-      </select></div>
+    <div class="srow" data-tip="Bridge: botadd_<team> / botkick_<team>&#10;Adds a bot then places it on the chosen team (or kicks one bot from it).&#10;Only STICKS with Fill (per team) = 0 — with fill on, the reconciler owns bot placement and re-derives it.">
+      <span class="slbl">Per team</span><span style="flex:1"></span>
+      <span class="tm tm-a" style="margin:0 6px 0 0">ALLIES</span>
+      <button class="b-gh b-sm ctrl" onclick="botTeam('add','allies')">＋</button>
+      <button class="b-gh b-sm ctrl" onclick="botTeam('kick','allies')">－</button>
+      <span class="tm tm-x" style="margin:0 6px 0 12px">AXIS</span>
+      <button class="b-gh b-sm ctrl" onclick="botTeam('add','axis')">＋</button>
+      <button class="b-gh b-sm ctrl" onclick="botTeam('kick','axis')">－</button>
+    </div>
+    <div class="srow" data-tip="gf_fill_n — DYNAMIC FILL (per team)&#10;Keeps each side at exactly N players (humans+bots). A joining human displaces a bot on his team; a leaving human is re-padded. Humans are NEVER moved. Displaced bots park in spectator for reuse (kicked under slot pressure). Survives map restart AND the lobby fast-restart.&#10;0 = OFF (manual bot control sticks)."><span class="slbl">Fill (per team)</span>
+      <input id="vFillN" class="num ctrl" type="number" value="0" min="0" max="6">
+      <button class="b-ac b-sm ctrl" onclick="applyFillN()">Apply</button>
+      <span class="shint" id="fillReadout">off</span></div>
   </div>
   <div class="block" data-eff="live" data-per="transient">
     <div class="btitle">DIFFICULTY <span style="font-weight:400;font-size:10px">(GSC bridge)</span></div>
@@ -565,6 +569,18 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       <input type="range" id="sFov" min="40" max="120" value="65" oninput="sv('sFov','vFov')" onchange="sdvv('cg_fov',this.value)" class="ctrl">
       <input type="number" id="vFov" class="num ctrl" value="65" oninput="su('vFov','sFov',40,120)">
       <button class="b-ac b-sm ctrl" onclick="sdve('cg_fov','vFov')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('cg_fov',65,'vFov','sFov')">↺</button>      <button class="b-gh b-sm" data-tip="Copy 'cg_fov &lt;value&gt;' to paste into your in-game console" onclick="copyClientDvar('cg_fov',g('vFov').value)">📋</button>
+    </div>
+    <div class="slider-row" oncontextmenu="event.preventDefault();copyClientDvar('cg_fovScale',g('vFovS').value)" data-tip="cg_fovScale&#10;Multiplier on cg_fov (effective FOV = cg_fov × scale). Default: 1. Range: 0.5–2.&#10;Saved client dvar — can't be server-forced; each player sets their own. Copy-only.&#10;📋 / right-click = copy 'cg_fovScale <value>' for your console.">
+      <span class="slbl" style="min-width:120px">FOV Scale</span>
+      <input type="range" id="sFovS" min="0.5" max="2" step="0.05" value="1" oninput="sv('sFovS','vFovS')">
+      <input type="number" id="vFovS" class="num" value="1" step="0.05" oninput="su('vFovS','sFovS',0.5,2)">
+      <button class="b-gh b-sm" data-tip="Copy 'cg_fovScale &lt;value&gt;' to paste into your in-game console" onclick="copyClientDvar('cg_fovScale',g('vFovS').value)">📋</button>
+    </div>
+    <div class="slider-row" oncontextmenu="event.preventDefault();copyClientDvar('sensitivity',g('vSens').value)" data-tip="sensitivity&#10;Mouse look sensitivity. Default: 5. Range: 0.5–15.&#10;Saved client dvar — can't be server-forced; each player sets their own. Copy-only.&#10;📋 / right-click = copy 'sensitivity <value>' for your console.">
+      <span class="slbl" style="min-width:120px">Sensitivity</span>
+      <input type="range" id="sSens" min="0.5" max="15" step="0.5" value="5" oninput="sv('sSens','vSens')">
+      <input type="number" id="vSens" class="num" value="5" step="0.5" oninput="su('vSens','sSens',0.5,15)">
+      <button class="b-gh b-sm" data-tip="Copy 'sensitivity &lt;value&gt;' to paste into your in-game console" onclick="copyClientDvar('sensitivity',g('vSens').value)">📋</button>
     </div>
     <div class="srow" oncontextmenu="event.preventDefault();copyClientDvar('cg_drawFPS',g('cbFPS').checked?'1':'0')" data-tip="cg_drawFPS&#10;On-screen FPS counter. Saved client dvar -- a server can't force it; each player toggles their own.&#10;Live toggle = host only (listen).&#10;📋 / right-click = copy 'cg_drawFPS 0/1' for your console.">
       <span class="slbl">FPS Counter</span><span style="flex:1"></span>
@@ -779,11 +795,13 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
       <button class="b-ac ctrl" data-tip="set sv_maprotation + sv_maprotationcurrent (RCON)&#10;Writes the edited order to the LIVE server rotation. Takes effect from the next map — no restart, no wrong-map flash (the engine's own rotation loads it). The current map keeps running. Does NOT survive a server restart unless you also Save to cfg." onclick="rotSaveOrder()">&#128190; Save Order (live)</button>
       <button class="b-gh ctrl" data-tip="Save Order live, then also write sv_maprotation into dedicated.cfg so it survives a server restart." onclick="rotSaveOrderCfg()">Save to cfg</button>
       <button class="b-gh ctrl" data-tip="Re-read sv_maprotation from the server (discards unsaved edits)." onclick="loadRotation(1)">&#8635; Reload</button>
+      <button class="b-wn ctrl" id="rotSkipBtn" data-tip="map_rotate (RCON console command)&#10;Ends the current match NOW and advances the rotation — loads whatever is badged NEXT. Same path the engine takes at match end, so no wrong-map flash. Use &#9197; on a row first to choose what NEXT is." onclick="rotSkipNow()">&#9197; Play Next Now</button>
       <span class="tlbl" id="rotDirty" style="margin-left:auto;font-size:11px;color:var(--wn);display:none">&#9679; unsaved edits</span>
     </div>
     <div class="rot-note">
       <b style="color:var(--ok)">&#9679; LIVE</b> = current map &nbsp;·&nbsp; <b style="color:var(--ac)">NEXT</b> = loads on match end &nbsp;·&nbsp;
-      <b>&#9197;</b> set as next (no flash) &nbsp; <b>&#9654;</b> load now &nbsp; <b>&#8593;&#8595;</b> reorder &nbsp; <b>&#10005;</b> remove.
+      row <b>&#9197;</b> set as next &nbsp; row <b>&#9654;</b> load that map now &nbsp; <b>&#8593;&#8595;</b> reorder &nbsp; <b>&#10005;</b> remove.
+      <br><b style="color:var(--wn)">&#9197; Play Next Now</b> skips the current match and loads the <b style="color:var(--ac)">NEXT</b> map immediately (rotation stays in step).
       Click a map below to add it to the rotation.
     </div>
   </div>
@@ -1233,6 +1251,7 @@ async function pollTick(gen){
         g('scAX').textContent=s.aliveAxis;
         if(s.gametype) g('sGt').textContent=s.gametype;
         setLobbyHold(s.lobbyHold);
+        updateFillReadout(s);
       }
       if(d.roster){
         _roster={}; for(const e of d.roster) _roster[e.num]=e;
@@ -1751,7 +1770,7 @@ function perkReset(){
 }
 
 // ─── Bots ────────────────────────────────────────────────────────────────────
-async function addBot(){const r=await rcon('set bots_manage_add 1');r.ok?(actLog('Bot added','ok'),toast('Bot added','ok')):toast(r.error,'err');}
+async function addBot(){const ok=await bridge('botadd','Bot added');if(ok){actLog('Bot added','ok');toast('Bot added','ok');}}
 async function kickBots(){
   const sr=await fetchStatus();
   if(!sr||!sr.ok){toast('Could not read status','err');return;}
@@ -1760,10 +1779,40 @@ async function kickBots(){
   for(const b of bots) await rcon(`clientkick ${b.num}`);
   actLog(`Kicked ${bots.length} bot(s)`,'wn');toast(`Kicked ${bots.length} bot(s)`,'ok');
 }
-async function applyFill(){
-  const n=g('vFl').value;
-  const r=await batchCmds([`set bots_manage_fill ${n}`,'set bots_manage_fill_mode 0','set bots_manage_fill_kick true'],50);
-  r.ok?(actLog('Bot fill → '+n,'ok'),toast('Fill → '+n,'ok')):toast('Failed','err');
+async function applyFillN(){
+  // Clamp to the same 0-6 the server clamps to (HTML max= only limits the spinner, not a typed value),
+  // so the input, the sent value and the telemetry echo can never disagree.
+  const n=Math.max(0,Math.min(6,parseInt(g('vFillN').value)||0));
+  g('vFillN').value=n;
+  const r=await rcon(`set gf_fill_n ${n}`);
+  const lbl=n>0?(n+'v'+n):'off';
+  r.ok?(actLog('Fill → '+lbl,'ok'),toast('Fill → '+lbl,'ok')):toast('Failed','err');
+}
+// Reflect live fill state (from gf_state fields 8-11) in the BOT MANAGEMENT readout, and seed the
+// input from the live value unless the admin is editing it. fillN null = server predates fill telemetry.
+function updateFillReadout(s){
+  const el=g('fillReadout'); if(!el) return;
+  if(s.fillN===null||s.fillN===undefined){ el.textContent=''; return; }
+  const inp=g('vFillN');
+  if(inp && document.activeElement!==inp) inp.value=s.fillN;
+  el.textContent = s.fillN<=0 ? 'off'
+    : `${s.fillN}v${s.fillN} · now ${s.playAllies}v${s.playAxis}`+(s.parked?` · ${s.parked} parked`:'');
+}
+// Even out the teams via the GSC bridge. Server-side pick (bots first) + safe apply (immediate in
+// prematch/lobby, deferred to next round mid-round). Feedback is the private bridge notify in-game.
+async function balanceTeams(){
+  const ok=await bridge('balanceteams','Balance teams');
+  if(ok){ actLog('Balance teams','ok'); toast('Balancing teams…','info'); }
+}
+// Per-team add/remove via the GSC bridge (botadd_<team> / botkick_<team>). Server-side so it
+// works on listen + dedicated and uses authoritative team data. Only STICKS with Fill (per team)
+// at 0 — with fill on, the reconciler owns bot placement and re-derives it.
+async function botTeam(act,team){
+  const ok=await bridge(`bot${act}_${team}`);
+  if(ok){
+    const lbl=(act==='add'?'Add':'Kick')+' bot '+(act==='add'?'→ ':'from ')+team;
+    actLog(lbl,act==='add'?'ok':'wn');toast(lbl,'info');
+  }
 }
 async function botDiff(d){
   const ok=await bridge(`botdiff_${d}`);
@@ -1915,6 +1964,22 @@ async function rotPlayNext(i){
     rotCurrentHead=rotation[i].map; renderRotation();
     actLog('Next map → '+mapName(rotation[i].map)+' (loads on match end)','ok');
     toast('Next: '+mapName(rotation[i].map),'ok');
+  } else toast('Failed','err');
+}
+// Advance the engine's rotation NOW. `map_rotate` consumes the head of sv_maprotationcurrent — i.e.
+// loads exactly the map badged NEXT — via the same code path the engine takes at match end, so there
+// is no wrong-map flash and the rotation position stays consistent (unlike a hard `map <id>`, which
+// jumps without consuming the remainder). Ends the live match, so it confirms first.
+async function rotSkipNow(){
+  const nm=rotCurrentHead?mapName(rotCurrentHead):'the next map in rotation';
+  if(!confirm('Play '+nm+' now?\n\nThis ends the current match immediately and advances the rotation.'))return;
+  const r=await rcon('map_rotate',true);
+  if(r&&r.ok){
+    actLog('map_rotate → '+nm+' (now)','ok');
+    toast('Loading '+nm+'…','info');
+    // The engine consumed the head; refresh once the new map is up (pollTick's map-change hook also
+    // refreshes, but only while this tab is open — this covers the immediate case).
+    setTimeout(()=>{ if(live) loadRotation(); },4000);
   } else toast('Failed','err');
 }
 // Hard-load an entry immediately (resets the current match). Sets the wager flag + gametype first.
@@ -2281,7 +2346,8 @@ const GT_SECTIONS = {
     { n:'scr_gf_numlives',            lbl:'Lives / Round',            type:'num', def:'1',    tip:'scr_gf_numlives\nLives per player per round.' },
 
     { grp:'Match Start',
-      n:'scr_gf_lobby',               lbl:'Match Start',               type:'sel', def:'0', opts:[['0','Normal (no lobby)'],['1','Auto lobby (min-players)'],['2','Manual lobby (START)']], tip:'scr_gf_lobby\nHow the match FIRST round starts (before the prematch countdown):\n• Normal = no lobby; the match starts in place (still waits for loaders / Min Players, then the countdown plays).\n• Auto = hold a pregame lobby (desaturated screen) until everyone is loaded and Min Players humans are in, then FAST-RESTART into a fresh match — re-firing the full start presentation (gun-rack, music, welcome). ~1s, no map reload.\n• Manual = hold the lobby until you click START MATCH (Match Control rail) — arrange teams first — then fast-restart. 10-min backstop so a forgotten hold can’t wedge the server.\nAuto/Manual: START MATCH is an instant override. Match-start only. Manual needs the RCON bridge (this panel).' },
+      n:'scr_gf_lobby',               lbl:'Match Start',               type:'sel', def:'0', opts:[['0','Normal (no lobby)'],['1','Auto lobby (min-players)'],['2','Manual lobby (START)']], tip:'scr_gf_lobby\nHow the match FIRST round starts (before the prematch countdown):\n• Normal = no lobby; the match starts in place (still waits for loaders / Min Players, then the countdown plays).\n• Auto = hold a pregame lobby (desaturated screen) until everyone is loaded and Min Players humans are in, then FAST-RESTART into a fresh match — re-firing the full start presentation (gun-rack, music, welcome). ~1s, no map reload.\n• Manual = hold the lobby until you click START MATCH (Match Control rail) — arrange teams first — then fast-restart. Auto-starts on its own after Manual Lobby Timer seconds (scr_gf_lobby_timer, default 600; 0 = never) so a forgotten hold can’t wedge the server.\nAuto/Manual: START MATCH is an instant override. Match-start only. Manual needs the RCON bridge (this panel).' },
+    { n:'scr_gf_lobby_timer',         lbl:'Manual Lobby Timer (s, 0=off)', type:'num', def:'600', tip:'scr_gf_lobby_timer\nMANUAL lobby only (Match Start = Manual). Seconds the pregame lobby waits before it AUTO-STARTS the match on its own, if you never click START MATCH. Replaces the old hardcoded 10-min backstop.\nThe lobby HUD shows a live "auto-starts in M:SS" countdown while this is running.\n0 = never auto-start — the lobby holds until you click START MATCH (a forgotten lobby then sits there indefinitely).\nDefault 600 (10 min). Clamped 0-3600. Has no effect in Normal or Auto (Auto releases on its own load/min-players gates).' },
     { n:'scr_gf_min_players',         lbl:'Min Players to Start',      type:'num', def:'1',  tip:'scr_gf_min_players\nHold the FIRST round (BEFORE the prematch countdown) until at least this many HUMAN players are here (bots do not count). Match-start only — once live it never re-holds, even if players leave. Nobody is spawned yet during the hold, so there is no freeze/damage-void. 90s start-anyway ceiling; a pure-bot lobby never stalls. 1 = effectively off. Clamped 1-8.\n(This is Gunfight’s min-players gate. The SERVER-tab party_minplayers does NOT affect gf.)' },
     { n:'scr_gf_load_wait',           lbl:'Load Wait (s, 0=off)',      type:'num', def:'0', tip:'scr_gf_load_wait\nMax seconds the match FIRST round holds BEFORE the prematch countdown until every map-loading client is in, so everyone sees the intro/countdown together (and slow loaders are not grace-locked into spectating round 1). Bots + demo clients excluded. Shows a "Waiting for teams N/M" readout. First-time FastDL downloaders are not fully absorbed. Default 0 = off (no wait; a slow loader may miss the intro / spectate round 1, and Load Grace goes inert). Clamped 0-120.\nSame hold also enforces Min Players above.' },
     { n:'scr_gf_match_prematch_seconds', lbl:'Prematch (s)',          type:'num', def:'15', tip:'scr_gf_match_prematch_seconds\nIntro countdown before the first round of the match (MATCH STARTING IN). Runs AFTER the Match Start hold. Clamped 2-30. (Stock scr_game_prematchperiod is overridden by this and has no effect.)' },

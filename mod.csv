@@ -2,6 +2,9 @@ menufile,ui_mp/hud_gf.txt
 # Empty stub: the engine hard-looks-up ui_mp/mod.txt on every mod load and BLOCKS
 # ~4.6s when it's missing (first-join black-screen contributor). Loads no menus.
 menufile,ui_mp/mod.txt
+# Companion empty stub: the engine also hard-looks-up the in-game variant
+# ui_mp/mod_ingame.txt on mod load; ship an empty stub to avoid the same block.
+menufile,ui_mp/mod_ingame.txt
 rawfile,maps/mp/gametypes/_gametypes.txt
 rawfile,maps/mp/gametypes/gf.txt
 fx,misc/fx_ui_flagbase_gf_white

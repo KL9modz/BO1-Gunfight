@@ -553,6 +553,15 @@ gf_showWeaponHUD( load )
     self setClientDvar( "ui_gf_lo_icon6", gf_getPerkShader( "specialty_longersprint" ) );   // Marathon
     self setClientDvar( "ui_gf_lo_icon7", gf_getPerkShader( "specialty_movefaster" ) );     // Lightweight
 
+    // Secondary icon slot width. The menu's slot is 2:1 like every weapon icon, but the
+    // Finger Gun borrows the square skull material (hud_death_suicide, same one the health
+    // panel uses) and a 2:1 slot stretches it flat. Push a square width for it; the menu
+    // recenters the slot on the column from this value.
+    if ( load["secondaryShader"] == "hud_death_suicide" )
+        self setClientDvar( "ui_gf_lo_w1", 36 );
+    else
+        self setClientDvar( "ui_gf_lo_w1", 72 );
+
     // Names (plain client dvars — NOT setText, so no configstring exhaustion).
     self setClientDvar( "ui_gf_lo_name0", load["primaryName"] );
     self setClientDvar( "ui_gf_lo_name1", load["secondaryName"] );

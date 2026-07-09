@@ -52,6 +52,18 @@ gf_cfgFloat( dvar, def, lo, hi )
     return clamped;
 }
 
+// Whole seconds -> "M:SS" (62 -> "1:02"). Used by the manual-lobby auto-start countdown.
+gf_fmtMMSS( secs )
+{
+    if ( secs < 0 )
+        secs = 0;
+    m = int( secs / 60 );
+    s = secs - ( m * 60 );
+    if ( s < 10 )
+        return m + ":0" + s;
+    return m + ":" + s;
+}
+
 // Flinch (damage view-kick) scale. scr_gf_flinch is a MULTIPLIER of the stock
 // bg_viewKickScale (0.2): 1 = stock flinch, 0 = no flinch, >1 = more. Applied
 // SERVER-side via setDvar, which runs with engine authority and so bypasses the
@@ -215,6 +227,13 @@ gf_waitForLoadingClients()
     if ( getDvar( "gf_matchArmed" ) == "1" )
     {
         setDvar( "gf_matchArmed", "0" );
+        // Lobby->match team transfer: re-apply the arranged-teams snapshot the lobby wrote before
+        // the fast-restart. Force auto-assign so returning humans skip the team-select menu and
+        // spawn frozen in prematch; gf_applyTeamPlan then places each on their planned side (the
+        // stock switch is the harmless warmup during prematch). Bots are re-padded by the fill
+        // reconciler from gf_fill_n. Then fall through to a normal prematch -> gunfight.
+        level.forceAutoAssign = true;
+        level thread gf_applyTeamPlan();
         return;
     }
 
@@ -254,7 +273,12 @@ gf_waitForLoadingClients()
     start         = gettime();
     loadDeadline  = start + int( loadWait * 1000 );   // stop waiting for loaders (only if loadGateOn)
     minDeadline   = start + 90000;                     // GF_MINPLAYERS_MAX_HOLD — start-anyway fallback (only if minGateOn)
-    lobbyDeadline = start + 600000;                    // GF_LOBBY_MAX_HOLD — 10-min backstop so a forgotten manual hold can't wedge the box
+    // MANUAL lobby auto-start timer (seconds), RCON-adjustable via scr_gf_lobby_timer. Replaces the old
+    // hardcoded 10-min GF_LOBBY_MAX_HOLD backstop. 0 = never auto-start: the lobby then holds until the
+    // admin clicks START (deliberate — but a forgotten hold will sit there until someone starts it).
+    // Manual-only: the Auto lobby releases on its own gates (load/min-players), never on this timer.
+    lobbyTimer    = int( gf_cfgFloat( "scr_gf_lobby_timer", 600, 0, 3600 ) );
+    lobbyDeadline = start + ( lobbyTimer * 1000 );
     floorEnd      = start + 3000;                       // arrival floor — see block comment
 
     // Stock look: the exact "waiting for teams" element matchStartTimer() shows
@@ -291,6 +315,7 @@ gf_waitForLoadingClients()
     lastLoaded   = -1;
     lastTotal    = -1;
     stillLoading = 0;
+    lastShownSec = -1;   // manual-lobby countdown: last second pushed to ui_gf_lobby_status
 
     // Live flag: true only while this hold is actively blocking. Read by the bridge
     // (lobbystart feedback) and mirrored into gf_state telemetry so the panel can
@@ -350,7 +375,10 @@ gf_waitForLoadingClients()
         // without teardown and WITHOUT the reset notify (that would kill the new
         // round's tracker).
         if ( !isDefined( level.gf_loadGateGen ) || level.gf_loadGateGen != myGen )
+        {
+            logPrint( "GF_LOBBY_END: superseded - gen changed (external map_restart re-armed the gate) after " + ( gettime() - start ) + "ms\n" );
             return;
+        }
 
         stillLoading = 0;
         humans       = 0;
@@ -402,20 +430,56 @@ gf_waitForLoadingClients()
 
         now = gettime();
         if ( isDefined( level.gameEnded ) && level.gameEnded )
+        {
+            logPrint( "GF_LOBBY_END: level.gameEnded became true after " + ( now - start ) + "ms\n" );
             break;
+        }
 
         // Admin "Start Match" click (bridge lobbystart) — an immediate override that
         // releases the hold in EITHER mode. Cleared per match in gf_armLoadGate, so a
         // stale click from a prior match can't leak in.
         startClicked = ( isDefined( level.gf_lobbyStart ) && level.gf_lobbyStart );
 
+        // Manual lobby: live countdown to the auto-start timer, shown in the lobby HUD status line.
+        // Pushed ONLY when the displayed second changes — at most 1 client dvar/sec/player. Keep it that
+        // way: a per-tick push to every player is exactly what overflowed a joining client's reliable
+        // command buffer ("server command overflow", see gf_lobbyCamPut). Skipped when the timer is 0
+        // (no auto-start), leaving gf_lobbyCamPut's static "Waiting for the host to start" in place.
+        if ( restartMode && manualMode && lobbyTimer > 0
+            && getDvarInt( "gf_diag_cd_no_lobby_dvars" ) != 1 )
+        {
+            remainSec = int( ( lobbyDeadline - now ) / 1000 );
+            if ( remainSec < 0 )
+                remainSec = 0;
+            if ( remainSec != lastShownSec )
+            {
+                lastShownSec = remainSec;
+                statusTxt = "Waiting for the host  -  auto-starts in " + gf_fmtMMSS( remainSec );
+                for ( si = 0; si < level.players.size; si++ )
+                {
+                    pl = level.players[si];
+                    if ( !isDefined( pl ) || pl istestclient() || pl isdemoclient() )
+                        continue;   // bots/demo render no HUD
+                    pl setClientDvar( "ui_gf_lobby_status", statusTxt );
+                }
+            }
+        }
+
         if ( manualMode )
         {
             // MANUAL lobby: hold until the admin clicks START (or the 10-min backstop),
             // regardless of load state / headcount. No 3s floor — a deliberate click
             // starts immediately.
-            if ( startClicked || now >= lobbyDeadline )
+            if ( startClicked )
+            {
+                logPrint( "GF_LOBBY_END: manual - admin START clicked after " + ( now - start ) + "ms\n" );
                 break;
+            }
+            if ( lobbyTimer > 0 && now >= lobbyDeadline )
+            {
+                logPrint( "GF_LOBBY_END: manual - auto-start timer (scr_gf_lobby_timer=" + lobbyTimer + "s) elapsed after " + ( now - start ) + "ms\n" );
+                break;
+            }
         }
         else
         {
@@ -426,8 +490,16 @@ gf_waitForLoadingClients()
             // click still force-releases (start now, even below min-players).
             loadOk = ( !loadGateOn ) || ( stillLoading == 0 ) || ( now >= loadDeadline );
             minOk  = ( !minGateOn ) || ( humans >= minP ) || ( humans == 0 ) || ( now >= minDeadline );
-            if ( startClicked || ( now >= floorEnd && loadOk && minOk ) )
+            if ( startClicked )
+            {
+                logPrint( "GF_LOBBY_END: auto - admin START clicked after " + ( now - start ) + "ms\n" );
                 break;
+            }
+            if ( now >= floorEnd && loadOk && minOk )
+            {
+                logPrint( "GF_LOBBY_END: auto - gates satisfied (loadOk=" + loadOk + " minOk=" + minOk + " humans=" + humans + " stillLoading=" + stillLoading + ") after " + ( now - start ) + "ms\n" );
+                break;
+            }
         }
 
         wait 0.25;
@@ -446,11 +518,8 @@ gf_waitForLoadingClients()
         setmatchflag( "cg_drawSpectatorMessages", 1 );
         for ( ri = 0; ri < level.players.size; ri++ )
         {
-            if ( getDvarInt( "gf_diag_cd_no_lobby_dvars" ) != 1 )
-            {
-                level.players[ri] setClientDvar( "compass", "1" );
-                level.players[ri] setClientDvar( "ui_gf_lobby_show", "0" );   // hide the lobby HUD for the match
-            }
+            level.players[ri] setClientDvar( "compass", "1" );
+            level.players[ri] setClientDvar( "ui_gf_lobby_show", "0" );   // hide the lobby HUD for the match
         }
     }
 
@@ -480,6 +549,7 @@ gf_waitForLoadingClients()
     if ( restartMode && !( isDefined( level.gameEnded ) && level.gameEnded ) )
     {
         setDvar( "gf_matchArmed", "1" );
+        gf_writeTeamPlan();                      // snapshot arranged human teams -> gf_teamplan (a dvar, survives the restart)
         for ( i = 0; i < elems.size; i++ )
             if ( isDefined( elems[i] ) )
                 elems[i] destroyElem();
@@ -514,6 +584,142 @@ gf_waitForLoadingClients()
     }
 
     level notify( "gf_load_gate_reset" );   // gate done — retire the tracker
+}
+
+// ── Lobby -> match team transfer ─────────────────────────────────────────────
+// The Auto/Manual lobby releases via map_restart(false), which WIPES pers[]/game[]/level[] — so
+// admin-arranged (or autoassigned) lobby teams would be lost and everyone re-autoassigned into the
+// real match. gf_writeTeamPlan snapshots each HUMAN's getGuid()->team into the gf_teamplan DVAR
+// (the only state that survives the fast-restart) just before the restart; gf_applyTeamPlan
+// re-applies it after. Bots are NOT snapshotted — the fill reconciler re-pads them from gf_fill_n.
+// Self-contained (no bridge dep) so it works even on a public build with the bridge stripped.
+
+// Snapshot arranged human teams into gf_teamplan: "<guid>:<a|x|s>,<guid>:<a|x|s>,...".
+gf_writeTeamPlan()
+{
+    plan = "";
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( !isDefined( p ) )
+            continue;
+        if ( p istestclient() || p isdemoclient() )   // humans only
+            continue;
+        t = p.pers["team"];
+        if ( !isDefined( t ) )
+            continue;
+        code = "";
+        if ( t == "allies" )         code = "a";
+        else if ( t == "axis" )      code = "x";
+        else if ( t == "spectator" ) code = "s";
+        else                         continue;          // no real assignment -> skip
+        g = "" + p getGuid();                            // string-coerce (stock idiom)
+        if ( plan != "" )
+            plan += ",";
+        plan += g + ":" + code;
+    }
+    setDvar( "gf_teamplan", plan );
+}
+
+// Re-apply the gf_teamplan snapshot after the lobby fast-restart. Threaded from the gf_matchArmed
+// consume branch; runs during the real match's prematch. Polls until every planned human is on
+// their side (or a bound elapses / prematch ends), tolerating the reconnect delay.
+gf_applyTeamPlan()
+{
+    level endon( "game_ended" );
+
+    plan = getDvar( "gf_teamplan" );
+    setDvar( "gf_teamplan", "" );        // consume once
+    if ( plan == "" )
+        return;
+
+    entries  = strTok( plan, "," );
+    total    = entries.size;
+    deadline = gettime() + 45000;        // bound: never run past the intro
+
+    for ( ;; )
+    {
+        // YIELD FIRST — do not evaluate the roster synchronously. This is threaded from the tail of
+        // onStartGameType, where _spawnlogic::init has already emptied level.players and
+        // Callback_PlayerConnect only repopulates it after we return. A synchronous first pass would
+        // see ZERO players, conclude "nobody left to seat", and silently drop the plan — which is
+        // already consumed from the dvar, so the arranged teams would be lost for good.
+        wait 0.25;
+
+        if ( gettime() >= deadline )
+            return;
+        if ( !( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod ) )
+            return;                      // prematch over — a live move would suicide the player
+
+        seen   = 0;
+        seated = 0;
+        players = level.players;
+        for ( i = 0; i < players.size; i++ )
+        {
+            p = players[i];
+            if ( !isDefined( p ) )
+                continue;
+            if ( p istestclient() || p isdemoclient() )
+                continue;
+            want = gf_teamPlanLookup( entries, "" + p getGuid() );
+            if ( want == "" )
+                continue;                // not in the plan (a fresh joiner)
+            seen++;
+            if ( isDefined( p.pers["team"] ) && p.pers["team"] == want )
+            {
+                seated++;
+                continue;                // already on the planned side
+            }
+            if ( isDefined( p.pers["team"] ) )   // only move once a team is resolved (don't race autoassign)
+                p gf_planApplyMove( want );
+        }
+        // Done only when EVERY planned human is back AND on their side. Someone who never
+        // reconnects simply rides out the deadline (harmless 0.25s polls).
+        if ( seen >= total && seated >= total )
+            return;
+    }
+}
+
+// GUID -> planned team ("allies"/"axis"/"spectator"), or "" if not in the plan.
+gf_teamPlanLookup( entries, guid )
+{
+    for ( i = 0; i < entries.size; i++ )
+    {
+        kv = strTok( entries[i], ":" );
+        if ( kv.size < 2 || kv[0] != guid )
+            continue;
+        if ( kv[1] == "a" ) return "allies";
+        if ( kv[1] == "x" ) return "axis";
+        if ( kv[1] == "s" ) return "spectator";
+        return "";
+    }
+    return "";
+}
+
+// Apply a planned team to self during prematch. Mirrors the bridge's gf_applyTeamMove but is
+// self-contained (the bridge is stripped from public builds). During prematch the stock switch is
+// the harmless frozen warmup; a not-yet-spawned player gets a quiet pers reassign.
+gf_planApplyMove( team )
+{
+    if ( self.sessionstate == "playing" )
+    {
+        if      ( team == "allies" ) self [[level.allies]]();
+        else if ( team == "axis"   ) self [[level.axis]]();
+        else                         self [[level.spectator]]();
+    }
+    else
+    {
+        self.pers["team"]   = team;
+        self.team           = team;
+        self.pers["class"]  = undefined;
+        self.class          = undefined;
+        self.pers["weapon"] = undefined;
+        if ( team == "spectator" )
+            self.sessionteam = "spectator";
+        else
+            self.sessionteam = team;
+    }
 }
 
 // True while any load-gate-tracked HUMAN still has the connecting statusicon
@@ -606,8 +812,7 @@ gf_lobbyCamPut()
     // _utility.gsc:8414). Client dvar, so restored at the hold release (loop below). CAVEAT: `compass`
     // may be a saved dvar Plutonium blocks servers from writing on a dedicated server — works on a
     // listen server; verify on the VPS (same class as the gf_vis_* r_* tweaks).
-    if ( getDvarInt( "gf_diag_cd_no_lobby_dvars" ) != 1 )
-        self setClientDvar( "compass", "0" );
+    self setClientDvar( "compass", "0" );
 
     // Vision (desaturation) is LEVEL-scope only in T5 MP — visionSetNaked has no per-player self-method
     // form (it's applied bare at the hold start in gf_waitForLoadingClients), so there's nothing to
@@ -636,24 +841,21 @@ gf_lobbyCamPut()
     // BIT_HUD_VISIBLE (the engine clears it entering intermission), so ui_gf_lobby_show is the sole
     // gate. Welcome is per-player; map/status are the same for everyone but must go via setClientDvar
     // (a dedicated server's setDvar doesn't replicate). Rules + ad copy are static text in the menu.
-    if ( getDvarInt( "gf_diag_cd_no_lobby_dvars" ) != 1 )
-    {
-        // Static header — every branding line is pushed in FULL (the typewriter reveal was removed).
-        statusText = "The match will begin shortly";
-        if ( int( gf_cfgFloat( "scr_gf_lobby", 0, 0, 2 ) ) == 2 )
-            statusText = "Waiting for the host to start";
+    // Static header — every branding line is pushed in FULL (the typewriter reveal was removed).
+    statusText = "The match will begin shortly";
+    if ( int( gf_cfgFloat( "scr_gf_lobby", 0, 0, 2 ) ) == 2 )
+        statusText = "Waiting for the host to start";
 
-        self setClientDvar( "ui_gf_lobby_eyebrow", "PREGAME LOBBY" );
-        self setClientDvar( "ui_gf_lobby_title",   "GUNFIGHT" );
-        self setClientDvar( "ui_gf_lobby_map",     gf_mapDisplayName( getDvar( "mapname" ) ) );
-        self setClientDvar( "ui_gf_lobby_welcome", "Welcome, " + self.name );
-        self setClientDvar( "ui_gf_lobby_status",  statusText );
-        self setClientDvar( "ui_gf_lobby_icon",    "menu_mp_weapons_famas" );   // seed a valid material before the icon items show
-        self setClientDvar( "ui_gf_lobby_icon_on", "1" );                        // header is instant now — reveal the flanking icons immediately
-        self setClientDvar( "ui_gf_lobby_ic_home", "rank_prestige14" );          // ad-rail emblem: 14th-prestige badge (homepage) — faction crests aren't loaded on every map
-        self setClientDvar( "ui_gf_lobby_ic_disc", "rank_prestige15" );          // ad-rail emblem: 15th-prestige badge (Discord)
-        self setClientDvar( "ui_gf_lobby_show",    "1" );   // reveal the fully-populated menuDef
-    }
+    self setClientDvar( "ui_gf_lobby_eyebrow", "PREGAME LOBBY" );
+    self setClientDvar( "ui_gf_lobby_title",   "GUNFIGHT" );
+    self setClientDvar( "ui_gf_lobby_map",     gf_mapDisplayName( getDvar( "mapname" ) ) );
+    self setClientDvar( "ui_gf_lobby_welcome", "Welcome, " + self.name );
+    self setClientDvar( "ui_gf_lobby_status",  statusText );
+    self setClientDvar( "ui_gf_lobby_icon",    "menu_mp_weapons_famas" );   // seed a valid material before the icon items show
+    self setClientDvar( "ui_gf_lobby_icon_on", "1" );                        // header is instant now — reveal the flanking icons immediately
+    self setClientDvar( "ui_gf_lobby_ic_home", "rank_prestige14" );          // ad-rail emblem: 14th-prestige badge (homepage) — faction crests aren't loaded on every map
+    self setClientDvar( "ui_gf_lobby_ic_disc", "rank_prestige15" );          // ad-rail emblem: 15th-prestige badge (Discord)
+    self setClientDvar( "ui_gf_lobby_show",    "1" );   // reveal the fully-populated menuDef
 }
 
 // ─── Lobby roster ("IN THE LOBBY" name list) ───────────────────────────────
@@ -662,9 +864,8 @@ gf_lobbyCamPut()
 // tick and pushes it — ONLY on change — to every begun human via setClientDvar (menus read CLIENT
 // dvars, and a dedicated server's setDvar doesn't replicate). 12 fixed name slots (ui_gf_lobby_p0..11)
 // + a count (ui_gf_lobby_pcount) that gates each slot's menu visibility. Retires with the hold via the
-// same notifies the load tracker / cam watcher use. Respects the gf_diag_cd_no_lobby_dvars diagnostic
-// (skips all pushes when set). Still-connecting + demo clients are excluded; bots are listed with a
-// "(bot)" tag per the combined-list design.
+// same notifies the load tracker / cam watcher use. Still-connecting + demo clients are excluded; bots
+// are listed with a "(bot)" tag per the combined-list design.
 gf_lobbyRosterLoop()
 {
     level endon( "game_ended" );
@@ -673,12 +874,6 @@ gf_lobbyRosterLoop()
     lastSig = "___init___";
     while ( isDefined( level.gf_inLobbyHold ) && level.gf_inLobbyHold )
     {
-        if ( getDvarInt( "gf_diag_cd_no_lobby_dvars" ) == 1 )
-        {
-            wait 0.5;
-            continue;
-        }
-
         names = [];
         for ( i = 0; i < level.players.size; i++ )
         {
@@ -728,9 +923,9 @@ gf_lobbyRosterLoop()
 // every viewer (one shared client dvar, pushed to all begun humans each step). Shader names are the
 // VERIFIED menu_mp_weapons_* set the loadout overview already renders (incl. the two odd bases:
 // colt = M1911, stoner63a = Stoner63). Level-scope; started with the roster loop for the Auto/Manual
-// hold only; retires with the hold via the same notifies. Respects the gf_diag_cd_no_lobby_dvars
-// diagnostic. The first icon is seeded in gf_lobbyCamPut (before the menuDef reveals), and the items
-// stay hidden until the typewriter finishes the title (ui_gf_lobby_icon_on).
+// hold only; retires with the hold via the same notifies. The first icon is seeded in gf_lobbyCamPut
+// (before the menuDef reveals), and the items stay hidden until the typewriter finishes the title
+// (ui_gf_lobby_icon_on).
 gf_lobbyIconCycler()
 {
     level endon( "game_ended" );
@@ -768,9 +963,6 @@ gf_lobbyIconCycler()
     while ( isDefined( level.gf_inLobbyHold ) && level.gf_inLobbyHold )
     {
         wait 1.2;
-        if ( getDvarInt( "gf_diag_cd_no_lobby_dvars" ) == 1 )
-            continue;
-
         idx++;
         if ( idx >= icons.size )
             idx = 0;
@@ -822,9 +1014,6 @@ gf_mapDisplayName( code )
 // map_restart(false). Loadout overview / team health panel / self bar / kill popup.
 gf_hideLobbyHUD()
 {
-    if ( getDvarInt( "gf_diag_cd_no_lobby_dvars" ) == 1 )
-        return;
-
     self setClientDvar( "ui_gf_lo_show",    "0" );
     self setClientDvar( "ui_gf_panel_show", "0" );
     self setClientDvar( "ui_gf_self_show",  "0" );
@@ -944,10 +1133,9 @@ gf_playerSpawnedCB()
     // The pregame lobby is pure-spectator (nobody spawns during it), so reaching here is always a real
     // match spawn — clear any stale ui_gf_lobby_show=1 a reconnecting client carried in. gf_onSpawnSpectator
     // already covers the pre-first-spawn spectate window; this catches the spawn path itself. One dvar,
-    // humans only, gated !inLobbyHold + the diag flag (spawns are infrequent — no overflow concern).
+    // humans only, gated !inLobbyHold (spawns are infrequent — no overflow concern).
     if ( ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
-        && ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold )
-        && getDvarInt( "gf_diag_cd_no_lobby_dvars" ) != 1 )
+        && ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold ) )
         self setClientDvar( "ui_gf_lobby_show", "0" );
 
     // Silence the stock "+N" XP popups. _rank::giveRankXP pushes them onto the SAME
@@ -964,10 +1152,9 @@ gf_playerSpawnedCB()
     // NOTE: the CLIENT half of this toggle used to be pushed here every spawn
     // (`self setClientDvar( "ui_xpText", "0" )`). REMOVED 2026-07-05 — ui_xpText is a
     // stock SAVED dvar, and Plutonium blocks servers from writing saved dvars to
-    // clients; the rejected per-spawn write is the prime suspect for the client-side
-    // "Unknown command" spam every non-admin saw on every spawn on the VPS. It was
-    // redundant anyway: self.enableText = false (above) plus the element-level park
-    // below are the decisive suppression, so dropping the client push costs nothing.
+    // clients. It was redundant anyway: self.enableText = false (above) plus the
+    // element-level park below are the decisive suppression, so dropping the client
+    // push costs nothing.
 
     // Element-level backstop: park the stock rank-score element offscreen so any
     // stock "+N" that slips past the gates renders invisibly. No stock writer
@@ -1039,9 +1226,8 @@ gf_playerSpawnedCB()
     // been set (the RCON Visuals sliders persist into them via the bridge), so
     // players keep their own video settings out of the box. Replaces the old
     // scr_gf_visualtweaks force-push (hardcoded r_gamma 1.1 etc. every spawn):
-    // r_gamma is a SAVED client dvar Plutonium blocks servers from writing, and the
-    // per-spawn stock-dvar writes were the prime suspect for the client-side
-    // "unknown cmd cd" spam. Humans only — bots have no renderer.
+    // r_gamma is a SAVED client dvar Plutonium blocks servers from writing.
+    // Humans only — bots have no renderer.
     if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
         self gf_applyVisTweaks();
     self thread gf_onSpawned();
@@ -1051,8 +1237,7 @@ gf_playerSpawnedCB()
     // thread. Mirrors the loadout HUD pattern. Suppressed during the pregame lobby hold
     // (the panel would flash in on the frozen spawn then get hidden by the lobby cam move).
     if ( ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
-        && ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold )
-        && getDvarInt( "gf_diag_cd_no_health_hud" ) != 1 )
+        && ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold ) )
         self thread gf_runHealthHUD();
 
     // #strip-begin - spawn recorder + HUD-pool overlays (dev/main only; stripped from public release)
@@ -1143,9 +1328,8 @@ gf_onSpawnSpectator( origin, angles )
     // prior lobby got ui_gf_lobby_show=1; if it left before the release that zeroes it, that 1 persists on
     // the client and nothing outside the lobby clears it — so the whole lobby chrome sticks over their
     // view. The inLobbyHold branch above already returned for real lobby spectators, so reaching here (as
-    // a human) means the LIVE match. Humans only; skipped under the diag flag like every other lobby push.
-    if ( !( self istestclient() ) && !( self isdemoclient() )
-        && getDvarInt( "gf_diag_cd_no_lobby_dvars" ) != 1 )
+    // a human) means the LIVE match. Humans only.
+    if ( !( self istestclient() ) && !( self isdemoclient() ) )
         self setClientDvar( "ui_gf_lobby_show", "0" );
 
     gf_queueHealthHUDUpdate();
@@ -1153,8 +1337,7 @@ gf_onSpawnSpectator( origin, angles )
     // Spectators always see the whole health HUD. The panel is fully menu-rendered and the
     // intro is a snap now, so re-threading gf_runHealthHUD on each spectator spawn is cheap
     // and harmless (it re-pushes the per-client dvars).
-    if ( ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
-        && getDvarInt( "gf_diag_cd_no_health_hud" ) != 1 )
+    if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
         self thread gf_runHealthHUD();
 }
 

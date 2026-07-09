@@ -62,11 +62,12 @@
 // Telemetry dvars (read-only):
 //   gf_ack    -> sequence id of the last processed gf_cmd (written the instant it's dispatched);
 //                the panel polls it to confirm a command was received. "0" = none yet.
-//   gf_state  -> "allies_wins:axis_wins:round:alive_allies:alive_axis"  (updated every 2s)
-//                e.g.  "3:2:5:2:1"
-//   gf_roster -> "<num>,<team>,<alive>,<pending>;..." per connected player, e.g.
-//                "1,a,1,-;2,x,0,x"  (team/pending code: a=allies x=axis s=spectator -=none;
-//                alive 1/0). Drives the RCON panel's per-player team badges + move buttons.
+//   gf_state  -> "wA:wX:round:aliveA:aliveX:gametype:hold:fillN:pAllies:pAxis:parked" (every 2s)
+//                e.g.  "3:2:5:2:1:gf:0:3:3:3:1"  (fields 8-11 = dynamic-fill telemetry: per-team
+//                fill target, current playing count per side, parked-bot count)
+//   gf_roster -> "<num>,<team>,<alive>,<pending>,<bot>;..." per connected player, e.g.
+//                "1,a,1,-,0;2,x,0,x,1"  (team/pending code: a=allies x=axis s=spectator -=none;
+//                alive 1/0; bot 1/0). Drives the RCON panel's per-player team badges + move buttons.
 
 #include maps\mp\_utility;
 #include maps\mp\gametypes\_globallogic_utils;
@@ -271,7 +272,18 @@ gf_bridgeTelemetry()
         if ( isDefined( level.gf_inLobbyHold ) && level.gf_inLobbyHold )
             hold = 1;
 
-        setDvar( "gf_state", wA + ":" + wX + ":" + rn + ":" + aA + ":" + aX + ":" + level.gameType + ":" + hold );
+        // Fields 8-11: dynamic-fill telemetry so the panel shows the live fill state. fillN is
+        // the per-team target (gf_fill_n); pAllies/pAxis are the current PLAYING counts (humans+
+        // bots) per side; parked is the count of bots benched in spectator for reuse. Computed
+        // from the reconciler's own classifier so the panel matches exactly what the fill sees.
+        // All appended (index-based parse), so older panels ignore them.
+        fillN  = maps\mp\gametypes\_bot::gf_fillTarget();   // CLAMPED (0-6) — echo what the fill actually uses, not a raw out-of-range dvar
+        fc     = maps\mp\gametypes\_bot::gf_reconcileCount();
+        pAll   = fc["allies_human"] + fc["allies_bot"];
+        pAxi   = fc["axis_human"]   + fc["axis_bot"];
+        parked = fc["parked"];
+
+        setDvar( "gf_state", wA + ":" + wX + ":" + rn + ":" + aA + ":" + aX + ":" + level.gameType + ":" + hold + ":" + fillN + ":" + pAll + ":" + pAxi + ":" + parked );
         setDvar( "gf_roster", gf_bridgeRosterString() );
     }
 }
@@ -292,7 +304,10 @@ gf_bridgeRosterString()
         alive = "0";
         if ( isDefined( p.health ) && p.health > 0 )
             alive = "1";
-        s += p getEntityNumber() + "," + gf_bridgeTeamShort( p.pers["team"] ) + "," + alive + "," + gf_bridgeTeamShort( p.pers["gf_pendingTeam"] );
+        bot = "0";
+        if ( p istestclient() )
+            bot = "1";
+        s += p getEntityNumber() + "," + gf_bridgeTeamShort( p.pers["team"] ) + "," + alive + "," + gf_bridgeTeamShort( p.pers["gf_pendingTeam"] ) + "," + bot;
     }
     return s;
 }
@@ -318,6 +333,14 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "botdiff_normal" ) { maps\mp\gametypes\_bot::bot_set_difficulty( "normal" ); gf_bridgeNotify( "^2Bot: Normal" ); return; }
     if ( cmd == "botdiff_hard"   ) { maps\mp\gametypes\_bot::bot_set_difficulty( "hard"   ); gf_bridgeNotify( "^1Bot: Hard"   ); return; }
     if ( cmd == "botdiff_fu"     ) { maps\mp\gametypes\_bot::bot_set_difficulty( "fu"     ); gf_bridgeNotify( "^1Bot: FU"     ); return; }
+
+    if ( cmd == "botadd"         ) { gf_bridgeAddBot(); return; }
+    if ( cmd == "botadd_allies"  ) { gf_bridgeAddBotToTeam( "allies" ); return; }
+    if ( cmd == "botadd_axis"    ) { gf_bridgeAddBotToTeam( "axis"   ); return; }
+    if ( cmd == "botkick_allies" ) { gf_bridgeKickBotFromTeam( "allies" ); return; }
+    if ( cmd == "botkick_axis"   ) { gf_bridgeKickBotFromTeam( "axis"   ); return; }
+
+    if ( cmd == "balanceteams"   ) { gf_bridgeBalanceTeams(); return; }
 
     if ( cmd == "endround_allies" ) { maps\mp\gametypes\sd::sd_endGame( "allies", "" ); return; }
     if ( cmd == "endround_axis"   ) { maps\mp\gametypes\sd::sd_endGame( "axis",   "" ); return; }
@@ -870,6 +893,170 @@ gf_applyPendingTeamMoves()
             continue;
         p gf_applyTeamMove( team );
     }
+}
+
+// --- Per-team bot add / remove (RCON panel) ----------------------------------
+// Precise per-team bot control that reuses the existing move machinery instead of the global
+// bots_team dvar. add: spawn one bot, then (once it finishes connecting) place it on `team` via
+// gf_applyTeamMove — the same clean switch the panel's team-move uses (stock switch while frozen
+// in prematch, quiet pers reassign otherwise). kick: remove ONE bot currently on `team`.
+// Bots only (istestclient) — humans are never touched. CAVEAT: with fill ON (gf_fill_n > 0) the
+// Gunfight reconciler (_bot.gsc) owns bot counts + placement and re-derives them each pass, so a
+// manual per-team add/kick/move is TRANSIENT — set gf_fill_n 0 (fill off = manual mode) to make it
+// stick. Human moves always stick (the reconciler never touches humans).
+// "+ Add Bot" (teamless): spawn one autoassigned bot. Replaces the old `set bots_manage_add 1`
+// path (the addBots loop that consumed it is retired). With fill on (gf_fill_n>0) the reconciler
+// owns counts so a manual add is transient (parked as surplus next pass); with fill off it sticks.
+gf_bridgeAddBot()
+{
+    bot = maps\mp\gametypes\_bot::add_bot();
+    if ( isDefined( bot ) )
+        gf_bridgeNotify( "^2Bot added" );
+    else
+        gf_bridgeNotify( "^1Bot add failed" );
+}
+
+gf_bridgeAddBotToTeam( team )
+{
+    // Cap check up front (mirror gf_playerSpawnedCB); the bot doesn't exist yet, so exclude nothing.
+    if ( gf_bridgeTeamFull( undefined, team ) )
+    {
+        gf_bridgeNotify( "^1Team full: " + gf_bridgeTeamLabel( team ) + " (scr_team_maxsize)" );
+        return;
+    }
+
+    bot = maps\mp\gametypes\_bot::add_bot();
+    if ( !isDefined( bot ) )
+    {
+        gf_bridgeNotify( "^1Bot add failed" );
+        return;
+    }
+
+    bot thread gf_bridgeMoveBotWhenReady( team );
+    gf_bridgeNotify( "^2Bot -> " + gf_bridgeTeamLabel( team ) );
+}
+
+// Wait for the freshly-added bot to finish connecting (autoassign sets pers["team"]) before moving
+// it, so the switch lands on a real side rather than mid-connect. Bounded ~10s; a no-op if the bot
+// already landed on the target team.
+gf_bridgeMoveBotWhenReady( team )
+{
+    self endon( "disconnect" );
+    level endon( "game_ended" );
+
+    ticks = 0;
+    while ( ticks < 100 && !isDefined( self.pers["team"] ) )
+    {
+        wait 0.1;
+        ticks++;
+    }
+
+    if ( !isDefined( self ) || !isDefined( self.pers["team"] ) )
+        return;
+    if ( self.pers["team"] == team )
+        return;
+
+    self gf_applyTeamMove( team );
+}
+
+// Kick one bot currently on `team`. Picks the first match; humans are never eligible.
+gf_bridgeKickBotFromTeam( team )
+{
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( !isDefined( p ) || !( p istestclient() ) )
+            continue;
+        if ( p.pers["team"] != team )
+            continue;
+        kick( p getEntityNumber(), "EXE_PLAYERKICKED" );
+        gf_bridgeNotify( "^3Kicked bot from " + gf_bridgeTeamLabel( team ) );
+        return;
+    }
+    gf_bridgeNotify( "^1No bot on " + gf_bridgeTeamLabel( team ) );
+}
+
+// --- Balance teams now (RCON panel) ------------------------------------------
+// Even out allies vs axis by moving players from the larger team to the smaller. Prefers moving
+// BOTS (least disruptive to humans). Uses the same safety as a manual move: applies immediately
+// while players are frozen in prematch/the lobby hold (gf_bridgeTeamSafeNow), otherwise DEFERS to
+// next round via pers["gf_pendingTeam"] so a live human isn't suicided mid-round. Inherently
+// cap-safe: we only move toward the SMALLER team, so the target never exceeds the source's count.
+gf_bridgeBalanceTeams()
+{
+    allies = gf_bridgeTeamMembers( "allies" );
+    axis   = gf_bridgeTeamMembers( "axis" );
+
+    diff = allies.size - axis.size;
+    if ( diff < 0 )
+        diff = 0 - diff;
+
+    if ( diff <= 1 )
+    {
+        gf_bridgeNotify( "^2Teams balanced (" + allies.size + "v" + axis.size + ")" );
+        return;
+    }
+
+    if ( allies.size > axis.size )
+    {
+        from   = allies;
+        toTeam = "axis";
+    }
+    else
+    {
+        from   = axis;
+        toTeam = "allies";
+    }
+
+    movers = gf_bridgePickMovers( from, int( diff / 2 ) );   // bots first, then humans
+
+    deferred = 0;
+    for ( i = 0; i < movers.size; i++ )
+    {
+        p = movers[i];
+        if ( gf_bridgeTeamSafeNow() )
+            p gf_applyTeamMove( toTeam );
+        else
+        {
+            p.pers["gf_pendingTeam"] = toTeam;
+            deferred++;
+        }
+    }
+
+    msg = "^2Balanced ^7-> " + gf_bridgeTeamLabel( toTeam ) + " +" + movers.size;
+    if ( deferred > 0 )
+        msg += " ^3(" + deferred + " next round)";
+    gf_bridgeNotify( msg );
+}
+
+// Playing members of `team` (excludes the server-side democlient; bots included).
+gf_bridgeTeamMembers( team )
+{
+    out = [];
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( !isDefined( p ) || p isdemoclient() )
+            continue;
+        if ( p.pers["team"] == team )
+            out[ out.size ] = p;
+    }
+    return out;
+}
+
+// Up to `n` movers from `from`, bots first (least disruptive) then humans to top up.
+gf_bridgePickMovers( from, n )
+{
+    picked = [];
+    for ( i = 0; i < from.size && picked.size < n; i++ )
+        if ( from[i] istestclient() )
+            picked[ picked.size ] = from[i];
+    for ( i = 0; i < from.size && picked.size < n; i++ )
+        if ( !( from[i] istestclient() ) )
+            picked[ picked.size ] = from[i];
+    return picked;
 }
 
 gf_bridgeTeamCode( s )

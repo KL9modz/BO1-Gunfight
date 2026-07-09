@@ -289,6 +289,52 @@ a:hover { color: var(--accent); text-decoration: underline; text-underline-offse
   letter-spacing: 1.4px;
 }
 
+/* feature list (index.html) — HUD-styled tiles matching the .steps rows */
+.features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.feature {
+  padding: 14px 16px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.012);
+  transition: border-color .18s ease, background-color .18s ease, transform .18s ease;
+}
+.feature:hover {
+  border-color: var(--edge-2);
+  background: rgba(255,122,26,0.045);
+  transform: translateX(2px);
+}
+.feature h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 5px;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--text);
+}
+/* small orange diamond marker before each feature title */
+.feature h3::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 7px; height: 7px;
+  transform: rotate(45deg);
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(255,122,26,0.55);
+}
+.feature p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+.feature p b { color: var(--accent-2); font-weight: 650; }
+
 .steps {
   list-style: none;
   margin: 0;

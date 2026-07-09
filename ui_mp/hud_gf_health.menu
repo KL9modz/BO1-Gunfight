@@ -631,13 +631,18 @@
 		}
 
 		// -- Secondary ------------------------------------------------------
+		// Width is dvar-driven (ui_gf_lo_w1) instead of baked: weapon icons are 2:1
+		// (72x36), but the Finger Gun's icon is the square skull, which a 2:1 slot
+		// stretches. GSC pushes 36 for it and 72 for everything else; X stays centered
+		// on the column by subtracting half the live width.
 		itemDef
 		{
 			style			WINDOW_STYLE_SHADER
 			type			ITEM_TYPE_IMAGE
 			rect			0 0 72 36 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
-			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 36 )
+			exp				rect X( dvarInt( "ui_gf_lo_cx" ) + dvarFloat( "ui_gf_lo_off" ) - 0.5 * dvarInt( "ui_gf_lo_w1" ) )
 			exp				rect Y( dvarInt( "ui_gf_lo_cy" ) - 44 )
+			exp				rect W( dvarInt( "ui_gf_lo_w1" ) )
 			exp				material( dvarString( "ui_gf_lo_icon1" ) );
 			forecolor		1 1 1 1
 			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )

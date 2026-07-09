@@ -5,14 +5,52 @@
 **Bugs**
 - "Pregame lobby" ends on its own at some point (should only end via load/min-players gate or admin start)
 - Fast restart clears the bots
+  FIXED 2026-07-08 (pending in-game verify): the lobby's `map_restart(false)` wipes `game[]` (so the
+  once-per-match `game["gf_botInit"]` gate in `gf.gsc` re-fires) but does NOT stop running threads —
+  so `_bot::init` re-threaded a SECOND set of managers over the surviving ones, while `level.bots`
+  was wiped. `_bot::init` now fires `level notify("bot_reinit")` before re-threading and every
+  persistent bot loop carries `level endon("bot_reinit")`, collapsing back to exactly one live set.
+  The new reconciler also counts off `level.players` + `istestclient()` (never `level.bots`), so a
+  wiped bookkeeping array can't make bots vanish. See the **Dynamic Bot Fill** section.
 - Sometimes too many bots appear — make default fill 3v3
+  FIXED 2026-07-08 (pending in-game verify): replaced the global `bots_manage_fill` headcount with
+  `gf_fill_n` = PER-TEAM target N. `set gf_fill_n 3` => exactly 3v3, humans+bots, forever. The old
+  `addBots()`/`teamBots()` pair could both over-add and fight each other; the single reconciler is
+  overshoot-free (finite parked pool + one-add-in-flight). Set the default in `dedicated.cfg`.
 - Bot bug: as bots connect one by one, they sometimes suicide — suspect they're self-balancing teams mid-connect while counts are momentarily uneven
+  FIXED 2026-07-08 (pending in-game verify): root cause = `teamBots()` in `_bot.gsc` re-balancing
+  bots with raw `[[level.allies/axis/spectator]]()` (stock `menuAllies`/`menuAxis`), which `suicide()`s
+  the target when `sessionstate == "playing"`. During the connect/fill window every already-spawned bot
+  is "playing" (frozen in prematch), so a 1.5s balance pass that fires while counts are momentarily
+  uneven yanks one -> visible suicide. Enabled by `doNonDediBots()` (local "Basic Training") setting
+  `bots_team custom` + `bots_team_force true`, which drives the two team-move branches. The existing
+  `gf_roundActive` guard only blocked LIVE rounds, not prematch/connect. Fix = the same invariant the
+  RCON bridge's `gf_applyTeamMove` already uses: **skip the move for any bot with `sessionstate ==
+  "playing"`** (guard added at both move-selection sites). A not-yet-spawned (spectator/limbo) bot is
+  still placeable, so custom-amount + autoassign-force assignment of freshly-connected bots still works;
+  the engine's connect-time autoassign keeps teams balanced without teamBots having to suicide anyone.
+  SUPERSEDED 2026-07-08: `teamBots()` is now RETIRED entirely (unthreaded) — the root cause is gone, not
+  just guarded. Bot team placement is owned by the reconciler, which only ever switches bots that are
+  parked/connecting (never a "playing" one) and only parks surplus bots BETWEEN rounds.
 - Mod changes people's client settings
-- 'Unknown cmd cd' (client-side console print)
 - Democlient round-cam lag
-- Fingergun not working
 - Start music killed by ambient music
 - Log thinks some bots are people (bot/human miscount in logs)
+  FIXED 2026-07-08: root cause = the box-side `status` parsers split each player line on
+  whitespace and assumed the NAME is a single token (`p[4]`) with the address at a fixed
+  `p[6]`. A bot named "MCG Gordon" (space in the name) splits into TWO tokens, which (a) read
+  the name as just "MCG" and (b) shift every trailing column right by one, so `p[6]` held the
+  *lastmsg* value instead of `"unknown"` — so the bot check `guid=="0" && p[6]=="unknown"`
+  failed and the bot counted as a human (the "MCG joined" false ntfy alert). Fix = read name +
+  address END-anchored (address = 3rd-from-last token, name = everything between guid and
+  lastmsg) and define bot = the address column is not a real `ip:port` (nor a listen `loopback`).
+  This matches the already-hardened `status_service.ps1`. Applied to all three still-naive
+  parsers: `tools/rcon/server.js::parseStatusText` (RCON panel), `tools/notify/join-notify.ps1`
+  (the deployed GF-JoinNotify service) + `tools/notify/join-notify.js`. `status_service` /
+  `conn_logger` (admin.json) were already safe via their own end-anchored ip:port check.
+  Also fixes human players whose NAME contains a space (previously shown truncated to the 1st
+  word). Deploy: `deploy.ps1 -Mod` ships the panel; the notify/status services are box-side
+  (scp/restart the GF-JoinNotify task), not part of the mod mirror.
 - Map size change (large/small mode) takes effect a round late
 - Minimap compass not showing wager mode size for some DLC maps
 
@@ -20,15 +58,30 @@
 - Rename "democlient"
 
 **RCON / Admin panel**
+- add adjustable timer for manual lobby
+- button to play next map in queue
 - Manage teams from RCON — combined ask: team switching, a "balance teams now" button, and allowing changing teams before countdown without forcing spectate
+  MOSTLY DONE 2026-07-08: right-click move (allies/axis/spectator) for humans AND bots, "Balance teams
+  now" (`balanceteams`), and pre-countdown moves apply live (the pre-prematch hold runs with
+  `inPrematchPeriod` already true, so `gf_bridgeTeamSafeNow()` applies immediately, no spectate bounce).
+  Moves now STICK because the `teamBots()` rebalance that undid them is retired. Remaining nuance: a
+  LIVE human can't be moved without dying (engine-level — false `onDeadEvent` + nulled `self.class`), so
+  mid-round it's next-round (normal click) or force-now/respawn (Shift+click). Bot moves are transient
+  while `gf_fill_n > 0` (the reconciler owns bot placement); set `gf_fill_n 0` for manual bot control.
 - Mantle/climb speed control
-- Sensitivity adjuster / FOV scale control
 - Friendly Fire setting exists in 2 RCON spots and re-enables itself next round (dedup/fix)
 - Gas/stun/flash intensity sliders
 
 **Gameplay / Spawns**
 - Allow players to spawn in late to a round if teams are uneven
 - Preserve players from lobby (don't re-shuffle/reset on transition)
+  DONE 2026-07-08 (pending in-game verify): `gf_writeTeamPlan()` snapshots each human's `getGuid()`->team
+  into the `gf_teamplan` DVAR just before the lobby's `map_restart(false)` (dvars are the only state that
+  survives it), and `gf_applyTeamPlan()` re-seats them by GUID during the post-restart prematch. Bots are
+  re-padded by `gf_fill_n`. NOTE the load-bearing detail: `gf_applyTeamPlan` must `wait` BEFORE its first
+  roster check — it is threaded from the tail of `onStartGameType`, where `_spawnlogic::init` has already
+  emptied `level.players`, so a synchronous first pass would see zero players, think it was done, and drop
+  the already-consumed plan.
 - Lobby ready up or team picking?
 - Widen the spawns
 - Adjust spawns & flags generally
@@ -37,6 +90,9 @@
 - Hockey gamemode on Arena (map-specific mode idea)
 - Lobby fly cam controls
 - Ship weapon files: ADS FOV / move speed tuning
+- shorten round time. raise capture time 3.5s
+- remove some IRs
+ - hardened on sniper classes
 
 **HUD / Visual**
 - Persistent clean "gunfight.us" text on HUD
@@ -407,6 +463,71 @@ time) via a `_large` suffix, so flipping modes never clobbers the other mode's v
 
 ---
 
+## Dynamic Bot Fill (NvN) + Team Management
+
+Added 2026-07-08. **One reconciler** (`gf_reconcilerInit` and friends in `_bot.gsc`) is the single
+authority over how many bots exist and which team each is on. It **replaces** BotWarfare's two
+competing loops — `addBots()` (a global bot headcount) and `teamBots()` (a team rebalance) — which
+fought each other, undid manual RCON team moves, and whose mid-connect `suicide()` was the
+long-standing "bots suicide as they connect" bug. Both are now unthreaded dead code.
+
+### The invariant
+`gf_fill_n` = **per-team target N** (`3` -> 3v3). Each team is padded to exactly **N playing clients
+(humans + bots)**, and **bots absorb all the variance**:
+- A **human joining team T displaces a bot on T** (event-driven off the `"connecting"` notify, plus a
+  3s safety poll). A human leaving re-pads that side.
+- **Humans are NEVER auto-moved.** If humans on a side exceed N, that side's bots go to 0 and the side
+  simply stays big; the other side still fills to N. Human placement is yours (RCON / autoassign).
+- `gf_fill_n 0` = **reconciler inert**. This is the mode in which the panel's manual per-team bot
+  add / kick / move actually **sticks**. With fill on, bot *counts* stick but bot *identity* doesn't —
+  you cannot have "both sides = N" *and* "this specific bot pinned to the overfull side".
+
+### Why it can't overshoot or churn
+- **Parked pool.** A displaced/surplus bot is moved to **spectator** ("parked") rather than kicked, and
+  redeployed instantly when a slot reopens. Deploy drains the parked pool (a single index shared across
+  both teams, so one bot is never assigned twice) before adding anything new.
+- **One add in flight.** A new bot is added only when nothing is mid-connect. The bot carries
+  `.gf_fillPending = <target team>` for its whole trip and is counted **in-flight** (neither parked nor
+  on a team) until `gf_botDeployWhenReady` lands it. This is load-bearing: the stock connect path parks
+  a fresh bot in `spectator` and `teamWatch` may autoassign it to the *wrong* team before the watcher
+  lands it — without the marker, the parked pool would steal it or the deficit would be miscounted.
+  On landing, the marker clears and a pass is requested immediately, so a cold fill converges at
+  ~one bot per driver tick (0.5s) instead of crawling on the 3s backstop.
+- **Serialized passes.** `gf_reconcilerDriver` runs at most one `gf_reconcilePass()` per 0.5s tick,
+  coalescing requests via `level.gf_reconcileDirty`. A pass never yields (all switches/adds are
+  threaded), so passes are atomic; the tick gap lets a pass's async switches land before the next count.
+- **Reserve cap = live human count.** Leftover parked bots beyond one-per-playing-human are **kicked**.
+  That is what makes *reducing* N kick the freed bots (0 humans -> 0 reserve -> all parked kicked) while
+  a human-displaced bot still parks for reuse. `gf_fill_kick_floor` additionally kicks parked bots
+  before they can breach `sv_maxclients` and lock a human out.
+
+### Round-safety
+Surplus bots are parked **only between rounds** (`!level.gf_roundActive`). Removing a bot mid-round goes
+through the stock switch, which `suicide()`s a "playing" client — that could wipe the team's last-alive
+bot and **phantom-end the round**. Deploying (reinforcement) is always safe and stays allowed. This
+costs nothing: one-life gunfight makes a mid-round human joiner wait for the next round anyway, so the
+displacement lands exactly when he starts playing. Counts key off `level.players` + `istestclient()`
+(**not** `level.bots`), so the reconciler stays correct even when a restart disturbs BotWarfare's
+bookkeeping.
+
+### Surviving restarts
+`_bot::init` fires **`level notify("bot_reinit")`** before re-threading, and every persistent bot loop
+carries `level endon("bot_reinit")`. This matters because **threads survive `map_restart(false)`** while
+`game[]`/`pers[]`/`level[]` are wiped — so the once-per-match `game["gf_botInit"]` gate in `gf.gsc`
+re-fires after the lobby fast-restart and would otherwise stack a *second* set of managers. The notify
+collapses it back to exactly one live set. Between rounds (`map_restart(true)`) `game[]` survives, the
+gate does not re-fire, and the managers keep running. This is also the fix for **"fast restart clears
+the bots"**.
+
+### Team moves that stick
+Human moves always stick (the reconciler never touches humans). A **live human cannot be moved across
+teams without dying** — a quiet reassign of a spawned player fires a false `onDeadEvent` (moving the
+last-alive player off a side reads as a team wipe) and nulls `self.class`, corrupting alive counts. So
+the panel offers exactly two actions: **normal click = next round** (queued via `pers["gf_pendingTeam"]`,
+no death) and **Shift+click = force now** (`pteamforce_`, respawns, costs the round). Same rule for bots.
+
+---
+
 ## Gametype Dvars
 
 Registered/clamped in `gf.gsc` (`onStartGameType` + the `register*Dvar` calls in `main()`) and
@@ -430,7 +551,11 @@ persists through `map_restart`.
 | `scr_gf_min_players` | 1 | **Min-HUMANS-to-start gate** — **folded into the pre-prematch load gate 2026-07-04** (`gf_waitForLoadingClients`, `_gf_rounds.gsc`; the old standalone `gf_waitForMinPlayers` is gone). Holds the match's FIRST round (`game["roundsplayed"]==0`) *before* the prematch countdown until at least this many *humans* are here (bots — `istestclient()` — don't count). Because it now runs BEFORE anyone spawns, it needs **no freeze and no damage-void** (the old `level.gf_waitingForPlayers` machinery is deleted) — nobody is in the world yet to die, and the intro no longer plays for a match that then stalls. Counts tracked humans (loaded **or** still loading — a loader counts as "here"). Anti-wedge: a **pure-bot lobby** (0 humans) never holds, and a **90s** `GF_MINPLAYERS_MAX_HOLD` ceiling is the "start anyway" fallback. Match-start only. `1` = effectively off. Clamped 1-8. Shares the "Waiting for teams…" screen with the load gate. Distinct from `scr_gf_load_wait` only in *what* it waits for (enough humans to exist vs. the known roster finishing its map load) — same hold, two release conditions |
 | `scr_gf_load_wait` | 0 (off) | **Pre-prematch gate — LOAD condition** (`gf_armLoadGate`/`gf_waitForLoadingClients`, `_gf_rounds.gsc`; added 2026-07-03, min-players folded in 2026-07-04). Match's FIRST round only: holds at the END of `onStartGameType` — the engine threads `startGame()` (prematch countdown) only when that callback returns — until every rotation-carried HUMAN client has left the loading screen, so everyone sees the full countdown/intro together and slow loaders can't be grace-locked into spectating round 1. Works because clients connect while STILL LOADING (`Callback_PlayerConnect` fires pre-load; statusicon `hud_status_connecting` until the engine's `"begin"`, and only then do they enter `level.players`) — the stock `waitForPlayers()` hook for this is an empty stub in T5. Loading = statusicon check; entities collected via the level `"connecting"` notify (pre-begin clients exist nowhere else). Bots (`istestclient()`) excluded from wait + readout. This dvar = ceiling seconds (clamped 0-120, `0` = gate off); 3s arrival floor. Shows the stock "Waiting for teams..." string + a live yellow `loaded / total` readout (setValue-driven, configstring-safe) in the countdown's slot. FastDL first-time downloaders (30-60s+ engine rebuild) are deliberately NOT absorbed. Releases log `GF_LOADGATE:` to games_mp.log. The SAME hold also enforces `scr_gf_min_players` (the humans-exist condition); a client STILL loading when the load ceiling hits is then covered by `scr_gf_load_grace` (below) |
 | `scr_gf_load_grace` | 20 | **Straggler grace extension** (`gf_anyTrackedClientLoading`/`gf_closeGraceEarly`, `_gf_rounds.gsc`; added 2026-07-04). Companion to `scr_gf_load_wait`: when the load gate releases with a client STILL loading (it hit the `scr_gf_load_wait` ceiling — e.g. a first-time FastDL downloader taking 30-60s+), keep the grace period open this many seconds *past `prematch_over`* so that client can still take its round-1 first spawn (stock `maySpawn` only admits a late first-spawn while `inGracePeriod`) instead of spectating the whole round. Implemented by raising `level.gracePeriod` at gate release (so the stock `gracePeriod()` backstop doesn't close first) + a hold in `gf_closeGraceEarly` keyed off the same tracker snapshot. **Cost:** a round-1 team wipe can't END the round until grace closes (bounded by this ceiling and by round length) — the deliberate tradeoff for letting the loader play. `0` = off (straggler spectates round 1, the pre-2026-07-04 behavior). Round 1 only (tracker snapshot is `map_restart`-wiped); bots excluded (`istestclient()`); a straggler who disconnects mid-load releases the hold. Clamped 0-60 |
-| `scr_gf_lobby` | 0 (Normal) | **Match Start mode — the "pregame lobby"** (`gf_waitForLoadingClients`, `_gf_rounds.gsc`; `lobbystart`/`gf_bridgeLobbyStart` in `_gf_bridge.gsc`; **consolidated 2026-07-05** from the retired `scr_gf_lobby_hold`/`scr_gf_lobby_restart`/`scr_gf_lobby_restart_full`). How the match's FIRST round starts (before the prematch countdown): `0` = **Normal** (default) — no lobby; starts in place (still holds for loaders / `scr_gf_min_players` via the pre-prematch gate, then the countdown plays; **no restart**). `1` = **Auto** — hold a pregame lobby (desaturated `mpIntro` vision + "Waiting for teams N/M" readout) until everyone is loaded AND `scr_gf_min_players` humans are here, then **`map_restart(false)`** into a fresh match. `2` = **Manual** — hold until the admin's **START MATCH** click (RCON panel → Match Control rail → bridge `lobbystart` → `level.gf_lobbyStart`, polled every 0.25s), then fast-restart; lets an admin arrange teams (right-click → move; applied **live**, `inPrematchPeriod` is already true during the hold). **Why the fast-restart:** the in-place hold pauses mid-init (the engine set `inPrematchPeriod`/InitGame BEFORE `onStartGameType`), so it's a paused-startup, not a true lobby; **`map_restart(false)`** re-inits FRESH so the full start presentation fires — weapon first-raise/"gun rack", spawn music, welcome splash — which the between-rounds **`map_restart(true)`** deliberately suppresses (verified in-game 2026-07-05: false racks the gun + plays music, fast, no map reload). The restart branch **blocks `onStartGameType` from returning** so `startGame()` never threads a stale prematch/timer (which would survive the restart and stack → double countdown); the **`gf_matchArmed` dvar** (NOT game[]: `map_restart(false)` wipes game[]/pers[], so a game[] flag would re-lobby forever) makes the post-restart pass skip the gate → real match threads its clocks once. Auto/Manual: START MATCH is an **instant override**; **10-min `GF_LOBBY_MAX_HOLD` backstop**; live state mirrored into the `gf_state` `lobbyHold` field so the panel reveals START only while a hold is up. Match-start only (`roundsplayed==0`); clamped 0-2. Manual needs the dev RCON bridge (inert on a bridge-less build; backstop still recovers). **CAVEAT (pending verify):** `map_restart(false)` is a fuller reset than `(true)` — whether admin-arranged teams survive it in Manual mode is unconfirmed; if they wipe, snapshot the roster pre-restart + reapply post-restart |
+| `scr_gf_lobby` | 0 (Normal) | **Match Start mode — the "pregame lobby"** (`gf_waitForLoadingClients`, `_gf_rounds.gsc`; `lobbystart`/`gf_bridgeLobbyStart` in `_gf_bridge.gsc`; **consolidated 2026-07-05** from the retired `scr_gf_lobby_hold`/`scr_gf_lobby_restart`/`scr_gf_lobby_restart_full`). How the match's FIRST round starts (before the prematch countdown): `0` = **Normal** (default) — no lobby; starts in place (still holds for loaders / `scr_gf_min_players` via the pre-prematch gate, then the countdown plays; **no restart**). `1` = **Auto** — hold a pregame lobby (desaturated `mpIntro` vision + "Waiting for teams N/M" readout) until everyone is loaded AND `scr_gf_min_players` humans are here, then **`map_restart(false)`** into a fresh match. `2` = **Manual** — hold until the admin's **START MATCH** click (RCON panel → Match Control rail → bridge `lobbystart` → `level.gf_lobbyStart`, polled every 0.25s), then fast-restart; lets an admin arrange teams (right-click → move; applied **live**, `inPrematchPeriod` is already true during the hold). **Why the fast-restart:** the in-place hold pauses mid-init (the engine set `inPrematchPeriod`/InitGame BEFORE `onStartGameType`), so it's a paused-startup, not a true lobby; **`map_restart(false)`** re-inits FRESH so the full start presentation fires — weapon first-raise/"gun rack", spawn music, welcome splash — which the between-rounds **`map_restart(true)`** deliberately suppresses (verified in-game 2026-07-05: false racks the gun + plays music, fast, no map reload). The restart branch **blocks `onStartGameType` from returning** so `startGame()` never threads a stale prematch/timer (which would survive the restart and stack → double countdown); the **`gf_matchArmed` dvar** (NOT game[]: `map_restart(false)` wipes game[]/pers[], so a game[] flag would re-lobby forever) makes the post-restart pass skip the gate → real match threads its clocks once. Auto/Manual: START MATCH is an **instant override**; **10-min `GF_LOBBY_MAX_HOLD` backstop**; live state mirrored into the `gf_state` `lobbyHold` field so the panel reveals START only while a hold is up. Match-start only (`roundsplayed==0`); clamped 0-2. Manual needs the dev RCON bridge (inert on a bridge-less build; backstop still recovers). **CAVEAT RESOLVED 2026-07-08 — lobby-arranged teams now TRANSFER** (pending in-game verify): `gf_writeTeamPlan()` snapshots every human's `getGuid()`->team into the `gf_teamplan` DVAR immediately before `map_restart(false)`, and `gf_applyTeamPlan()` (threaded from the `gf_matchArmed` consume branch, with `level.forceAutoAssign=true` so returning humans skip the team menu) re-seats each by GUID during the post-restart prematch — where the stock switch is the harmless frozen warmup. Bots are NOT snapshotted; the fill reconciler re-pads them from `gf_fill_n`. Both helpers are self-contained in `_gf_rounds.gsc` (no bridge dep) so they survive the public-build strip |
+| `gf_fill_n` | 0 (off) | **Dynamic bot fill — the PER-TEAM target N** (`3` = 3v3). The reconciler (`_bot.gsc`, dev-only) pads each side to exactly N *playing* clients (humans+bots), with **bots absorbing all the variance**. A human joining team T displaces a bot on T; a human leaving re-pads it. **Humans are NEVER auto-moved** — if humans on a side exceed N, that side's bots go to 0 and it may exceed N while the other side still fills to N. Displaced bots **park in spectator** for instant reuse (kicked instead under client-slot pressure; and *reducing* N kicks the freed bots, because the parked reserve is capped at the live human count). Overshoot-free: parked bots are reused from a finite pool and new bots are added **one-in-flight-at-a-time** (a bot is marked `.gf_fillPending` until it lands on its target team, so no pass can steal or miscount it). `0` = **fill OFF -> reconciler inert**, which is what makes the panel's manual per-team bot add/kick/move *stick*. Survives `map_restart(true)` (between rounds) and `map_restart(false)` (lobby fast-restart). A DVAR because that is the only state surviving the fast-restart. Clamped 0-6 on read (`gf_fillTarget()`); the panel clamps too. RCON: **Match -> Bot Management -> Fill (per team)**. See the **Dynamic Bot Fill** section |
+| `gf_fill_kick_floor` | 2 | Client slots kept free for humans. A parked bot is **kicked** rather than parked once total clients would breach `sv_maxclients - gf_fill_kick_floor`, so parked bots can never lock a real player out of the server (at 6v6 with `sv_maxclients 14`, an uncapped parked reserve would exhaust slots). Also caps the parked reserve. Read via `gf_fillKickFloor()` (>=0) |
+| `gf_teamplan` | "" | Read-only plumbing for the lobby->match transfer: a `"<guid>:<a\|x\|s>,..."` snapshot of arranged HUMAN teams, written by `gf_writeTeamPlan()` just before the lobby's `map_restart(false)` and consumed once by `gf_applyTeamPlan()` after. A dvar because `game[]`/`pers[]`/`level[]` are all wiped by that restart. Humans only (bots are re-padded by fill) |
+| ~~`bots_manage_fill`~~ / ~~`bots_manage_fill_kick`~~ / ~~`bots_manage_add`~~ / ~~`bots_team_amount`~~ / ~~`bots_team_force`~~ | *(retired for Gunfight)* | **RETIRED 2026-07-08 — no longer read.** These drove BotWarfare's `addBots()` (global bot headcount) and `teamBots()` (team rebalance) loops, which fought each other *and* fought manual RCON team moves, and whose mid-connect `suicide()` was the "bots suicide as they connect" bug. Both loops are now **unthreaded dead code**; the Gunfight reconciler (`gf_reconcilerInit`, `_bot.gsc`) replaces them with one authority over bot counts + placement, driven by `gf_fill_n`. Still *seeded* in `_bot::init` for BotWarfare AI compatibility; setting them does nothing. `doNonDediBots()` (local "Basic Training") is retired with them — set `gf_fill_n` instead |
 | `scr_gf_flinch` | 1 | **Flinch (damage view-kick) scale** — a MULTIPLIER of stock `bg_viewKickScale` (0.2): `1` = stock, `0` = no flinch, `>1` = more; clamped 0-3. Applied in `gf_applyFlinch()` (`_gf_rounds.gsc`) via **server-side `setDvar`**, which runs with engine authority and so bypasses the `sv_cheats` gate that blocks rcon/console `set` of a cheat-protected dvar — i.e. it holds on the **dedicated VPS**, unlike the client-pushed `gf_vis_*` r_* tweaks. `bg_` dvars replicate to clients, so the reduced kick is what each player feels. Re-applied every `onStartGameType` (persists across `map_restart`). RCON: **Advanced → Player State → Flinch** slider (bridge `flinch_<mult>` → sets `scr_gf_flinch` + applies live). *Pending in-game verify that server-side `bg_viewKickScale` replication reduces the felt flinch on a dedicated server.* |
 | `scr_team_maxsize` | 0 (shipped cfg sets **6**) | `>0` caps players/team; overflow is sent to spectator on spawn (`gf_playerSpawnedCB`). `dedicated.cfg` ships `6` (up to 6v6); `sv_maxclients` 14 = 12 play + 2 spectator. Set `4` for a 4v4 server |
 | `perk_weapSwitchMultiplier` | (engine default) | Engine weapon-swap speed (lower = faster); gated by `specialty_fastweaponswitch`, which is **OFF by default** (no longer in the base loadout). NOT forced by the mod — stock by default. To use it: enable Fast Weapon Switch via the RCON Perks tab (`gf_perk_on`), then tune the slider; inert until the perk is on |
@@ -539,8 +664,7 @@ for per-player team badges + grouped-by-team roster; dedicated-only (times out o
 > `r_lightGridContrast`/`r_fullHDRrendering`/`r_fog`). The RCON Visuals sliders persist values into
 > those dvars via the bridge (`vis<key>_<value>`; value `stock` clears one, `visreset` clears all).
 > The old `scr_gf_visualtweaks` force-push (r_gamma 1.1 etc. every spawn) was removed: `r_gamma` is
-> a SAVED client dvar Plutonium blocks servers from writing, and the per-spawn stock-dvar writes
-> were the prime suspect for the client "unknown cmd cd" spam.
+> a SAVED client dvar Plutonium blocks servers from writing.
 
 ---
 

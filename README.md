@@ -8,7 +8,7 @@
 
 Made by **KL9**. Join us on **[Discord](https://discord.gg/blackops)**.
 
-![Version](https://img.shields.io/badge/version-0.6.0-ff7a1a)
+![Version](https://img.shields.io/badge/version-0.6.2-ff7a1a)
 [![Discord](https://img.shields.io/badge/Discord-join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/blackops)
 [![Website](https://img.shields.io/badge/web-gunfight.us-2ea44f)](https://gunfight.us)
 
@@ -22,8 +22,9 @@ Made by **KL9**. Join us on **[Discord](https://discord.gg/blackops)**.
 - **Custom overtime flag** — a hold-to-capture objective that spawns in the center of the map at the end of a round for either team to take.
 - **Health-based round logic** — if both teams survive and neither captures the overtime flag, the round is decided on time expiry by **total remaining health**. Equal health is a draw.
 - **Per-map spawn & overtime points** — hand-placed spawn and overtime-flag locations for each map.
-- **Map-size scaling** — smaller wager-style map sizes for **3v3 and under**, larger full-map sizes for **4v4 and up**.
-- **Loadout system & camos** — a shared, shuffle-without-repeat loadout pool with randomized weapon camos.
+- **All 24 maps + map-size scaling** — supports **all 24 maps** (12 base + 12 DLC), with map-size scaling: smaller wager-style map sizes for smaller lobbies, larger full-map sizes for bigger lobbies.
+- **50+ unique loadouts** — a shared, shuffle-without-repeat loadout pool with randomized weapon camos.
+- **Visual improvements** — tuned game rendering, lighting, and colors for a cleaner, sharper look.
 - **Damage-based scoring** — each player's score value is the total damage they've dealt.
 - **Full bot support** — bots are fully supported.
 

@@ -25,6 +25,16 @@ init()
 	if (!getDvarInt("bots_main"))
 		return;
 
+	// Kill any bot threads left over from a PRIOR init. The lobby's map_restart(false)
+	// wipes game[]/level[] (so the once-per-match game["gf_botInit"] gate in gf.gsc re-fires
+	// and re-threads this init) but does NOT stop running threads — so without this the stock
+	// manager loops (onPlayerConnect, watchers) and the fill reconciler would DOUBLE after every
+	// lobby fast-restart. Every persistent loop below carries endon("bot_reinit"); firing it here,
+	// before we re-thread, collapses to exactly one live set. (No-op on the first match — a notify
+	// with no listeners does nothing.) Between rounds (map_restart(true)) game[] survives, the gate
+	// does NOT re-fire, and the managers keep running — so this only triggers on a real re-init.
+	level notify("bot_reinit");
+
 	if(getDvar("bots_main_waitForHostTime") == "")
 		setDvar("bots_main_waitForHostTime", 10.0);//how long to wait to wait for the host player
 
@@ -88,10 +98,11 @@ init()
 	thread fixGamemodes();
 	thread onPlayerConnect();
 	thread bot_watch_planes();
-	
-	thread handleBots();
 
-	thread doNonDediBots();
+	thread handleBots();
+	// doNonDediBots() is RETIRED — it drove the old teamBots() rebalance (bots_team custom /
+	// bots_team_force) which the reconciler replaces. Local "Basic Training" now just sets
+	// gf_fill_n to the desired per-team N.
 }
 
 /*
@@ -99,6 +110,8 @@ init()
 */
 onPlayerConnect()
 {
+	level endon("bot_reinit");   // die if _bot::init re-runs (lobby map_restart(false)) so we don't double-handle connects
+
 	for(;;)
 	{
 		level waittill("connected", player);
@@ -111,17 +124,374 @@ onPlayerConnect()
 
 /*
 	Starts the threads for bots.
+
+	diffBots keeps setting bot difficulty (unrelated to counts/teams). The OLD count loop
+	(addBots) and team-balance loop (teamBots) are RETIRED — replaced by gf_reconcilerInit(),
+	the Gunfight fill reconciler (see the big block below). The reconciler is the single
+	authority over how many bots are on each team and which team each bot is on.
 */
 handleBots()
 {
 	thread diffBots();
-	thread teamBots();
-	addBots();
+	thread gf_reconcilerInit();
+}
 
-	while(!level.intermission)
-		wait 0.05;
-	
-	setDvar("bots_manage_add", getBotArray().size);
+// ============================================================================
+// GUNFIGHT DYNAMIC FILL RECONCILER
+// ----------------------------------------------------------------------------
+// Replaces the stock BotWarfare addBots()/teamBots() loops (both retired, left as dead
+// code below) with ONE authority over bot COUNTS and PLACEMENT. Source of truth = the
+// dvar gf_fill_n (per-team target N; each side is padded to N *playing* clients, humans+
+// bots, with bots absorbing the variance). It MUST be a dvar — the only state that
+// survives the lobby's map_restart(false).
+//
+// Invariant: each team = exactly N playing, BOTS-ONLY. Humans are NEVER moved — if the
+// humans on a side exceed N, that side's bots drop to 0 and it may exceed N; the OTHER
+// side still fills to N. A joining human displaces a bot on his side (that bot PARKS in
+// spectator for reuse; it is KICKED instead under client-slot pressure so a human can
+// always connect, and REDUCING the fill number kicks the freed bots too). Displacement
+// is event-driven (human connect/disconnect) with a slow safety poll as the backstop.
+//
+// gf_fill_n == 0 => reconciler INERT (fill off): bots are left alone so the RCON panel's
+// manual per-team add/kick/move sticks. That is why "move a bot and have it stick" needs
+// fill off; with fill on, bot placement is reconciler-owned (counts stick, identity doesn't).
+//
+// Counts key off level.players + istestclient() (NOT level.bots), so the reconciler stays
+// correct even if a restart disturbs BotWarfare's own bookkeeping. Overshoot-free: parked
+// bots are reused from a finite pool, and NEW bots are added at most one-in-flight-at-a-time.
+// Every persistent loop carries endon("bot_reinit") so a lobby map_restart(false) (which
+// re-runs _bot::init but does NOT stop threads) collapses back to exactly one live set.
+// ============================================================================
+
+gf_reconcilerInit()
+{
+	level endon("bot_reinit");
+
+	// Clear any stale in-flight deploy marker. bot_reinit kills gf_botDeployWhenReady watchers
+	// without running their cleanup, but the BOT ENTITY survives a map_restart(false) — a leftover
+	// .gf_fillPending would count that bot as forever-inflight and wedge the one-add-at-a-time
+	// throttle (no bot could ever be added again). Sweep it here, right after the notify.
+	for(i = 0; i < level.players.size; i++)
+		if(isDefined(level.players[i]))
+			level.players[i].gf_fillPending = undefined;
+
+	level.gf_reconcileDirty = true;      // request an immediate first pass
+	thread gf_reconcilerDriver();
+	thread gf_reconcilerEvents();
+}
+
+// Single serialized driver: runs at most ONE reconcile pass per tick. GSC has no preemption,
+// so a pass runs atomically, but a pass THREADS its team-switches/adds (async) — the 0.5s tick
+// lets those land before the next count, so we never re-act on a not-yet-applied change.
+// Coalesces event requests via level.gf_reconcileDirty and force-passes every ~3s as a backstop.
+gf_reconcilerDriver()
+{
+	level endon("game_ended");
+	level endon("bot_reinit");
+
+	sinceForced = 0;
+	for(;;)
+	{
+		wait 0.5;
+		sinceForced += 0.5;
+
+		doPass = (isDefined(level.gf_reconcileDirty) && level.gf_reconcileDirty);
+		if(sinceForced >= 3)
+		{
+			doPass = true;
+			sinceForced = 0;
+		}
+		if(doPass)
+		{
+			level.gf_reconcileDirty = false;
+			gf_reconcilePass();
+		}
+	}
+}
+
+// Ask the driver to run a pass on its next tick (<=0.5s). Cheap; safe to spam.
+gf_reconcileRequest()
+{
+	level.gf_reconcileDirty = true;
+}
+
+// Event-driven displacement: a HUMAN joining team T must make a bot on T yield promptly, and a
+// human LEAVING must let a bot re-pad. Bots/democlients don't trigger it.
+gf_reconcilerEvents()
+{
+	level endon("game_ended");
+	level endon("bot_reinit");
+
+	for(;;)
+	{
+		level waittill("connecting", p);
+		if(!isDefined(p))
+			continue;
+		if(p istestclient() || p isdemoclient())
+			continue;
+		p thread gf_reconcileOnHumanConnect();
+		p thread gf_reconcileOnHumanDisconnect();
+	}
+}
+
+gf_reconcileOnHumanConnect()
+{
+	self endon("disconnect");
+	level endon("bot_reinit");
+
+	// Wait until the human lands on a real team (autoassign / team pick), then request a pass so
+	// a bot on his side yields. Bounded so a team-menu camper can't wedge the thread.
+	ticks = 0;
+	while(ticks < 300 && !(isDefined(self.pers["team"]) && (self.pers["team"] == "allies" || self.pers["team"] == "axis")))
+	{
+		wait 0.1;
+		ticks++;
+	}
+	gf_reconcileRequest();
+}
+
+gf_reconcileOnHumanDisconnect()
+{
+	level endon("bot_reinit");
+
+	self waittill("disconnect");
+	gf_reconcileRequest();               // freed a slot -> re-pad next pass
+}
+
+// Classify level.players. Buckets: <team>_human / <team>_bot (on a real team), parked (a
+// CONNECTED bot in spectator — the reusable pool, listed in parkedBots), inflight (a bot still
+// connecting with no team yet — throttles new adds). A human in spectator is neutral.
+gf_reconcileCount()
+{
+	r = [];
+	r["allies_human"] = 0; r["allies_bot"] = 0;
+	r["axis_human"]   = 0; r["axis_bot"]   = 0;
+	r["parked"]       = 0; r["inflight"]   = 0; r["clients"] = 0;
+	r["parkedBots"]   = [];
+
+	players = level.players;
+	for(i = 0; i < players.size; i++)
+	{
+		p = players[i];
+		if(!isDefined(p))
+			continue;
+		if(p isdemoclient())             // server-side democlient: never counted, never touched
+			continue;
+		r["clients"]++;
+		t = p.pers["team"];
+		onTeam = (isDefined(t) && (t == "allies" || t == "axis"));
+
+		if(p istestclient())
+		{
+			// A bot still being STEERED to its target team by gf_botDeployWhenReady is in flight
+			// regardless of where it currently sits. This matters because the stock connect path
+			// parks a fresh bot in "spectator" (and teamWatch may then autoassign it to the WRONG
+			// team) before the watcher lands it — without this, the parked pool would steal it, or
+			// the wrong-team count would skew the deficit, causing a double-switch / overshoot.
+			if(isDefined(p.gf_fillPending))
+			{
+				r["inflight"]++;
+				continue;
+			}
+			if(onTeam)
+				r[t + "_bot"]++;
+			else if(isDefined(t) && t == "spectator")
+			{
+				r["parked"]++;
+				r["parkedBots"][r["parkedBots"].size] = p;
+			}
+			else
+				r["inflight"]++;         // connecting / no team resolved yet
+			continue;
+		}
+
+		if(onTeam)
+			r[t + "_human"]++;
+		// human in spectator: ignored (don't pad against a slot he isn't using)
+	}
+	return r;
+}
+
+// One reconcile pass. Runs to completion without yielding (all switches/adds are threaded), so
+// it is atomic vs. other passes.
+gf_reconcilePass()
+{
+	n = gf_fillTarget();
+	if(n <= 0)
+		return;                          // fill OFF -> reconciler inert (manual bot control sticks)
+
+	c = gf_reconcileCount();
+
+	maxClients = getDvarInt("sv_maxclients");
+	if(maxClients < 1) maxClients = 18;
+	ceiling = maxClients - gf_fillKickFloor();
+
+	teams = [];
+	teams[0] = "allies";
+	teams[1] = "axis";
+
+	// --- DEPLOY: fill each team's deficit. Reuse parked bots first (one shared index across both
+	// teams -> no double-assign), then add NEW bots but only while nothing is in flight
+	// (overshoot-free: the next pass adds more once this add lands and stops being "inflight"). ---
+	pool     = c["parkedBots"];
+	pi       = pool.size;
+	inflight = c["inflight"];
+	totalDeficit = 0;
+	for(ti = 0; ti < 2; ti++)
+	{
+		team = teams[ti];
+		need = n - (c[team + "_human"] + c[team + "_bot"]);
+		if(need <= 0)
+			continue;
+		totalDeficit += need;
+
+		while(need > 0 && pi > 0)
+		{
+			pi--;
+			b = pool[pi];
+			if(isDefined(b))
+			{
+				b thread gf_botSwitchTeam(team);
+				need--;
+			}
+		}
+		if(need > 0 && inflight <= 0)
+		{
+			bot = add_bot();
+			if(isDefined(bot))
+			{
+				bot.gf_fillPending = team;   // in flight until the watcher lands it on `team`
+				bot thread gf_botDeployWhenReady(team);
+				inflight++;              // one add in flight at a time -> overshoot-free
+			}
+		}
+	}
+
+	// --- PARK: trim each team's bot surplus (bots-only), BETWEEN ROUNDS only — removing a bot
+	// mid-round could suicide the team's last-alive bot and phantom-end the round; a mid-round
+	// human join doesn't actually enter the live round anyway (one life -> waits for next round),
+	// so settling the surplus at the round boundary lands exactly when the human starts playing. ---
+	if(!(isDefined(level.gf_roundActive) && level.gf_roundActive))
+	{
+		for(ti = 0; ti < 2; ti++)
+		{
+			team    = teams[ti];
+			bots    = c[team + "_bot"];
+			surplus = (c[team + "_human"] + bots) - n;
+			if(surplus > bots)           // humans-only overflow: leave the side big, never move a human
+				surplus = bots;
+			if(surplus > 0)
+				gf_parkBots(team, surplus);
+		}
+	}
+
+	// --- CLEANUP (only when no team still needs bots): keep a parked RESERVE == the humans
+	// currently playing (each could leave and reopen a slot) and stay under the client ceiling;
+	// KICK the excess. This makes "reduce the fill number" kick the freed bots (0 humans -> 0
+	// reserve -> all parked kicked) while a human-displaced bot still PARKS for instant reuse. ---
+	if(totalDeficit == 0 && pi > 0)
+	{
+		reserve = c["allies_human"] + c["axis_human"];   // one parked bot per playing human (each could leave)
+		// ...but never keep so many parked that total clients breach the ceiling (this also relieves
+		// slot pressure so a human can always connect). clients-parked = every non-parked client.
+		maxReserve = ceiling - (c["clients"] - c["parked"]);
+		if(reserve > maxReserve)
+			reserve = maxReserve;
+		if(reserve < 0)
+			reserve = 0;
+		excess = pi - reserve;           // pi == parked here (deploy consumed none: no deficit)
+		for(k = 0; k < excess; k++)
+		{
+			b = pool[k];
+			if(isDefined(b))
+				kick(b getEntityNumber(), "EXE_PLAYERKICKED");
+		}
+	}
+}
+
+// Move a bot to `team`. Bots are fungible, so the stock switch is fine (a not-yet-playing bot is
+// assigned+spawned; a playing bot is respawned — harmless). Threaded by callers.
+gf_botSwitchTeam(team)
+{
+	if(team == "allies")        self [[level.allies]]();
+	else if(team == "axis")     self [[level.axis]]();
+	else                        self [[level.spectator]]();
+}
+
+// A freshly add_bot()'d bot connects async; wait for it to land, then place it on `team`. It is
+// marked .gf_fillPending (counted in-flight) for the whole trip so no pass can steal or miscount
+// it. If it never connects (timeout with no team) drop it so a wedged connect can't block the
+// fill's one-in-flight throttle forever. On completion we clear the marker and request the NEXT
+// pass immediately — that's what makes a cold fill converge at ~one bot per driver tick (0.5s)
+// instead of crawling on the 3s safety backstop.
+gf_botDeployWhenReady(team)
+{
+	self endon("disconnect");
+	level endon("bot_reinit");
+
+	ticks = 0;
+	while(ticks < 100 && !isDefined(self.pers["team"]))
+	{
+		wait 0.1;
+		ticks++;
+	}
+	if(!isDefined(self))
+		return;
+	if(!isDefined(self.pers["team"]))
+	{
+		kick(self getEntityNumber(), "EXE_PLAYERKICKED");   // never connected -> unwedge the throttle
+		return;
+	}
+	if(self.pers["team"] != team)
+		self gf_botSwitchTeam(team);
+
+	self.gf_fillPending = undefined;     // landed: release the throttle...
+	gf_reconcileRequest();               // ...and let the driver deploy the next one right away
+}
+
+// Park `count` DISTINCT surplus bots from `team` (collected up front so the async switches don't
+// re-pick the same bot): move each to spectator for reuse, or KICK it under slot pressure so
+// parked bots can't lock a human out.
+gf_parkBots(team, count)
+{
+	picks = [];
+	players = level.players;
+	for(i = 0; i < players.size && picks.size < count; i++)
+	{
+		p = players[i];
+		if(!isDefined(p) || !(p istestclient()))
+			continue;
+		if(isDefined(p.pers["team"]) && p.pers["team"] == team)
+			picks[picks.size] = p;
+	}
+
+	maxClients = getDvarInt("sv_maxclients");
+	if(maxClients < 1) maxClients = 18;
+	ceiling = maxClients - gf_fillKickFloor();
+	for(i = 0; i < picks.size; i++)
+	{
+		if(level.players.size >= ceiling)
+			kick(picks[i] getEntityNumber(), "EXE_PLAYERKICKED");
+		else
+			picks[i] thread gf_botSwitchTeam("spectator");
+	}
+}
+
+// Per-team fill target N (clamped 0-6). 0 = fill off.
+gf_fillTarget()
+{
+	n = getDvarInt("gf_fill_n");
+	if(n < 0) n = 0;
+	if(n > 6) n = 6;
+	return n;
+}
+
+// Client-slot headroom to keep free for humans (>=0).
+gf_fillKickFloor()
+{
+	f = getDvarInt("gf_fill_kick_floor");
+	if(f < 0) f = 0;
+	return f;
 }
 
 /*
@@ -157,6 +527,8 @@ connected()
 */
 diffBots()
 {
+	level endon("bot_reinit");   // one copy only across a lobby re-init
+
 	for (;;)
 	{
 		wait 1.5;
@@ -433,10 +805,19 @@ teamBots()
 						
 						if(!player is_bot())
 							continue;
-							
+
+						// Only ever switch a bot that is NOT yet in-world this round.
+						// [[level.allies/axis/spectator]]() (stock menuAllies/menuAxis)
+						// suicide()s the player if sessionstate == "playing" — and during
+						// the connect/fill window every already-spawned bot is "playing"
+						// (frozen in prematch), so re-balancing them here is the "bots
+						// suicide mid-connect" bug. A spectator/limbo bot is safe to place.
+						if(player.sessionstate == "playing")
+							continue;
+
 						if(player.pers["team"] == toTeam)
 							continue;
-							
+
 						if (toTeam == "allies")
 							player thread [[level.allies]]();
 						else if (toTeam == "axis")
@@ -460,7 +841,14 @@ teamBots()
 				
 				if(!player is_bot())
 					continue;
-					
+
+				// Same guard as the force branch: never switch an already-spawned
+				// ("playing") bot — the stock team switch suicide()s it. Placing a
+				// not-yet-spawned (spectator/limbo) bot is harmless, so custom-amount
+				// assignment of freshly-connected bots still works.
+				if(player.sessionstate == "playing")
+					continue;
+
 				if(player.pers["team"] == "axis")
 				{
 					if(axis > teamAmount)
@@ -655,6 +1043,8 @@ add_bot()
 		bot.pers["isBotWarfare"] = true;
 		bot thread maps\mp\bots\_bot_script::added();
 	}
+
+	return bot;   // callers may ignore; the RCON per-team add uses it to place the bot (_gf_bridge)
 }
 
 /*
@@ -865,6 +1255,8 @@ doFiringThread()
 */
 bot_watch_planes()
 {
+	level endon("bot_reinit");   // one copy only across a lobby re-init
+
 	for(;;)
 	{
 		level waittill("uav_update");
@@ -924,6 +1316,8 @@ bot_killBoost()
 */
 fixGamemodes()
 {
+	level endon("bot_reinit");   // one copy only across a lobby re-init
+
 	for(i=0;i<19;i++)
 	{
 		if(isDefined(level.bombZones) && level.gametype == "sd")

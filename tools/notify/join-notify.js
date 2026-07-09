@@ -102,7 +102,12 @@ function parseRconResponse(buf) {
 
 function stripColors(s) { return String(s).replace(/\^[0-9a-zA-Z]/g, '').trim(); }
 
-// Parse map/gametype + the human players out of `status`. Bot = guid "0" AND addr "unknown".
+// Parse map/gametype + the human players out of `status`. Bot = the ADDRESS column is not
+// a real ip:port (and not a listen-server loopback). Player names CAN contain spaces (e.g.
+// the bot "MCG Gordon"), so name is not a single token: index the fixed trailing columns
+// from the END and take everything between guid and lastmsg as the name. The old fixed
+// p[4]/p[6] split misread a spaced name AND shifted the address column, leaking spaced-name
+// bots in as humans (the "MCG joined" false alert).
 function parseStatus(text) {
   const lines = text.split('\n');
   const out = { map: '', gametype: '', players: [] };
@@ -117,10 +122,14 @@ function parseStatus(text) {
       const line = lines[i].trim();
       if (!line) continue;
       const p = line.split(/\s+/);
-      if (p.length < 7 || !/^\d+$/.test(p[0])) continue;
-      const isBot = p[3] === '0' && p[6] === 'unknown';
+      if (p.length < 8 || !/^\d+$/.test(p[0])) continue;
+      const addr = p[p.length - 3];                          // address = 3rd-from-last
+      const name = stripColors(p.slice(4, p.length - 4).join(' '));   // between guid and lastmsg
+      if (!name) continue;
+      // Human = a real ip:port (or a listen-server loopback); anything else is a bot/non-human.
+      const isBot = !(addr === 'loopback' || addr === 'local' || /^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(addr));
       const ping  = /^\d+$/.test(p[2]) ? parseInt(p[2], 10) : null;   // "CNCT"/"ZMBI" → null
-      out.players.push({ num: parseInt(p[0], 10), guid: p[3], name: stripColors(p[4]), addr: p[6], ping: ping, bot: isBot });
+      out.players.push({ num: parseInt(p[0], 10), guid: p[3], name, addr, ping, bot: isBot });
     }
   }
   return out;

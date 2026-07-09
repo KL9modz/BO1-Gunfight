@@ -115,11 +115,15 @@ small Gunfight lobby with headroom.
     ```bat
     cd /D %LOCALAPPDATA%\Plutonium
     :server
+    "%~dp0plutonium.exe" -install-dir "%LOCALAPPDATA%\Plutonium" -update-only
     start /wait /abovenormal bin\plutonium-bootstrapper-win32.exe t5mp "C:\gameserver\T5" -dedicated ^
       +set key %key% +set fs_game "mods/mp_gunfight" +exec "dedicated.cfg" ^
       +set net_port %port% +set sv_maxclients %maxclients% +map_rotate
     goto server
     ```
+    Keep the updater line inside the `:server` loop and before the bootstrapper. Every initial
+    start, deploy restart, or crash recovery then refreshes the Plutonium runtime before the
+    dedicated process opens, preventing newer clients from connecting to an old server protocol.
     The mod loads via `fs_game "mods/mp_gunfight"` (NOT a `loadMod` line in the cfg).
     The `:server ... goto server` loop auto-restarts on crash.
 13. **Open the firewall port** (PowerShell as admin on the VPS):
@@ -322,7 +326,9 @@ Update-MpSignature
 Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart
 # Re-enable IE Enhanced Security Config after setup downloads are done (reverses Phase 1 step 4).
 ```
-Keep Windows Update on automatic, and keep the Plutonium launcher/bootstrapper current.
+Keep Windows Update on automatic. The launch loop above keeps the server runtime current; players
+must start the game through the actual `plutonium.exe` launcher so its automatic updater runs
+(starting `plutonium-bootstrapper-win32.exe` directly bypasses that update check).
 
 **7. Out-of-band & provider plane.** Rotate the Contabo **VNC** password to the longest the panel
 allows; enable **2FA on the Contabo customer panel** (it can rebuild/reset the box). Don't leave an

@@ -305,6 +305,19 @@ onStartGameType()
         setDvar( "scr_gf_load_grace", "20" );     // s past prematch_over to keep grace open for a still-loading client so it spawns into round 1 (0 = off)
     if ( getDvar( "scr_gf_lobby" ) == "" )
         setDvar( "scr_gf_lobby", "0" );           // Match Start: 0 = Normal (default, off), 1 = Auto lobby (min-players -> fast-restart), 2 = Manual lobby (admin START -> fast-restart)
+    if ( getDvar( "scr_gf_lobby_timer" ) == "" )
+        setDvar( "scr_gf_lobby_timer", "600" );   // MANUAL lobby auto-start timer (s). Was the hardcoded 10-min backstop; now RCON-adjustable. 0 = never auto-start (hold until START)
+    // Dynamic bot fill. gf_fill_n is the PER-TEAM target N (humans+bots per side): the Gunfight
+    // reconciler (gf_reconcilerInit in _bot.gsc, dev-only) pads each side to exactly N with bots
+    // and yields a bot the moment a human joins that side. It MUST be a dvar — the only state that
+    // survives the lobby's map_restart(false). Seeded here (public file) so it's always in the dvar
+    // table for the RCON panel even on a public build with no reconciler reading it.
+    if ( getDvar( "gf_fill_n" ) == "" )
+        setDvar( "gf_fill_n", "0" );              // 0 = fill off; 3 = 3v3, 4 = 4v4, ... (clamped 0-6 on read)
+    if ( getDvar( "gf_fill_kick_floor" ) == "" )
+        setDvar( "gf_fill_kick_floor", "2" );     // client slots kept free for humans: a parked bot is KICKED (not parked) once level.players >= sv_maxclients - this
+    if ( getDvar( "gf_teamplan" ) == "" )
+        setDvar( "gf_teamplan", "" );             // lobby->match transfer: "<guid>:<a|x|s>,..." snapshot written pre-restart, re-applied post-restart (survives map_restart(false))
     // Register scr_team_maxsize with its documented default (0 = no cap) so it always exists
     // in the dvar table. The mod reads it via getDvarInt (0 when unset), but an UNregistered
     // dvar echoes "Unknown cmd scr_team_maxsize" when the RCON panel's connect-sweep reads it

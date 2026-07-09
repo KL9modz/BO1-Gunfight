@@ -1,5 +1,5 @@
 // Gunfight v3 — Loadout System
-// 54 hand-authored loadouts, shuffled once per match and expanded into a round
+// 53 hand-authored loadouts, shuffled once per match and expanded into a round
 // schedule. All players read the same game["roundsplayed"] index so loadout sync
 // is guaranteed by construction.
 //
@@ -26,7 +26,8 @@
 //   Equipment : camera_spike_mp | scrambler_mp (Jammer) | acoustic_sensor_mp
 //               (Motion) | claymore_mp | satchel_charge_mp (C4)
 //   Minigun & M202 stay primaries (camo forced 0); true launchers appear only as
-//   secondaries.
+//   secondaries. The Finger Gun ("defaultweapon") rides as the Death Machine's
+//   secondary — an easter-egg sidearm, not a primary.
 
 #include maps\mp\gametypes\_gf_hud;
 
@@ -53,14 +54,14 @@ gf_initLoadouts()
     pool[n] = gf_load( "galil_gl_mp",               "cz75_silencer_mp",        "claymore_mp",         "hatchet_mp",        "tabun_gas_mp",           -1,  -1 ); n++;
     pool[n] = gf_load( "commando_mp",               "crossbow_explosive_mp",   "satchel_charge_mp",   "sticky_grenade_mp", "nightingale_mp",         -1,  -1 ); n++;
     pool[n] = gf_load( "fnfal_acog_mp",             "rpg_mp",                  "camera_spike_mp",     "hatchet_mp",        "flash_grenade_mp",       -1,  -1 ); n++;
-    pool[n] = gf_load( "m14_reflex_grip_mp",        "china_lake_mp",           "scrambler_mp",        "sticky_grenade_mp", "concussion_grenade_mp",  -1,  -1 ); n++;
+    pool[n] = gf_load( "m14_acog_grip_mp",        "china_lake_mp",           "scrambler_mp",        "sticky_grenade_mp", "concussion_grenade_mp",  -1,  -1 ); n++;
     pool[n] = gf_load( "galil_silencer_mp",         "m72_law_mp",              "claymore_mp",         "sticky_grenade_mp", "willy_pete_mp",          -1,  -1 ); n++;
 
     // ── SMG ×6 ──
     pool[n] = gf_load( "mp5k_silencer_mp",          "pythondw_mp",             "claymore_mp",         "hatchet_mp",        "tabun_gas_mp",           -1,  -1 ); n++;
     pool[n] = gf_load( "dragunov_acog_mp",          "cz75dw_mp",               "satchel_charge_mp",   "hatchet_mp",        "nightingale_mp",         -1,  -1 ); n++;
     pool[n] = gf_load( "mp5k_mp",                   "aspdw_mp",                "camera_spike_mp",     "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1 ); n++;
-    pool[n] = gf_load( "spectre_grip_extclip_mp",   "hs10dw_mp",               "scrambler_mp",        "frag_grenade_mp",   "concussion_grenade_mp",  -1,  -1 ); n++;
+    pool[n] = gf_load( "spectre_acog_grip_mp",   "hs10dw_mp",               "scrambler_mp",        "frag_grenade_mp",   "concussion_grenade_mp",  -1,  -1 ); n++;
     pool[n] = gf_load( "uzi_acog_grip_mp",          "ithaca_grip_mp",          "satchel_charge_mp",   "frag_grenade_mp",   "willy_pete_mp",          -1,  -1 ); n++;
     pool[n] = gf_load( "pm63_extclip_mp",           "knife_ballistic_mp",      "claymore_mp",         "hatchet_mp",        "nightingale_mp",         -1,  -1 ); n++;
 
@@ -72,7 +73,7 @@ gf_initLoadouts()
 
     // ── Sniper ×2 ──
     pool[n] = gf_load( "l96a1_mp",                  "crossbow_explosive_mp",   "camera_spike_mp",     "hatchet_mp",        "concussion_grenade_mp",  -1,  -1 ); n++;
-    pool[n] = gf_load( "wa2000_ir_silencer_mp",     "m72_law_mp",              "satchel_charge_mp",   "frag_grenade_mp",   "tabun_gas_mp",           -1,  -1 ); n++;
+    pool[n] = gf_load( "wa2000_ir_mp",     "m72_law_mp",              "satchel_charge_mp",   "frag_grenade_mp",   "tabun_gas_mp",           -1,  -1 ); n++;
 
     // ── Shotgun ×2 ──
     pool[n] = gf_load( "spas_silencer_mp",          "china_lake_mp",           "claymore_mp",         "hatchet_mp",        "flash_grenade_mp",       -1,  -1 ); n++;
@@ -99,28 +100,27 @@ gf_initLoadouts()
     // ── Shotgun ×1 (expanded) ──
     pool[n] = gf_load( "rottweil72_mp",             "m72_law_mp",              "satchel_charge_mp",   "sticky_grenade_mp", "nightingale_mp",         -1,  -1 ); n++;
 
-    // ── Dual-wield SMG ×5 ──
-    pool[n] = gf_load( "mac11_grip_silencer_mp",    "m1911dw_mp",              "satchel_charge_mp",   "hatchet_mp",        "flash_grenade_mp",       -1,  -1 ); n++;
-    pool[n] = gf_load( "defaultweapon",             "knife_ballistic_mp",      "scrambler_mp",        "frag_grenade_mp",   "concussion_grenade_mp",  -1,  -1 ); n++;
+    // ── Dual-wield SMG ×4 ──
+    pool[n] = gf_load( "mac11_silencer_mp",    "m1911dw_mp",              "satchel_charge_mp",   "hatchet_mp",        "flash_grenade_mp",       -1,  -1 ); n++;
     pool[n] = gf_load( "ithaca_grip_mp",            "pm63dw_mp",               "acoustic_sensor_mp",  "sticky_grenade_mp", "willy_pete_mp",          -1,  -1 ); n++;
     pool[n] = gf_load( "l96a1_mp",                  "rpg_mp",                  "camera_spike_mp",     "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1 ); n++;
-    pool[n] = gf_load( "aug_elbit_dualclip_mp",     "python_acog_mp",          "scrambler_mp",        "frag_grenade_mp",   "nightingale_mp",         -1,  -1 ); n++;
+    pool[n] = gf_load( "aug_elbit_mp",     "python_acog_mp",          "scrambler_mp",        "frag_grenade_mp",   "nightingale_mp",         -1,  -1 ); n++;
 
     // ── SMG/AR/Sniper (expanded ×5) ──
     pool[n] = gf_load( "mpl_acog_grip_mp",          "makarov_silencer_mp",     "acoustic_sensor_mp",  "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1 ); n++;
     pool[n] = gf_load( "commando_mk_mp",            "m1911_silencer_mp",       "camera_spike_mp",     "hatchet_mp",        "concussion_grenade_mp",  -1,  -1 ); n++;
     pool[n] = gf_load( "wa2000_acog_mp",            "asp_mp",                  "scrambler_mp",        "frag_grenade_mp",   "willy_pete_mp",          -1,  -1 ); n++;
     pool[n] = gf_load( "psg1_silencer_mp",          "crossbow_explosive_mp",   "acoustic_sensor_mp",  "sticky_grenade_mp", "tabun_gas_mp",           -1,  -1 ); n++;
-    pool[n] = gf_load( "kiparis_elbit_grip_mp",     "rpg_mp",                  "claymore_mp",         "frag_grenade_mp",   "nightingale_mp",         -1,  -1 ); n++;
+    pool[n] = gf_load( "kiparis_acog_grip_mp",     "rpg_mp",                  "claymore_mp",         "frag_grenade_mp",   "nightingale_mp",         -1,  -1 ); n++;
 
     // ── Heavy & mixed ×9 — Minigun/M202 stay primary; launchers are secondaries ──
-    pool[n] = gf_load( "m16_ir_extclip_mp",         "hs10_mp",                 "scrambler_mp",        "frag_grenade_mp",   "flash_grenade_mp",       -1,  -1 ); n++;
+    pool[n] = gf_load( "m16_ir_mp",         "hs10_mp",                 "scrambler_mp",        "frag_grenade_mp",   "flash_grenade_mp",       -1,  -1 ); n++;
     pool[n] = gf_load( "spas_mp",                   "python_acog_mp",          "acoustic_sensor_mp",  "sticky_grenade_mp", "concussion_grenade_mp",  -1,  -1 ); n++;
     pool[n] = gf_load( "ak74u_grip_dualclip_mp",    "makarov_extclip_mp",      "camera_spike_mp",     "hatchet_mp",        "willy_pete_mp",          -1,  -1 ); n++;
     pool[n] = gf_load( "galil_mp",                  "m1911_extclip_mp",        "scrambler_mp",        "frag_grenade_mp",   "concussion_grenade_mp",  -1,  -1 ); n++;
     pool[n] = gf_load( "stoner63_reflex_mp",        "cz75_auto_mp",            "acoustic_sensor_mp",  "sticky_grenade_mp", "nightingale_mp",         -1,  -1 ); n++;
     pool[n] = gf_load( "m202_flash_wager_mp",       "ithaca_grip_mp",          "camera_spike_mp",     "hatchet_mp",        "flash_grenade_mp",       -1,  -1 ); n++;
-    pool[n] = gf_load( "minigun_wager_mp",          "knife_ballistic_mp",      "claymore_mp",         "hatchet_mp",        "concussion_grenade_mp",  -1,  -1 ); n++;
+    pool[n] = gf_load( "minigun_wager_mp",          "defaultweapon",           "claymore_mp",         "hatchet_mp",        "concussion_grenade_mp",  -1,  -1 ); n++;
     pool[n] = gf_load( "fnfal_mk_mp",               "skorpiondw_mp",           "acoustic_sensor_mp",  "frag_grenade_mp",   "willy_pete_mp",          -1,  -1 ); n++;
     pool[n] = gf_load( "hk21_acog_mp",              "cz75_auto_mp",            "satchel_charge_mp",   "hatchet_mp",        "tabun_gas_mp",           -1,  -1 ); n++;
     // #gf-loadout-editor-end
@@ -237,9 +237,7 @@ gf_giveCustomLoadout()
     // Also suppressed during the pregame lobby hold: the overview would slide in on the frozen
     // prematch spawn then get yanked when the lobby cam moves the player to spectator (the "lobby HUD
     // flash"). The real match re-gives the loadout on the map_restart(false) spawn and shows it then.
-    if ( !isBot
-        && ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold )
-        && getDvarInt( "gf_diag_cd_no_loadout_hud" ) != 1 )
+    if ( !isBot && ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold ) )
         self thread gf_showWeaponHUD( load );
 }
 
@@ -316,9 +314,16 @@ gf_load( pri, sec, equip, lethal, tactical, camo, camoSec )
         load["camoSecondary"] = randomInt( 16 );   // independent secondary roll (only real-base secondaries show it)
     else
         load["camoSecondary"] = camoSec;
-    // Special primaries reject a real camo — force stock so they don't error.
+    // Special primaries reject a real camo — force stock so GiveWeapon doesn't no-op.
     if ( isSubStr( pri, "minigun" ) || isSubStr( pri, "m202" ) )
         load["camo"] = 0;
+    // The Finger Gun (defaultweapon) is an SP weapon def with no camo materials, so a
+    // rolled index is meaningless on it. The give works either way (the live server runs
+    // it with a random roll), but pin stock in whichever slot it lands.
+    if ( pri == "defaultweapon" )
+        load["camo"] = 0;
+    if ( sec == "defaultweapon" )
+        load["camoSecondary"] = 0;
 
     return load;
 }
@@ -404,7 +409,7 @@ gf_buildWeaponDB()
     gf_regFamily( "stoner63",   "Stoner63",   "menu_mp_weapons_stoner63a" );   // icon base has trailing 'a'
     gf_regFamily( "spas",       "SPAS-12",    "menu_mp_weapons_spas" );
     gf_regFamily( "ithaca",     "Stakeout",   "menu_mp_weapons_ithaca" );
-    gf_regFamily( "defaultweapon", "Finger Gun", "menu_mp_weapons_knife" );   // real weapon (raw\weapons\sp\defaultweapon, precached in gf.gsc) -> engine's finger-gun easter egg
+    gf_regFamily( "defaultweapon", "Finger Gun", "hud_death_suicide" );   // real weapon (raw\weapons\sp\defaultweapon, precached in gf.gsc) -> engine's finger-gun easter egg. Icon = the skull (same material the health panel uses via ui_gf_skull_mat). (menu_mp_weapons_knife does NOT exist -> was a missing-texture checkerboard.)
     gf_regFamily( "rottweil72", "Olympia",    "menu_mp_weapons_rottweil72" );
     gf_regFamily( "l96a1",      "L96A1",      "menu_mp_weapons_l96a1" );
     gf_regFamily( "wa2000",     "WA2000",     "menu_mp_weapons_wa2000" );

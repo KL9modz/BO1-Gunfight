@@ -93,7 +93,12 @@ function Parse-RconResponse($s) {
   return $s.Substring($nl + 1).TrimEnd()
 }
 
-# Parse map/gametype + human players from `status`. Bot = guid "0" AND addr "unknown".
+# Parse map/gametype + human players from `status`. Bot = the ADDRESS column is not a
+# real ip:port (and not a listen-server loopback). Player names CAN contain spaces (e.g.
+# the bot "MCG Gordon"), so name is not a single token: index the fixed trailing columns
+# from the END and take everything between guid and lastmsg as the name. The old fixed
+# p[4]/p[6] split misread a spaced name AND shifted the address column, leaking spaced-
+# name bots in as humans (that was the "MCG joined" false phone alert).
 function Parse-Status($text) {
   $lines   = $text -split "`n"
   $map = ''; $gt = ''; $sepIdx = -1
@@ -109,11 +114,18 @@ function Parse-Status($text) {
       $line = $lines[$i].Trim()
       if ($line -eq '') { continue }
       $p = $line -split '\s+'
-      if ($p.Length -lt 7 -or $p[0] -notmatch '^\d+$') { continue }
-      $isBot = ($p[3] -eq '0' -and $p[6] -eq 'unknown')
+      if ($p.Length -lt 8 -or $p[0] -notmatch '^\d+$') { continue }
+      $addr    = $p[$p.Length - 3]                 # address = 3rd-from-last (name may hold spaces)
+      $nameEnd = $p.Length - 5
+      $name    = ''
+      if ($nameEnd -ge 4) { $name = ($p[4..$nameEnd] -join ' ') }   # name = between guid and lastmsg
+      $name = (Strip-Colors $name)
+      if ($name -eq '') { continue }
+      # Human = a real ip:port (or a listen-server loopback); anything else is a bot/non-human.
+      $isBot = -not ($addr -eq 'loopback' -or $addr -eq 'local' -or $addr -match '^\d{1,3}(\.\d{1,3}){3}:\d+$')
       $pg = $null; if ($p[2] -match '^\d+$') { $pg = [int]$p[2] }   # "CNCT"/"ZMBI" -> null
       [void]$players.Add([pscustomobject]@{
-        num = [int]$p[0]; guid = $p[3]; name = (Strip-Colors $p[4]); addr = $p[6]; ping = $pg; bot = $isBot
+        num = [int]$p[0]; guid = $p[3]; name = $name; addr = $addr; ping = $pg; bot = $isBot
       })
     }
   }

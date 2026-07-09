@@ -141,8 +141,15 @@ function parseRconResponse(buf) {
 //   --- ----- ---- --------- --------------- ------- --------------------- ------ -----
 //     1     0   12 2223048 KL9                   0 loopback              -20175 25000
 //     2   857    0       0 LiMi7ED         1092400 unknown                   42  5000
+//     3     0    0       0 MCG Gordon            0 unknown                   43  5000
 //
-// Bot detection: guid == "0" AND address == "unknown"
+// Bot detection: the ADDRESS column is not a real ip:port (and not a listen-server
+// loopback). We do NOT key off guid=="0" && p[6]=="unknown" anymore: player NAMES
+// CAN CONTAIN SPACES (e.g. the bot "MCG Gordon"), so name is not a single token —
+// a fixed p[4]/p[6] split misreads a spaced name AND shifts the address one column
+// right, so a spaced-name bot (guid 0, but the shifted col != "unknown") leaked in
+// as a human. Instead we index the fixed trailing columns from the END and take
+// everything between guid and lastmsg as the name (matches status_service.ps1).
 // Local player:  address == "loopback"
 
 function stripColors(s) { return String(s).replace(/\^[0-9a-zA-Z]/g, '').trim(); }
@@ -164,23 +171,30 @@ function parseStatusText(text) {
     for (let i = sepIdx + 1; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
-      // Split by whitespace; T5 player names have no spaces
+      // Columns: num score ping guid  NAME(may contain spaces)  lastmsg address qport rate
+      // Front columns (num/score/ping/guid) are a fixed count, so read them by index.
+      // The name can hold spaces, so read the trailing columns from the END: address is
+      // the 3rd-from-last token, and the name is everything between guid and lastmsg.
       const p = line.split(/\s+/);
-      // expect: [num, score, ping, guid, name, lastmsg, address, ...]
-      if (p.length < 7 || !/^\d+$/.test(p[0])) continue;
-      const isBot   = p[3] === '0' && p[6] === 'unknown';
-      const isLocal = p[6] === 'loopback';
+      if (p.length < 8 || !/^\d+$/.test(p[0])) continue;
+      const addr    = p[p.length - 3];
+      const name    = stripColors(p.slice(4, p.length - 4).join(' '));
+      if (!name) continue;
+      const isLocal = addr === 'loopback' || addr === 'local';
+      // Human = a real ip:port (or a listen-server loopback). Anything else — "unknown",
+      // a still-connecting client's lastmsg value, etc. — is treated as a bot/non-human.
+      const isBot   = !(isLocal || /^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(addr));
       if (isLocal) result.listenServer = true;
-      const ip      = isBot ? null : isLocal ? 'local' : p[6].split(':')[0];
+      const ip      = isBot ? null : isLocal ? 'local' : addr.split(':')[0];
       result.players.push({
         num:   parseInt(p[0]),
         score: parseInt(p[1]),
         ping:  parseInt(p[2]),
         guid:  p[3],
-        name:  stripColors(p[4]),
+        name,
         bot:   isBot,
         local: isLocal,
-        addr:  p[6],
+        addr,
         ip,
       });
     }
@@ -295,8 +309,9 @@ async function readDvars(host, port, password, names, fresh) {
   return values;
 }
 
-// Parse the gf_roster telemetry dvar into per-player team/alive/pending.
-// format: "<num>,<team>,<alive>,<pending>;..."  team/pending: a=allies x=axis s=spectator -=none
+// Parse the gf_roster telemetry dvar into per-player team/alive/pending/bot.
+// format: "<num>,<team>,<alive>,<pending>,<bot>;..."  team/pending: a=allies x=axis s=spectator
+// -=none; alive 1/0; bot 1/0 (5th field added 2026-07-08; older servers omit it -> bot:false).
 function parseGfRoster(str) {
   const map = { a: 'allies', x: 'axis', s: 'spectator', '-': '' };
   const out = [];
@@ -309,6 +324,7 @@ function parseGfRoster(str) {
       team:    map[f[1]] || '',
       alive:   f[2] === '1',
       pending: map[f[3]] || '',
+      bot:     f[4] === '1',
     });
   }
   return out;
@@ -336,10 +352,12 @@ function parseMapRotation(str) {
 }
 
 function parseGfState(stateStr) {
-  // format: "wA:wX:round:aliveA:aliveX:gametype:hold"  (hold added 2026-07-05; older
-  // servers omit it → parts[6] undefined → lobbyHold false, so this stays back-compatible)
+  // format: "wA:wX:round:aliveA:aliveX:gametype:hold:fillN:pAllies:pAxis:parked"
+  // (hold added 2026-07-05, fill fields 8-11 added 2026-07-08; older servers omit trailing
+  // fields → parts[i] undefined → sane defaults, so this stays back-compatible)
   const parts = String(stateStr).split(':');
   if (parts.length < 5) return null;
+  const num = (v, d) => (v === undefined || v === '' ? d : (parseInt(v) || 0));
   return {
     winsAllies: parseInt(parts[0]) || 0,
     winsAxis:   parseInt(parts[1]) || 0,
@@ -348,6 +366,10 @@ function parseGfState(stateStr) {
     aliveAxis:  parseInt(parts[4]) || 0,
     gametype:   (parts[5] || '').replace(/\^\d/g, ''),   // strip color codes (gf^7 -> gf)
     lobbyHold:  parts[6] === '1',                          // pre-prematch admin/load hold is active
+    fillN:      parts[7] !== undefined ? num(parts[7], 0) : null,   // per-team fill target (null = server predates fill telemetry)
+    playAllies: num(parts[8], 0),                          // current playing count (humans+bots) allies
+    playAxis:   num(parts[9], 0),                          // current playing count axis
+    parked:     num(parts[10], 0),                         // bots benched in spectator for reuse
   };
 }
 
