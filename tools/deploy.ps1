@@ -290,12 +290,67 @@ function Set-Maintenance {
     Write-Host "Watchdog maintenance window set ($Minutes min) - the planned restart won't page."
 }
 
+function Test-GamePortUp {
+    # UDP 28960 bound = the game server is live and serving. The launcher bat only
+    # opens it once the bootstrapper (not the -update-only step) is actually running.
+    return [bool](Get-NetUDPEndpoint -LocalPort 28960 -ErrorAction SilentlyContinue)
+}
+
+function Get-UpdaterCpu {
+    # Total CPU-seconds of the update-only process, whose name is exactly 'plutonium'
+    # (NOT 'plutonium-bootstrapper-win32', the game server - exact -Name never matches it).
+    # $null when it isn't running. A LIVE update climbs this; a WEDGED one sits flat.
+    $p = Get-Process -Name plutonium -ErrorAction SilentlyContinue
+    if ($p) { return ($p | Measure-Object -Property CPU -Sum).Sum }
+    return $null
+}
+
+function Wait-ForServerBack {
+    # Killing the bootstrapper makes the launcher bat's :server loop re-run
+    # `plutonium.exe -update-only` (normally ~2 min) BEFORE relaunching the server.
+    # That update step occasionally WEDGES - flat CPU, port never opens, server stays
+    # DOWN (observed 2026-07-10; recovered by hand with `Stop-Process -Name plutonium`).
+    # Nothing else recovers it: the deploy's own watchdog-maintenance window suppresses
+    # the box watchdog for exactly this span. So deploy owns the recovery. Poll for the
+    # game port to come back; once we're PAST the grace period (a legit update should be
+    # done) and the updater is provably FLAT, kill it so the bat loops on to launch the
+    # bootstrapper. The flat-CPU guard is what keeps us from killing a still-working update.
+    param(
+        [int]$GraceSeconds   = 150,   # a legit ~2 min update should have finished by here
+        [int]$CeilingSeconds = 300    # hard stop - report failure past this
+    )
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Waiting for the game server to come back (UDP 28960)..."
+    while ($sw.Elapsed.TotalSeconds -lt $CeilingSeconds) {
+        if (Test-GamePortUp) {
+            Write-Host "Game server is back up (UDP 28960 listening after $([int]$sw.Elapsed.TotalSeconds)s)." -ForegroundColor Green
+            return $true
+        }
+        if ($sw.Elapsed.TotalSeconds -ge $GraceSeconds) {
+            $c1 = Get-UpdaterCpu
+            if ($null -ne $c1) {
+                Start-Sleep -Seconds 20
+                if (Test-GamePortUp) { continue }   # came up while sampling
+                $c2 = Get-UpdaterCpu
+                if ($null -ne $c2 -and ($c2 - $c1) -lt 1.0) {
+                    Write-Host ("Updater appears WEDGED (plutonium.exe CPU flat: {0}->{1}s over 20s). Killing it so the bat relaunches the server..." -f [math]::Round($c1,1), [math]::Round($c2,1)) -ForegroundColor Yellow
+                    Get-Process -Name plutonium -ErrorAction SilentlyContinue | Stop-Process -Force
+                }
+            }
+        }
+        Start-Sleep -Seconds 5
+    }
+    return $false
+}
+
 function Restart-Server {
     if ($NoRestart -or $DryRun) {
         Write-Host "Skipping server restart$(if ($DryRun) { ' (dry run)' }) - relaunch manually to load the new mod."
         return
     }
-    Set-Maintenance -Minutes 5 -Reason 'deploy'   # suppress the watchdog's restart-window false alarm
+    # 7 min (> Wait-ForServerBack's 5 min ceiling) so the recovery poll never runs past the
+    # watchdog-maintenance window and trips a false page as it's healing a wedge.
+    Set-Maintenance -Minutes 7 -Reason 'deploy'
     Write-Host "Restarting game server (the restart-loop bat relaunches it under the server account)..."
     # Use Get-Process/Stop-Process, NOT taskkill: under $ErrorActionPreference='Stop'
     # taskkill's stderr ("process not found", emitted when the server is already
@@ -305,6 +360,12 @@ function Restart-Server {
     if ($boot) {
         $boot | Stop-Process -Force
         Write-Host "Bootstrapper killed; the restart-loop bat will bring it back up."
+        # Verify it actually returns, and auto-recover the known `-update-only` wedge
+        # instead of leaving the server silently DOWN for a human to notice.
+        if (-not (Wait-ForServerBack)) {
+            Write-Host "Game server did NOT come back within 5 min - needs manual attention." -ForegroundColor Red
+            Write-Host "On the box: Stop-Process -Name plutonium (clears a wedged updater), then confirm UDP 28960." -ForegroundColor Red
+        }
     } else {
         Write-Host "Bootstrapper was NOT running - the game server is DOWN." -ForegroundColor Yellow
         Write-Host "Start it manually (your server start .bat). The restart loop only" -ForegroundColor Yellow
