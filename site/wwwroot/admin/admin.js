@@ -154,3 +154,62 @@ function initHist(){
   fetchHist(); setInterval(fetchHist,60000);
 }
 initHist();
+
+// ---- Server health (ops status) ------------------------------------------
+// Own container (#health) + own 5s interval, separate from the roster tick so
+// neither re-render disturbs the other. Fetches live/health.json (no PII:
+// round/map/counts/stuck-state), written by status_service every 5s.
+var HEALTHURL = 'live/health.json';
+function fmtAge(s){ if(s==null||s<0) return '—'; s=Math.round(s); return s<90? s+'s' : Math.floor(s/60)+'m'; }
+function fmtUp(m){ if(m==null) return '—'; if(m<60) return m+'m'; return Math.floor(m/60)+'h '+(m%60)+'m'; }
+
+function renderHealth(d){
+  var host=document.getElementById('health');
+  if(!host) return;
+  host.innerHTML='';
+  var card=el('div','card');
+
+  var head=el('div','hhead');
+  head.appendChild(el('p','kick','Server health'));
+  var pill;
+  if(!d.online){ pill=el('span','pill bad','OFFLINE'); }
+  else if(d.roundStuck){ pill=el('span','pill warn live','MATCH STUCK'); }
+  else if(d.lobbyHold){ pill=el('span','pill warn','PREGAME LOBBY'); }
+  else{ pill=el('span','pill ok','LIVE'); }
+  head.appendChild(pill);
+  card.appendChild(head);
+
+  if(d.online && d.roundStuck){
+    card.appendChild(el('div','hbanner',
+      'Round '+d.round+' has not advanced in '+fmtAge(d.secsSinceRoundChange)+
+      '. The in-game and box watchdogs should auto-recover (map_rotate may fire).'));
+  }
+
+  var g=el('div','hstat');
+  function cell(k,v){ var c=el('div','cell'); c.appendChild(el('div','k',k));
+    c.appendChild(el('div','v',(v==null||v==='')?'—':String(v))); g.appendChild(c); }
+  if(d.online){
+    cell('Map', d.mapName||d.map||'—');
+    cell('Mode', prettyGt(d.gametype));
+    cell('Round', d.round!=null? d.round : '—');
+    cell('Score', ((d.score&&d.score.allies)||0)+' – '+((d.score&&d.score.axis)||0));
+    cell('Players', (d.humans!=null?d.humans:'?')+' + '+(d.bots!=null?d.bots:'?')+' bots');
+    cell('Alive', ((d.alive&&d.alive.allies)||0)+' / '+((d.alive&&d.alive.axis)||0));
+    cell('Uptime', fmtUp(d.serverUptimeMins));
+    cell('Engine log', fmtAge(d.gamesLogAgeSecs)+' ago');
+    cell('Round age', fmtAge(d.secsSinceRoundChange));
+  } else {
+    cell('Status', 'Not answering RCON');
+    cell('Uptime', fmtUp(d.serverUptimeMins));
+  }
+  card.appendChild(g);
+  host.appendChild(card);
+}
+
+function fetchHealth(){
+  fetch(HEALTHURL+'?t='+Date.now(),{cache:'no-store'})
+    .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+    .then(renderHealth)
+    .catch(function(){ /* health.json appears once status_service writes it; keep prior card */ });
+}
+fetchHealth(); setInterval(fetchHealth,5000);

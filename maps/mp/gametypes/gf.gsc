@@ -10,6 +10,9 @@
 // #strip-begin - RCON bridge include (dev/main only; stripped from public release)
 #include maps\mp\gametypes\_gf_bridge;
 // #strip-end
+// #strip-begin - frame-hitch/slow-mo monitor include (dev/main only; stripped from public release)
+#include maps\mp\gametypes\_gf_debug;
+// #strip-end
 
 main()
 {
@@ -385,6 +388,13 @@ onStartGameType()
     level.inOvertime         = false;
     level.timeLimitOverride  = false;
 
+    // Round generation stamp — re-stamped every onStartGameType (so every round AND
+    // every map_restart, which wipes level.*). gettime() is monotonic across map_restart.
+    // gf_tryActivateRound / gf_roundWatchdog capture this and bail if it moves, so a stale
+    // activator that survived a lobby map_restart(false) can never strand or double-start a
+    // round (see gf_tryActivateRound in _gf_rounds.gsc — replaces the old load-gate endon).
+    level.gf_roundGen = gettime();
+
     gf_rocketOncePerMatch();   // Cosmodrome: stop the launch re-firing every round
 
     if ( !isDefined( game["switchedsides"] ) )
@@ -486,6 +496,15 @@ onStartGameType()
         setDvar( "bots_manage_add", 0 );
         thread maps\mp\gametypes\_bot::init();
     }
+
+    // Frame-hitch / slow-mo diagnostic (dev only). Chases the "prematch/preround
+    // countdown + whole game runs in slow-motion until it hits 0" report: samples
+    // how much gettime() advances across a fixed wait() and logs GF_HITCH to
+    // games_mp.log when a window runs slow. Re-launched every onStartGameType but
+    // collapsed to exactly one live sampler by the gf_hitch_reinit notify (threads
+    // survive map_restart, so a bare re-thread would stack). See _gf_debug.gsc.
+    level notify( "gf_hitch_reinit" );
+    level thread gf_hitchMonitor();
     // #strip-end
 
     // Pre-prematch load gate — MUST be the last statement: the engine threads

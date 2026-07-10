@@ -129,34 +129,37 @@ gf_bridgeInit()
     // blend (a newer visionSetNaked call retargets the in-progress lerp).
     level thread gf_bridgeVisionPersist();
 
-    // Persistent loops: ONCE PER MATCH, not once per round. gf_bridgeInit is re-threaded on every
-    // map_restart (gf.gsc) to re-seed the dvars/flags above (level.* is wiped by map_restart) and
-    // re-arm the per-round vision blend - but the telemetry loop, the 20 Hz command poll, and the
-    // pending-team watcher are for(;;) loops that only endon("game_ended") (match end, NOT a
-    // map_restart). Re-threading them every round STACKED one live copy per round: N pollers racing
-    // the gf_cmd read+clear (breaking the single-consumer take the poll relies on), N redundant
-    // telemetry writes, and an O(players^2) pending-team sweep x N on every spawn burst - all
-    // peaking exactly at the between-rounds transition (proven leak class; same one the bot manager
-    // had before its game[] guard). Gate on game[] (survives map_restart, resets on a real new-map
-    // load) so exactly ONE set runs per match. Same idiom as _bot::init / game["gf_botInit"].
-    // gf_ackSeq is still re-seeded per round above, so the surviving poll always reads a defined mark.
-    if ( !isDefined( game["gf_bridgeInit"] ) )
-    {
-        game["gf_bridgeInit"] = true;
-        level thread gf_bridgeWatchPendingTeam();
-        level thread gf_bridgeTelemetry();
-        level thread gf_bridgePoll();
-    }
+    // Persistent loops: exactly ONE live set at a time, re-threaded every round with a COLLAPSE
+    // NOTIFY (the _bot::init "bot_reinit" idiom), NOT a game[] guard. gf_bridgeInit is re-threaded on
+    // every map_restart (gf.gsc) to re-seed the dvars/flags above (level.* is wiped by map_restart);
+    // the telemetry loop, the 20 Hz command poll, and the pending-team watcher are for(;;) loops that
+    // survive map_restart (only endon("game_ended") = match end). A bare re-thread every round would
+    // STACK one copy per round (N pollers racing the gf_cmd read+clear, N telemetry writes, an
+    // O(players^2) pending sweep). The OLD fix was a game["gf_bridgeInit"] guard — thread once, never
+    // again while game[] survives — but that was fragile the other direction: after game_ended kills
+    // these threads, a match that starts on a game[]-PRESERVING path (same-map cycle / lobby
+    // fast-restart) left the guard set and the loops DEAD FOR GOOD (telemetry/roster/command-poll all
+    // frozen — observed live on the VPS: gf_state pinned at its seed, gf_ack never advancing). Firing
+    // "gf_bridge_reinit" before re-threading, with each loop carrying endon("gf_bridge_reinit"),
+    // collapses any survivors to exactly one set per round AND self-heals a set that died at the last
+    // match end. Same fix _bot::init uses for "fast restart clears the bots". gf_ackSeq is re-seeded
+    // per round above, so the surviving poll always reads a defined mark.
+    level notify( "gf_bridge_reinit" );
+    level thread gf_bridgeWatchPendingTeam();
+    level thread gf_bridgeTelemetry();
+    level thread gf_bridgePoll();
 }
 
 // 20 Hz command poll (was 2 Hz): cuts up to ~450ms off the command latency floor for a single
-// getDvar per tick. Runs exactly ONCE per match (game["gf_bridgeInit"] gate), so it is a single
-// consumer - read+clear are adjacent statements with no wait between, so the engine can't slot an
-// incoming `set gf_cmd` into the gap and the take is race-free. endon "game_ended" so it dies with
-// the match; the next match's gf_bridgeInit re-threads a fresh one.
+// getDvar per tick. Exactly ONE copy is live (the gf_bridge_reinit collapse-notify kills the prior
+// one each round before a fresh poll is threaded), so it is a single consumer - read+clear are
+// adjacent statements with no wait between, so the engine can't slot an incoming `set gf_cmd` into
+// the gap and the take is race-free. endon "game_ended" + "gf_bridge_reinit" so it dies with the
+// match or when gf_bridgeInit re-threads.
 gf_bridgePoll()
 {
     level endon( "game_ended" );
+    level endon( "gf_bridge_reinit" );   // one consumer only: die when gf_bridgeInit re-threads a fresh poll
 
     for ( ;; )
     {
@@ -251,6 +254,7 @@ gf_bridgeNotify( text )
 gf_bridgeTelemetry()
 {
     level endon( "game_ended" );
+    level endon( "gf_bridge_reinit" );   // collapse to one live copy when gf_bridgeInit re-threads
 
     for ( ;; )
     {
@@ -866,6 +870,7 @@ gf_forceTeamQuiet( team )
 gf_bridgeWatchPendingTeam()
 {
     level endon( "game_ended" );
+    level endon( "gf_bridge_reinit" );   // collapse to one live copy when gf_bridgeInit re-threads
     for ( ;; )
     {
         level waittill( "spawned_player" );

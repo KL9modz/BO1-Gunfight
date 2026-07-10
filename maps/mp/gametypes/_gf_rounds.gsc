@@ -1355,6 +1355,14 @@ gf_onSpawned()
 
 // ─── Round Activation ──────────────────────────────────────────────────────
 
+// True if a map_restart happened since myGen was captured (level.gf_roundGen is
+// re-stamped every onStartGameType, gettime()-based so it's monotonic across
+// map_restart). Undefined level gen (never stamped) also reads as "changed".
+gf_roundGenChanged( myGen )
+{
+    return ( !isDefined( level.gf_roundGen ) || level.gf_roundGen != myGen );
+}
+
 gf_tryActivateRound()
 {
     if ( level.gf_activatingRound )
@@ -1362,26 +1370,30 @@ gf_tryActivateRound()
 
     level.gf_activatingRound = true;
     level endon( "game_ended" );
-    // Auto/Manual lobby: a frozen prematch spawn during the Pass-1 hold threads this, and it then
-    // parks on the waittill("prematch_over") below. map_restart(false) on release does NOT fire
-    // game_ended and threads survive it, so without this endon the stale Pass-1 activator would
-    // wake alongside the fresh Pass-2 one when the real prematch fires prematch_over — a double
-    // gf_startRoundClock/gf_closeGraceEarly. gf_load_gate_reset (fired at every gate release) kills
-    // it here; inert for Normal/round-2+ (the notify has already fired / never fires by then).
-    level endon( "gf_load_gate_reset" );
+
+    // Generation token: this activator belongs to the round init that was current when
+    // it started. A frozen prematch spawn during an Auto/Manual Pass-1 lobby hold threads
+    // this and parks on waittill("prematch_over"); the lobby's map_restart(false) does NOT
+    // fire game_ended and threads SURVIVE it, so that stale Pass-1 activator would wake
+    // alongside the fresh Pass-2 one and double gf_startRoundClock/gf_closeGraceEarly.
+    // We USED to kill it with endon("gf_load_gate_reset") — but that same notify fires on
+    // every lobby RE-arm (gf_armLoadGate), so in a bot-only re-lobby loop it could kill a
+    // LIVE activator mid-commit, stranding the round with gf_roundActive=true but no
+    // grace-close and no round clock: the 24h freeze. The endon is GONE. Instead we commit
+    // gf_roundActive AFTER the prematch wait and bail if the generation moved (a stale
+    // Pass-1 activator) or a peer already went live — so no stale thread can strand a round
+    // and no notify can kill a committing one. gf_roundWatchdog is the final backstop.
+    myGen = level.gf_roundGen;
 
     // 0.2s dedup so a single activation thread wins the spawn burst.
     wait 0.2;
 
-    if ( level.gf_roundActive )
+    if ( level.gf_roundActive || gf_roundGenChanged( myGen ) )
     {
         level.gf_activatingRound = false;
         return;
     }
 
-    level.gf_roundEnding     = false;
-    level.gf_roundActive     = true;
-    level.gf_activatingRound = false;
     level.gf_warnedLastPlayer = [];
     gf_forceHealthHUDUpdate();
 
@@ -1394,6 +1406,25 @@ gf_tryActivateRound()
     // the whole prematch (clean, no flicker), exactly like SD.
     if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
         level waittill( "prematch_over" );
+
+    // COMMIT — atomic from here to gf_startRoundClock (no yields), so nothing can strand a
+    // half-activated round. A map_restart during the prematch wait bumped gf_roundGen (stale
+    // Pass-1 activator), or a peer activator already went live — either way, bail cleanly.
+    if ( level.gf_roundActive || gf_roundGenChanged( myGen ) )
+    {
+        level.gf_activatingRound = false;
+        return;
+    }
+
+    level.gf_roundEnding = false;
+    level.gf_roundActive = true;
+
+    // Backstop the whole round: a per-round watchdog force-ends a round that gets stranded
+    // despite the above (any dropped team-wipe edge, stuck grace, or a clock that never
+    // starts). The mod suppresses EVERY native round-end fallback, so this is the only net.
+    // Threaded first, before the (non-yielding) setup below, so it is armed even if a future
+    // edit adds a yield that an interrupt could exploit.
+    level thread gf_roundWatchdog( myGen );
 
     // Silence the native timeLimitClock across the (usually zero-length) hold below —
     // it starts at prematch_over and on a 45s round timeLeftInt begins inside the stock
@@ -1435,6 +1466,102 @@ gf_tryActivateRound()
     // (announcer + TIME_OUT music + beeps) and drives our own countdown instead: VO at 15s, beeps
     // in the final 10s, no music.
     gf_startRoundClock();
+
+    level.gf_activatingRound = false;
+}
+
+// ─── Round Watchdog (safety net) ───────────────────────────────────────────
+// The mod owns the round clock and suppresses EVERY native round-end backstop
+// (pauseTimer gates off timeLimitClock; timeLimitOverride early-returns stock
+// checkTimeLimit; gf_onDeadEvent is guarded by gf_roundActive/gf_roundEnding;
+// grace-close is mod-owned). So a single dropped round-end edge — a team wipe
+// that arrives while inGracePeriod is (wrongly) still open, or an activation that
+// somehow strands before it closes grace / starts the clock — would hang the round
+// FOREVER (observed 2026-07-09: a 24h freeze, engine still running, a wiped team
+// that never ended the round, no timer). This gettime()-anchored thread is the only
+// net. gettime() is wall-clock, immune to pauseTimer. One per round; retired by
+// gf_round_over (normal end), game_ended (match end), or a generation change.
+gf_roundWatchdog( myGen )
+{
+    level endon( "game_ended" );
+    level endon( "gf_round_over" );   // a normal round end retires the watchdog
+
+    activeSince = gettime();
+    emptySince  = undefined;
+
+    for ( ;; )
+    {
+        wait 1;
+
+        // A round transition that did NOT route through gf_endRound (no gf_round_over) —
+        // bail so we never act on a stale round.
+        if ( gf_roundGenChanged( myGen ) )
+            return;
+        if ( !isDefined( level.gf_roundActive ) || !level.gf_roundActive )
+            return;
+        if ( isDefined( level.gf_roundEnding ) && level.gf_roundEnding )
+            return;
+
+        now     = gettime();
+        elapsed = now - activeSince;
+
+        // (1) STRANDED-ACTIVATION RECOVERY. If the round has been "active" well past any
+        // legit grace / clock-start window but grace is still open or the clock never
+        // started, activation was interrupted — restore normal flow so the round can end
+        // on its own. Threshold covers stock 15s grace + scr_gf_load_grace (<=60s) + slack.
+        if ( elapsed > 65000 )
+        {
+            if ( isDefined( level.inGracePeriod ) && level.inGracePeriod && !gf_anyTrackedClientLoading() )
+            {
+                logPrint( "GF_WATCHDOG: grace overstayed " + elapsed + "ms — force-closing\n" );
+                level.inGracePeriod = false;
+                level thread maps\mp\gametypes\_globallogic::updateTeamStatus();
+            }
+            if ( ( !isDefined( level.gf_roundClockRunning ) || !level.gf_roundClockRunning )
+                && ( !isDefined( level.gf_overtimeActive ) || !level.gf_overtimeActive ) )
+            {
+                logPrint( "GF_WATCHDOG: round clock never started — starting it\n" );
+                gf_startRoundClock();
+            }
+        }
+
+        // (2) WIPE-NOT-DETECTED RECOVERY. A team is fully eliminated but the round did
+        // not end. Judged only out of grace (during grace a team legitimately reads 0
+        // alive mid-spawn) and only after the empty state PERSISTS a few seconds — then
+        // force the round decision. Recovery (1) force-closes a stuck grace first, so a
+        // grace-suppressed wipe reaches here on the next tick.
+        aliveA = 0;
+        aliveX = 0;
+        if ( isDefined( level.aliveCount ) )
+        {
+            if ( isDefined( level.aliveCount["allies"] ) ) aliveA = level.aliveCount["allies"];
+            if ( isDefined( level.aliveCount["axis"] ) )   aliveX = level.aliveCount["axis"];
+        }
+
+        graceOpen = ( isDefined( level.inGracePeriod ) && level.inGracePeriod );
+
+        if ( ( aliveA == 0 || aliveX == 0 ) && !graceOpen )
+        {
+            if ( !isDefined( emptySince ) )
+                emptySince = now;
+            else if ( now - emptySince > 3000 )
+            {
+                if ( aliveA == 0 && aliveX == 0 )
+                    winner = "tie";
+                else if ( aliveA == 0 )
+                    winner = "axis";
+                else
+                    winner = "allies";
+
+                logPrint( "GF_WATCHDOG: team wipe not ended (allies=" + aliveA + " axis=" + aliveX + ") — forcing round end -> " + winner + "\n" );
+                level.gf_endReasonText = gf_reasonText( "elim", winner );
+                gf_endRound( winner );
+                return;
+            }
+        }
+        else
+            emptySince = undefined;
+    }
 }
 
 // Closes the grace period once floorTime has passed. Closing grace reopens

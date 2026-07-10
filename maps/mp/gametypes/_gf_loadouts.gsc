@@ -50,18 +50,18 @@ gf_initLoadouts()
     // ── AR ×8 ──
     pool[n] = gf_load( "famas_dualclip_mp",         "spas_silencer_mp",        "claymore_mp",         "hatchet_mp",        "tabun_gas_mp",           -1,  -1 ); n++;
     pool[n] = gf_load( "m16_acog_mp",               "spas_mp",                 "scrambler_mp",        "sticky_grenade_mp", "concussion_grenade_mp",  -1,  -1 ); n++;
-    pool[n] = gf_load( "aug_silencer_mp",           "mac11dw_mp",              "acoustic_sensor_mp",  "hatchet_mp",        "willy_pete_mp",          -1,  -1 ); n++;
+    pool[n] = gf_load( "aug_silencer_mp",           "mac11dw_mp",              "claymore_mp",         "hatchet_mp",        "willy_pete_mp",          -1,  -1 ); n++;
     pool[n] = gf_load( "galil_gl_mp",               "cz75_silencer_mp",        "claymore_mp",         "hatchet_mp",        "tabun_gas_mp",           -1,  -1 ); n++;
     pool[n] = gf_load( "commando_mp",               "crossbow_explosive_mp",   "satchel_charge_mp",   "sticky_grenade_mp", "nightingale_mp",         -1,  -1 ); n++;
     pool[n] = gf_load( "fnfal_acog_mp",             "rpg_mp",                  "camera_spike_mp",     "hatchet_mp",        "flash_grenade_mp",       -1,  -1 ); n++;
-    pool[n] = gf_load( "m14_acog_grip_mp",        "china_lake_mp",           "scrambler_mp",        "sticky_grenade_mp", "concussion_grenade_mp",  -1,  -1 ); n++;
+    pool[n] = gf_load( "m14_acog_grip_mp",          "china_lake_mp",           "scrambler_mp",        "sticky_grenade_mp", "concussion_grenade_mp",  -1,  -1 ); n++;
     pool[n] = gf_load( "galil_silencer_mp",         "m72_law_mp",              "claymore_mp",         "sticky_grenade_mp", "willy_pete_mp",          -1,  -1 ); n++;
 
     // ── SMG ×6 ──
     pool[n] = gf_load( "mp5k_silencer_mp",          "pythondw_mp",             "claymore_mp",         "hatchet_mp",        "tabun_gas_mp",           -1,  -1 ); n++;
     pool[n] = gf_load( "dragunov_acog_mp",          "cz75dw_mp",               "satchel_charge_mp",   "hatchet_mp",        "nightingale_mp",         -1,  -1 ); n++;
     pool[n] = gf_load( "mp5k_mp",                   "aspdw_mp",                "camera_spike_mp",     "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1 ); n++;
-    pool[n] = gf_load( "spectre_acog_grip_mp",   "hs10dw_mp",               "scrambler_mp",        "frag_grenade_mp",   "concussion_grenade_mp",  -1,  -1 ); n++;
+    pool[n] = gf_load( "spectre_acog_grip_mp",      "hs10dw_mp",               "scrambler_mp",        "frag_grenade_mp",   "concussion_grenade_mp",  -1,  -1 ); n++;
     pool[n] = gf_load( "uzi_acog_grip_mp",          "ithaca_grip_mp",          "satchel_charge_mp",   "frag_grenade_mp",   "willy_pete_mp",          -1,  -1 ); n++;
     pool[n] = gf_load( "pm63_extclip_mp",           "knife_ballistic_mp",      "claymore_mp",         "hatchet_mp",        "nightingale_mp",         -1,  -1 ); n++;
 
@@ -73,7 +73,7 @@ gf_initLoadouts()
 
     // ── Sniper ×2 ──
     pool[n] = gf_load( "l96a1_mp",                  "crossbow_explosive_mp",   "camera_spike_mp",     "hatchet_mp",        "concussion_grenade_mp",  -1,  -1 ); n++;
-    pool[n] = gf_load( "wa2000_ir_mp",     "m72_law_mp",              "satchel_charge_mp",   "frag_grenade_mp",   "tabun_gas_mp",           -1,  -1 ); n++;
+    pool[n] = gf_load( "wa2000_vzoom_mp",           "m72_law_mp",              "satchel_charge_mp",   "frag_grenade_mp",   "tabun_gas_mp",           -1,  -1 ); n++;
 
     // ── Shotgun ×2 ──
     pool[n] = gf_load( "spas_silencer_mp",          "china_lake_mp",           "claymore_mp",         "hatchet_mp",        "flash_grenade_mp",       -1,  -1 ); n++;
@@ -95,26 +95,26 @@ gf_initLoadouts()
 
     // ── Sniper ×2 (expanded) ──
     pool[n] = gf_load( "psg1_ir_mp",                "rpg_mp",                  "acoustic_sensor_mp",  "frag_grenade_mp",   "willy_pete_mp",          -1,  -1 ); n++;
-    pool[n] = gf_load( "dragunov_vzoom_mp",         "china_lake_mp",           "claymore_mp",         "frag_grenade_mp",   "tabun_gas_mp",           -1,  -1 ); n++;
+    pool[n] = gf_load( "dragunov_extclip_mp",       "china_lake_mp",           "claymore_mp",         "frag_grenade_mp",   "tabun_gas_mp",           -1,  -1 ); n++;
 
     // ── Shotgun ×1 (expanded) ──
     pool[n] = gf_load( "rottweil72_mp",             "m72_law_mp",              "satchel_charge_mp",   "sticky_grenade_mp", "nightingale_mp",         -1,  -1 ); n++;
 
     // ── Dual-wield SMG ×4 ──
-    pool[n] = gf_load( "mac11_silencer_mp",    "m1911dw_mp",              "satchel_charge_mp",   "hatchet_mp",        "flash_grenade_mp",       -1,  -1 ); n++;
+    pool[n] = gf_load( "mac11_silencer_mp",         "m1911dw_mp",              "satchel_charge_mp",   "hatchet_mp",        "flash_grenade_mp",       -1,  -1 ); n++;
     pool[n] = gf_load( "ithaca_grip_mp",            "pm63dw_mp",               "acoustic_sensor_mp",  "sticky_grenade_mp", "willy_pete_mp",          -1,  -1 ); n++;
     pool[n] = gf_load( "l96a1_mp",                  "rpg_mp",                  "camera_spike_mp",     "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1 ); n++;
-    pool[n] = gf_load( "aug_elbit_mp",     "python_acog_mp",          "scrambler_mp",        "frag_grenade_mp",   "nightingale_mp",         -1,  -1 ); n++;
+    pool[n] = gf_load( "aug_elbit_mp",              "python_acog_mp",          "scrambler_mp",        "frag_grenade_mp",   "nightingale_mp",         -1,  -1 ); n++;
 
     // ── SMG/AR/Sniper (expanded ×5) ──
-    pool[n] = gf_load( "mpl_acog_grip_mp",          "makarov_silencer_mp",     "acoustic_sensor_mp",  "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1 ); n++;
+    pool[n] = gf_load( "mpl_acog_grip_mp",          "makarov_silencer_mp",     "satchel_charge_mp",   "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1 ); n++;
     pool[n] = gf_load( "commando_mk_mp",            "m1911_silencer_mp",       "camera_spike_mp",     "hatchet_mp",        "concussion_grenade_mp",  -1,  -1 ); n++;
     pool[n] = gf_load( "wa2000_acog_mp",            "asp_mp",                  "scrambler_mp",        "frag_grenade_mp",   "willy_pete_mp",          -1,  -1 ); n++;
     pool[n] = gf_load( "psg1_silencer_mp",          "crossbow_explosive_mp",   "acoustic_sensor_mp",  "sticky_grenade_mp", "tabun_gas_mp",           -1,  -1 ); n++;
-    pool[n] = gf_load( "kiparis_acog_grip_mp",     "rpg_mp",                  "claymore_mp",         "frag_grenade_mp",   "nightingale_mp",         -1,  -1 ); n++;
+    pool[n] = gf_load( "kiparis_acog_grip_mp",      "rpg_mp",                  "claymore_mp",         "frag_grenade_mp",   "nightingale_mp",         -1,  -1 ); n++;
 
     // ── Heavy & mixed ×9 — Minigun/M202 stay primary; launchers are secondaries ──
-    pool[n] = gf_load( "m16_ir_mp",         "hs10_mp",                 "scrambler_mp",        "frag_grenade_mp",   "flash_grenade_mp",       -1,  -1 ); n++;
+    pool[n] = gf_load( "m16_ir_mp",                 "hs10_mp",                 "scrambler_mp",        "frag_grenade_mp",   "flash_grenade_mp",       -1,  -1 ); n++;
     pool[n] = gf_load( "spas_mp",                   "python_acog_mp",          "acoustic_sensor_mp",  "sticky_grenade_mp", "concussion_grenade_mp",  -1,  -1 ); n++;
     pool[n] = gf_load( "ak74u_grip_dualclip_mp",    "makarov_extclip_mp",      "camera_spike_mp",     "hatchet_mp",        "willy_pete_mp",          -1,  -1 ); n++;
     pool[n] = gf_load( "galil_mp",                  "m1911_extclip_mp",        "scrambler_mp",        "frag_grenade_mp",   "concussion_grenade_mp",  -1,  -1 ); n++;

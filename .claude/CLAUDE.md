@@ -58,8 +58,8 @@
 - Rename "democlient"
 
 **RCON / Admin panel**
-- add adjustable timer for manual lobby
-- button to play next map in queue
+- Gas/stun/flash intensity sliders
+- Mantle/climb speed control
 - Manage teams from RCON — combined ask: team switching, a "balance teams now" button, and allowing changing teams before countdown without forcing spectate
   MOSTLY DONE 2026-07-08: right-click move (allies/axis/spectator) for humans AND bots, "Balance teams
   now" (`balanceteams`), and pre-countdown moves apply live (the pre-prematch hold runs with
@@ -68,9 +68,55 @@
   LIVE human can't be moved without dying (engine-level — false `onDeadEvent` + nulled `self.class`), so
   mid-round it's next-round (normal click) or force-now/respawn (Shift+click). Bot moves are transient
   while `gf_fill_n > 0` (the reconciler owns bot placement); set `gf_fill_n 0` for manual bot control.
-- Mantle/climb speed control
 - Friendly Fire setting exists in 2 RCON spots and re-enables itself next round (dedup/fix)
-- Gas/stun/flash intensity sliders
+  FIXED 2026-07-09 (panel redesign): ROOT CAUSE — the MATCH-tab FF toggle wrote `scr_gf_ff` +
+  `scr_team_ff`, which NOTHING reads (dead dvars), so it was a no-op whose UI state lied; the
+  real dvar is `scr_team_fftype` (stock tweakable, re-read only at round init → "re-enables/
+  reverts next round" feel), and the engine also polls a per-gametype OVERRIDE dvar
+  `scr_gf_team_fftype` every ~5s (`_serversettings::updateServerSettings` →
+  `getTweakableValue`, override wins when non-empty). Fix = ONE canonical 4-state select
+  (Off/On/Reflect/Shared) on DASHBOARD → GAMEPLAY that sets BOTH `scr_team_fftype` (base,
+  persistence + non-gf modes) and `scr_gf_team_fftype` (live ≤5s in gf) — zero GSC changes.
+  Set All / 💾 Save write both (a stale override would silently win over the base).
+- PANEL REDESIGNED 2026-07-09 — split `index.html` into `index.html`+`app.css`+`app.js` (same
+  look/feel); tabs are now **DASHBOARD** (run the live match: GUNFIGHT rules, deduped GAMEPLAY,
+  BOTS incl. difficulty, PLAYER STATE, FUN & VISION, ADMIN) and **ADVANCED** (configure: MATCH
+  START, MOVEMENT, GAME RULES, PLAYER, TEAMS, PERKS(+multipliers), GENERAL, ENGINE GAMEPLAY,
+  BOT TUNING, HUD/CLIENT-LOCAL/VISUAL TWEAKS, MODIFIERS, DEBUG, other-gametype dvars); internal
+  tab keys stay `match`/`srv`. **The floating right-hand rail (`#rail`, `positionRail()`) is
+  RETIRED**: MATCH CONTROL (`#matchCtrl`, a `.block.sb-block` that keeps the `.btitle` collapse)
+  docks in the SIDEBAR **beside** SERVER+SCOREBOARD — the sidebar top is a `.sb-top` flex row
+  (`.sb-top-l` = SERVER+SCOREBOARD, `.sb-top-r` = MATCH CONTROL, paired buttons stacked via
+  `.sb-top-r .two{grid-template-columns:1fr}`), visible on every tab. To fit side-by-side the
+  sidebar default widened to **380** (`--sbw` fallback + `SB_DEF`) and `COL_MIN` dropped to
+  **400** so a 1270-1280px half-screen still keeps 2 content columns. The behavior-pill
+  LEGEND is a collapsed-by-default strip at the bottom of each settings tab
+  (`buildLegendFooters()`/`toggleLegend()`, own `gf_legend` key — it can't ride the `.block`
+  collapse list because `restoreCollapse()` only ever ADDS `collapsed`).
+  Layout = EXPLICIT FLEX COLUMNS driven by `layoutColumns()` (app.js), NOT CSS multi-columns:
+  multi-columns balance by height, so zooming / collapsing a block reshuffled which block sat in
+  which column ("sections move"). Now each block is assigned to a column ONCE and only
+  redistributed when the column COUNT changes. Count = `_wantCols()`: `COL_MIN`=400,
+  `MAX_COLS`=3, `PANEL_CAP`=2100 (mirrors the `#p-*` max-width in app.css) => 3 cols on a 2560px
+  display (the space the rail used to occupy), 2 cols at a 1270-1280px half-screen window, 1 col
+  below that. Set `MAX_COLS=2` for a strict two-column layout. Columns live in a `.cols` row
+  wrapper so the legend footer can sit beneath them; `.flow` wrappers stay as the JS render
+  targets (`display:contents`) and `layoutColumns` re-parents the built blocks into `.pcol`.
+  `.panel` is `overflow:hidden auto` — a bare `overflow-y:auto` also makes overflow-x `auto`,
+  which is what produced the horizontal scrollbar on zoom-in. `layoutColumns`
+  is guarded to `p-match`/`p-srv` only (MAPS/CONSOLE keep their own flow). Sidebar width
+  (`--sbw`, default 320) and Activity-log height (`--alh`, default 220) are DRAG-RESIZABLE via
+  `#sbDrag`/`#alDrag` (double-click resets; persisted in `gf_sbw`/`gf_alh`). All blocks
+  collapsible (state persisted). Duplicates collapsed to ONE
+  control each (FF, Max Team Size, Killstreaks, Headshots Only, Radar, Health Regen, Killcam) —
+  killstreaks/headshots/radar are combined dvar+bridge switches (`togDvarBridge`: sticky dvar +
+  live bridge in one toggle). Data rows now carry `data-dvar`/`data-also` (Set All / Save / search
+  read attributes first, legacy onclick-regex kept for static rows). `GT_SECTIONS.gf` split into
+  `GF_MATCH_VARS` (Dashboard) + `GF_START_VARS` (Advanced MATCH START); concat preserved for the
+  sweep/search. Removed: legacy localStorage migrations, dead `set gf_debug` console chips, the
+  `reorderSrvSections` IIFE (now declared `SRV_ORDER`). Added `?tab=` deep-link (composes with
+  `?profile=`/`?autoconnect`). server.js untouched — transport/ack/secrets/profiles + `/api/tick`
+  `/api/status` contracts unchanged (VPS-tunnel + listen-server flows unaffected).
 
 **Gameplay / Spawns**
 - Allow players to spawn in late to a round if teams are uneven
@@ -91,8 +137,7 @@
 - Lobby fly cam controls
 - Ship weapon files: ADS FOV / move speed tuning
 - shorten round time. raise capture time 3.5s
-- remove some IRs
- - hardened on sniper classes
+- hardened on sniper classes
 
 **HUD / Visual**
 - Persistent clean "gunfight.us" text on HUD
@@ -142,6 +187,29 @@ the prematch countdown is in slow motion
   then jumps) instead of slow-mo, AND kills the sv_fps-30 fast-countdown deal-breaker if
   30-fps perf is ever wanted. Interim: shave box-side contention during restart. Verify
   in-game on the LOCAL dedi with `set sv_fps 10` to force-reproduce the dilation.
+  INSTRUMENTED 2026-07-10 (measure before the risky prematch rewrite): added a dev-only
+  frame-hitch monitor `gf_hitchMonitor()` (+ `gf_hitchPhase/Humans/Bots`) in `_gf_debug.gsc`,
+  launched once via `level thread gf_hitchMonitor()` in `gf.gsc` onStartGameType and kept to a
+  single live sampler across rounds/map_restart by a new `gf_hitch_reinit` notify (threads
+  survive map_restart, so a bare re-thread would stack). Each 0.5s it measures how far
+  `gettime()` advanced across a `wait 0.5` and, when the window ran slow, logs
+  `GF_HITCH: <real>ms vs 500ms (+N% slow) phase=<prematch|live|overtime|roundend|restart>
+  humans=H bots=B` to logs\games_mp.log. Tunables (dvars, no rebuild): `gf_hitch_pct` (log
+  threshold %, default 25) and `gf_hitch_debug 1` (log EVERY sample). Built on ONLY
+  `gettime()`+`wait()` → zero compile risk, AND self-validating about the load-bearing claim
+  above that gettime() is WALL-clock: if a KNOWN slow-mo (run with `gf_hitch_debug 1`) logs
+  +N% dilation, gettime is wall-clock and we have the magnitude+phase; if it logs ~+0%
+  throughout the slow-mo, gettime is GAME-time (dilates in lockstep with `wait`, so the
+  "live clocks are immune" line above is only true of the sv_fps-scaling quirk, NOT a real
+  CPU stall) and the reference must move to `getRealTime` — confirm that need before risking
+  that builtin (unknown-function = gametype fails to load; T5 stock scripts don't use it, so
+  it's unconfirmed for this engine). NOTE the monitor only MEASURES the stall; owning the
+  countdown with gettime() (the REAL FIX above) makes the number/beep honest but does NOT stop
+  the movement/animation slow-mo — that needs less restart-burst CPU (or more box CPU).
+  GSC-only, dev-wiring strip-wrapped → no public leak, no mod.ff rebuild; ships to the VPS via
+  `deploy.ps1 -Mod` (full main mirror). Verify: LOCAL dedi first, `set gf_hitch_debug 1`, watch
+  a normal round (baseline should read ~+0% ≈ real 500ms → confirms gettime=wall + monitor
+  works), then reproduce the slow-mo and read the GF_HITCH lines.
   DONE 2026-07-04: went fully MANUAL. The SYSTEM/boot GF-GameServer task ran the server in
   Session 0 (invisible desktop) - that's why there was no console. Disabled that task
   (reversible) and added a Desktop shortcut "Gunfight Launch" -> C:\gameserver\T5\gf_launch.bat:
@@ -502,13 +570,22 @@ long-standing "bots suicide as they connect" bug. Both are now unthreaded dead c
   before they can breach `sv_maxclients` and lock a human out.
 
 ### Round-safety
-Surplus bots are parked **only between rounds** (`!level.gf_roundActive`). Removing a bot mid-round goes
-through the stock switch, which `suicide()`s a "playing" client — that could wipe the team's last-alive
-bot and **phantom-end the round**. Deploying (reinforcement) is always safe and stays allowed. This
-costs nothing: one-life gunfight makes a mid-round human joiner wait for the next round anyway, so the
-displacement lands exactly when he starts playing. Counts key off `level.players` + `istestclient()`
-(**not** `level.bots`), so the reconciler stays correct even when a restart disturbs BotWarfare's
-bookkeeping.
+**REVISED 2026-07-10.** The stock team switch (`level.allies/axis/spectator` = menuAllies/menuAxis/
+menuSpectator) calls `suicide()` on a *"playing"* client — a spawned, **alive** bot, which **includes
+the prematch-frozen state**. Do that to a live bot and you get the two reported bugs: a **visible
+"bot suicides at spawn"** (park spectating a frozen bot during prematch) and, if it was the team's
+last-alive, a **phantom round-end**. The old rule "park only between rounds (`!gf_roundActive`)" did
+NOT actually make this safe, because `gf_roundActive` is false *during prematch too* — bots are
+spawned & frozen (alive) there — so the park still suicided them. The fix is a per-bot gate,
+`gf_botSwitchSafe()` = **not (`sessionstate=="playing"` && `health>0`)**: a switch is only issued to a
+bot that is **dead** (one-life: eliminated for the round) or **spectator/limbo**. Both are invisible
+(no fresh spawn) and can't touch the live alive-count (no phantom end), so park now runs **every pass**
+with no round gate. In practice a mid-round human joiner's surplus bot is trimmed **the instant it dies**
+during the round (or a round later if it survives), landing his side at exactly N with **zero visible
+suicide**. The same gate guards `gf_botDeployWhenReady` (a fresh bot autoassigned+spawned on the wrong
+side is left there, not suicide-switched — the next pass rebalances via park). Counts key off
+`level.players` + `istestclient()` (**not** `level.bots`), so the reconciler stays correct even when a
+restart disturbs BotWarfare's bookkeeping.
 
 ### Surviving restarts
 `_bot::init` fires **`level notify("bot_reinit")`** before re-threading, and every persistent bot loop
@@ -552,11 +629,11 @@ persists through `map_restart`.
 | `scr_gf_load_wait` | 0 (off) | **Pre-prematch gate — LOAD condition** (`gf_armLoadGate`/`gf_waitForLoadingClients`, `_gf_rounds.gsc`; added 2026-07-03, min-players folded in 2026-07-04). Match's FIRST round only: holds at the END of `onStartGameType` — the engine threads `startGame()` (prematch countdown) only when that callback returns — until every rotation-carried HUMAN client has left the loading screen, so everyone sees the full countdown/intro together and slow loaders can't be grace-locked into spectating round 1. Works because clients connect while STILL LOADING (`Callback_PlayerConnect` fires pre-load; statusicon `hud_status_connecting` until the engine's `"begin"`, and only then do they enter `level.players`) — the stock `waitForPlayers()` hook for this is an empty stub in T5. Loading = statusicon check; entities collected via the level `"connecting"` notify (pre-begin clients exist nowhere else). Bots (`istestclient()`) excluded from wait + readout. This dvar = ceiling seconds (clamped 0-120, `0` = gate off); 3s arrival floor. Shows the stock "Waiting for teams..." string + a live yellow `loaded / total` readout (setValue-driven, configstring-safe) in the countdown's slot. FastDL first-time downloaders (30-60s+ engine rebuild) are deliberately NOT absorbed. Releases log `GF_LOADGATE:` to games_mp.log. The SAME hold also enforces `scr_gf_min_players` (the humans-exist condition); a client STILL loading when the load ceiling hits is then covered by `scr_gf_load_grace` (below) |
 | `scr_gf_load_grace` | 20 | **Straggler grace extension** (`gf_anyTrackedClientLoading`/`gf_closeGraceEarly`, `_gf_rounds.gsc`; added 2026-07-04). Companion to `scr_gf_load_wait`: when the load gate releases with a client STILL loading (it hit the `scr_gf_load_wait` ceiling — e.g. a first-time FastDL downloader taking 30-60s+), keep the grace period open this many seconds *past `prematch_over`* so that client can still take its round-1 first spawn (stock `maySpawn` only admits a late first-spawn while `inGracePeriod`) instead of spectating the whole round. Implemented by raising `level.gracePeriod` at gate release (so the stock `gracePeriod()` backstop doesn't close first) + a hold in `gf_closeGraceEarly` keyed off the same tracker snapshot. **Cost:** a round-1 team wipe can't END the round until grace closes (bounded by this ceiling and by round length) — the deliberate tradeoff for letting the loader play. `0` = off (straggler spectates round 1, the pre-2026-07-04 behavior). Round 1 only (tracker snapshot is `map_restart`-wiped); bots excluded (`istestclient()`); a straggler who disconnects mid-load releases the hold. Clamped 0-60 |
 | `scr_gf_lobby` | 0 (Normal) | **Match Start mode — the "pregame lobby"** (`gf_waitForLoadingClients`, `_gf_rounds.gsc`; `lobbystart`/`gf_bridgeLobbyStart` in `_gf_bridge.gsc`; **consolidated 2026-07-05** from the retired `scr_gf_lobby_hold`/`scr_gf_lobby_restart`/`scr_gf_lobby_restart_full`). How the match's FIRST round starts (before the prematch countdown): `0` = **Normal** (default) — no lobby; starts in place (still holds for loaders / `scr_gf_min_players` via the pre-prematch gate, then the countdown plays; **no restart**). `1` = **Auto** — hold a pregame lobby (desaturated `mpIntro` vision + "Waiting for teams N/M" readout) until everyone is loaded AND `scr_gf_min_players` humans are here, then **`map_restart(false)`** into a fresh match. `2` = **Manual** — hold until the admin's **START MATCH** click (RCON panel → Match Control rail → bridge `lobbystart` → `level.gf_lobbyStart`, polled every 0.25s), then fast-restart; lets an admin arrange teams (right-click → move; applied **live**, `inPrematchPeriod` is already true during the hold). **Why the fast-restart:** the in-place hold pauses mid-init (the engine set `inPrematchPeriod`/InitGame BEFORE `onStartGameType`), so it's a paused-startup, not a true lobby; **`map_restart(false)`** re-inits FRESH so the full start presentation fires — weapon first-raise/"gun rack", spawn music, welcome splash — which the between-rounds **`map_restart(true)`** deliberately suppresses (verified in-game 2026-07-05: false racks the gun + plays music, fast, no map reload). The restart branch **blocks `onStartGameType` from returning** so `startGame()` never threads a stale prematch/timer (which would survive the restart and stack → double countdown); the **`gf_matchArmed` dvar** (NOT game[]: `map_restart(false)` wipes game[]/pers[], so a game[] flag would re-lobby forever) makes the post-restart pass skip the gate → real match threads its clocks once. Auto/Manual: START MATCH is an **instant override**; **10-min `GF_LOBBY_MAX_HOLD` backstop**; live state mirrored into the `gf_state` `lobbyHold` field so the panel reveals START only while a hold is up. Match-start only (`roundsplayed==0`); clamped 0-2. Manual needs the dev RCON bridge (inert on a bridge-less build; backstop still recovers). **CAVEAT RESOLVED 2026-07-08 — lobby-arranged teams now TRANSFER** (pending in-game verify): `gf_writeTeamPlan()` snapshots every human's `getGuid()`->team into the `gf_teamplan` DVAR immediately before `map_restart(false)`, and `gf_applyTeamPlan()` (threaded from the `gf_matchArmed` consume branch, with `level.forceAutoAssign=true` so returning humans skip the team menu) re-seats each by GUID during the post-restart prematch — where the stock switch is the harmless frozen warmup. Bots are NOT snapshotted; the fill reconciler re-pads them from `gf_fill_n`. Both helpers are self-contained in `_gf_rounds.gsc` (no bridge dep) so they survive the public-build strip |
-| `gf_fill_n` | 0 (off) | **Dynamic bot fill — the PER-TEAM target N** (`3` = 3v3). The reconciler (`_bot.gsc`, dev-only) pads each side to exactly N *playing* clients (humans+bots), with **bots absorbing all the variance**. A human joining team T displaces a bot on T; a human leaving re-pads it. **Humans are NEVER auto-moved** — if humans on a side exceed N, that side's bots go to 0 and it may exceed N while the other side still fills to N. Displaced bots **park in spectator** for instant reuse (kicked instead under client-slot pressure; and *reducing* N kicks the freed bots, because the parked reserve is capped at the live human count). Overshoot-free: parked bots are reused from a finite pool and new bots are added **one-in-flight-at-a-time** (a bot is marked `.gf_fillPending` until it lands on its target team, so no pass can steal or miscount it). `0` = **fill OFF -> reconciler inert**, which is what makes the panel's manual per-team bot add/kick/move *stick*. Survives `map_restart(true)` (between rounds) and `map_restart(false)` (lobby fast-restart). A DVAR because that is the only state surviving the fast-restart. Clamped 0-6 on read (`gf_fillTarget()`); the panel clamps too. RCON: **Match -> Bot Management -> Fill (per team)**. See the **Dynamic Bot Fill** section |
+| `gf_fill_n` | 0 (off) | **Dynamic bot fill — the PER-TEAM target N** (`3` = 3v3). The reconciler (`_bot.gsc`, dev-only) pads each side to exactly N *playing* clients (humans+bots), with **bots absorbing all the variance**. A human joining team T displaces a bot on T; a human leaving re-pads it. **Humans are NEVER auto-moved** — if humans on a side exceed N, that side's bots go to 0 and it may exceed N while the other side still fills to N. Displaced bots **park in spectator** for instant reuse (kicked instead under client-slot pressure; and *reducing* N kicks the freed bots, because the parked reserve is capped at the live human count). Overshoot-free: parked bots are reused from a finite pool and new bots are added **one-in-flight-at-a-time** (a bot is marked `.gf_fillPending` until it lands on its target team, so no pass can steal or miscount it). `0` = **fill OFF -> reconciler inert**, which is what makes the panel's manual per-team bot add/kick/move *stick*. Survives `map_restart(true)` (between rounds) and `map_restart(false)` (lobby fast-restart). A DVAR because that is the only state surviving the fast-restart. Clamped 0-6 on read (`gf_fillTarget()`); the panel clamps too. RCON: **DASHBOARD → BOTS → Fill (per team)**. See the **Dynamic Bot Fill** section |
 | `gf_fill_kick_floor` | 2 | Client slots kept free for humans. A parked bot is **kicked** rather than parked once total clients would breach `sv_maxclients - gf_fill_kick_floor`, so parked bots can never lock a real player out of the server (at 6v6 with `sv_maxclients 14`, an uncapped parked reserve would exhaust slots). Also caps the parked reserve. Read via `gf_fillKickFloor()` (>=0) |
 | `gf_teamplan` | "" | Read-only plumbing for the lobby->match transfer: a `"<guid>:<a\|x\|s>,..."` snapshot of arranged HUMAN teams, written by `gf_writeTeamPlan()` just before the lobby's `map_restart(false)` and consumed once by `gf_applyTeamPlan()` after. A dvar because `game[]`/`pers[]`/`level[]` are all wiped by that restart. Humans only (bots are re-padded by fill) |
 | ~~`bots_manage_fill`~~ / ~~`bots_manage_fill_kick`~~ / ~~`bots_manage_add`~~ / ~~`bots_team_amount`~~ / ~~`bots_team_force`~~ | *(retired for Gunfight)* | **RETIRED 2026-07-08 — no longer read.** These drove BotWarfare's `addBots()` (global bot headcount) and `teamBots()` (team rebalance) loops, which fought each other *and* fought manual RCON team moves, and whose mid-connect `suicide()` was the "bots suicide as they connect" bug. Both loops are now **unthreaded dead code**; the Gunfight reconciler (`gf_reconcilerInit`, `_bot.gsc`) replaces them with one authority over bot counts + placement, driven by `gf_fill_n`. Still *seeded* in `_bot::init` for BotWarfare AI compatibility; setting them does nothing. `doNonDediBots()` (local "Basic Training") is retired with them — set `gf_fill_n` instead |
-| `scr_gf_flinch` | 1 | **Flinch (damage view-kick) scale** — a MULTIPLIER of stock `bg_viewKickScale` (0.2): `1` = stock, `0` = no flinch, `>1` = more; clamped 0-3. Applied in `gf_applyFlinch()` (`_gf_rounds.gsc`) via **server-side `setDvar`**, which runs with engine authority and so bypasses the `sv_cheats` gate that blocks rcon/console `set` of a cheat-protected dvar — i.e. it holds on the **dedicated VPS**, unlike the client-pushed `gf_vis_*` r_* tweaks. `bg_` dvars replicate to clients, so the reduced kick is what each player feels. Re-applied every `onStartGameType` (persists across `map_restart`). RCON: **Advanced → Player State → Flinch** slider (bridge `flinch_<mult>` → sets `scr_gf_flinch` + applies live). *Pending in-game verify that server-side `bg_viewKickScale` replication reduces the felt flinch on a dedicated server.* |
+| `scr_gf_flinch` | 1 | **Flinch (damage view-kick) scale** — a MULTIPLIER of stock `bg_viewKickScale` (0.2): `1` = stock, `0` = no flinch, `>1` = more; clamped 0-3. Applied in `gf_applyFlinch()` (`_gf_rounds.gsc`) via **server-side `setDvar`**, which runs with engine authority and so bypasses the `sv_cheats` gate that blocks rcon/console `set` of a cheat-protected dvar — i.e. it holds on the **dedicated VPS**, unlike the client-pushed `gf_vis_*` r_* tweaks. `bg_` dvars replicate to clients, so the reduced kick is what each player feels. Re-applied every `onStartGameType` (persists across `map_restart`). RCON: **DASHBOARD → PLAYER STATE → Flinch** slider (bridge `flinch_<mult>` → sets `scr_gf_flinch` + applies live). *Pending in-game verify that server-side `bg_viewKickScale` replication reduces the felt flinch on a dedicated server.* |
 | `scr_team_maxsize` | 0 (shipped cfg sets **6**) | `>0` caps players/team; overflow is sent to spectator on spawn (`gf_playerSpawnedCB`). `dedicated.cfg` ships `6` (up to 6v6); `sv_maxclients` 14 = 12 play + 2 spectator. Set `4` for a 4v4 server |
 | `perk_weapSwitchMultiplier` | (engine default) | Engine weapon-swap speed (lower = faster); gated by `specialty_fastweaponswitch`, which is **OFF by default** (no longer in the base loadout). NOT forced by the mod — stock by default. To use it: enable Fast Weapon Switch via the RCON Perks tab (`gf_perk_on`), then tune the slider; inert until the perk is on |
 | `gf_perk_on` / `gf_perk_off` | "" | Comma-separated perk override lists (RCON-managed) applied AFTER the base perk set in `gf_giveCustomLoadout` |

@@ -44,6 +44,14 @@ param(
     [int]    $AdminHistoryMax      = 5000,
     [int]    $AdminHistoryEverySec = 60,
     [string] $AdminHistoryFile     = '',
+    # Ops/detailed health snapshot for the admin page + the box watchdog. Written beside
+    # $AdminOutFile as health.json (same .secured gate). Carries no PII (round/map/counts/
+    # stuck-state), so it's safe there. $RoundStuckSecs = how long the round number may sit
+    # unchanged (while humans are on and it's NOT a pregame lobby hold) before roundStuck
+    # trips. The in-GSC watchdog self-heals a stuck round in ~65s, so keep this well above
+    # that so the box signal only fires if the in-game net also failed.
+    [string] $HealthOutFile        = '',
+    [int]    $RoundStuckSecs       = 300,
     [int]    $RecvTimeoutMs = 1200,
     [int]    $RecentMax     = 15,
     # Loopback port of the RCON panel (tools\rcon\server.js). When the panel is running,
@@ -65,6 +73,15 @@ if ([string]::IsNullOrEmpty($LogDir))  { $LogDir  = Join-Path $storageT5 'logs' 
 if ([string]::IsNullOrEmpty($AdminHistoryFile) -and -not [string]::IsNullOrEmpty($AdminOutFile)) {
     $AdminHistoryFile = Join-Path (Split-Path -Parent $AdminOutFile) 'admin_history.json'
 }
+# health.json lives beside the admin snapshot too (same .secured-gated folder).
+if ([string]::IsNullOrEmpty($HealthOutFile) -and -not [string]::IsNullOrEmpty($AdminOutFile)) {
+    $HealthOutFile = Join-Path (Split-Path -Parent $AdminOutFile) 'health.json'
+}
+# The engine's games_mp.log (advances on game events = a liveness proxy) lives in the MOD
+# folder's own logs\ dir, distinct from $LogDir (players_*.log). $PSScriptRoot =
+# ...\mods\mp_gunfight\tools\status_service -> two parents up = the mod folder.
+$modFolder    = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$gamesLogPath = Join-Path $modFolder 'logs\games_mp.log'
 
 # --- RCON password ------------------------------------------------------------
 function Get-RconPassword {
@@ -262,10 +279,18 @@ Write-Host ("status_service -> $OutFile (host $RconHost`:$RconPort, every ${Inte
 
 $lastHistoryBuild = $null   # rebuild the multi-day admin history at most every $AdminHistoryEverySec
 
+# Round-advancement tracking for the stuck detector (persist across iterations).
+$lastRound         = -1
+$lastRoundChangeAt = Get-Date
+
 while ($true) {
     $online = $false
     $snapshot = $null
     $adminSnapshot = $null
+    $lobbyHold    = $false   # from gf_state field 7 (pregame lobby hold) — suppresses roundStuck
+    $humansOnline = 0
+    $botCount     = 0
+    $round        = 0
     try {
         # PREFERRED SOURCE: the RCON panel's /api/tick on this box — status+gf_state+gf_roster
         # in ONE rcon send through the panel's paced, coalescing queue (if the admin panel has
@@ -303,6 +328,7 @@ while ($true) {
                 $round      = [int]$tick.state.round
                 $aliveA     = [int]$tick.state.aliveAllies; $aliveX = [int]$tick.state.aliveAxis
                 $gametype   = [string]$tick.state.gametype
+                if ($null -ne $tick.state.lobbyHold) { $lobbyHold = [bool]$tick.state.lobbyHold }
             }
         }
         elseif (-not $panelSaysDown) {
@@ -326,6 +352,8 @@ while ($true) {
                 $aliveA     = if ($sf.Count -ge 4 -and $sf[3] -ne '') { [int]$sf[3] } else { 0 }
                 $aliveX     = if ($sf.Count -ge 5 -and $sf[4] -ne '') { [int]$sf[4] } else { 0 }
                 $gametype   = if ($sf.Count -ge 6) { $sf[5] } else { '' }
+                # gf_state field 7 (index 6) = pregame lobby hold flag (see gf_bridgeTelemetry).
+                $lobbyHold  = if ($sf.Count -ge 7 -and $sf[6] -ne '') { $sf[6] -eq '1' } else { $false }
             }
         }
 
@@ -362,6 +390,7 @@ while ($true) {
 
             $botCount = 0
             foreach ($num in $players.Keys) { if ($players[$num].bot) { $botCount++ } }
+            $humansOnline = $list.Count
 
             $snapshot = [ordered]@{
                 updated  = (Get-Date).ToString('o')
@@ -436,6 +465,56 @@ while ($true) {
                 } catch { Write-Warning ("history write failed: {0}" -f $_.Exception.Message) }
             }
         }
+    }
+
+    # --- Health snapshot (ops/detailed status: admin page + box watchdog) --------
+    # No PII (round/map/counts/stuck-state), but written to the same .secured-gated
+    # admin folder so the whole ops surface stays behind Basic auth.
+    if ((Test-AdminEnabled $AdminOutFile) -and -not [string]::IsNullOrEmpty($HealthOutFile)) {
+        # Track round advancement. The stuck detector trips only while the server is up,
+        # humans are on, it is NOT a legitimate pregame lobby hold, and the round number
+        # has not moved for $RoundStuckSecs. Down/lobby resets the clock so a fresh start
+        # or an intentional hold never reads as stuck.
+        if ($online -and -not $lobbyHold) {
+            if ($round -ne $lastRound) { $lastRound = $round; $lastRoundChangeAt = Get-Date }
+        } else {
+            $lastRound = $round
+            $lastRoundChangeAt = Get-Date
+        }
+        $secsSinceRoundChange = [int]((Get-Date) - $lastRoundChangeAt).TotalSeconds
+        $roundStuck = ($online -and $humansOnline -gt 0 -and -not $lobbyHold -and $secsSinceRoundChange -ge $RoundStuckSecs)
+
+        # games_mp.log mtime = engine-liveness proxy (advances on game events).
+        $gamesLogAge = -1
+        if (Test-Path $gamesLogPath) {
+            try { $gamesLogAge = [int]((Get-Date) - (Get-Item $gamesLogPath).LastWriteTime).TotalSeconds } catch { }
+        }
+        # Dedicated-server uptime (from the bootstrapper process).
+        $uptimeMins = $null
+        try {
+            $bp = Get-Process -Name 'plutonium-bootstrapper-win32' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($bp) { $uptimeMins = [int]((Get-Date) - $bp.StartTime).TotalMinutes }
+        } catch { }
+
+        $health = [ordered]@{
+            updated              = (Get-Date).ToString('o')
+            online               = $online
+            map                  = $mapRaw
+            mapName              = (Map-Name $mapRaw)
+            gametype             = $gametype
+            round                = $round
+            humans               = $humansOnline
+            bots                 = $botCount
+            lobbyHold            = $lobbyHold
+            roundStuck           = $roundStuck
+            secsSinceRoundChange = $secsSinceRoundChange
+            roundStuckSecs       = $RoundStuckSecs
+            score                = [ordered]@{ allies = $alliesWins; axis = $axisWins }
+            alive                = [ordered]@{ allies = $aliveA; axis = $aliveX }
+            gamesLogAgeSecs      = $gamesLogAge
+            serverUptimeMins     = $uptimeMins
+        }
+        try { Write-Snapshot -path $HealthOutFile -obj $health } catch { Write-Warning ("health write failed: {0}" -f $_.Exception.Message) }
     }
 
     Start-Sleep -Seconds $IntervalSeconds

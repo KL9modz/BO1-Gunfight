@@ -387,3 +387,104 @@ gf_debugPrintPerks()
             self iPrintLn( "^2+ " + allPerks[i] );
     }
 }
+
+// ─── Frame-hitch / game-time-dilation monitor ────────────────────────────────
+// Chases the report: "the prematch/preround countdown + the WHOLE game run in
+// slow-motion until the timer hits 0, then everything snaps back to normal."
+//
+// Working theory (see CLAUDE.md "prematch countdown in slow motion" + memory
+// vps-prematch-slowmo-framehitch): a transient SERVER-FRAME hitch dilates game
+// time. GSC `wait` and the entire simulation advance 1/sv_fps per EXECUTED server
+// frame, so when the box can't finish its frames in real time, everything (player
+// movement, animation, the wait(1.0)-driven stock prematch countdown) runs slow in
+// wall-clock and then catches up. On the contended Contabo VPS the restart burst
+// (map_restart + the per-player respawn/loadout/HUD work ± bot fill) is the load
+// that occasionally can't be kept up with, which is why the stall lines up with,
+// and clears at the end of, the countdown.
+//
+// This measures how much gettime() advances across a fixed `wait W`. It is built
+// on ONLY gettime()+wait() — both guaranteed-valid builtins, so ZERO compile risk —
+// and it is SELF-VALIDATING about the load-bearing assumption that gettime() is
+// WALL-clock (as the notes claim) rather than game-time:
+//   • gettime() WALL clock -> during a stall the delta EXCEEDS W*1000; the dilation
+//     is measured directly (expected if the notes are right).
+//   • gettime() GAME time  -> the delta stays ~W*1000 even during a KNOWN slow-mo
+//     (both clocks dilate together). So if a live repro logs ~0% the whole time,
+//     gettime is game-time and the reference must move to a real-time builtin
+//     (getRealTime) — which we'd confirm is needed before risking that builtin.
+//
+// Output: GF_HITCH lines in logs\games_mp.log. Tunables (dvars, no rebuild):
+//   set gf_hitch_debug 1  -> log EVERY sample (wall-vs-game validation + full
+//                            per-window profile through a repro; set back to 0 after)
+//   set gf_hitch_pct N    -> log threshold in percent-slower-than-real-time (default 25)
+// Singleton across rounds/map_restart via the gf_hitch_reinit notify (gf.gsc);
+// level scope, never touches a player.
+gf_hitchMonitor()
+{
+    level endon( "game_ended" );
+    level endon( "gf_hitch_reinit" );
+
+    W        = 0.5;              // sample window (game-seconds, nominal)
+    expected = W * 1000.0;       // real ms the window SHOULD take at full server speed
+
+    for ( ;; )
+    {
+        t0 = gettime();
+        wait W;
+        real = gettime() - t0;   // real ms the window ACTUALLY took (if gettime is wall-clock)
+
+        pct = getDvarInt( "gf_hitch_pct" );
+        if ( pct <= 0 )
+            pct = 25;
+
+        slow = int( ( ( real - expected ) / expected ) * 100 );   // % slower than real-time
+
+        if ( getDvarInt( "gf_hitch_debug" ) == 1 || slow >= pct )
+        {
+            logPrint( "GF_HITCH: " + real + "ms vs " + int( expected ) + "ms  (+" + slow
+                      + "% slow)  phase=" + gf_hitchPhase()
+                      + " humans=" + gf_hitchHumans() + " bots=" + gf_hitchBots()
+                      + " gt=" + gettime() + "\n" );
+        }
+    }
+}
+
+// Coarse round-phase label so we can see WHAT a stall coincides with. Overtime is a
+// sub-state of a live round, so it is checked first; "restart" catches the
+// pre-prematch gate hold and the map_restart transition gap (neither of the flags set).
+gf_hitchPhase()
+{
+    if ( isDefined( level.inOvertime ) && level.inOvertime )              return "overtime";
+    if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )  return "prematch";
+    if ( isDefined( level.gf_roundActive ) && level.gf_roundActive )      return "live";
+    if ( isDefined( level.gf_roundEnding ) && level.gf_roundEnding )      return "roundend";
+    return "restart";
+}
+
+gf_hitchHumans()
+{
+    if ( !isDefined( level.players ) )
+        return 0;
+    n = 0;
+    for ( i = 0; i < level.players.size; i++ )
+    {
+        p = level.players[i];
+        if ( isDefined( p ) && !( p istestclient() ) )
+            n++;
+    }
+    return n;
+}
+
+gf_hitchBots()
+{
+    if ( !isDefined( level.players ) )
+        return 0;
+    n = 0;
+    for ( i = 0; i < level.players.size; i++ )
+    {
+        p = level.players[i];
+        if ( isDefined( p ) && p istestclient() )
+            n++;
+    }
+    return n;
+}
