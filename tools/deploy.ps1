@@ -271,11 +271,31 @@ function Publish-FastDL {
     Write-Host "sv_wwwBaseURL and IIS serves the .ff MIME type (see docs/VPS_DEPLOY.md Phase 8)." -ForegroundColor Yellow
 }
 
+function Set-Maintenance {
+    # Drop a short, SELF-EXPIRING marker the box watchdog (tools\vps_services\watchdog.ps1)
+    # honors so a PLANNED restart doesn't page. Killing the bootstrapper makes the launcher
+    # bat re-run `plutonium.exe -update-only`, which routinely takes ~2 min - long enough to
+    # trip the watchdog's updater-wedge/staleness checks and fire a false alarm mid-deploy
+    # (observed 2026-07-10). The marker stands the watchdog down for the window; it auto-
+    # expires so an aborted deploy can never leave the watchdog disabled. Written into the
+    # DEPLOYED mod folder ($ModDest), where the SYSTEM watchdog reads it - NOT the clone.
+    param([int]$Minutes = 5, [string]$Reason = 'deploy')
+    if ($DryRun) { return }
+    $dir = Join-Path $ModDest "tools\vps_services"
+    if (!(Test-Path -LiteralPath $dir)) { return }   # watchdog not deployed on this box
+    $marker = Join-Path $dir "watchdog_maintenance.json"
+    $until  = (Get-Date).AddMinutes($Minutes).ToString('o')
+    (@{ until = $until; reason = $Reason } | ConvertTo-Json -Compress) |
+        Set-Content -LiteralPath $marker -Encoding UTF8
+    Write-Host "Watchdog maintenance window set ($Minutes min) - the planned restart won't page."
+}
+
 function Restart-Server {
     if ($NoRestart -or $DryRun) {
         Write-Host "Skipping server restart$(if ($DryRun) { ' (dry run)' }) - relaunch manually to load the new mod."
         return
     }
+    Set-Maintenance -Minutes 5 -Reason 'deploy'   # suppress the watchdog's restart-window false alarm
     Write-Host "Restarting game server (the restart-loop bat relaunches it under the server account)..."
     # Use Get-Process/Stop-Process, NOT taskkill: under $ErrorActionPreference='Stop'
     # taskkill's stderr ("process not found", emitted when the server is already
@@ -326,6 +346,34 @@ function Restart-Panel {
     }
 }
 
+function Restart-BoxServices {
+    # The box-side helper SERVICES (status_service, conn_logger, join-notify) run their
+    # scripts straight out of THIS mod folder we just mirrored - so a -Mod deploy already
+    # updates their code on disk. But they are load-once infinite loops (register_services.ps1),
+    # so a changed script only takes effect when the process is RECYCLED. Bounce them here so a
+    # -Mod deploy always leaves every box service on the SAME code as the mod, exactly like
+    # Restart-Panel does for the RCON panel. Without this, box-side service edits deployed but
+    # silently kept running the old code until the next reboot or manual restart.
+    #   GF-Watchdog is deliberately EXEMPT: it is a short-lived task re-invoked every 3 min
+    #   (register_services.ps1), so it re-reads its script on the next run with no restart.
+    # Non-fatal and self-skipping: a task not installed on this box (e.g. a dev box) is ignored.
+    if ($NoRestart -or $DryRun) {
+        Write-Host "Skipping box-service restart$(if ($DryRun) { ' (dry run)' })."
+        return
+    }
+    foreach ($name in @('GF-StatusService', 'GF-ConnLogger', 'GF-JoinNotify')) {
+        if (-not (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue)) { continue }
+        try {
+            Stop-ScheduledTask  -TaskName $name -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 400
+            Start-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+            Write-Host "Recycled $name (now on the deployed code)."
+        } catch {
+            Write-Host "$name restart failed (non-fatal): $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+}
+
 function Deploy-Mod {
     # Safety: never let a typo'd -ModDest mirror over the wrong directory.
     if (($ModDest -notlike "*$ModName*")) {
@@ -358,14 +406,22 @@ function Deploy-Mod {
     # console_mp.log* (+ logs\games_mp.log above) are the running server's own log files -
     # untracked, and held open by the process /MIR just restarted around, so purging them
     # is both wrong (not part of the deploy) and unreliable (ERROR 32, file in use).
-    $xf = @("config.json", "secrets.local.json", "console_mp.log*")
+    # Box-local RUNTIME state that lives in the mod tree but isn't tracked (the source clone
+    # doesn't have it), so without /XF the /MIR would DELETE the live copy every deploy. That
+    # churn also re-fired the watchdog's "already alerted" memory each deploy (duplicate pages).
+    #   .dvarcache.json          - RCON panel's dvar cache
+    #   watchdog_state.json      - watchdog's down/last-alert memory
+    #   watchdog_maintenance.json- the deploy maintenance marker written just below in Restart-Server
+    $xf = @("config.json", "secrets.local.json", "console_mp.log*",
+            ".dvarcache.json", "watchdog_state.json", "watchdog_maintenance.json")
     Invoke-Robocopy -Source $RepoRoot -Destination $ModDest -ExtraArgs (@("/XD") + $xd + @("/XF") + $xf)
     Write-Host "Mod tree + mod.ff deployed$(if ($DryRun) { ' (dry run - nothing changed)' }) to $ModDest"
 
     Publish-FastDL
 
     Restart-Server
-    Restart-Panel   # keep the admin panel's node process on the same code as the game
+    Restart-Panel        # keep the admin panel's node process on the same code as the game
+    Restart-BoxServices  # recycle the load-once box services (status/conn/join) onto the new code
 
     Write-Host ""
     Write-Host "NOTE: clients auto-download mod.ff via FastDL on join (sv_wwwBaseURL)." -ForegroundColor Yellow

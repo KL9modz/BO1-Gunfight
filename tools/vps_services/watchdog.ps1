@@ -39,6 +39,7 @@ param(
     [int]      $UpdaterWedgeSecs = 120,
     [int]      $ReAlertMinutes   = 20,
     [string]   $StatePath        = '',
+    [string]   $MaintenancePath  = '',   # deploy.ps1 drops a self-expiring marker here to stand the watchdog down during a planned restart
     [string]   $NotifyConfigPath = '',
     [string]   $CfgPath          = '',   # dedicated.cfg (for the rcon password used by map_rotate)
     [int]      $PanelPort        = 3000, # RCON panel loopback port (single rcon pacer)
@@ -49,6 +50,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $StatePath)        { $StatePath        = Join-Path $scriptRoot 'watchdog_state.json' }
+if (-not $MaintenancePath)  { $MaintenancePath  = Join-Path $scriptRoot 'watchdog_maintenance.json' }
 if (-not $NotifyConfigPath) { $NotifyConfigPath = Join-Path (Split-Path -Parent $scriptRoot) 'notify\config.json' }
 if (-not $CfgPath) {
     # ...\storage\t5\mods\mp_gunfight\tools\vps_services -> four parents up = ...\storage\t5
@@ -60,6 +62,30 @@ if (-not $CfgPath) {
 function Log($msg) {
     $t = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     Write-Host "[$t] $msg"
+}
+
+# ---- deploy maintenance window ------------------------------------------------
+# deploy.ps1 -Mod restarts the game server (kills the bootstrapper); the launcher
+# bat then re-runs `plutonium.exe -update-only`, which routinely takes long enough
+# to trip the updater-wedge / staleness checks below and page a FALSE alarm in the
+# middle of a planned deploy (observed 2026-07-10). deploy.ps1 drops a short,
+# self-expiring marker here so a PLANNED restart stands the watchdog down (no kill,
+# no alert) until the window passes; a real outage AFTER expiry is still caught on
+# the next 3-min run. Self-expiring by design so a crashed/aborted deploy can never
+# leave the watchdog disabled - a stale marker past its `until` is deleted here.
+if (Test-Path $MaintenancePath) {
+    try {
+        $mw = Get-Content $MaintenancePath -Raw | ConvertFrom-Json
+        $until = [datetime]$mw.until
+        if ((Get-Date) -lt $until) {
+            Log ("maintenance window active (reason=$($mw.reason)) until {0:HH:mm:ss} - skipping all checks" -f $until)
+            return
+        }
+        Log 'maintenance window expired - removing marker, resuming normal checks'
+        Remove-Item $MaintenancePath -Force -ErrorAction SilentlyContinue
+    } catch {
+        Log "maintenance marker unreadable ($($_.Exception.Message)) - ignoring it"
+    }
 }
 
 # ---- ntfy alert (plain HTTP POST, no node dependency) ------------------------

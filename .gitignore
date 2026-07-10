@@ -31,6 +31,10 @@ tools/rcon/.dvarcache.json
 # Watchdog — box-local alert-state (down/recovered transitions), regenerated on demand
 tools/vps_services/watchdog_state.json
 
+# Watchdog — self-expiring maintenance marker written by deploy.ps1 to mute alerts during a
+# planned restart; box-local, always transient
+tools/vps_services/watchdog_maintenance.json
+
 # Loadout editor — rolling backup written next to the edited .gsc on each save
 *.editorbak
 
