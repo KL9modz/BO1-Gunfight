@@ -49,8 +49,10 @@
   (the deployed GF-JoinNotify service) + `tools/notify/join-notify.js`. `status_service` /
   `conn_logger` (admin.json) were already safe via their own end-anchored ip:port check.
   Also fixes human players whose NAME contains a space (previously shown truncated to the 1st
-  word). Deploy: `deploy.ps1 -Mod` ships the panel; the notify/status services are box-side
-  (scp/restart the GF-JoinNotify task), not part of the mod mirror.
+  word). Deploy: `deploy.ps1 -Mod` ships the panel AND the box services — they run their scripts
+  out of the mirrored mod folder, and since 2026-07-10 `deploy.ps1 -Mod` also RECYCLES the
+  load-once ones (GF-StatusService/ConnLogger/JoinNotify) so their new code actually runs (no
+  manual scp/restart). See [[deploy-recycles-box-services]].
 - Map size change (large/small mode) takes effect a round late
 - Minimap compass not showing wager mode size for some DLC maps
 
