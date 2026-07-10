@@ -39,6 +39,15 @@ if printf '%s\n' "$added" | grep -Eiq "$key_re"; then
   printf '%s\n' "$added" | grep -Ein "$key_re" >&2
 fi
 
+# 3) Discord invite must ALWAYS be the canonical vanity URL discord.gg/blackops.
+#    Raw/temporary invite codes expire; a stale one shipped a dead link on the
+#    public website once. Any other discord.gg/<code> is blocked.
+bad_dg=$(printf '%s\n' "$added" | grep -oiE 'discord\.gg/[A-Za-z0-9]+' | grep -viE '^discord\.gg/blackops$')
+if [ -n "$bad_dg" ]; then
+  note "a non-canonical Discord invite is staged (must be https://discord.gg/blackops):"
+  printf '%s\n' "$bad_dg" | sort -u >&2
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo "" >&2
   echo "  Commit blocked to keep secrets out of git. Fix the lines above," >&2
