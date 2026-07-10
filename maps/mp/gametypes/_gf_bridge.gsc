@@ -838,6 +838,13 @@ gf_applyTeamMove( team )
         if      ( team == "allies" ) self [[level.allies]]();
         else if ( team == "axis"   ) self [[level.axis]]();
         else                         self [[level.spectator]]();
+
+        // The stock switch suicide()s a "playing" (prematch-frozen, alive) player without restoring
+        // its life, so an admin move applied during prematch can leave the player DEAD/spectating the
+        // round (maySpawn denies the switch's respawn once both teams have existed). gf_reseatRespawn
+        // gives the life back so the respawn is admitted. Real teams only (spectator wants no respawn).
+        if ( team != "spectator" )
+            self thread maps\mp\gametypes\_gf_rounds::gf_reseatRespawn();
     }
     else
         self gf_forceTeamQuiet( team );

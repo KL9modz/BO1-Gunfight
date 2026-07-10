@@ -302,6 +302,8 @@ onStartGameType()
     // Both feed the single pre-prematch hold in gf_waitForLoadingClients.
     if ( getDvar( "scr_gf_min_players" ) == "" )
         setDvar( "scr_gf_min_players", "1" );     // min HUMANS to start the match (1 = off)
+    if ( getDvar( "scr_gf_minplayers_timer" ) == "" )
+        setDvar( "scr_gf_minplayers_timer", "0" );// min-players "start anyway" ceiling (s). 0 = never auto-start (hold until enough humans / admin START). Was a hardcoded 90s that started too-thin matches
     if ( getDvar( "scr_gf_load_wait" ) == "" )
         setDvar( "scr_gf_load_wait", "0" );       // max s to hold the prematch for map-loading clients (0 = off, default; slow loaders may miss the intro)
     if ( getDvar( "scr_gf_load_grace" ) == "" )

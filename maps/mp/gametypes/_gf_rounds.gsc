@@ -234,6 +234,7 @@ gf_waitForLoadingClients()
         // reconciler from gf_fill_n. Then fall through to a normal prematch -> gunfight.
         level.forceAutoAssign = true;
         level thread gf_applyTeamPlan();
+        level thread gf_applyBotPlan();          // re-seat manually-arranged bots (fill-off); inert when gf_fill_n > 0
         return;
     }
 
@@ -272,7 +273,15 @@ gf_waitForLoadingClients()
     myGen         = level.gf_loadGateGen;
     start         = gettime();
     loadDeadline  = start + int( loadWait * 1000 );   // stop waiting for loaders (only if loadGateOn)
-    minDeadline   = start + 90000;                     // GF_MINPLAYERS_MAX_HOLD — start-anyway fallback (only if minGateOn)
+    // Min-players "start anyway" ceiling — RCON-adjustable via scr_gf_minplayers_timer.
+    // 0 = never auto-start (DEFAULT): the min-players lobby holds until enough humans arrive OR an
+    // admin clicks START, instead of quietly starting a too-thin match on its own. The old hardcoded
+    // 90s GF_MINPLAYERS_MAX_HOLD forced a start here, which read as an unintended auto-start once the
+    // wait exceeded 90s. A pure-bot lobby (0 humans) still releases via the humans==0 clause below,
+    // so 0 can never wedge a bot-only match; only a lobby genuinely short of humans waits.
+    minTimer      = int( gf_cfgFloat( "scr_gf_minplayers_timer", 0, 0, 3600 ) );
+    minTimerOn    = ( minTimer > 0 );
+    minDeadline   = start + ( minTimer * 1000 );        // only consulted when minTimerOn
     // MANUAL lobby auto-start timer (seconds), RCON-adjustable via scr_gf_lobby_timer. Replaces the old
     // hardcoded 10-min GF_LOBBY_MAX_HOLD backstop. 0 = never auto-start: the lobby then holds until the
     // admin clicks START (deliberate — but a forgotten hold will sit there until someone starts it).
@@ -489,7 +498,7 @@ gf_waitForLoadingClients()
             // the load condition then waits for any still loading to finish. An admin START
             // click still force-releases (start now, even below min-players).
             loadOk = ( !loadGateOn ) || ( stillLoading == 0 ) || ( now >= loadDeadline );
-            minOk  = ( !minGateOn ) || ( humans >= minP ) || ( humans == 0 ) || ( now >= minDeadline );
+            minOk  = ( !minGateOn ) || ( humans >= minP ) || ( humans == 0 ) || ( minTimerOn && now >= minDeadline );
             if ( startClicked )
             {
                 logPrint( "GF_LOBBY_END: auto - admin START clicked after " + ( now - start ) + "ms\n" );
@@ -550,6 +559,7 @@ gf_waitForLoadingClients()
     {
         setDvar( "gf_matchArmed", "1" );
         gf_writeTeamPlan();                      // snapshot arranged human teams -> gf_teamplan (a dvar, survives the restart)
+        gf_writeBotPlan();                       // snapshot arranged bot counts per team -> gf_botplan (fill-off manual bots carry over)
         for ( i = 0; i < elems.size; i++ )
             if ( isDefined( elems[i] ) )
                 elems[i] destroyElem();
@@ -591,7 +601,9 @@ gf_waitForLoadingClients()
 // admin-arranged (or autoassigned) lobby teams would be lost and everyone re-autoassigned into the
 // real match. gf_writeTeamPlan snapshots each HUMAN's getGuid()->team into the gf_teamplan DVAR
 // (the only state that survives the fast-restart) just before the restart; gf_applyTeamPlan
-// re-applies it after. Bots are NOT snapshotted — the fill reconciler re-pads them from gf_fill_n.
+// re-applies it after. Bots: with dynamic fill ON the reconciler re-pads them from gf_fill_n, so
+// nothing is snapshotted; with fill OFF (manual bots) gf_writeBotPlan/gf_applyBotPlan carry the
+// arranged per-team bot COUNTS across the restart the same way (count-based — bots have no guid).
 // Self-contained (no bridge dep) so it works even on a public build with the bridge stripped.
 
 // Snapshot arranged human teams into gf_teamplan: "<guid>:<a|x|s>,<guid>:<a|x|s>,...".
@@ -620,6 +632,34 @@ gf_writeTeamPlan()
         plan += g + ":" + code;
     }
     setDvar( "gf_teamplan", plan );
+}
+
+// Snapshot arranged bot COUNTS per team into gf_botplan: "<alliesN>,<axisN>". Bots have no stable
+// guid (all "0"), so unlike the human plan this is count-based — bots are fungible, we only need to
+// reproduce how many sit on each side, not which is which. Companion to gf_writeTeamPlan; written
+// just before the lobby's map_restart(false) and consumed once by gf_applyBotPlan after. Only
+// meaningful with dynamic fill OFF (gf_fill_n 0) — with fill on the reconciler owns bot placement
+// and re-pads from gf_fill_n, so gf_applyBotPlan stands down. Self-contained (no _bot.gsc dep) so it
+// compiles in the bot-stripped public build, where level.players holds no test clients -> a no-op.
+gf_writeBotPlan()
+{
+    a = 0;
+    x = 0;
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( !isDefined( p ) )
+            continue;
+        if ( !( p istestclient() || p isdemoclient() ) )   // bots only (the inverse of gf_writeTeamPlan)
+            continue;
+        t = p.pers["team"];
+        if ( !isDefined( t ) )
+            continue;
+        if      ( t == "allies" ) a++;
+        else if ( t == "axis" )   x++;
+    }
+    setDvar( "gf_botplan", a + "," + x );
 }
 
 // Re-apply the gf_teamplan snapshot after the lobby fast-restart. Threaded from the gf_matchArmed
@@ -681,6 +721,80 @@ gf_applyTeamPlan()
     }
 }
 
+// Re-apply the gf_botplan bot-count snapshot after the lobby fast-restart. Threaded from the
+// gf_matchArmed consume branch alongside gf_applyTeamPlan; runs during the real match's prematch.
+// Bots survive map_restart(false) as connected clients (only their team placement is wiped), so we
+// just re-seat the SURVIVING bots: first A to allies, next X to axis, any extra to spectator —
+// reproducing the arranged per-side counts. Inert when dynamic fill is on (gf_fill_n > 0): the
+// reconciler owns bot placement there and this would fight it. Self-contained (reuses gf_planApplyMove,
+// not _bot.gsc) so it compiles in the public build, where gf_botplan is empty -> immediate no-op.
+gf_applyBotPlan()
+{
+    level endon( "game_ended" );
+
+    plan = getDvar( "gf_botplan" );
+    setDvar( "gf_botplan", "" );         // consume once
+    if ( plan == "" )
+        return;
+    if ( int( gf_cfgFloat( "gf_fill_n", 0, 0, 6 ) ) > 0 )
+        return;                          // dynamic fill on -> the reconciler owns bot placement
+
+    counts = strTok( plan, "," );
+    if ( counts.size < 2 )
+        return;
+    wantA = int( counts[0] );
+    wantX = int( counts[1] );
+    if ( wantA + wantX <= 0 )
+        return;
+
+    deadline = gettime() + 45000;        // bound: never run past the intro
+    aSeated  = 0;
+    xSeated  = 0;
+
+    for ( ;; )
+    {
+        // Poll FAST so a reconnecting bot is caught the instant autoassign resolves its team (don't
+        // race autoassign — wait for pers["team"]) but BEFORE it spawns frozen, so gf_planApplyMove
+        // takes the quiet pers-reassign branch (no visible suicide). A bot already spawned gets the
+        // same harmless prematch warmup switch + respawn recovery the human transfer uses.
+        wait 0.05;
+
+        if ( gettime() >= deadline )
+            return;
+        if ( !( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod ) )
+            return;                      // prematch over — a live switch would suicide the bot for real
+
+        players = level.players;
+        for ( i = 0; i < players.size; i++ )
+        {
+            p = players[i];
+            if ( !isDefined( p ) )
+                continue;
+            if ( !( p istestclient() || p isdemoclient() ) )
+                continue;                // bots only
+            if ( isDefined( p.gf_botPlanSeated ) )
+                continue;                // one-shot per bot
+            if ( !isDefined( p.pers["team"] ) )
+                continue;                // let autoassign resolve first, then override
+
+            if      ( aSeated < wantA ) want = "allies";
+            else if ( xSeated < wantX ) want = "axis";
+            else                        want = "spectator";
+
+            // Skip the switch if autoassign already landed the bot on its target side — moving a
+            // correctly-placed "playing" bot would be a needless warmup suicide.
+            if ( p.pers["team"] != want )
+                p gf_planApplyMove( want );
+            p.gf_botPlanSeated = true;
+            if      ( want == "allies" ) aSeated++;
+            else if ( want == "axis" )   xSeated++;
+        }
+
+        if ( aSeated >= wantA && xSeated >= wantX )
+            return;                      // every arranged slot filled
+    }
+}
+
 // GUID -> planned team ("allies"/"axis"/"spectator"), or "" if not in the plan.
 gf_teamPlanLookup( entries, guid )
 {
@@ -707,6 +821,12 @@ gf_planApplyMove( team )
         if      ( team == "allies" ) self [[level.allies]]();
         else if ( team == "axis"   ) self [[level.axis]]();
         else                         self [[level.spectator]]();
+
+        // The stock switch above suicide()s a "playing" (prematch-frozen, ALIVE) player and does
+        // NOT restore its life, so the re-seat can leave a HUMAN DEAD into round 1 — see
+        // gf_reseatRespawn. Only for a real team (spectator moves want no respawn).
+        if ( team != "spectator" )
+            self thread gf_reseatRespawn();
     }
     else
     {
@@ -719,6 +839,40 @@ gf_planApplyMove( team )
             self.sessionteam = "spectator";
         else
             self.sessionteam = team;
+    }
+}
+
+// Recover a player the stock team switch left dead during prematch. menuAllies/menuAxis suicide() a
+// "playing" (prematch-frozen, alive) player to move them but never restore pers["lives"]; once BOTH
+// teams have existed this prematch, maySpawn's `!pers["lives"] && gameHasStarted` gate then DENIES the
+// switch's auto-respawn and spawnClient bounces the player to SPECTATOR with no retry — so a re-seated
+// human sits DEAD through round 1 (it self-heals round 2, where map_restart resets lives). This is the
+// root cause of "players sometimes start the first round dead" after a lobby->match team transfer.
+// Give the life back so the respawn is admitted, and re-drive spawnClient if the deny already bounced
+// them to spectator. Threaded + brief because the suicide's kill callback (which decrements lives) and
+// beginClassChoice's respawn both settle asynchronously, so we can't reliably restore in one synchronous
+// write. Prematch warmup only — no real round life has been spent, and map_restart resets lives anyway.
+gf_reseatRespawn()
+{
+    self endon( "disconnect" );
+    self notify( "gf_reseatRespawn" );   // collapse to one live copy per player
+    self endon( "gf_reseatRespawn" );
+    level endon( "game_ended" );
+
+    for ( i = 0; i < 20; i++ )   // ~1s, covering the switch's async settle
+    {
+        wait 0.05;
+        if ( !( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod ) )
+            return;                                    // out of the safe warmup window
+        if ( self.sessionstate == "playing" && self.health > 0 )
+            return;                                    // respawned cleanly — done
+        // Restore the life the switch's suicide consumed (clears maySpawn gate A). Leave hasSpawned
+        // alone: the player already spawned this prematch, which satisfies maySpawn gate B — forcing
+        // it false would re-trip B whenever grace has already closed.
+        self.pers["lives"] = level.numLives;
+        if ( self.sessionstate != "playing" && game["state"] == "playing"
+             && maps\mp\gametypes\_globallogic_utils::isValidClass( self.class ) )
+            self thread [[level.spawnClient]]();
     }
 }
 
