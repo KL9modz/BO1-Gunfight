@@ -674,6 +674,23 @@ gf_lobbyMaySpawn()
 {
     if ( isDefined( level.gf_lobbyRestartHold ) && level.gf_lobbyRestartHold )
         return false;
+
+    // Dynamic-fill surplus trim (driven by the dev-only bot reconciler; inert without it since
+    // nothing else sets the mark). When a human joins a team already at the per-team fill target,
+    // the reconciler marks the displaced bot pers["gf_parkPending"]; here — the pre-spawn window,
+    // where the bot is not yet "playing" so no suicide is needed — we route it to spectator instead
+    // of letting it spawn frozen. Setting the team fields first makes the engine's spawnSpectator
+    // produce a CLEAN spectator (statusicon cleared, not "dead"), and the reconciler then counts it
+    // as parked/reusable. pers survives map_restart(true), so the mark reaches this next-round spawn.
+    if ( isDefined( self.pers["gf_parkPending"] ) && self.pers["gf_parkPending"] )
+    {
+        self.pers["gf_parkPending"] = undefined;
+        self.pers["team"]           = "spectator";
+        self.team                   = "spectator";
+        self.sessionteam            = "spectator";
+        return false;
+    }
+
     return true;
 }
 

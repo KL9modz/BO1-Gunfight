@@ -582,10 +582,18 @@ spawned & frozen (alive) there — so the park still suicided them. The fix is a
 `gf_botSwitchSafe()` = **not (`sessionstate=="playing"` && `health>0`)**: a switch is only issued to a
 bot that is **dead** (one-life: eliminated for the round) or **spectator/limbo**. Both are invisible
 (no fresh spawn) and can't touch the live alive-count (no phantom end), so park now runs **every pass**
-with no round gate. In practice a mid-round human joiner's surplus bot is trimmed **the instant it dies**
-during the round (or a round later if it survives), landing his side at exactly N with **zero visible
-suicide**. The same gate guards `gf_botDeployWhenReady` (a fresh bot autoassigned+spawned on the wrong
-side is left there, not suicide-switched — the next pass rebalances via park). Counts key off
+with no round gate. A switch-safe surplus bot is parked immediately; an **alive/prematch-frozen** surplus
+bot is instead **DEFERRED** — `gf_parkBots` marks it `pers["gf_parkPending"]` and `gf_lobbyMaySpawn`
+(gf.gsc) routes it to a clean spectator on its **NEXT spawn** (the pre-spawn window, where it isn't yet
+"playing", so no suicide) — an invisible, **next-round** park. **This is the fix for "a human joins after
+fill is set and the team just grows"** (added 2026-07-10): the old code trimmed a surplus bot **only when
+it happened to DIE** mid-round, so a surviving surplus bot on a winning side never left and the side
+stayed at N+1 forever. Now the displaced bot leaves next round regardless. The mark is **cleared and
+re-derived every pass** (`gf_clearAllParkPending`) so a surplus that resolves — the human leaves before
+the bot's next spawn — un-marks the bot in time; `pers` survives `map_restart(true)` so the mark reaches
+the next-round spawn. The same `gf_botSwitchSafe` gate guards `gf_botDeployWhenReady` (a fresh bot
+autoassigned+spawned on the wrong side is left there, not suicide-switched — the next pass rebalances via
+park). Counts key off
 `level.players` + `istestclient()` (**not** `level.bots`), so the reconciler stays correct even when a
 restart disturbs BotWarfare's bookkeeping.
 

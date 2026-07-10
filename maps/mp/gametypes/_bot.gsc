@@ -318,7 +318,10 @@ gf_reconcilePass()
 {
 	n = gf_fillTarget();
 	if(n <= 0)
-		return;                          // fill OFF -> reconciler inert (manual bot control sticks)
+	{
+		gf_clearAllParkPending();        // fill OFF: drop any stale defer marks so a manually
+		return;                          // managed bot never spectates a round on an old mark
+	}                                    // fill OFF -> reconciler inert (manual bot control sticks)
 
 	c = gf_reconcileCount();
 
@@ -367,14 +370,18 @@ gf_reconcilePass()
 		}
 	}
 
-	// --- PARK: trim each team's bot surplus (bots-only). Runs EVERY pass, but gf_parkBots only
-	// ever moves a SWITCH-SAFE bot (dead / spectator / limbo — see gf_botSwitchSafe). That is what
-	// removes both old bugs at once: (1) it never spectates a live prematch-frozen bot, so no
-	// "bot suicides at spawn"; (2) it never removes a team's last-ALIVE bot, so no phantom
-	// round-end — which is why the old "between rounds only" gate is no longer needed. In one-life
-	// gunfight a surplus bot is trimmed the moment it DIES during the round (invisible — already
-	// dead), so a human who joined mid-round has his side back at exactly N by the next round. A
-	// surplus bot that survives the whole round simply trims a round later; it never suicides. ---
+	// --- PARK: trim each team's bot surplus (bots-only). Runs EVERY pass. gf_parkBots moves a
+	// SWITCH-SAFE bot (dead / spectator / limbo — see gf_botSwitchSafe) to spectator IMMEDIATELY,
+	// and DEFERS any alive/prematch-frozen surplus (which can't be stock-switched without a visible
+	// suicide) by marking pers["gf_parkPending"] — gf_lobbyMaySpawn (gf.gsc) then routes that bot to
+	// spectator on its NEXT spawn (invisible, next round). This closes the reported hole: a human
+	// joining pushes his side over N, and the displaced bot now leaves NEXT ROUND even if it survived
+	// this one. (The old code trimmed ONLY a bot that happened to DIE mid-round, so a surviving
+	// surplus bot on a winning side never left and "the team just grew.") Never spectates a live
+	// prematch bot (no "suicides at spawn") and never pulls a team's last-ALIVE bot (no phantom
+	// round-end). Marks are cleared first each pass so a surplus that resolves — human leaves before
+	// the bot's next spawn — un-marks the bot in time. ---
+	gf_clearAllParkPending();
 	for(ti = 0; ti < 2; ti++)
 	{
 		team    = teams[ti];
@@ -429,8 +436,18 @@ gf_botSwitchTeam(team)
 // is the invariant the RCON bridge + the retired teamBots both settled on.
 gf_botSwitchSafe()
 {
-	if(isDefined(self.sessionstate) && self.sessionstate == "playing" && isDefined(self.health) && self.health > 0)
-		return false;
+	// A spawned client (sessionstate "playing") is only switch-safe when it is CONFIRMED DEAD
+	// (health explicitly 0 — one-life gunfight: eliminated for the round). Alive/prematch-frozen
+	// (health > 0) is the classic spawn-suicide. The load-bearing extra case: a bot MID-SPAWN is
+	// already "playing" but self.health is not set yet — treat that undefined-health window as
+	// unsafe too, or a switch issued in that one-frame race suicides it the instant it finishes
+	// spawning (the "1-2 bots kill themselves as they pour in" symptom). Spectator/limbo bots
+	// (sessionstate not "playing") stay switch-safe.
+	if(isDefined(self.sessionstate) && self.sessionstate == "playing")
+	{
+		if(!isDefined(self.health) || self.health > 0)
+			return false;
+	}
 	return true;
 }
 
@@ -470,36 +487,62 @@ gf_botDeployWhenReady(team)
 	gf_reconcileRequest();               // ...and let the driver deploy the next one right away
 }
 
-// Park `count` DISTINCT surplus bots from `team` (collected up front so the async switches don't
-// re-pick the same bot): move each to spectator for reuse, or KICK it under slot pressure so
-// parked bots can't lock a human out. Only SWITCH-SAFE bots (dead / spectator / limbo) are
-// eligible — a live/prematch-frozen bot is skipped so we never spawn-suicide it or pull a team's
-// last-alive bot (phantom round-end). Fewer-than-count eligible just trims fewer now; the surplus
-// keeps getting recomputed each pass and finishes trimming as its bots die.
+// Trim `count` surplus bots from `team`. SWITCH-SAFE bots (dead / spectator / limbo) are parked to
+// spectator NOW — or KICKED under slot pressure so parked bots can't lock a human out. Any alive/
+// frozen surplus that remains can't be stock-switched without a visible suicide, so it is DEFERRED:
+// mark pers["gf_parkPending"] and let gf_lobbyMaySpawn (gf.gsc) route it to spectator on its next
+// spawn — an invisible, next-round park. pers survives map_restart(true), so the mark reaches that
+// spawn. Picks are collected up front so the async switches don't re-pick the same bot.
 gf_parkBots(team, count)
 {
-	picks = [];
+	safe  = [];                          // dead / spectator / limbo: park (or kick) immediately
+	alive = [];                          // alive / prematch-frozen: defer to next spawn via the mark
 	players = level.players;
-	for(i = 0; i < players.size && picks.size < count; i++)
+	for(i = 0; i < players.size; i++)
 	{
 		p = players[i];
 		if(!isDefined(p) || !(p istestclient()))
 			continue;
-		if(!(p gf_botSwitchSafe()))       // live/frozen bot: leave it, trim it when it dies
+		if(!(isDefined(p.pers["team"]) && p.pers["team"] == team))
 			continue;
-		if(isDefined(p.pers["team"]) && p.pers["team"] == team)
-			picks[picks.size] = p;
+		if(p gf_botSwitchSafe())
+			safe[safe.size] = p;
+		else
+			alive[alive.size] = p;
 	}
 
 	maxClients = getDvarInt("sv_maxclients");
 	if(maxClients < 1) maxClients = 18;
 	ceiling = maxClients - gf_fillKickFloor();
-	for(i = 0; i < picks.size; i++)
+
+	done = 0;
+	for(i = 0; i < safe.size && done < count; i++)
 	{
 		if(level.players.size >= ceiling)
-			kick(picks[i] getEntityNumber(), "EXE_PLAYERKICKED");
+			kick(safe[i] getEntityNumber(), "EXE_PLAYERKICKED");
 		else
-			picks[i] thread gf_botSwitchTeam("spectator");
+			safe[i] thread gf_botSwitchTeam("spectator");
+		done++;
+	}
+	// Remaining surplus is alive this round -> defer to its next spawn (see header). This is the
+	// fix for a surviving surplus bot that never dies, so the old "trim when it dies" never fired.
+	for(i = 0; done < count && i < alive.size; i++)
+	{
+		alive[i].pers["gf_parkPending"] = true;
+		done++;
+	}
+}
+
+// Drop every bot's deferred-park mark. Called at the top of each PARK derivation (and when fill is
+// off) so a surplus that resolved before the bot's next spawn never wrongly spectates a round.
+gf_clearAllParkPending()
+{
+	players = level.players;
+	for(i = 0; i < players.size; i++)
+	{
+		p = players[i];
+		if(isDefined(p) && p istestclient() && isDefined(p.pers["gf_parkPending"]))
+			p.pers["gf_parkPending"] = undefined;
 	}
 }
 
