@@ -296,49 +296,68 @@ function Test-GamePortUp {
     return [bool](Get-NetUDPEndpoint -LocalPort 28960 -ErrorAction SilentlyContinue)
 }
 
-function Get-UpdaterCpu {
-    # Total CPU-seconds of the update-only process, whose name is exactly 'plutonium'
-    # (NOT 'plutonium-bootstrapper-win32', the game server - exact -Name never matches it).
-    # $null when it isn't running. A LIVE update climbs this; a WEDGED one sits flat.
+function Get-UpdaterActivity {
+    # Liveness of the update-only process (name exactly 'plutonium.exe', NOT the
+    # 'plutonium-bootstrapper-win32.exe' game server - the exact filter never matches it).
+    # Returns @{ Cpu = <CPU-seconds>; IO = <total read+write bytes> }, or $null when it
+    # isn't running. A WEDGED updater is flat on BOTH; a LIVE update grows CPU (apply/verify)
+    # or I/O (download) even when CPU is low. Requiring BOTH to be flat is what lets us kill
+    # early without ever aborting a still-working update (the old CPU-only check had to wait
+    # a conservative 150s because a network-bound download can sit at ~0 CPU).
+    $wp = Get-CimInstance Win32_Process -Filter "Name='plutonium.exe'" -ErrorAction SilentlyContinue
+    if (-not $wp) { return $null }
+    $cpu = 0.0
     $p = Get-Process -Name plutonium -ErrorAction SilentlyContinue
-    if ($p) { return ($p | Measure-Object -Property CPU -Sum).Sum }
-    return $null
+    if ($p) { $cpu = ($p | Measure-Object -Property CPU -Sum).Sum }
+    $io = 0.0
+    foreach ($w in $wp) { $io += [double]$w.ReadTransferCount + [double]$w.WriteTransferCount }
+    return @{ Cpu = $cpu; IO = $io }
 }
 
 function Wait-ForServerBack {
     # Killing the bootstrapper makes the launcher bat's :server loop re-run
     # `plutonium.exe -update-only` (normally ~2 min) BEFORE relaunching the server.
-    # That update step occasionally WEDGES - flat CPU, port never opens, server stays
-    # DOWN (observed 2026-07-10; recovered by hand with `Stop-Process -Name plutonium`).
-    # Nothing else recovers it: the deploy's own watchdog-maintenance window suppresses
-    # the box watchdog for exactly this span. So deploy owns the recovery. Poll for the
-    # game port to come back; once we're PAST the grace period (a legit update should be
-    # done) and the updater is provably FLAT, kill it so the bat loops on to launch the
-    # bootstrapper. The flat-CPU guard is what keeps us from killing a still-working update.
+    # That update step occasionally WEDGES - flat CPU + flat I/O, port never opens, server
+    # stays DOWN (observed 2026-07-10; recovered by hand with `Stop-Process -Name plutonium`).
+    # Nothing else recovers it: the deploy's own watchdog-maintenance window suppresses the
+    # box watchdog for exactly this span, so deploy OWNS the recovery. Poll for the game port;
+    # if the updater goes FLAT on both CPU and I/O for a sustained streak (past a short warmup),
+    # kill it so the bat loops on to launch the bootstrapper. The dual-signal + streak guard is
+    # what keeps us from ever killing a working update, so the warmup can be short (~45s) instead
+    # of the old blanket 150s wait - a wedge now heals in ~45-60s instead of ~170s.
     param(
-        [int]$GraceSeconds   = 150,   # a legit ~2 min update should have finished by here
-        [int]$CeilingSeconds = 300    # hard stop - report failure past this
+        [int]$MinGraceSeconds = 45,    # never kill in the first 45s - the updater needs to spin up
+        [int]$FlatKillSeconds = 40,    # sustained flat CPU *and* I/O beyond this => wedged
+        [int]$CeilingSeconds  = 300    # hard stop - report failure past this
     )
-    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $sw   = [System.Diagnostics.Stopwatch]::StartNew()
+    $poll = 5
+    $prev = $null
+    $flatFor = 0
     Write-Host "Waiting for the game server to come back (UDP 28960)..."
     while ($sw.Elapsed.TotalSeconds -lt $CeilingSeconds) {
         if (Test-GamePortUp) {
             Write-Host "Game server is back up (UDP 28960 listening after $([int]$sw.Elapsed.TotalSeconds)s)." -ForegroundColor Green
             return $true
         }
-        if ($sw.Elapsed.TotalSeconds -ge $GraceSeconds) {
-            $c1 = Get-UpdaterCpu
-            if ($null -ne $c1) {
-                Start-Sleep -Seconds 20
-                if (Test-GamePortUp) { continue }   # came up while sampling
-                $c2 = Get-UpdaterCpu
-                if ($null -ne $c2 -and ($c2 - $c1) -lt 1.0) {
-                    Write-Host ("Updater appears WEDGED (plutonium.exe CPU flat: {0}->{1}s over 20s). Killing it so the bat relaunches the server..." -f [math]::Round($c1,1), [math]::Round($c2,1)) -ForegroundColor Yellow
-                    Get-Process -Name plutonium -ErrorAction SilentlyContinue | Stop-Process -Force
-                }
+        $act = Get-UpdaterActivity
+        if ($null -eq $act) {
+            $prev = $null; $flatFor = 0        # updater not running (bootstrapper phase) - reset
+        }
+        else {
+            if ($null -ne $prev) {
+                $cpuAdvanced = ($act.Cpu - $prev.Cpu) -ge 1.0
+                $ioAdvanced  = ($act.IO  - $prev.IO)  -ge 65536   # >=64KB moved => still downloading/applying
+                if ($cpuAdvanced -or $ioAdvanced) { $flatFor = 0 } else { $flatFor += $poll }
+            }
+            $prev = $act
+            if ($sw.Elapsed.TotalSeconds -ge $MinGraceSeconds -and $flatFor -ge $FlatKillSeconds) {
+                Write-Host ("Updater appears WEDGED (plutonium.exe flat on CPU AND I/O for {0}s). Killing it so the bat relaunches the server..." -f $flatFor) -ForegroundColor Yellow
+                Get-Process -Name plutonium -ErrorAction SilentlyContinue | Stop-Process -Force
+                $prev = $null; $flatFor = 0
             }
         }
-        Start-Sleep -Seconds 5
+        Start-Sleep -Seconds $poll
     }
     return $false
 }
