@@ -35,6 +35,15 @@ set scr_team_maxsize "6"                            // Gunfight: max players per
 set scr_xpscale "1"                                 // Round end XP multiplicator (score * scr_xpscale = xp)
 set scr_wagerbet "100"                              // How much it would cost to connect to a wager gamemode. 
 set sv_disableClientConsole "1"                     // 1 = block players opening the in-game console (shrinks client cheat/tweak surface on a public lobby)
+// sv_cheats MUST be 0 on a public dedicated server: 1 makes every cheat-protected command and dvar
+// (noclip / god / give / r_* renderer tweaks) reachable from any player console, leaving
+// sv_disableClientConsole as the ONLY thing holding the line. It is now set explicitly rather than
+// left to the engine default, so a stray `rcon set sv_cheats 1` does not survive a restart.
+// gf.gsc force-sets sv_cheats 1 on a LISTEN server only (dev block) — never on a dedicated one.
+// This does NOT cost you the RCON panel's bot-tuning or timescale sliders: those are cheat-protected,
+// so they are routed through the GSC bridge (svset_), which runs with engine authority and is not
+// cheat-gated. The r_* Visual Tweaks DO need cheats and are correctly greyed out on a dedicated server.
+set sv_cheats "0"                                   // 0 = cheat commands/dvars refused. Keep at 0 on any public server.
 set sv_doubleCoDPoints "1"                          // Earn double CoD Points for finished matches?
 set sv_floodProtect "4"                             // Chat Spam Protection.(Set this to 20 if you are using a RCon tool)
 set sv_kickBanTime "300"                            // Kick Ban Duration. Time before player can re-join the server after getting kicked.

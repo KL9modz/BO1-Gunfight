@@ -23,7 +23,13 @@
 //   pfreeze_<num>      - freeze one player
 //   punfreeze_<num>    - unfreeze one player
 //   pperks_<num>       - give perks to one player
-//   pnoclip_<num>      - noclip one player
+//   (NO pnoclip_: this was documented here for a long time but never implemented, and it can't be —
+//    T5 has no scriptable noclip. The engine's `noclip` is a cheat-protected console command acting
+//    on the LOCAL player, so it needs sv_cheats 1 AND a listen server. The panel greys it off there.)
+//   svset_<dvar>=<val> - set a CHEAT-PROTECTED server dvar (bot tuning, timescale) from GSC, which
+//                        is not cheat-gated — so it works on the dedicated VPS with sv_cheats 0.
+//                        Also mirrors the value into gf_<dvar> so it can persist via dedicated.cfg.
+//   svsync             - re-apply every gf_<dvar> mirror onto its real dvar (Set All / after restart)
 //   pteam_<num>_<allies|axis|spec>  - move one player to a team. Applies LIVE only during the
 //                        native prematch countdown (players frozen, round unscored); any other
 //                        time (live round / killcam / min-players hold) it's DEFERRED to the next
@@ -102,6 +108,14 @@ gf_bridgeInit()
 
     setDvar( "gf_state", "0:0:1:0:0:" + level.gameType );
     setDvar( "gf_roster", "" );
+
+    // Copy every mirrored cheat-protected server dvar (gf_sv_botFov -> sv_botFov, ...) onto the real
+    // dvar from GSC, where the sv_cheats gate does not apply. This runs EVERY round, but the load-
+    // bearing one is the first round after a full server restart: dedicated.cfg is executed as
+    // console commands, so a `set sv_botFov 50` line in it is cheat-refused exactly like an rcon one
+    // — the cfg can only ever set the plain gf_* mirror, and this is what makes that mirror mean
+    // something. Empty mirror = never configured = leave the engine default alone.
+    gf_bridgeApplyServerDvars();
 
     // Deferred team moves queued mid-round (pers["gf_pendingTeam"], the only state that survives
     // map_restart) are applied at the START of the next round. It CANNOT be a synchronous sweep
@@ -385,6 +399,13 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "headshots_off"   ) { gf_bridgeHeadshots( false );   return; }
     if ( isSubStr( cmd, "flinch_" ) ) { gf_bridgeFlinch( getSubStr( cmd, 7, cmd.size ) ); return; }
 
+    // Cheat-protected SERVER dvars, written from GSC so they work with sv_cheats 0 (the only
+    // correct value on a dedicated server). Format: svset_<dvar>=<value>. See gf_bridgeServerDvarSet.
+    if ( isSubStr( cmd, "svset_" ) ) { gf_bridgeServerDvarSet( getSubStr( cmd, 6, cmd.size ) ); return; }
+    // svsync — copy EVERY gf_* mirror onto its real dvar in one shot. The panel's Set All / 💾 Save
+    // write the plain mirrors over rcon (which is allowed) and then fire this once.
+    if ( cmd == "svsync" ) { gf_bridgeApplyServerDvars(); gf_bridgeNotify( "^2Server dvars applied" ); return; }
+
     // --- Fun / silly (EnCoReV8 + iMCSx) ---
     if ( isSubStr( cmd, "vision_"      ) ) { gf_bridgeVision( getSubStr( cmd, 7,  cmd.size ) ); return; }
     if ( isSubStr( cmd, "thirdperson_" ) ) { gf_bridgeVisSet( "cg_thirdPerson",    getSubStr( cmd, 12, cmd.size ) ); return; }
@@ -592,8 +613,9 @@ gf_bridgeHeadshots( enable )
 // --- Flinch (damage view-kick) -----------------------------------------------
 // value = multiplier of stock bg_viewKickScale (0.2): 1 = stock, 0 = no flinch.
 // Stores it in scr_gf_flinch (so onStartGameType re-applies it every round) and
-// applies bg_viewKickScale live via gf_applyFlinch. Server-side setDvar, so it
-// holds on a dedicated server. gf_applyFlinch re-reads + clamps to 0..3.
+// applies it live via gf_applyFlinch, which re-reads + clamps to 0..3 and PUSHES
+// bg_viewKickScale to each human — the server dvar does not replicate, so the
+// server-side setDvar alone would change nothing for anyone on a dedicated server.
 
 gf_bridgeFlinch( value )
 {
@@ -603,6 +625,97 @@ gf_bridgeFlinch( value )
         gf_bridgeNotify( "^2Flinch: OFF (no view kick)" );
     else
         gf_bridgeNotify( "^3Flinch: " + scale + "x stock" );
+}
+
+// --- Cheat-protected SERVER dvars (svset_<dvar>=<value>) ---------------------
+// The engine REFUSES a console/rcon `set` of a CHEAT-protected dvar unless sv_cheats is 1: it
+// answers "Error: <dvar> is cheat protected" and keeps the old value. A GSC setDvar runs with
+// engine authority and is NOT cheat-gated. Verified live 2026-07-11 on a dedicated-equivalent
+// round with sv_cheats 0: rcon `set bg_viewKickScale 0.9` was refused while the bridge's own
+// flinch_2 verb wrote that same dvar to 0.4 in the same round.
+//
+// So the RCON panel routes its cheat-protected SERVER dvars (bot tuning, timescale) through here
+// instead of a raw rcon `set`, and they keep working on the dedicated VPS with sv_cheats 0 — which
+// is the only correct value there (gf.gsc's dev-cheat block used to force it to 1 on EVERY server
+// because its `getDvarInt( "dedicated" ) == 0` guard was always true; see gf.gsc).
+//
+// ⚠ SERVER dvars ONLY. This does NOT rescue a cheat-protected CLIENT dvar (the r_* Visual Tweaks,
+// and bg_viewKickScale's per-client push): those go out via setClientDvar and the CLIENT applies
+// its own cheat check on arrival, which no amount of server-side authority can bypass.
+//
+// Allowlisted rather than arbitrary. An rcon holder can already `set sv_cheats 1` directly (that
+// dvar is not itself cheat-protected), so this grants no new privilege — the list keeps the surface
+// legible and turns a typo into a clear error instead of a silently-created junk dvar.
+gf_bridgeServerDvarSet( arg )
+{
+    parts = strTok( arg, "=" );
+    if ( parts.size < 2 )
+    {
+        gf_bridgeNotify( "^1svset: expected <dvar>=<value>" );
+        return;
+    }
+
+    name  = parts[0];
+    value = parts[1];
+
+    if ( !gf_bridgeServerDvarAllowed( name ) )
+    {
+        gf_bridgeNotify( "^1svset: " + name + " is not allowlisted" );
+        return;
+    }
+
+    setDvar( name, value );
+
+    // Mirror into a plain (non-cheat) gf_* dvar so the value can PERSIST. dedicated.cfg is executed
+    // as console commands at startup, so a `set sv_botFov 50` line there is refused exactly like the
+    // rcon one — cfg-persisting the real dvar is impossible with sv_cheats 0. The panel's 💾 Save
+    // therefore writes the mirror, and gf_bridgeApplyServerDvars() (below, every round) copies the
+    // mirror back onto the real dvar from GSC, where the cheat gate doesn't apply.
+    setDvar( "gf_" + name, value );
+
+    gf_bridgeNotify( "^3" + name + " = " + value );
+}
+
+// Re-apply every mirrored cheat-protected server dvar. Called from gf_bridgeInit (so: every round,
+// and — critically — on the first round after a full server restart, which is the only way a
+// cfg-set value can reach a cheat-protected dvar at all). An unset/empty mirror is skipped, leaving
+// the engine default alone.
+gf_bridgeApplyServerDvars()
+{
+    names = gf_bridgeServerDvarList();
+    for ( i = 0; i < names.size; i++ )
+    {
+        v = getDvar( "gf_" + names[i] );
+        if ( v == "" )
+            continue;
+        setDvar( names[i], v );
+    }
+}
+
+// The allowlist + the mirror list are the SAME set, so they cannot drift apart.
+gf_bridgeServerDvarList()
+{
+    n = [];
+    n[ n.size ] = "sv_botFov";
+    n[ n.size ] = "sv_botMinReactionTime";
+    n[ n.size ] = "sv_botMaxReactionTime";
+    n[ n.size ] = "sv_botMinFireTime";
+    n[ n.size ] = "sv_botMaxFireTime";
+    n[ n.size ] = "sv_botStrafeChance";
+    n[ n.size ] = "sv_botSprintDistance";
+    n[ n.size ] = "sv_botMeleeDist";
+    n[ n.size ] = "sv_botYawSpeed";
+    n[ n.size ] = "timescale";
+    return n;
+}
+
+gf_bridgeServerDvarAllowed( name )
+{
+    names = gf_bridgeServerDvarList();
+    for ( i = 0; i < names.size; i++ )
+        if ( names[i] == name )
+            return true;
+    return false;
 }
 
 // --- Self health bar ---------------------------------------------------------
@@ -913,12 +1026,14 @@ gf_applyPendingTeamMoves()
 // gf_applyTeamMove — the same clean switch the panel's team-move uses (stock switch while frozen
 // in prematch, quiet pers reassign otherwise). kick: remove ONE bot currently on `team`.
 // Bots only (istestclient) — humans are never touched. CAVEAT: with fill ON (gf_fill_n > 0) the
-// Gunfight reconciler (_bot.gsc) owns bot counts + placement and re-derives them each pass, so a
-// manual per-team add/kick/move is TRANSIENT — set gf_fill_n 0 (fill off = manual mode) to make it
-// stick. Human moves always stick (the reconciler never touches humans).
+// Gunfight round-boundary reconciler (_bot.gsc) owns bot counts + placement and re-derives them at
+// every round boundary, so a manual per-team add/kick/move is TRANSIENT (it lasts at most until
+// the current round ends) — set gf_fill_n 0 (fill off = manual mode) to make it stick. Human
+// moves always stick (the reconciler never touches humans).
 // "+ Add Bot" (teamless): spawn one autoassigned bot. Replaces the old `set bots_manage_add 1`
-// path (the addBots loop that consumed it is retired). With fill on (gf_fill_n>0) the reconciler
-// owns counts so a manual add is transient (parked as surplus next pass); with fill off it sticks.
+// path (the addBots loop that consumed it is deleted). With fill on (gf_fill_n>0) the reconciler
+// owns counts so a manual add is transient (parked as surplus at the next round boundary); with
+// fill off it sticks.
 gf_bridgeAddBot()
 {
     bot = maps\mp\gametypes\_bot::add_bot();

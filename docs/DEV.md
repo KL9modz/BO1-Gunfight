@@ -232,14 +232,14 @@ See the header of `maps/mp/gametypes/_gf_bridge.gsc` for the complete command li
 
 ## Bots (dev / listen-server)
 
-The bot framework is vendored under `maps/mp/bots/` (`_bot_loadout`, `_bot_script`, `_bot_utility`; original author INeedGames) and integrated by `maps/mp/gametypes/_bot.gsc`. `_bot::init()` registers the `bots_*` management dvars and threads the add/fill/team management loops. It is wired in from `gf.gsc` inside a `#strip-begin … #strip-end` block, so it is **stripped from public builds** — bots are a development / listen-server aid only.
+The bot framework is vendored under `maps/mp/bots/` (`_bot_loadout`, `_bot_script`, `_bot_utility`; original author INeedGames) and integrated by `maps/mp/gametypes/_bot.gsc`. `_bot::init()` registers the `bots_*` dvars (kept for the vendored AI) and threads `diffBots` (difficulty) plus the Gunfight **round-boundary fill reconciler** — the single authority over bot counts and placement (`gf_fill_n` = per-team target N; see the big header block in `_bot.gsc`). BotWarfare's own managers (`addBots` / `teamBots` / `doNonDediBots`) are **deleted**. It is wired in from `gf.gsc` inside a `#strip-begin … #strip-end` block, so it is **stripped from public builds** — bots are a development / server-side aid only.
 
-Two Gunfight-specific touches matter:
+Gunfight-specific behavior that matters:
 
-- `teamBots()` skips moving bots between teams while a round is live (`level.gf_roundActive`), because a mid-round team change respawns the bot and would drop it on the wrong side.
+- The reconciler acts **only at round boundaries** — round end (inside the killcam), the match-start gate release, and one roster-settle pass after init — and only through suicide-free primitives: a quiet pers reassign (`gf_botQuietSetTeam`) for un-"playing" bots, a deferred `pers["gf_parkPending"]` mark (consumed pre-spawn by `gf_lobbyMaySpawn`) for alive ones, kicks, and 0.5s-staggered generation-stamped adds. It never moves a bot mid-round and never stock-switches one (the stock team switch suicides any "playing" client — the historical "bots suicide at spawn" bug).
 - `bot_set_difficulty()` (`easy` / `normal` / `hard` / `fu`) is the dvar set behind the bridge's `botdiff_*` commands.
 
-Bots run on both a local listen server and the dedicated VPS. The current Plutonium T5 build spawns test clients on a dedicated server without any executable patch (an older assumption — that dedicated needs the `SV_AddTestClient` byte patch noted in the `addBots()` comment block — no longer holds for this build, confirmed live 2026-07-04). On the VPS bots are enabled at **runtime via the RCON panel** (`bots_manage_fill` / `+Add Bot`, set over rcon), so they never appear in `dedicated.cfg` — a config grep does not prove "no bots." The byte-patch offsets in the `addBots()` comment are kept as historical reference only.
+Bots run on both a local listen server and the dedicated VPS. The current Plutonium T5 build spawns test clients on a dedicated server without any executable patch (confirmed live 2026-07-04). On the VPS bots are enabled at **runtime via the RCON panel** (`gf_fill_n`, set over rcon), so they never appear in `dedicated.cfg` — a config grep does not prove "no bots."
 
 ---
 

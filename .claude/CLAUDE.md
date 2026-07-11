@@ -304,26 +304,34 @@ killstreak names — those fire the "called-in" announcer + holster-lock), the `
 [[reference_t5_mp_weapons]]. Dev aids: `gf_force_loadout`, `gf_force_camo`.
 
 ### Dynamic bot fill + team management
-**One reconciler** (`gf_reconcilerInit` in `_bot.gsc`, dev-only) is the single authority over bot counts
-and placement; it replaced BotWarfare's competing `addBots()`/`teamBots()` loops (now unthreaded dead
-code). `gf_fill_n` = **per-team target N** (`3` → 3v3): each side is padded to exactly N *playing*
-clients (humans+bots) and **bots absorb all variance**. **Humans are never auto-moved** (if humans on a
-side exceed N, that side's bots go to 0 and it stays big while the other side still fills). `gf_fill_n
-0` = reconciler inert — the mode in which manual per-team bot add/kick/move sticks. Overshoot-free:
-displaced/surplus bots **park in spectator** (reused from a finite shared-index pool), a new bot is added
-only when none is mid-connect (marked `.gf_fillPending` in-flight), passes are serialized (0.5s, atomic).
-Reserve is capped at the live human count (so *reducing* N kicks freed bots); `gf_fill_kick_floor`
-kicks parked bots before they breach `sv_maxclients`.
+**One round-boundary reconciler** (`gf_reconcilerInit` in `_bot.gsc`, dev-only) is the single authority
+over bot counts and placement; BotWarfare's own managers (`addBots`/`teamBots`/`doNonDediBots`) are
+**deleted**. `gf_fill_n` = **per-team target N** (`3` → 3v3): each side is padded to exactly N *playing*
+clients (humans+bots) at **each round start**, and **bots absorb all variance**. **Humans are never
+auto-moved** (if humans on a side exceed N, that side's bots go to 0 and it stays big while the other
+side still fills). Mid-round roster changes (and fill-N changes) are deliberately ignored until the next
+boundary — worst case one ~45s round. `gf_fill_n 0` = reconciler inert — the mode in which manual
+per-team bot add/kick/move sticks (with fill on, a manual move lasts at most until the round ends).
 
-**Round-safety** — the stock team switch suicides a "playing" client, and "playing" **includes the
-prematch-frozen alive state**. `gf_botSwitchSafe()` = **unsafe iff `sessionstate=="playing"` AND
-(`health` undefined OR `health > 0`)** — note the undefined-health mid-spawn window is unsafe too (a
-switch there would suicide the bot the instant it finishes spawning). So the reconciler only hard-switches
-dead/limbo bots; an alive/frozen surplus is **deferred** (`pers["gf_parkPending"]`), and `gf_lobbyMaySpawn`
-(gf.gsc) routes it to a clean spectator on its *next* spawn (pre-spawn window, no suicide). Counts key off
+**Boundary-only = suicide-free + overshoot-free by construction.** ONE yield-free `gf_boundaryPass` per
+round, triggered by: `gf_round_over` +0.5s (inside the killcam, where every eliminated bot is already
+un-"playing"), the match-start gate release (`gf_load_gate_reset` with players present — pre-spawn, so
+the round-1 wave reads the finished plan; the Auto/Manual lobby-release fire instead **kicks all bots**
+pre-restart and the post-restart pass rebuilds the fill clean), and one roster-settle pass after init.
+Placement is a **quiet pers reassign** (`gf_botQuietSetTeam`, mirror of the bridge's `gf_forceTeamQuiet`
+— no suicide path exists); an **alive ("playing", incl. prematch-frozen) bot is never touched**: a
+surplus one gets `pers["gf_parkPending"]` and `gf_lobbyMaySpawn` (gf.gsc) routes it to a clean spectator
+in its next pre-spawn window. Adds are staggered (0.5s) and **generation-stamped** (`level.gf_fillGen` —
+a newer pass cancels an older pass's add loop) with steer marks (`.gf_fillPending = team`, counted
+toward the target team while mid-connect) — the old model's racing passes + wrong-team autoassign
+landings were the "bots exceed the target" bug, and its mid-prematch stock switches racing the async
+spawn commit were the "bots suicide during the countdown" bug. Displaced bots **park in spectator** for
+reuse; the parked reserve is capped at the live human count (so *reducing* N kicks freed bots) and
+`gf_fill_kick_floor` kicks parked bots before they breach `sv_maxclients`. Counts key off
 `level.players` + `istestclient()`, never `level.bots` (which a restart desyncs). Every persistent bot
-loop carries `endon("bot_reinit")`; `init()` fires `bot_reinit` before re-threading so a restart-surviving
-manager set collapses to one. Full detail → [[gf-fill-reconciler-and-team-transfer]], `docs/DEV.md`.
+loop carries `endon("bot_reinit")`; `init()` fires `bot_reinit` before re-threading so a
+restart-surviving manager set collapses to one. Full detail →
+[[gf-fill-reconciler-and-team-transfer]], `docs/DEV.md`.
 
 ### HUD (menu-layer)
 All mod HUD is rendered in the **menu layer** (`ui_mp/hud_gf_health.menu`, in `mod.ff`), NOT client
@@ -359,8 +367,13 @@ rebuild; dvar values/positions are GSC-tunable. Intro slide/fade animations are 
 - **Friendly fire is 100% stock** — the mod GSC sets no FF dvar. It's owned by the RCON panel writing the
   stock tweakables `scr_team_fftype` (base) + `scr_gf_team_fftype` (per-gametype override the engine
   re-polls ~5s). FF damage is applied by the engine but never scored. ([[t5-tweakable-override-dvars-live]])
-- **Flinch:** `scr_gf_flinch` (mult of stock `bg_viewKickScale` 0.2), applied server-side each round —
-  which carries engine authority and so **holds on the dedicated VPS** (unlike client-pushed r_* tweaks).
+- **Flinch:** `scr_gf_flinch` (mult of stock `bg_viewKickScale` 0.2), re-applied every round by
+  `gf_applyFlinch`. ⚠ **`bg_viewKickScale` does NOT replicate** — each client scales its own damage view
+  kick from its LOCAL copy, so the server-side `setDvar` alone changes nothing for anyone on a dedicated
+  server (it only ever appeared to work on a listen host, where the host *is* a client). So the value is
+  **pushed per-client**: to live humans in `gf_applyFlinch`, and per-spawn via `gf_applyFlinchClient`
+  (skipped at stock 1 — a fresh client already sits at 0.2). Session-only; `bg_viewKickScale` is not a
+  saved client dvar. ([[flinch-bg-viewkickscale-not-replicated]])
 - **Vision/video:** stock by default. `gf_vis_*` server dvars map to client `r_*` (ambient/gridint/
   gridcon/hdr/fog), pushed per human spawn only if non-empty — but these are cheat-protected and
   **unreliable on dedicated**; the VPS-safe look lever is `visionSetNaked` via the bridge, not r_*
@@ -434,7 +447,7 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_overtimelimit` / `_large` | 15 / 30 | Overtime seconds, small / large; `0` = OT off (HP decides now). |
 | `gf_capture_time` / `_large` | 3 / 5 | OT zone hold-to-capture seconds, small / large. |
 | `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (auto goes large when a team hits 5+). |
-| `scr_gf_flinch` | 1 | Flinch scale (× stock `bg_viewKickScale` 0.2); server-side, holds on dedicated (clamp 0-3). |
+| `scr_gf_flinch` | 1 | Flinch scale (× stock `bg_viewKickScale` 0.2); pushed **per-client** — the server dvar alone doesn't replicate (clamp 0-3). |
 | `scr_team_maxsize` | 0 (cfg ships 6) | `>0` caps players/team; overflow → spectator on spawn. |
 
 **Match start / pregame lobby** (match's first round only)

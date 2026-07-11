@@ -30,24 +30,39 @@ function _rowVal(row){
   if(el.type==='checkbox') return el.checked?'1':'0';
   return el.value!==''?el.value:null;
 }
+// A row flagged .unsynced never got a value back from the server (read timed out, or the dvar is
+// unregistered), so its control is still showing the HARDCODED DEFAULT — not a live value. Writing
+// that back is how a missed read silently reconfigures the server: e.g. a dropped
+// sv_disableClientConsole read + Set All would push the default and re-open the console on a live
+// public lobby. Never write a value we never read. Applies to Set All AND 💾 Save.
+function _skipUnsynced(row){ return row.classList.contains('unsynced') || (row.closest('.srow')||row).classList.contains('unsynced'); }
 async function setAllInBlock(btn){
   const block=btn.closest('.block');
   const cmds=[],seen={};
+  let skipped=0,svset=0;
   // Data-driven rows carry their dvar declaratively (data-dvar, emitted by srvRow).
   // data-also = a rider dvar kept in lockstep (e.g. the scr_gf_team_fftype FF override) —
   // it MUST be written too, or a stale override would silently win over the base dvar.
+  // data-mirror = a cheat-protected dvar the engine will NOT let us `set` directly; we write its
+  // plain gf_* mirror instead and fire one `svsync` below so GSC copies the mirrors across.
   block.querySelectorAll('[data-dvar]').forEach(row=>{
-    const dv=row.getAttribute('data-dvar'),v=_rowVal(row);
+    if(_skipUnsynced(row)){skipped++;return;}
+    const mirror=row.getAttribute('data-mirror');
+    const dv=mirror||row.getAttribute('data-dvar'),v=_rowVal(row);
+    if(mirror&&v!==null) svset++;
     if(dv&&v!==null&&!seen[dv]){seen[dv]=1;cmds.push(`set ${dv} ${v}`);}
     const also=row.getAttribute('data-also');
     if(also&&v!==null&&!seen[also]){seen[also]=1;cmds.push(`set ${also} ${v}`);}
   });
+  // One unstamped bridge call applies every mirror at once (seq 0 = no dedup, always runs).
+  if(svset) cmds.push('set gf_cmd svsync');
   // Legacy static rows: scrape the sdve('dvar','inputId') onclick pattern.
   block.querySelectorAll('[onclick^="sdve("]').forEach(el=>{
     const m=el.getAttribute('onclick').match(/sdve\('([^']+)','([^']+)'\)/);
     if(m&&!seen[m[1]]){const inp=g(m[2]);if(inp){seen[m[1]]=1;cmds.push(`set ${m[1]} ${inp.value}`);}}
   });
-  if(!cmds.length)return;
+  if(skipped) actLog(`Set All: skipped ${skipped} unread row(s) — ↻ Read first`,'wn');
+  if(!cmds.length){toast(skipped?'Nothing synced to set — ↻ Read first':'Nothing to set','info');return;}
   const r=await batchCmds(cmds,50);
   const ok=r.results?r.results.filter(x=>x.ok).length:0;
   actLog(`Set All: ${ok}/${cmds.length}`,'ok');toast(`Set All (${cmds.length})`,'ok');
@@ -60,7 +75,12 @@ async function setAllInBlock(btn){
 function collectBlockDvars(block){
   const out={};
   block.querySelectorAll('[data-dvar]').forEach(row=>{
-    const dv=row.getAttribute('data-dvar'),v=_rowVal(row);
+    if(_skipUnsynced(row)) return;   // never persist a value we never read (see _skipUnsynced)
+    // A cheat-protected dvar cannot be persisted directly: dedicated.cfg is executed as console
+    // commands at startup, so `set sv_botFov 50` there is refused exactly like an rcon set. Persist
+    // the plain gf_* mirror instead — gf_bridgeApplyServerDvars() copies it onto the real dvar from
+    // GSC on the first round after the restart, which is the only path that works.
+    const dv=row.getAttribute('data-mirror')||row.getAttribute('data-dvar'),v=_rowVal(row);
     if(dv&&v!==null) out[dv]=v;
     const also=row.getAttribute('data-also');
     if(also&&v!==null) out[also]=v;
@@ -464,6 +484,13 @@ function showCtx(e,num,name,isBot){
   // Route private in-game bridge feedback to this player (by GUID). Only offered for real players.
   const adminItem=guid?`<div class="ctx-sep"></div>
     <div class="ctx-item ${guid===_adminGuid?'cur':''}" onclick="ctxAction('setadmin')">★ ${guid===_adminGuid?'Feedback admin (you)':'Send feedback to me'}</div>`:'';
+  // Noclip is a CHEAT-PROTECTED console command that acts on the LOCAL player — a dedicated server
+  // has neither (sv_cheats is 0 there, and there is no local player at all). It used to fire
+  // `noclip <num>` unconditionally and log "Noclip toggled" regardless. T5 has no scriptable noclip,
+  // so there is nothing to route through the bridge either: grey it off-listen and say why.
+  const noclipItem=_listenServer
+    ? `<div class="ctx-item" onclick="ctxAction('pnoclip')">Noclip</div>`
+    : `<div class="ctx-item cur" title="Listen server only — noclip is cheat-protected (sv_cheats is 0 on a dedicated server) and acts on the local player, which a dedicated server does not have.">Noclip <span style="opacity:.6">— listen only</span></div>`;
   const m=g('ctx-menu');
   m.innerHTML=`<div class="ctx-header">${x(name)}</div>
     <div class="ctx-item" onclick="ctxAction('kick')">Kick</div>
@@ -478,7 +505,7 @@ function showCtx(e,num,name,isBot){
     <div class="ctx-item yellow" onclick="ctxAction('pfreeze')">Freeze</div>
     <div class="ctx-item yellow" onclick="ctxAction('punfreeze')">Unfreeze</div>
     <div class="ctx-item" onclick="ctxAction('pperks')">Give Perks</div>
-    <div class="ctx-item" onclick="ctxAction('pnoclip')">Noclip</div>${ipItems}${adminItem}`;
+    ${noclipItem}${ipItems}${adminItem}`;
   m.style.display='block';
   // Position near cursor, keep in viewport
   const vw=window.innerWidth,vh=window.innerHeight;
@@ -523,8 +550,13 @@ async function ctxAction(act,ev){
     await bridge(`${force?'pteamforce':'pteam'}_${num}_${code}`,(force?'⚠ Force → ':'Team → ')+lbl+': '+name);
     actLog((force?'Force team → ':'Team → ')+lbl+': '+name,force?'wn':(code==='spec'?'wn':'ok'));
   }else if(act==='pnoclip'){
-    // noclip is a server console command, not GSC — send directly via RCON
-    await rcon(`noclip ${num}`);actLog('Noclip toggled: '+name,'ok');
+    // Listen only (see noclipItem). Even there, verify the reply — noclip is cheat-protected, so it
+    // is refused the moment sv_cheats is 0, and the old code logged success unconditionally.
+    if(!_listenServer){ toast('Noclip needs a listen server — cheat-protected, and no local player on a dedicated server','err'); return; }
+    const r=await rcon(`noclip ${num}`);
+    const err=(!r||!r.ok)?((r&&r.error)||'send failed'):dvarWriteError(r.response);
+    if(err){ toast('Noclip refused: '+err,'err'); actLog('✗ Noclip '+name+': '+err,'err'); return; }
+    actLog('Noclip toggled: '+name,'ok');
   }else if(act==='copyip'){
     if(!ip){toast('No IP for this player','err');return;}
     try{ await navigator.clipboard.writeText(ip); actLog('Copied IP '+ip+' ('+name+')','ok'); }
@@ -663,15 +695,72 @@ document.addEventListener('click',e=>{
 document.addEventListener('input',e=>{const r=e.target.closest&&e.target.closest('.srow.unsynced');if(r)r.classList.remove('unsynced');});
 document.addEventListener('change',e=>{const r=e.target.closest&&e.target.closest('.srow.unsynced');if(r)r.classList.remove('unsynced');});
 
+// ─── Write verification ───────────────────────────────────────────────────────
+// The engine ANSWERS a refused `set` — it never fails silently. Observed replies:
+//   ^1Error: <dvar> is cheat protected             needs sv_cheats 1 (and 0 is the CORRECT value on
+//                                                  a dedicated server, so this is expected there)
+//   '<v>' is not a valid value for dvar '<dvar>'   value outside the dvar's declared domain
+//   ... is read only / is write protected
+// The panel used to DISCARD that reply and toast "ok" on any successful HTTP round-trip, so a
+// refused write looked exactly like an applied one. That is the single biggest reason a control
+// "doesn't work": it did nothing and said it worked. Parsing the reply costs zero extra rcon
+// traffic (we already have it in hand) and stays correct as Plutonium changes underneath us.
+const _DVAR_ERR=[
+  [/is cheat protected/i,   'cheat-protected — the engine refused it. sv_cheats is 0 (correct on a dedicated server); route it through the GSC bridge instead.'],
+  [/is not a valid value/i, 'value is outside the dvar’s allowed domain — the engine kept the old one.'],
+  [/is read.?only/i,        'read-only dvar — cannot be set at runtime.'],
+  [/is write protected/i,   'write-protected dvar — the engine refused it.'],
+  [/unknown cmd/i,          'no such dvar on this server.'],
+];
+function dvarWriteError(resp){
+  const s=String(resp||'');
+  if(!s.trim()) return null;                    // a successful `set` echoes nothing back
+  for(const [re,msg] of _DVAR_ERR) if(re.test(s)) return msg;
+  return null;
+}
+// A refused write means the control no longer reflects the server — which is exactly what
+// .unsynced already means, so reuse it: the row gets flagged AND Set All / 💾 Save will now
+// refuse to push that stale value back (see _skipUnsynced).
+function flagDvarRow(dv){
+  const id=String(dv).replace(/[^a-zA-Z0-9]/g,'_');
+  ['srv_','mt_'].forEach(p=>{
+    const el=g(p+id), row=el&&el.closest('.srow');
+    if(row) row.classList.add('unsynced');
+  });
+}
+// Report one dvar write. Returns true only if the server actually took the value.
+function reportWrite(dv,v,r){
+  if(!r||!r.ok){ toast((r&&r.error)||'send failed','err'); return false; }
+  const err=dvarWriteError(r.response);
+  if(err){
+    toast(dv+' — '+err,'err');
+    actLog('✗ '+dv+': '+err,'err');
+    flagDvarRow(dv);
+    return false;
+  }
+  toast(dv+'='+v,'ok'); actLog(dv+' → '+v,'ok');
+  return true;
+}
+
 // ─── Gunfight ────────────────────────────────────────────────────────────────
 async function sdv(dv,id){
   const v=g(id).value;
-  const r=await rcon(`set ${dv} ${v}`);
-  r.ok?(toast(dv+'='+v,'ok'),actLog(dv+' → '+v,'ok')):toast(r.error,'err');
+  return reportWrite(dv,v,await rcon(`set ${dv} ${v}`));
 }
 async function sdvv(dv,v){
-  const r=await rcon(`set ${dv} ${v}`);
-  r.ok?(toast(dv+'='+v,'ok'),actLog(dv+' → '+v,'ok')):toast(r.error,'err');
+  return reportWrite(dv,v,await rcon(`set ${dv} ${v}`));
+}
+// Cheat-protected SERVER dvars (bot tuning, timescale) go through the GSC bridge, not a raw
+// `set`: GSC setDvar runs with engine authority and is NOT cheat-gated, so these keep working on
+// the dedicated VPS with sv_cheats 0. The bridge also mirrors the value into a plain gf_<dvar>
+// dvar, which is what 💾 Save persists to dedicated.cfg — a cfg `set sv_botFov 50` line would be
+// cheat-refused at startup exactly like an rcon one, so the mirror is the only thing that CAN
+// persist. gf_bridgeApplyServerDvars() copies the mirrors back each round.
+async function bridgeSvSet(dv,id){
+  const v=g(id).value;
+  const ok=await bridge(`svset_${dv}=${v}`,`${dv} = ${v}`);
+  if(ok){ toast(dv+'='+v+' (bridge)','ok'); actLog(dv+' → '+v+' (GSC bridge — cheat-protected)','ok'); }
+  return ok;
 }
 // Set two dvars to the same value in one chained send (used by rows with an `also:` dvar,
 // e.g. Friendly Fire = scr_team_fftype + the scr_gf_team_fftype live override — the engine
@@ -1289,7 +1378,12 @@ const SRV_SECTIONS = [
     { n:'sv_kickBanTime',           lbl:'Kick Ban Duration (s)',  type:'num',    def:'300', tip:'sv_kickBanTime\nHow long a kicked player must wait before reconnecting.' },
     { n:'sv_maxPing',               lbl:'Max Ping (0=any)',       type:'num',    def:'0',   tip:'sv_maxPing\nKick players whose ping exceeds this. 0 = no limit.' },
     { n:'sv_pure',                  lbl:'Pure Server',            type:'tog',    def:'0',   eff:'restart', tip:'sv_pure\nVerify client files match server files. Blocks modded clients.' },
-    { n:'sv_disableClientConsole',  lbl:'Block Player Console',   type:'tog',    def:'0',   tip:'sv_disableClientConsole\nPrevent players from using the in-game console.' },
+    // def '1' (was '0'): the shipped dedicated.cfg blocks the console, and a WRONG default here is
+    // dangerous — if the connect-sweep read misses this dvar the row keeps its default, and Set All /
+    // 💾 Save would then push it, silently re-opening the console on a live public server. Defaults
+    // for security dvars must match the hardened cfg, never the engine default. (Set All now also
+    // skips .unsynced rows, so a missed read can't be written back at all — belt and braces.)
+    { n:'sv_disableClientConsole',  lbl:'Block Player Console',   type:'tog',    def:'1',   tip:'sv_disableClientConsole\n1 = players cannot open the in-game console. SHIPPED DEFAULT: 1.\nThis is the main thing standing between a player and any cheat-protected command, so leave it ON for a public lobby.' },
     { n:'sv_doubleCoDPoints',       lbl:'Double CoD Points',      type:'tog',    def:'1',   tip:'sv_doubleCoDPoints\nAward double CoD Points for completed matches.' },
     { n:'sv_voice',                 lbl:'Voice Chat',             type:'tog',    def:'1',   tip:'sv_voice\nEnable in-game voice chat.' },
     { n:'sv_voicequality',          lbl:'Voice Quality (1–9)',    type:'num',    def:'9',   tip:'sv_voicequality\n1 = lowest (least bandwidth), 9 = highest quality.' },
@@ -1393,20 +1487,34 @@ const SRV_SECTIONS = [
     { n:'gf_force_loadout',       lbl:'Force Loadout (-1=off)', type:'num', def:'-1', tip:'gf_force_loadout\nDEV/TEST: lock ONE loadout on every spawn instead of the round rotation, to inspect it without waiting. Value = index into the live (SHUFFLED) pool, 0-53 — NOT the editor row number, so cycle 0,1,2… and read the on-screen loadout HUD to find the one you want. -1 = off (normal rotation).' },
     // (duplicate Killcam row removed — the one control lives in GAME RULES)
     { n:'compass',                lbl:'Minimap',              type:'tog', def:'1', tip:'compass\n1 = show minimap, 0 = hide.' },
-    { n:'sv_cheats',              lbl:'Allow Cheat Commands', type:'tog', def:'1', tip:'sv_cheats\nAllow cheat-protected console commands (noclip, god, etc.).' },
+    // def '0' (was '1'): 0 is both the engine default AND the correct production value. sv_cheats 1
+    // on a dedicated server makes noclip/god/give/r_* reachable from any player console, leaving
+    // sv_disableClientConsole as the only line of defence. The mod forces sv_cheats 1 on a LISTEN
+    // server only (gf.gsc, dev block) — it must never be 1 on the VPS.
+    { n:'sv_cheats',              lbl:'Allow Cheat Commands', type:'tog', def:'0', tip:'sv_cheats\nAllow cheat-protected dvars + commands (noclip, god, give, timescale, r_* renderer tweaks, sv_bot* tuning).\n\n• LISTEN: the mod force-sets this to 1 every round (dev block) — cheat controls work.\n• DEDICATED (VPS): must be 0. A 1 here exposes every cheat command to any player who can open a console.\n\nTurning this OFF disables the BOT TUNING sliders, the Timescale slider and the r_* Visual Tweaks — those are cheat-protected and the engine will silently refuse them.' },
     { n:'scr_disable_cac',        lbl:'Disable Class Select', type:'tog', def:'1', tip:'scr_disable_cac\nDisable Create-a-Class; players auto-spawn with the default class.' },
     { n:'scr_disable_weapondrop', lbl:'Disable Weapon Drop',  type:'tog', def:'1', tip:'scr_disable_weapondrop\n1 = weapons do not drop on death.' },
   ]},
+  // BOT TUNING — the sv_bot* sliders are CHEAT-PROTECTED: the engine refuses a raw rcon `set`
+  // ("Error: sv_botFov is cheat protected") whenever sv_cheats is 0, which is the only correct value
+  // on a dedicated server. They used to appear to work here purely because the mod was force-setting
+  // sv_cheats 1 on EVERY server (a broken `dedicated` guard in gf.gsc — since fixed).
+  //
+  // svset:true routes them through the GSC bridge instead. GSC setDvar is NOT cheat-gated (verified:
+  // rcon `set bg_viewKickScale 0.9` refused while the bridge wrote the same dvar in the same round),
+  // and these are SERVER dvars read by the bot AI — no client replication involved — so this works
+  // on the VPS with cheats off. The bridge also mirrors each into a plain gf_<dvar> that 💾 Save can
+  // persist to dedicated.cfg; the real dvar can't be, since the cfg is cheat-gated too.
   { title: 'BOT TUNING', eff: 'live', per: 'dvar', vars: [
-    { n:'sv_botFov',             lbl:'Bot FOV (deg)',         type:'num', def:'65',   tip:'sv_botFov\nField of view bots use to acquire targets. Higher = they see you sooner.\nCheat-protected — needs sv_cheats 1.' },
-    { n:'sv_botMinReactionTime', lbl:'Reaction Min (ms)',     type:'num', def:'500',  tip:'sv_botMinReactionTime\nFastest reaction time on spotting a target. Lower = harder bots.\nCheat-protected — needs sv_cheats 1.' },
-    { n:'sv_botMaxReactionTime', lbl:'Reaction Max (ms)',     type:'num', def:'1000', tip:'sv_botMaxReactionTime\nSlowest reaction time. Lower = harder bots.\nCheat-protected — needs sv_cheats 1.' },
-    { n:'sv_botMinFireTime',     lbl:'Fire Burst Min (ms)',   type:'num', def:'400',  tip:'sv_botMinFireTime\nShortest continuous-fire burst. Cheat-protected — needs sv_cheats 1.' },
-    { n:'sv_botMaxFireTime',     lbl:'Fire Burst Max (ms)',   type:'num', def:'600',  tip:'sv_botMaxFireTime\nLongest continuous-fire burst. Cheat-protected — needs sv_cheats 1.' },
-    { n:'sv_botStrafeChance',    lbl:'Strafe Chance (0–1)',   type:'flt', def:'0.1',  tip:'sv_botStrafeChance\nProbability a bot strafes during a fight. Cheat-protected — needs sv_cheats 1.' },
-    { n:'sv_botSprintDistance',  lbl:'Sprint Distance',       type:'num', def:'512',  tip:'sv_botSprintDistance\nRange beyond which bots sprint toward targets/objectives. Cheat-protected — needs sv_cheats 1.' },
-    { n:'sv_botMeleeDist',       lbl:'Melee Distance',        type:'num', def:'80',   tip:'sv_botMeleeDist\nRange at which bots attempt a melee. Cheat-protected — needs sv_cheats 1.' },
-    { n:'sv_botYawSpeed',        lbl:'Aim Turn Speed',        type:'num', def:'4',    tip:'sv_botYawSpeed\nAim turn speed. Higher = snappier. Cheat-protected — needs sv_cheats 1.' },
+    { n:'sv_botFov',             lbl:'Bot FOV (deg)',         type:'num', def:'65',   svset:true, tip:'sv_botFov\nField of view bots use to acquire targets. Higher = they see you sooner.\nCheat-protected — set via the GSC bridge, so it works on the dedicated VPS with sv_cheats 0.' },
+    { n:'sv_botMinReactionTime', lbl:'Reaction Min (ms)',     type:'num', def:'500',  svset:true, tip:'sv_botMinReactionTime\nFastest reaction time on spotting a target. Lower = harder bots.\nCheat-protected — set via the GSC bridge.' },
+    { n:'sv_botMaxReactionTime', lbl:'Reaction Max (ms)',     type:'num', def:'1000', svset:true, tip:'sv_botMaxReactionTime\nSlowest reaction time. Lower = harder bots.\nCheat-protected — set via the GSC bridge.' },
+    { n:'sv_botMinFireTime',     lbl:'Fire Burst Min (ms)',   type:'num', def:'400',  svset:true, tip:'sv_botMinFireTime\nShortest continuous-fire burst.\nCheat-protected — set via the GSC bridge.' },
+    { n:'sv_botMaxFireTime',     lbl:'Fire Burst Max (ms)',   type:'num', def:'600',  svset:true, tip:'sv_botMaxFireTime\nLongest continuous-fire burst.\nCheat-protected — set via the GSC bridge.' },
+    { n:'sv_botStrafeChance',    lbl:'Strafe Chance (0–1)',   type:'flt', def:'0.1',  svset:true, tip:'sv_botStrafeChance\nProbability a bot strafes during a fight.\nCheat-protected — set via the GSC bridge.' },
+    { n:'sv_botSprintDistance',  lbl:'Sprint Distance',       type:'num', def:'512',  svset:true, tip:'sv_botSprintDistance\nRange beyond which bots sprint toward targets/objectives.\nCheat-protected — set via the GSC bridge.' },
+    { n:'sv_botMeleeDist',       lbl:'Melee Distance',        type:'num', def:'80',   svset:true, tip:'sv_botMeleeDist\nRange at which bots attempt a melee.\nCheat-protected — set via the GSC bridge.' },
+    { n:'sv_botYawSpeed',        lbl:'Aim Turn Speed',        type:'num', def:'4',    svset:true, tip:'sv_botYawSpeed\nAim turn speed. Higher = snappier.\nCheat-protected — set via the GSC bridge.' },
     { n:'sv_botAllowGrenades',   lbl:'Bots Throw Grenades',   type:'tog', def:'1',    tip:'sv_botAllowGrenades\nAllow bots to throw lethal grenades.' },
     { n:'sv_randomizeBotNames',  lbl:'Randomize Bot Names',   type:'tog', def:'1',    tip:'sv_randomizeBotNames\nGive bots random player-style names.' },
     { n:'sv_botUseFriendNames',  lbl:'Bots Use Friend Names', type:'tog', def:'1',    tip:'sv_botUseFriendNames\nBots borrow names from your friends list.' },
@@ -1791,10 +1899,19 @@ function srvRow(v, prefix, dEff, dPer) {
     ctrl = `<input id="${id}" type="text" class="ctrl" value="${v.def}" style="flex:1;min-width:80px"><button class="b-ac b-sm ctrl" onclick="sdve('${v.n}','${id}')">Set</button>`;
   } else {
     const step = v.type === 'flt' ? '0.1' : '1';
-    ctrl = `<input id="${id}" type="number" class="num ctrl" value="${v.def}" step="${step}"><button class="b-ac b-sm ctrl" onclick="sdve('${v.n}','${id}')">Set</button>`;
+    // v.svset — a CHEAT-PROTECTED server dvar. A raw rcon `set` is refused by the engine whenever
+    // sv_cheats is 0 (i.e. always, on a correctly-configured dedicated server), so the Set button
+    // routes through the GSC bridge, which is not cheat-gated.
+    const setCall = v.svset ? `bridgeSvSet('${v.n}','${id}')` : `sdve('${v.n}','${id}')`;
+    ctrl = `<input id="${id}" type="number" class="num ctrl" value="${v.def}" step="${step}"><button class="b-ac b-sm ctrl" onclick="${setCall}">Set</button>`;
   }
   const noDvar = (v.type === 'perk' || v.type === 'btn' || v.type === 'bridgetog');
-  const dd = noDvar ? '' : ` data-dvar="${v.n}"` + (v.also ? ` data-also="${v.also}"` : '');
+  // data-dvar stays the REAL dvar (reads + search key off it — a READ is never cheat-gated).
+  // data-mirror is the plain gf_<dvar> the WRITERS must use: Set All pushes it over rcon and 💾 Save
+  // persists it to dedicated.cfg, because the real dvar can be written by NEITHER (both are
+  // cheat-refused). One `svsync` bridge call then copies the mirrors onto the real dvars from GSC.
+  const dd = noDvar ? '' : ` data-dvar="${v.n}"` + (v.also ? ` data-also="${v.also}"` : '')
+                                                 + (v.svset ? ` data-mirror="gf_${v.n}"` : '');
   const sp = (v.type === 'tog' || v.type === 'bridgetog' || v.type === 'perk' || v.type === 'btn') ? '<span style="flex:1"></span>' : '';
   const pills = (v.type === 'perk' || v.type === 'btn') ? '' : badges(v.eff || dEff, v.per || dPer);
   return `<div class="srow"${dd} ${tip}><span class="slbl">${v.lbl}${pills}</span>${sp}${ctrl}</div>`;

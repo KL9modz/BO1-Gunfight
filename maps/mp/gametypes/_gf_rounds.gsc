@@ -65,18 +65,48 @@ gf_fmtMMSS( secs )
 }
 
 // Flinch (damage view-kick) scale. scr_gf_flinch is a MULTIPLIER of the stock
-// bg_viewKickScale (0.2): 1 = stock flinch, 0 = no flinch, >1 = more. Applied
-// SERVER-side via setDvar, which runs with engine authority and so bypasses the
-// sv_cheats gate that blocks console/rcon `set` of a cheat-protected dvar — i.e.
-// it holds on a DEDICATED server, unlike the client-pushed gf_vis_* tweaks. bg_
-// dvars replicate to clients, so the reduced kick is what each player feels.
-// Called each round from onStartGameType (persists) and live from the RCON
-// bridge (flinch_<mult>). Returns the clamped multiplier for feedback.
+// bg_viewKickScale (0.2): 1 = stock flinch, 0 = no flinch, >1 = more. Called each
+// round from onStartGameType (so an RCON change persists across map_restart) and
+// live from the RCON bridge (flinch_<mult>). Returns the clamped multiplier.
+//
+// ⚠ bg_viewKickScale does NOT replicate. Each client scales its OWN damage view
+// kick from its LOCAL copy, so the server-side setDvar alone changes nothing for
+// anyone — verified on the dedicated VPS: server read 0, every client still 0.2,
+// players still flinching. (It only ever appeared to work on a listen host, where
+// the host IS a client.) So the value is also pushed to each human: live players
+// here, and per-spawn in gf_onSpawnPlayer for anyone who joins later. The server
+// copy is still set so server-side reads stay truthful.
+//
+// The push is session-only (bg_viewKickScale is not a SAVED client dvar — it isn't
+// in config_mp.cfg — so unlike r_gamma it can be written and never sticks in the
+// player's config). Reset-to-stock must push too: a live client is still holding
+// whatever we last gave it, so it needs an explicit 0.2 to be put back.
 gf_applyFlinch()
 {
     scale = gf_cfgFloat( "scr_gf_flinch", 1, 0, 3 );   // seeds the dvar if unset
     setDvar( "bg_viewKickScale", 0.2 * scale );        // 0.2 = stock bg_viewKickScale
+
+    // level.players is EMPTY during onStartGameType, so this loop is a no-op on the
+    // per-round call — the per-spawn push below is what covers the round-start case.
+    for ( i = 0; i < level.players.size; i++ )
+    {
+        p = level.players[i];
+        if ( isDefined( p.pers["isBot"] ) && p.pers["isBot"] )
+            continue;                                  // bots have no client to push to
+        p setClientDvar( "bg_viewKickScale", 0.2 * scale );
+    }
     return scale;
+}
+
+// Per-spawn half of the flinch push (see gf_applyFlinch). Skipped at stock (1): a
+// fresh client is already at the engine default 0.2, and the mod's rule is to leave
+// client settings alone unless an admin has actually asked for a non-stock value.
+gf_applyFlinchClient()
+{
+    scale = gf_cfgFloat( "scr_gf_flinch", 1, 0, 3 );
+    if ( scale == 1 )
+        return;
+    self setClientDvar( "bg_viewKickScale", 0.2 * scale );
 }
 
 // The engine's native prematch (matchStartTimer) draws the countdown number but plays NO sound.
@@ -1382,8 +1412,13 @@ gf_playerSpawnedCB()
     // scr_gf_visualtweaks force-push (hardcoded r_gamma 1.1 etc. every spawn):
     // r_gamma is a SAVED client dvar Plutonium blocks servers from writing.
     // Humans only — bots have no renderer.
+    // Flinch rides along here for the same reason the vis tweaks do: bg_viewKickScale
+    // is client-scaled and unreplicated, so a joiner needs it pushed on spawn.
     if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+    {
         self gf_applyVisTweaks();
+        self gf_applyFlinchClient();
+    }
     self thread gf_onSpawned();
 
     // Drive the entire per-player health panel in the PLAYER's own context (create +

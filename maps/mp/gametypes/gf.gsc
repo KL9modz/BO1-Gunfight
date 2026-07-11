@@ -228,18 +228,32 @@ onStartGameType()
     // an admin enables Fast Weapon Switch in the RCON Perks tab (-> gf_perk_on), then tunes the
     // "Weapon Switch Speed" slider; without the perk the multiplier dvar is inert.
     // #strip-begin - dev cheats for LOCAL listen-server testing only.
-    // Guarded by `dedicated == 0` (0 = listen server; 1/2 = dedicated) so the ENGINE itself
-    // blocks this on any dedicated server (the VPS), independent of the build pipeline. The
-    // strip markers additionally remove it from the public release build. dedicated.cfg is the
-    // SOLE owner of rcon_password / g_password / sv_cheats on the VPS. NO password is set here
-    // (never commit a secret): for local RCON-panel testing, set `rcon_password` yourself in a
-    // gitignored local cfg or the listen-server console.
-    if ( getDvarInt( "dedicated" ) == 0 )
+    // ⚠ `dedicated` is an ENUM dvar: its VALUE is a STRING ("listen server" / "dedicated LAN
+    // server" / "dedicated internet server"), NOT the index. getDvarInt() parses that string to
+    // 0 on EVERY server type, so the old `getDvarInt( "dedicated" ) == 0` guard was ALWAYS TRUE
+    // and this block ran on the live dedicated VPS — forcing sv_cheats 1 and blanking g_password
+    // every single round. (Verified live 2026-07-11: rcon `set sv_cheats 0` -> `fast_restart` ->
+    // reads back 1.) Never infer server type with getDvarInt on this dvar.
+    //
+    // The string compare below FAILS CLOSED: any value that isn't exactly "listen server" — a
+    // dedicated server, or a future build that renames the label — leaves cheats OFF. The worst
+    // case is a listen server losing its dev cheats (annoying), never a dedicated server gaining
+    // them (catastrophic). dedicated.cfg is the SOLE owner of rcon_password / g_password /
+    // sv_cheats on the VPS; NO password is set here (never commit a secret).
+    if ( getDvar( "dedicated" ) == "listen server" )
     {
         setDvar( "sv_cheats", "1" );
         setDvar( "g_password", "" );
     }
     // #strip-end
+
+    // Tripwire (ships in EVERY build, including public — deliberately outside the strip markers).
+    // sv_cheats on a dedicated server hands every player with console access noclip/god/give; the
+    // only thing standing between that and a public lobby is sv_disableClientConsole. The guard
+    // above already fails closed, so this can now only fire if a cfg sets sv_cheats 1 by hand — but
+    // the previous guard failed OPEN and silently for months, so the failure mode gets an alarm
+    // rather than another comment. Logs to games_mp.log (the deploy-verification log) + console.
+    gf_warnIfCheatsOnDedicated();
 
     setDvar( "scr_player_healthregentime", "0" );
     level.killstreaksenabled             = 0;
@@ -313,10 +327,11 @@ onStartGameType()
     if ( getDvar( "scr_gf_lobby_timer" ) == "" )
         setDvar( "scr_gf_lobby_timer", "600" );   // MANUAL lobby auto-start timer (s). Was the hardcoded 10-min backstop; now RCON-adjustable. 0 = never auto-start (hold until START)
     // Dynamic bot fill. gf_fill_n is the PER-TEAM target N (humans+bots per side): the Gunfight
-    // reconciler (gf_reconcilerInit in _bot.gsc, dev-only) pads each side to exactly N with bots
-    // and yields a bot the moment a human joins that side. It MUST be a dvar — the only state that
-    // survives the lobby's map_restart(false). Seeded here (public file) so it's always in the dvar
-    // table for the RCON panel even on a public build with no reconciler reading it.
+    // round-boundary reconciler (gf_reconcilerInit in _bot.gsc, dev-only) pads each side to exactly
+    // N with bots at each round boundary — mid-round roster changes are absorbed at the next round
+    // start. It MUST be a dvar — the only state that survives the lobby's map_restart(false).
+    // Seeded here (public file) so it's always in the dvar table for the RCON panel even on a
+    // public build with no reconciler reading it.
     if ( getDvar( "gf_fill_n" ) == "" )
         setDvar( "gf_fill_n", "0" );              // 0 = fill off; 3 = 3v3, 4 = 4v4, ... (clamped 0-6 on read)
     if ( getDvar( "gf_fill_kick_floor" ) == "" )
@@ -482,16 +497,15 @@ onStartGameType()
     // #strip-begin - RCON bridge + bot init (dev/main only; stripped from public release)
     thread gf_bridgeInit();   // per-round: re-seeds dvars/flags + re-arms the vision blend (level.* wiped by map_restart); its telemetry/poll/pending-team loops self-guard to once-per-match inside
     // The bot manager is once-per-MATCH, NOT once-per-round. onStartGameType re-runs on every
-    // map_restart (SD round cycling), but _bot::init() threads PERSISTENT managers
-    // (handleBots/addBots/diffBots/teamBots) that carry only "game_ended" endon (fires at match
-    // end, never on a map_restart), so they SURVIVE round cycling. Re-threading them every round
-    // stacked N concurrent addBots() fill loops that raced on the shared bots_manage_add dvar and
-    // over-added bots ("keeps adding more every match"). Gate on game[] — the only state that
-    // survives map_restart, and it resets on a genuine new map load — so exactly ONE manager set
-    // runs per match and it still re-inits for the next match. Same idiom as gf_rocketOncePerMatch
-    // / game["gf_init"]. Also clear any stale bots_manage_add the prior match's racing loops left
-    // behind (handleBots' reconciliation tail is unreachable dead code), so each match starts clean
-    // and the single fill loop converges to bots_manage_fill instead of ratcheting upward.
+    // map_restart (SD round cycling), but _bot::init() threads PERSISTENT managers (diffBots +
+    // the round-boundary fill reconciler) that carry only "game_ended"/"bot_reinit" endons
+    // (match end / lobby re-init — never a between-rounds map_restart), so they SURVIVE round
+    // cycling; re-threading them every round would stack copies. Gate on game[] — the only
+    // state that survives map_restart, and it resets on a genuine new map load — so exactly ONE
+    // manager set runs per match and it still re-inits for the next match. Same idiom as
+    // gf_rocketOncePerMatch / game["gf_init"]. bots_manage_add is legacy-cleared: nothing
+    // consumes it anymore (the addBots loop is deleted), but a stale nonzero value from an
+    // older build should not linger in the panel-visible dvar table.
     if ( !isDefined( game["gf_botInit"] ) )
     {
         game["gf_botInit"] = true;
@@ -555,6 +569,31 @@ gf_watchRocketLaunch()
     // Latch it in game[] so every later round suppresses.
     level waittill( "rocket_launch" );
     game["gf_rocketLaunched"] = true;
+}
+
+// Alarm if a DEDICATED server is running with cheats enabled. sv_cheats 1 makes every
+// cheat-protected dvar and command (noclip / god / give / r_* renderer tweaks) reachable
+// from a player's console — sv_disableClientConsole is then the ONLY thing holding the line
+// on a public lobby, which is not a margin worth relying on.
+//
+// Read `dedicated` as a STRING, never getDvarInt(): it is an ENUM dvar whose value is a label
+// ("listen server" / "dedicated LAN server" / "dedicated internet server"), so getDvarInt()
+// returns 0 for all of them — that exact mistake is what let the dev-cheat block above run on
+// the live VPS. Anything that is not "listen server" is treated as dedicated (fail-closed).
+gf_warnIfCheatsOnDedicated()
+{
+    if ( getDvar( "dedicated" ) == "listen server" )
+        return;
+
+    // Accept BOTH representations rather than trust one accessor — sv_cheats is a bool dvar, and
+    // the whole reason this function exists is that getDvarInt() silently returned the wrong thing
+    // for a non-int dvar. An alarm that can false-NEGATIVE is worthless, so check the string too.
+    cheatsOn = ( getDvarInt( "sv_cheats" ) == 1 || getDvar( "sv_cheats" ) == "1" );
+    if ( !cheatsOn )
+        return;
+
+    println( "^1[GF] SECURITY: sv_cheats is 1 on a DEDICATED server. Cheat commands (noclip/god/give) are reachable from any player console. Set sv_cheats 0 in dedicated.cfg." );
+    logPrint( "GF_SECURITY sv_cheats=1 on dedicated server\n" );
 }
 
 // ─── Spawn Pipeline ────────────────────────────────────────────────────────
