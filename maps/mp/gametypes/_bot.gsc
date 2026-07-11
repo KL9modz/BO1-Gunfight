@@ -664,6 +664,18 @@ diffBots()
 		wait 1.5;
 
 		bot_set_difficulty(GetDvar( #"bot_difficulty" ));
+
+		// bot_set_difficulty rewrites the WHOLE sv_bot* set from the difficulty preset, and this
+		// loop re-runs it every 1.5s — so an individual sv_bot* override (the RCON panel's BOT
+		// TUNING sliders) was silently reverted within a second and a half. THAT, not the cheat
+		// gate, is why those sliders never appeared to do anything: two controls owned the same
+		// dvars and the preset always won.
+		//
+		// Re-apply the explicit overrides on top, so Difficulty is a BASELINE and a tuned slider
+		// actually sticks. Cheap: an unset override is a single getDvar and no write, and this
+		// loop already does ~15 setDvars per pass. Fully-qualified call (no #include needed);
+		// _bot.gsc and _gf_bridge.gsc are both dev-only and are stripped together.
+		maps\mp\gametypes\_gf_bridge::gf_bridgeApplyServerDvars();
 	}
 }
 

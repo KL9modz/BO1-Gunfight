@@ -1505,6 +1505,12 @@ const SRV_SECTIONS = [
   // and these are SERVER dvars read by the bot AI — no client replication involved — so this works
   // on the VPS with cheats off. The bridge also mirrors each into a plain gf_<dvar> that 💾 Save can
   // persist to dedicated.cfg; the real dvar can't be, since the cfg is cheat-gated too.
+  //
+  // ⚠ These are OVERRIDES ON TOP OF the Difficulty preset, not independent settings. _bot.gsc's
+  // diffBots() loop re-applies bot_set_difficulty() every 1.5s, which rewrites the WHOLE sv_bot*
+  // set — so before 2026-07-11 every slider here was silently reverted within a second and a half
+  // (the real reason they "did nothing"; the cheat gate was a red herring). diffBots now re-applies
+  // these overrides right after the preset, so Difficulty = baseline and a tuned slider sticks.
   { title: 'BOT TUNING', eff: 'live', per: 'dvar', vars: [
     { n:'sv_botFov',             lbl:'Bot FOV (deg)',         type:'num', def:'65',   svset:true, tip:'sv_botFov\nField of view bots use to acquire targets. Higher = they see you sooner.\nCheat-protected — set via the GSC bridge, so it works on the dedicated VPS with sv_cheats 0.' },
     { n:'sv_botMinReactionTime', lbl:'Reaction Min (ms)',     type:'num', def:'500',  svset:true, tip:'sv_botMinReactionTime\nFastest reaction time on spotting a target. Lower = harder bots.\nCheat-protected — set via the GSC bridge.' },
