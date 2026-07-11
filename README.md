@@ -52,10 +52,10 @@ Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFER
 
 ## How To Play
 
-1. **Install [Plutonium](https://plutonium.pw/)** and Black Ops 1.
-2. **Launch & join:** start BO1 multiplayer through Plutonium → open the **Server Browser** → join **`Gunfight`**.
+1. **Get the game + Plutonium** with the **[CB Servers Launcher](https://docs.cbservers.xyz/games/t5)** — one app downloads Black Ops 1 and runs it on Plutonium (a free [Plutonium account](https://forum.plutonium.pw/register) is required).
+2. **Launch & join:** hit **PLAY → Multiplayer**, open the **Server Browser**, and join **`Gunfight`**.
 
-You need a copy of **Black Ops 1** from [Steam](https://store.steampowered.com/app/42700/Call_of_Duty_Black_Ops/) or from our [Discord](https://discord.gg/blackops). The mod **downloads automatically** when you connect: Plutonium pulls it from the server (FastDL), so there's no manual install. T5 has no direct IP connect — find the server in the in-game **browser** by its name, and keep your **Plutonium launcher updated** so its build matches the server's.
+The mod **downloads automatically** when you connect: Plutonium pulls it from the server (FastDL), so there's no manual install. T5 has no direct IP connect — find the server in the in-game **browser** by its name, and keep your client updated (the CB Servers Launcher does this for you) so its build matches the server's.
 
 **New to Plutonium?** The full walkthrough — install, recommended settings, the aim-down-sights fix, and joining the server → **[Getting Started](docs/GETTING_STARTED.md)**.
 

@@ -2,35 +2,31 @@
 
 Everything a new player needs: install Plutonium and Black Ops 1, dial in the recommended settings, fix the aim-down-sights bug, and join the Gunfight server. *Part of the [Black Ops Gunfight](../README.md) documentation.*
 
-> Platform: **PC only.** Black Ops Gunfight runs on the [Plutonium](https://plutonium.pw/) T5 client for Call of Duty: Black Ops 1. You need a copy of the game (Steam, or from our [Discord](https://discord.gg/blackops)).
+> Platform: **PC only.** Black Ops Gunfight runs on the [Plutonium](https://plutonium.pw/) T5 client for Call of Duty: Black Ops 1. The **[CB Servers Launcher](https://docs.cbservers.xyz/games/t5)** gets you the game and Plutonium in one app - see [step 1](#1-install-black-ops-1--plutonium).
 
 ## Contents
-- [1. Install Plutonium & Black Ops 1](#1-install-plutonium--black-ops-1)
+- [1. Install Black Ops 1 + Plutonium](#1-install-black-ops-1--plutonium)
 - [2. Recommended settings](#2-recommended-settings)
 - [3. Find & join Gunfight](#3-find--join-gunfight)
 - [4. Troubleshooting](#4-troubleshooting)
 
 ---
 
-## 1. Install Plutonium & Black Ops 1
+## 1. Install Black Ops 1 + Plutonium
 
-Plutonium is a free community client that runs Black Ops 1 online. Full official walkthrough: **[plutonium.pw/docs/install](https://plutonium.pw/docs/install/#t5-black-ops-1)**.
+Black Ops Gunfight runs on **[Plutonium](https://plutonium.pw/)**, a free community client for Black Ops 1. The **[CB Servers Launcher](https://docs.cbservers.xyz/games/t5)** is the easiest way in - one app downloads Black Ops 1 *and* runs it on the Plutonium client, so there's **no separate Plutonium download**. You'll just need a free **Plutonium account** ([forum.plutonium.pw/register](https://forum.plutonium.pw/register)).
 
-1. **Download the launcher.** Get `plutonium.exe` from **[plutonium.pw](https://plutonium.pw/)**. You can save it anywhere convenient - your Desktop or the game folder both work.
-2. **Run it.** If Windows SmartScreen shows *"Windows protected your PC"*, click **More info -> Run anyway**. The launcher then installs its client files.
-3. **Log in.** Sign in with your Plutonium forum account. Don't have one? Create a free account at **[forum.plutonium.pw/register](https://forum.plutonium.pw/register)**, then log in.
-4. **Point it at Black Ops.** Select the **Black Ops T5 Multiplayer** tab, click **SETUP**, and choose your Black Ops game folder. A Steam copy is usually at:
-   ```
-   C:\Program Files (x86)\Steam\steamapps\common\Call of Duty Black Ops
-   ```
-   (In Steam: right-click the game -> **Manage -> Browse local files**.) If you downloaded the game from elsewhere (such as our Discord), select the unzipped Black Ops folder instead.
-5. **Launch.** Press **PLAY**. That's it - you're in.
+1. **Get the launcher.** Download `cb-launcher.exe` from **[docs.cbservers.xyz/games/t5](https://docs.cbservers.xyz/games/t5)** - their T5 guide has the download and the full walkthrough. Save it anywhere.
+2. **Run it.** If Windows SmartScreen shows *"Windows protected your PC"*, click **More info -> Run anyway**.
+3. **Open the Library tab** and find **Black Ops**, then click **SETUP**:
+   - **Don't own the game?** Choose **Download game** and let it finish (it's a large download).
+   - **Already have Black Ops installed?** Point it at your existing copy, then click **VERIFY**.
+4. **Log in** with your Plutonium account (create one free at [forum.plutonium.pw/register](https://forum.plutonium.pw/register)).
+5. **Click PLAY -> Multiplayer.** Done - CB Servers installed the game and the Plutonium client for you.
 
-> **Re-selecting the folder later:** use **Game Settings** (next to the **PLAY** button), not SETUP.
->
-> **"Invalid Game Path" error?** The folder you picked isn't a valid Black Ops install (wrong folder, or missing/renamed game files). Re-select the correct `Call of Duty Black Ops` folder via **Game Settings**.
+> **CB Servers only bundles the download - the client it runs *is* Plutonium**, so everything below (settings, joining gunfight.us) works exactly the same. CB Servers is a third-party launcher, not affiliated with Plutonium.
 
-<!-- image slot: docs/images/getting-started/01-launcher-setup.png (Plutonium launcher: Black Ops tab -> SETUP -> folder picker) -->
+<!-- image slot: docs/images/getting-started/01-launcher-setup.png (CB Servers Launcher: Library -> Black Ops -> SETUP) -->
 
 ---
 
@@ -141,7 +137,7 @@ Black Ops Gunfight is a ranked server. Join through the in-game **Server Browser
 |---|---|
 | **Can't aim down sights** while holding Sprint | Paste the ADS bind from the [Sprint/ADS improvement](#mouse--keyboard-sprintads-improvement) section. |
 | **ADS stopped working** after a restart | Re-paste the `bind MOUSE2 ...` line. |
-| **"Invalid Game Path"** in the launcher | Re-select the correct `Call of Duty Black Ops` folder via **Game Settings**. |
+| **Game won't launch / bad install** | In the CB Servers Launcher, open **Black Ops -> SETUP** to re-point or re-download your copy, then click **VERIFY**. |
 | **Gunfight isn't in the server list** | Reset all filters, click **Refresh**, and check the **Ranked** tab for `Gunfight | gunfight.us`. |
 | **Black screen after the mod downloads** (first join) | Normal on the very first join - the game is rebuilding itself around the mod. Give it a few minutes and it drops you into the match. Still black after ~5 minutes? Close the game and rejoin - the second join is quick. |
 | **Error connecting to the server** | Make sure your Plutonium client is up to date, then rejoin. |
