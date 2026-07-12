@@ -16,7 +16,7 @@ Everything a new player needs: install Plutonium and Black Ops 1, dial in the re
 
 Black Ops Gunfight runs on **[Plutonium](https://plutonium.pw/)**, a free community client for Black Ops 1. The **[CB Servers Launcher](https://docs.cbservers.xyz/games/t5)** is the easiest way in - one app downloads Black Ops 1 *and* runs it on the Plutonium client, so there's **no separate Plutonium download**. You'll just need a free **Plutonium account** ([forum.plutonium.pw/register](https://forum.plutonium.pw/register)).
 
-1. **Get the launcher.** Download `cb-launcher.exe` from **[docs.cbservers.xyz/games/t5](https://docs.cbservers.xyz/games/t5)** - their T5 guide has the download and the full walkthrough. Save it anywhere.
+1. **Get the launcher.** Download `cb-launcher.exe` from **[docs.cbservers.xyz/games/t5](https://docs.cbservers.xyz/games/t5)**. Save it anywhere.
 2. **Run it.** If Windows SmartScreen shows *"Windows protected your PC"*, click **More info -> Run anyway**.
 3. **Open the Library tab** and find **Black Ops**, then click **SETUP**:
    - **Don't own the game?** Choose **Download game** and let it finish (it's a large download).
