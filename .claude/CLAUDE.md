@@ -560,13 +560,25 @@ The live server is a Contabo VPS ([[vps-server-provisioned]]); the launch bat + 
 live only in `C:\gameserver\T5\start_mp_server.bat` ([[vps-launch-bat-and-maxclients-latch]]); the
 in-game browser name comes from the Plutonium **server key label**, not `sv_hostname`
 ([[plutonium-serverkey-sets-browser-name]]). Box helpers are Scheduled Tasks (`register_services.ps1`):
-`GF-RconPanel`, `GF-StatusService` (the single box-side RCON reader → writes the public `status.json`
-plus the `.secured`-gated `admin.json`/`health.json`, all atomically), `GF-ConnLogger` (zero RCON — diffs
-`admin.json`), `GF-JoinNotify` (ntfy alerts), `GF-Watchdog` (short-lived, re-invoked every 3 min so it
-can't exhaust a retry budget; restarts dead tasks, recovers wedges, `map_rotate`s a stuck match).
+`GF-RconPanel`, `GF-StatusService` (the single box-side RCON reader → writes the public `status.json` +
+`activity.json` plus the `.secured`-gated `admin.json`/`health.json`, all atomically), `GF-ConnLogger`
+(zero RCON — diffs `admin.json`), `GF-JoinNotify` (ntfy alerts), `GF-Watchdog` (short-lived, re-invoked
+every 3 min so it can't exhaust a retry budget; restarts dead tasks, recovers wedges, `map_rotate`s a
+stuck match).
 ⚠ **Panel-first rule: never add another direct RCON poller on the box** — all readers go through the
-panel API on `127.0.0.1:3000`. Player IP/GUID data reaches the web only behind IIS Basic auth +
-the `.secured` interlock. Full runbook → `docs/VPS_DEPLOY.md`. Admin site + connection history →
+panel API on `127.0.0.1:3000`. The same rule now covers **geo**: the panel is the box's single ip-api
+client (disk-cached `.geocache.json`, paced under the free tier's 45 req/min), and `/api/geoip?ips=`
+is the cache-first, non-blocking batch read everything else uses. Player IP/GUID data reaches the web
+only behind IIS Basic auth + the `.secured` interlock.
+
+**Public connect history + country flags.** `activity.json` (public web root, **no** `.secured` gate) is
+a 7-day connect/leave feed parsed from the same `players_*.log` day-files as the admin history, but
+**PII-stripped**: time/name/event/session + a 2-letter country code, never an IP or GUID. status.html
+renders it as a searchable feed and puts a flag next to each live player. Flags are **self-hosted SVGs**
+(`site/wwwroot/assets/flags/`, vendored circle-flags) — emoji flags are NOT usable, they don't render on
+Windows, and self-hosting keeps the CSP's `img-src 'self'` intact. ⚠ The feed inherits conn_logger's
+chain (no `.secured` → no `admin.json` → no day-files → empty feed); status.js falls back to the live
+in-memory `recent` ring in that case. Full runbook → `docs/VPS_DEPLOY.md`. Admin site + connection history →
 [[gf-admin-connection-history]].
 
 ---

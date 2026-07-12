@@ -5,10 +5,14 @@
 # renders as a read-only scoreboard: map, gametype, match score, per-team roster
 # (alive/ping), and a short recent-activity feed.
 #
-# PRIVACY: this snapshot is world-readable (served by IIS). It carries player
-# NAMES only - the same info anyone sees in the in-game server browser. It does
-# NOT include IP addresses or GUIDs. The IP connect log (conn_logger) stays
-# private on the box and is never written to the web root.
+# It also writes activity.json beside it: a PUBLIC, 7-day connect/leave history parsed from the
+# same players_*.log day-files that feed the admin page's searchable history.
+#
+# PRIVACY: both public files are world-readable (served by IIS). They carry player NAMES - the
+# same info anyone sees in the in-game server browser - plus a 2-letter COUNTRY CODE. They do NOT
+# include IP addresses or GUIDs. The country code is derived from the IP on the box (via the RCON
+# panel's cached ip-api resolver) and the IP is dropped before anything is written here; the raw
+# IP connect log (conn_logger) and admin_history.json stay behind the .secured/Basic-auth gate.
 #
 # Merges the same three sources the RCON panel uses:
 #   gf_state  -> "alliesWins:axisWins:round:aliveAllies:aliveAxis:gametype"
@@ -44,6 +48,17 @@ param(
     [int]    $AdminHistoryMax      = 5000,
     [int]    $AdminHistoryEverySec = 60,
     [string] $AdminHistoryFile     = '',
+    # PUBLIC connect/leave history for the website's status page, written beside $OutFile as
+    # activity.json. Built from the SAME players_*.log day-files as the admin history, but
+    # PII-STRIPPED: time, name, event, session length and a 2-letter country code only - never
+    # an IP or GUID. That is what makes it safe to serve unauthenticated, unlike admin_history.json.
+    # Rebuilt on the $AdminHistoryEverySec cadence (static day-files; zero rcon cost).
+    # NOTE: it inherits conn_logger's dependency chain - no .secured marker => no admin.json =>
+    # conn_logger writes no day-files => this feed is empty. status.js falls back to the live
+    # in-memory `recent` ring in that case, so the page degrades instead of going blank.
+    [string] $ActivityOutFile      = '',
+    [int]    $ActivityDays         = 7,
+    [int]    $ActivityMax          = 500,
     # Ops/detailed health snapshot for the admin page + the box watchdog. Written beside
     # $AdminOutFile as health.json (same .secured gate). Carries no PII (round/map/counts/
     # stuck-state), so it's safe there. $RoundStuckSecs = how long the round number may sit
@@ -76,6 +91,11 @@ if ([string]::IsNullOrEmpty($AdminHistoryFile) -and -not [string]::IsNullOrEmpty
 # health.json lives beside the admin snapshot too (same .secured-gated folder).
 if ([string]::IsNullOrEmpty($HealthOutFile) -and -not [string]::IsNullOrEmpty($AdminOutFile)) {
     $HealthOutFile = Join-Path (Split-Path -Parent $AdminOutFile) 'health.json'
+}
+# activity.json is PUBLIC (no IP/GUID), so it lives beside status.json in the open web root -
+# deliberately NOT in the .secured admin folder.
+if ([string]::IsNullOrEmpty($ActivityOutFile)) {
+    $ActivityOutFile = Join-Path (Split-Path -Parent $OutFile) 'activity.json'
 }
 # The engine's games_mp.log (advances on game events = a liveness proxy) lives in the MOD
 # folder's own logs\ dir, distinct from $LogDir (players_*.log). $PSScriptRoot =
@@ -247,6 +267,62 @@ function Build-ConnHistory {
     return @($events.ToArray())
 }
 
+# --- Country codes via the RCON panel's shared geo resolver -------------------
+# We ask the PANEL for country codes rather than calling ip-api.com ourselves. The panel is the
+# box's single ip-api client: it caches IP -> location on disk and paces outbound lookups under
+# the free tier's 45 req/min cap. A second client here would burn that shared budget re-resolving
+# IPs the panel already knows - the same "one queue on the box" rule the rcon lane follows.
+#
+# The batch endpoint is CACHE-FIRST and NON-BLOCKING: unknown IPs come back absent and are
+# resolved in the background, so a cold IP simply has no flag for a poll or two. Geo can never
+# delay the status snapshot, and a dead panel just means no flags (cosmetic, never fatal).
+#
+# PRIVACY: only the 2-letter country CODE crosses back into this process. The IP is never
+# published - it stays in the box-local cache and the .secured admin files.
+function Get-GeoBatch {
+    param([string[]]$ips, [int]$panelPort)
+    $out = @{}
+    # Log/status IPs carry a :port - strip it, the resolver keys on the bare address.
+    $uniq = @($ips | Where-Object { $_ } | ForEach-Object { ($_ -split ':')[0] } |
+              Where-Object { $_ -match '^\d{1,3}(\.\d{1,3}){3}$' } | Sort-Object -Unique)
+    if ($uniq.Count -eq 0) { return $out }
+    # The endpoint caps one batch at 64 IPs; chunk so a multi-day history rebuild still resolves.
+    for ($i = 0; $i -lt $uniq.Count; $i += 64) {
+        $chunk = $uniq[$i..([Math]::Min($i + 63, $uniq.Count - 1))]
+        try {
+            $u = 'http://127.0.0.1:{0}/api/geoip?ips={1}' -f $panelPort, ($chunk -join ',')
+            $r = Invoke-RestMethod -UseBasicParsing -TimeoutSec 5 -Uri $u
+            if ($r.ok -and $r.geo) {
+                foreach ($prop in $r.geo.PSObject.Properties) {
+                    if ($prop.Value.cc) { $out[$prop.Name] = [string]$prop.Value.cc }
+                }
+            }
+        } catch { }   # panel down / slow: no flags this pass, snapshot still ships
+    }
+    return $out
+}
+
+# Project the shared day-file event list into the PUBLIC activity feed: drop ip/guid/ping,
+# keep time/name/event/session, and stamp the country code resolved from the (dropped) IP.
+# This is the ONLY place a log IP is turned into something publishable.
+function Build-PublicActivity {
+    param($events, [hashtable]$geo)
+    $out = New-Object System.Collections.ArrayList
+    foreach ($e in $events) {
+        $bare = ([string]$e.ip -split ':')[0]
+        $cc   = if ($geo.ContainsKey($bare)) { $geo[$bare] } else { '' }
+        [void]$out.Add([ordered]@{
+            date    = $e.date
+            time    = $e.time
+            event   = $e.event
+            name    = $e.name
+            session = $e.session
+            cc      = $cc
+        })
+    }
+    return @($out.ToArray())
+}
+
 function Map-Name {
     param([string]$raw)
     switch ($raw) {
@@ -260,14 +336,16 @@ function Map-Name {
 }
 
 # --- Recent-activity feed (name-only, in-memory ring, no IP) -------------------
+# Kept as the LIVE fallback for the status page: it needs no day-files, so it still works when
+# conn_logger isn't running (no .secured marker). The durable multi-day feed is activity.json.
 $recent   = New-Object System.Collections.ArrayList
-$prevSet  = @{}     # name -> $true for humans currently online
+$prevSet  = @{}     # name -> country code ('' if unresolved) for humans currently online
 $firstRun = $true
 
 function Push-Recent {
-    param([string]$name, [string]$event)
+    param([string]$name, [string]$event, [string]$cc = '')
     $stamp = (Get-Date).ToString('o')
-    [void]$recent.Insert(0, @{ t = $stamp; name = $name; event = $event })
+    [void]$recent.Insert(0, @{ t = $stamp; name = $name; event = $event; cc = $cc })
     while ($recent.Count -gt $RecentMax) { $recent.RemoveAt($recent.Count - 1) }
 }
 
@@ -358,11 +436,9 @@ while ($true) {
         }
 
         if ($online) {
-            # Build the public player list (humans only), merging team/alive from roster.
-            # $adminList is the same list PLUS ip, used only for the protected admin snapshot.
-            $list = @()
-            $adminList = @()
-            $humanNames = @{}
+            # Collect the humans first (with their IPs), so the whole roster's country codes can
+            # be resolved in ONE batch call below rather than one call per player per poll.
+            $humansRaw = @()
             foreach ($num in $players.Keys) {
                 $p = $players[$num]
                 if ($p.bot) { continue }
@@ -372,18 +448,38 @@ while ($true) {
                 # the human count and log spurious connects.
                 if ([string]$p.ip -ne 'local' -and [string]$p.ip -ne 'loopback' -and [string]$p.ip -notmatch '^\d{1,3}(\.\d{1,3}){3}:\d+$') { continue }
                 $r = $roster[$num]
-                $team = if ($r) { $r.team } else { 'unknown' }
-                $alive = if ($r) { $r.alive } else { $true }
-                $list      += ,([ordered]@{ name = $p.name; team = $team; alive = $alive; ping = $p.ping })
-                $adminList += ,([ordered]@{ name = $p.name; team = $team; alive = $alive; ping = $p.ping; ip = $p.ip; guid = $p.guid })
-                $humanNames[$p.name] = $true
+                $humansRaw += ,@{
+                    name  = $p.name
+                    team  = if ($r) { $r.team } else { 'unknown' }
+                    alive = if ($r) { $r.alive } else { $true }
+                    ping  = $p.ping
+                    ip    = $p.ip
+                    guid  = $p.guid
+                }
+            }
+
+            # One cache-first, non-blocking geo call for the whole roster.
+            $geo = Get-GeoBatch -ips @($humansRaw | ForEach-Object { $_.ip }) -panelPort $PanelPort
+
+            # Build the public player list (humans only). $adminList is the same PLUS ip/guid,
+            # used only for the protected admin snapshot. NOTE the asymmetry: both carry the
+            # country code, only the admin one carries the IP it was derived from.
+            $list = @()
+            $adminList = @()
+            $humanNames = @{}
+            foreach ($h in $humansRaw) {
+                $bare = ([string]$h.ip -split ':')[0]
+                $cc   = if ($geo.ContainsKey($bare)) { $geo[$bare] } else { '' }
+                $list      += ,([ordered]@{ name = $h.name; team = $h.team; alive = $h.alive; ping = $h.ping; cc = $cc })
+                $adminList += ,([ordered]@{ name = $h.name; team = $h.team; alive = $h.alive; ping = $h.ping; cc = $cc; ip = $h.ip; guid = $h.guid })
+                $humanNames[$h.name] = $cc
             }
 
             # Diff human names for the recent-activity feed (skip the very first poll
             # so a cold start doesn't spam "joined" for everyone already on).
             if (-not $firstRun) {
-                foreach ($n in $humanNames.Keys) { if (-not $prevSet.ContainsKey($n)) { Push-Recent $n 'joined' } }
-                foreach ($n in $prevSet.Keys)    { if (-not $humanNames.ContainsKey($n)) { Push-Recent $n 'left' } }
+                foreach ($n in $humanNames.Keys) { if (-not $prevSet.ContainsKey($n)) { Push-Recent $n 'joined' $humanNames[$n] } }
+                foreach ($n in $prevSet.Keys)    { if (-not $humanNames.ContainsKey($n)) { Push-Recent $n 'left' $prevSet[$n] } }
             }
             $prevSet = $humanNames
             $firstRun = $false
@@ -447,23 +543,46 @@ while ($true) {
     # provably auth-protected (.secured marker). Otherwise it is never written.
     if (Test-AdminEnabled $AdminOutFile) {
         try { Write-Snapshot -path $AdminOutFile -obj $adminSnapshot } catch { Write-Warning ("admin write failed: {0}" -f $_.Exception.Message) }
+    }
 
-        # Multi-day searchable history (same .secured gate as the admin snapshot).
-        # Static day-files, so rebuild on a slow cadence rather than every poll.
-        if (-not [string]::IsNullOrEmpty($AdminHistoryFile)) {
-            $now = Get-Date
-            if ($null -eq $lastHistoryBuild -or ($now - $lastHistoryBuild).TotalSeconds -ge $AdminHistoryEverySec) {
-                try {
-                    $ev = Build-ConnHistory -dir $LogDir -days $AdminHistoryDays -maxEvents $AdminHistoryMax
-                    Write-Snapshot -path $AdminHistoryFile -obj ([ordered]@{
-                        updated = $now.ToString('o')
-                        days    = $AdminHistoryDays
-                        count   = $ev.Count
-                        events  = $ev
-                    })
-                    $lastHistoryBuild = $now
-                } catch { Write-Warning ("history write failed: {0}" -f $_.Exception.Message) }
-            }
+    # --- Day-file derived histories ----------------------------------------------
+    # Both feeds are parsed from the SAME static players_*.log files, so they rebuild on a slow
+    # cadence rather than every poll, and cost zero rcon. They differ only in reach and privacy:
+    #   activity.json      PUBLIC  - 7 days, no IP/GUID, country code only -> NO .secured gate
+    #   admin_history.json PRIVATE - 60 days, full IP + GUID               -> .secured gate
+    $now = Get-Date
+    if ($null -eq $lastHistoryBuild -or ($now - $lastHistoryBuild).TotalSeconds -ge $AdminHistoryEverySec) {
+        # Stamp FIRST: a throwing build must not re-run flat out on every 5s poll.
+        $lastHistoryBuild = $now
+
+        if (-not [string]::IsNullOrEmpty($ActivityOutFile)) {
+            try {
+                $pev  = Build-ConnHistory -dir $LogDir -days $ActivityDays -maxEvents $ActivityMax
+                $pgeo = Get-GeoBatch -ips @($pev | ForEach-Object { $_.ip }) -panelPort $PanelPort
+                Write-Snapshot -path $ActivityOutFile -obj ([ordered]@{
+                    updated = $now.ToString('o')
+                    days    = $ActivityDays
+                    count   = $pev.Count
+                    events  = (Build-PublicActivity -events $pev -geo $pgeo)
+                })
+            } catch { Write-Warning ("activity write failed: {0}" -f $_.Exception.Message) }
+        }
+
+        if ((Test-AdminEnabled $AdminOutFile) -and -not [string]::IsNullOrEmpty($AdminHistoryFile)) {
+            try {
+                $ev   = Build-ConnHistory -dir $LogDir -days $AdminHistoryDays -maxEvents $AdminHistoryMax
+                $ageo = Get-GeoBatch -ips @($ev | ForEach-Object { $_.ip }) -panelPort $PanelPort
+                foreach ($e in $ev) {
+                    $bare = ([string]$e.ip -split ':')[0]
+                    $e.cc = if ($ageo.ContainsKey($bare)) { $ageo[$bare] } else { '' }
+                }
+                Write-Snapshot -path $AdminHistoryFile -obj ([ordered]@{
+                    updated = $now.ToString('o')
+                    days    = $AdminHistoryDays
+                    count   = $ev.Count
+                    events  = $ev
+                })
+            } catch { Write-Warning ("history write failed: {0}" -f $_.Exception.Message) }
         }
     }
 

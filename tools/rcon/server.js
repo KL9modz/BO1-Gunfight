@@ -425,28 +425,103 @@ function saveSecret(name, pass) {
   fs.writeFileSync(SECRETS_PATH, JSON.stringify(obj, null, 2) + '\n');
 }
 
-// ─── Geo IP (on-demand city lookup) ───────────────────────────────────────────
-// One outbound HTTP GET to ip-api.com (free, no key). Only fires when the admin clicks
-// "Locate" on a specific player — never automatic/bulk. Built-in http module, 4s timeout.
-function geoLookup(ip) {
-  return new Promise((resolve) => {
-    const url = `http://ip-api.com/json/${ip}?fields=status,message,country,regionName,city,isp,proxy,hosting`;
+// ─── Geo IP (the box's ONE ip-api client: disk-cached + rate-paced) ───────────
+// Every box-side "where is this player from" consumer reads through here:
+//   • the panel UI's right-click "Locate" (single IP, admin-initiated)
+//   • status_service, which stamps a country code on the public roster + activity feed
+// ip-api.com free is HTTP-only, no key, and hard-limits at 45 req/min PER SOURCE IP, so a
+// second independent client on the box would burn the same budget re-resolving IPs this one
+// already knows — the same reason the rcon lane has exactly one queue. Lookups are therefore
+// serialized behind GEO_MIN_GAP, deduped while in flight, and cached to disk so a panel
+// restart doesn't re-resolve the whole roster.
+//
+// PRIVACY: the cache maps IP -> location and lives ONLY on the box (gitignored, never in a web
+// root). Callers that publish (status_service) take the 2-letter country CODE and nothing else;
+// the IP itself never reaches the public snapshot.
+const GEO_CACHE_FILE = path.join(__dirname, '.geocache.json');
+const GEO_TTL_MS     = 30 * 24 * 3600 * 1000;   // re-resolve a good entry once it's a month old
+// A FAILURE is cached only briefly. Failures here are usually transient (ip-api rate-limited us,
+// or a network blip), so caching one for the full TTL would blank that player's flag for a month;
+// but not caching it at all would re-hit the API for the same dead IP every single 5s poll.
+const GEO_NEG_TTL_MS = 30 * 60 * 1000;          // 30 min
+const GEO_MIN_GAP    = 1500;                    // ms between outbound lookups (ip-api: 45/min)
+const GEO_PRIVATE_RX = /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.)/;
+
+const geoCache = (function loadGeoCache() {
+  try {
+    const obj = JSON.parse(fs.readFileSync(GEO_CACHE_FILE, 'utf8'));
+    return new Map(Object.entries(obj));
+  } catch (_) { return new Map(); }
+})();
+let geoDirty = false;
+function saveGeoCache() {
+  if (!geoDirty) return;
+  geoDirty = false;
+  try { fs.writeFileSync(GEO_CACHE_FILE, JSON.stringify(Object.fromEntries(geoCache))); } catch (_) {}
+}
+setInterval(saveGeoCache, 30000).unref();   // batch writes; never fsync per lookup
+
+// Strip an optional :port, then reject anything that isn't a routable IPv4 literal.
+function geoNormIp(addr) {
+  const ip = String(addr || '').trim().split(':')[0];
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return '';
+  if (GEO_PRIVATE_RX.test(ip)) return '';     // LAN / loopback: no useful answer, don't spend a call
+  return ip;
+}
+
+// Cache read. Returns the entry, or null when unknown / stale (=> caller may resolve).
+function geoCached(ip) {
+  const e = geoCache.get(ip);
+  if (!e) return null;
+  const ttl = e.ok ? GEO_TTL_MS : GEO_NEG_TTL_MS;
+  if (Date.now() - (e.at || 0) > ttl) return null;
+  return e;
+}
+
+const geoInflight = new Map();   // ip -> Promise (dedups concurrent asks for the same IP)
+let geoNextSlot = 0;             // earliest wall-clock ms the next outbound GET may leave
+
+// Resolve ONE ip through ip-api, honouring the shared rate gap. Always settles (never throws);
+// a failure caches a short-lived negative entry so a dead IP isn't retried every single tick.
+function geoResolve(ip) {
+  const hit = geoCached(ip);
+  if (hit) return Promise.resolve(hit);
+  if (geoInflight.has(ip)) return geoInflight.get(ip);
+
+  const wait = Math.max(0, geoNextSlot - Date.now());
+  geoNextSlot = Date.now() + wait + GEO_MIN_GAP;
+
+  const p = sleep(wait).then(() => new Promise((resolve) => {
+    const store = (entry) => {
+      entry.at = Date.now();
+      geoCache.set(ip, entry);
+      geoDirty = true;
+      geoInflight.delete(ip);
+      resolve(entry);
+    };
+    const url = `http://ip-api.com/json/${ip}?fields=status,message,countryCode,country,regionName,city,isp,proxy,hosting`;
     const req2 = http.get(url, (r) => {
       let data = '';
       r.on('data', (c) => { data += c; if (data.length > 65536) r.destroy(); });
       r.on('end', () => {
         try {
           const j = JSON.parse(data);
-          if (j.status === 'success')
-            resolve({ ok: true, city: j.city || '', region: j.regionName || '', country: j.country || '', isp: j.isp || '', proxy: !!j.proxy, hosting: !!j.hosting });
-          else
-            resolve({ ok: false, error: j.message || 'lookup failed' });
-        } catch (_) { resolve({ ok: false, error: 'bad geo response' }); }
+          if (j.status === 'success') {
+            store({ ok: true, cc: (j.countryCode || '').toLowerCase(), country: j.country || '',
+                    region: j.regionName || '', city: j.city || '', isp: j.isp || '',
+                    proxy: !!j.proxy, hosting: !!j.hosting });
+          } else {
+            store({ ok: false, cc: '', error: j.message || 'lookup failed' });
+          }
+        } catch (_) { store({ ok: false, cc: '', error: 'bad geo response' }); }
       });
     });
-    req2.setTimeout(4000, () => { req2.destroy(); resolve({ ok: false, error: 'geo timeout' }); });
-    req2.on('error', (e) => resolve({ ok: false, error: e.message }));
-  });
+    req2.setTimeout(4000, () => { req2.destroy(); store({ ok: false, cc: '', error: 'geo timeout' }); });
+    req2.on('error', (e) => store({ ok: false, cc: '', error: e.message }));
+  }));
+
+  geoInflight.set(ip, p);
+  return p;
 }
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -613,15 +688,34 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // ── GET /api/geoip ── on-demand city lookup for ONE player IP (right-click "Locate").
-  // Admin-initiated only (never bulk/automatic). Uses ip-api.com free tier (HTTP, no key,
-  // 45 req/min). The player IP already shows in the panel; this just annotates it with a city.
+  // ── GET /api/geoip ── two modes over the shared, disk-cached resolver above.
+  //
+  //   ?ip=<one>    BLOCKING single lookup — the panel UI's right-click "Locate". An admin is
+  //                watching a spinner, so it's fine to wait for a cache miss to resolve.
+  //
+  //   ?ips=a,b,c   NON-BLOCKING batch — status_service, every 5s, for the whole roster. Returns
+  //                only what is ALREADY cached and kicks off background resolution for the rest,
+  //                so a cold IP costs the caller nothing: its flag simply appears a poll or two
+  //                later. Blocking here instead would stall the public status snapshot behind a
+  //                rate-paced queue (GEO_MIN_GAP per miss) — a slow geo API must never be able to
+  //                hold up the scoreboard.
   if (req.method === 'GET' && pathname === '/api/geoip') {
-    const ip = String(query.ip || '').trim();
-    if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return sendJson(res, { ok: false, error: 'Bad IP' }, 400);
+    const batch = String(query.ips || '').trim();
+    if (batch) {
+      const ips = [...new Set(batch.split(',').map(geoNormIp).filter(Boolean))].slice(0, 64);
+      const geo = {};
+      for (const ip of ips) {
+        const hit = geoCached(ip);
+        if (hit) { if (hit.ok) geo[ip] = { cc: hit.cc, country: hit.country, city: hit.city }; }
+        else geoResolve(ip).catch(() => {});   // warm it for a later tick; do not await
+      }
+      return sendJson(res, { ok: true, geo });
+    }
+
+    const ip = geoNormIp(query.ip);
+    if (!ip) return sendJson(res, { ok: false, error: 'Bad IP' }, 400);
     try {
-      const geo = await geoLookup(ip);
-      return sendJson(res, geo);
+      return sendJson(res, await geoResolve(ip));
     } catch (err) {
       return sendJson(res, { ok: false, error: err.message });
     }
