@@ -24,7 +24,8 @@
 //   Tactical  : flash_grenade_mp | concussion_grenade_mp (Stun) | willy_pete_mp (Smoke)
 //               | tabun_gas_mp (Gas) | nightingale_mp (Decoy)
 //   Equipment : camera_spike_mp | scrambler_mp (Jammer) | acoustic_sensor_mp
-//               (Motion) | claymore_mp | satchel_charge_mp (C4)
+//               (Motion) | claymore_mp | satchel_charge_mp (C4) | "none" (no
+//               equipment — the give is skipped and the HUD slot is hidden)
 //   Minigun & M202 stay primaries (camo forced 0); true launchers appear only as
 //   secondaries. The Finger Gun ("defaultweapon") rides as the Death Machine's
 //   secondary — an easter-egg sidearm, not a primary.
@@ -207,7 +208,9 @@ gf_giveCustomLoadout()
     self GiveWeapon( load["tactical"] );
     self setWeaponAmmoClip( load["tactical"], 1 );   // 1 tactical on spawn
     isBot = isDefined( self.pers["isBot"] ) && self.pers["isBot"];
-    if ( !isBot )
+    // "none" = an equipment-less loadout. GiveWeapon of a token the engine doesn't know
+    // hands out the finger gun rather than nothing, so the slot must be skipped outright.
+    if ( !isBot && !gf_slotEmpty( load["equip"] ) )
     {
         self GiveWeapon( load["equip"] );
         self SetActionSlot( 1, "weapon", load["equip"] );
@@ -301,6 +304,9 @@ gf_load( pri, sec, equip, lethal, tactical, camo, camoSec )
 
     e = gf_wdb( equip );
     load["equip"]           = e["w"];   load["equipName"]       = e["n"];   load["equipShader"]     = e["s"];
+    // Carried on the loadout so _gf_hud can hide the overview's equipment slot without
+    // having to #include this file back (the include graph is one-way: loadouts -> hud).
+    load["equipNone"]       = gf_slotEmpty( equip );
 
     l = gf_wdb( lethal );
     load["lethal"]          = l["w"];   load["lethalName"]      = l["n"];   load["lethalShader"]    = l["s"];
@@ -330,6 +336,13 @@ gf_load( pri, sec, equip, lethal, tactical, camo, camoSec )
         load["camoSecondary"] = 0;
 
     return load;
+}
+
+// An empty slot — "none" (what the loadout editor writes) or a blank token. Only the
+// equipment slot uses it today; the give and the HUD row are both skipped for it.
+gf_slotEmpty( token )
+{
+    return !isDefined( token ) || token == "" || token == "none";
 }
 
 // Resolve a weapon token -> { w:token, n:displayName, s:hudShader }.
@@ -449,6 +462,9 @@ gf_buildWeaponDB()
     gf_reg( "minigun_wager_mp",   "Death Machine",   "menu_mp_weapons_minigun" );
 
     // ── Equipment ──
+    // "none" is a real row so gf_wdb() doesn't log it as an unknown token. The shader is a
+    // placeholder — the menu hides that slot (ui_gf_lo_show4 0), so it is never drawn.
+    gf_reg( "none",               "None",          "white" );
     gf_reg( "camera_spike_mp",    "Camera Spike",  "hud_deployable_camera" );
     gf_reg( "scrambler_mp",       "Jammer",        "hud_radar_jammer" );
     gf_reg( "acoustic_sensor_mp", "Motion Sensor", "hud_acoustic_sensor" );
@@ -534,6 +550,7 @@ gf_buildWeaponDB()
 //   rpg_mp
 //
 // Equipment (placed — use GiveWeapon + SetActionSlot(1,"weapon",equip))
+//   none                 no equipment (give skipped, overview slot hidden)
 //   claymore_mp          icon: hud_icon_claymore
 //   acoustic_sensor_mp   icon: hud_acoustic_sensor      (Motion Sensor)
 //   camera_spike_mp      icon: hud_deployable_camera

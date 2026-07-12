@@ -50,7 +50,9 @@ set sv_disableClientConsole "1"                     // 1 = block players opening
 // cheat-gated. The r_* Visual Tweaks DO need cheats and are correctly greyed out on a dedicated server.
 set sv_cheats "0"                                   // 0 = cheat commands/dvars refused. Keep at 0 on any public server.
 set sv_doubleCoDPoints "1"                          // Earn double CoD Points for finished matches?
-set sv_floodProtect "4"                             // Chat Spam Protection.(Set this to 20 if you are using a RCon tool)
+// The stock template ships 4. We run an RCON tool (the admin panel) against this server permanently,
+// so 20 is the correct value -- the template's own comment says as much and then ships 4 anyway.
+set sv_floodProtect "20"                            // Chat Spam Protection. 20 because an RCon tool is always attached.
 set sv_kickBanTime "300"                            // Kick Ban Duration. Time before player can re-join the server after getting kicked.
 set sv_maxPing "0"                                  // Max Ping allowed.
 set sv_minPing "0"                                  // Minimum Ping allowed.
@@ -83,8 +85,17 @@ set sv_timeout "240"                                // In-game client packet sil
 // Blowing 80s mid-rebuild is a large part of why new players report having to connect TWICE.
 // 200 matches the client's own cl_connectTimeout. Costs nothing: it only applies pre-load-complete.
 set sv_connectTimeout "200"                         // Connecting/loading client budget. (Engine default 80)
+//
+// ── Per-client outbound bandwidth cap. Do NOT leave this at the engine default. ──
+// The engine registers sv_maxRate at 5000 bytes/sec, which at sv_fps 20 is only ~250 bytes per snapshot.
+// Round cycling in this gametype goes snapshot-silent through map_restart and then bursts a full lobby
+// of respawns plus the HUD dvar pushes — under a 5000 cap that burst drains slowly enough that clients
+// draw the engine Connection Interrupted overlay on the round-end killcam. 25000 drains it about 5x
+// faster and is the single biggest win against that flash. Voice chat rides this same budget, so a high
+// sv_voicequality eats headroom out of it too.
+set sv_maxRate "25000"                              // Per-client outbound cap in bytes per sec. (Engine default 5000 is far too low here)
 set sv_voice "1"                                    // Allow Voice Chat
-set sv_voicequality "9"                             // Voice Quality, 9 for high, 1 for low. More bandwidth better quality.
+set sv_voicequality "8"                             // Voice Quality, 9 for high, 1 for low. Engine default is 3. Only costs bandwidth while someone is actually talking, but that traffic shares the sv_maxRate budget above.
 set g_voiceChatTalkingDuration "500"                // Duration you can chat.
 set voice_deadChat "0"                              // 0 = eliminated players can't talk (no live-callout leak in one-life rounds).
 set voice_global "0"                                // Enable/Disable the use of in-game voice over IP.
@@ -97,17 +108,37 @@ set sv_wwwBaseURL ""                                // Configure the URL to Fast
 //////////////////////////////////////////////////
 // Gameplay CONFIGURATION                        //
 //////////////////////////////////////////////////
-set g_fix_viewkick_dupe "0"                         // Fix an issue where viewkick is doubled
+// Plutonium engine fix, registered in MP with default 0 (fix OFF) -- the stock template ships 0 too.
+// Gunfight turns it ON. Without it the damage view kick is applied TWICE, which silently doubles the
+// felt flinch and makes scr_gf_flinch mean half of what it says.
+set g_fix_viewkick_dupe "1"                         // Fix an issue where viewkick is doubled
 set g_playerEjection "0"                            // From whom are players ejected? (0 = everybody, 1 = enemies, 2 = nobody)
 set g_playerCollisionEjectSpeed "25"                // How fast are players ejected from eachother? (0-32000)
 set sv_allowFriendlyThrowback "1"                   // Prevent throwing friendly grenades?
 set cg_hudGrenadeIconShowFriendly "1"               // Prevent friendly grenades showing on the HUD?
 set g_patchRocketJumps "1"                          // Enable upward knockback from rocket shots?
 set bullet_penetration_affected_by_team "1"         // Count teammates when reducing your damage output due to penetraion?
-set g_fixBulletDamageDupe "0"                       // Fix an issue where intersecting players would deal double damage?
-set g_fix_entity_leaks "0"                          // Fix various engine related issues where entities leaks?
+// Plutonium engine fix, ENGINE default 0 (fix OFF). A bullet passing through two INTERSECTING players
+// registers its damage twice. Gunfight turns it ON, because doubled damage corrupts three things this
+// mod is built on: score IS cumulative damage dealt, a timed-out round is decided by most remaining team
+// HP, and every round is ONE LIFE (so a doubled bullet is an unearned instant kill). Bodies overlap
+// routinely in the tight curated 2v2 spawns and doorways, which is exactly the trigger condition.
+set g_fixBulletDamageDupe "1"                       // Fix an issue where intersecting players would deal double damage?
+// Plutonium engine fix. The ENGINE default is 1 (fix ON) -- the stock T5ServerConfig template sets 0,
+// which actively DISABLES a fix the engine ships enabled. Gunfight restores the engine default.
+// Among other things this fixes the "Hunk_AllocAlign failed on 8 bytes" leak caused by WEAPON SWITCHING,
+// which is squarely this mod's hot path: every player is handed a fresh shared loadout (GiveWeapon +
+// switchToWeapon) every single round, on a server that runs 24/7.
+set g_fix_entity_leaks "1"                          // Fix various engine related issues where entities leaks?
 set g_playerCollision "0"                           // Who are players colliding with? (0 = everybody, 1 = enemies, 2 = nobody)
-set bg_viewBobAmplitudeBase "0.3"                   // Reduced head-bob while moving (1 = stock, 0 = off). bg_* replicates to all clients.
+// WARNING this line does NOTHING for players on a dedicated server, despite what it looks like.
+// bg_* is the SHARED/PREDICTED dvar class -- every client scales its own view from its OWN LOCAL copy,
+// and the server's copy does not replicate. This is the exact same trap as bg_viewKickScale (flinch),
+// which is why the mod has to PUSH that one per-client with setClientDvar on every spawn. Nothing
+// pushes viewbob, so this value only ever applies on a LISTEN host, where the host IS a client.
+// To actually give a player reduced head-bob today, use the RCON panel's clipboard button on the
+// Bob slider and have them paste the command into their own console (or put it in their config).
+set bg_viewBobAmplitudeBase "0.3"                   // Reduced head-bob while moving (1 = stock, 0 = off). INERT on dedicated -- see above.
 
 //////////////////////////////////////////////////
 // B3, IW4MADMIN, GAME LOG & RCON SETTINGS      //
@@ -264,7 +295,12 @@ set con_displayRconOutput "0"                       // Print the output of comma
 //set scr_team_kickteamkillers "0"                  // kick team killers?
 //set scr_team_teamkillpointloss "1"                // Point penalty for teamkills?
 //set scr_team_teamkillspawndelay "20"              // Delay spawns of teamkillers?
-set scr_teambalance "1"                             // Block joining the already-larger team. Real T5 dvar, read by _teams.gsc.
+// scr_teambalance is NOT a join blocker -- nothing in stock reads it for that. It is the max team-size
+// difference the stock AUTOBALANCE loop in _teams.gsc tolerates, and any non-zero value ARMS that loop:
+// every 10s it warns, then FORCE-MOVES the most recent joiner via changeTeam(), which suicide()s them if
+// they are alive. In a ONE-LIFE gametype that is a live player killed mid-round. Keep it 0 -- Gunfight
+// balances at ROUND BOUNDARIES via the bot reconciler (gf_fill_n) and the RCON Balance Teams button.
+set scr_teambalance "0"
 // scr_teamup removed: it's a CoD4/WaW dvar that does NOT exist in Black Ops (T5) — nothing reads it, and a bare RCON read of it prints "Unknown cmd".
 //set scr_teamKillPunishCount "4"                   // After how many teamkills are players punished?
 
@@ -305,7 +341,7 @@ set scr_teambalance "1"                             // Block joining the already
 
 set scr_dm_scorelimit "1500"                        // Points needed to win the game.
 set scr_dm_timelimit "10"                           // Duration the game lasts in minutes when the score limit isn't reached.
-set scr_gf_timelimit "0.75"                         // Gunfight SMALL-mode round time in minutes. 0.75 = 45 sec. (Large mode uses scr_gf_timelimit_large.)
+set scr_gf_timelimit "0.7"                          // Gunfight SMALL-mode round time in minutes. 0.7 = 42 sec. (Large mode uses scr_gf_timelimit_large.)
 set gf_vis_vision "enhance"                         // Default vision set for every round (enhance = full saturation + contrast 1.2). RCON Vision buttons override live until restart. Comment out for stock map visions. Needs the dev bridge (_gf_bridge) to apply.
 
 //set scr_dm_playerrespawndelay "0"                 // Time in seconds wait to respawn.

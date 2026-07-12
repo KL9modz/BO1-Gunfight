@@ -30,7 +30,7 @@ main()
     maps\mp\gametypes\_globallogic::SetupCallbacks();
 
     maps\mp\gametypes\_globallogic_utils::registerRoundSwitchDvar(   level.gameType, 2, 0, 9    );
-    maps\mp\gametypes\_globallogic_utils::registerTimeLimitDvar(     level.gameType, 0.75, 0, 1440 ); // 0.75 = 45s SMALL-mode round default
+    maps\mp\gametypes\_globallogic_utils::registerTimeLimitDvar(     level.gameType, 0.7, 0, 1440 ); // 0.7 = 42s SMALL-mode round default
     maps\mp\gametypes\_globallogic_utils::registerNumLivesDvar(      level.gameType, 1, 0, 10   );
     maps\mp\gametypes\_globallogic_utils::registerRoundWinLimitDvar( level.gameType, 0, 0, 10   );
     maps\mp\gametypes\_globallogic_utils::registerScoreLimitDvar(    level.gameType, 6, 0, 10   );
@@ -404,11 +404,11 @@ onStartGameType()
     // gf_getOvertimeLimit, gf_getCaptureTime). scr_gf_timelimit + scr_gf_teamspawnmode are
     // already always-registered (registerTimeLimitDvar / gf_resolveTeamMode).
     gtp = "scr_" + level.gameType;
-    if ( getDvar( gtp + "_timelimit" ) == "" )           setDvar( gtp + "_timelimit", "0.75" );
+    if ( getDvar( gtp + "_timelimit" ) == "" )           setDvar( gtp + "_timelimit", "0.7" );
     if ( getDvar( gtp + "_timelimit_large" ) == "" )     setDvar( gtp + "_timelimit_large", "1.5" );
     if ( getDvar( gtp + "_overtimelimit" ) == "" )       setDvar( gtp + "_overtimelimit", "15" );
     if ( getDvar( gtp + "_overtimelimit_large" ) == "" ) setDvar( gtp + "_overtimelimit_large", "30" );
-    if ( getDvar( "gf_capture_time" ) == "" )            setDvar( "gf_capture_time", "3" );
+    if ( getDvar( "gf_capture_time" ) == "" )            setDvar( "gf_capture_time", "3.5" );
     if ( getDvar( "gf_capture_time_large" ) == "" )      setDvar( "gf_capture_time_large", "5" );
 
     // #strip-begin - dev debug dvars: seed to 0 so the RCON panel's DEBUG section reads them
@@ -422,7 +422,7 @@ onStartGameType()
     // #strip-end
 
     // Flinch (damage view-kick) scale — mult of stock bg_viewKickScale (0.2).
-    // Seeds scr_gf_flinch (default 1 = stock) and applies bg_viewKickScale each
+    // Seeds scr_gf_flinch (default 0.5 = half stock) and applies bg_viewKickScale each
     // round so an RCON change persists across map_restart. Server-side, so it
     // holds on the dedicated VPS. RCON bridge: flinch_<mult> for a live change.
     gf_applyFlinch();

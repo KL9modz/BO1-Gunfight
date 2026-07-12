@@ -35,7 +35,7 @@ gf_getCaptureTime()
 {
     if ( isDefined( level.gf_largeMode ) && level.gf_largeMode )
         return gf_cfgFloat( "gf_capture_time_large", 5, 0.5, 60 );
-    return gf_cfgFloat( "gf_capture_time", 3, 0.5, 60 );
+    return gf_cfgFloat( "gf_capture_time", 3.5, 0.5, 60 );
 }
 
 // Reads a float dvar, registering the default if unset and clamping to [lo,hi].
@@ -67,9 +67,10 @@ gf_fmtMMSS( secs )
 // #strip-end
 
 // Flinch (damage view-kick) scale. scr_gf_flinch is a MULTIPLIER of the stock
-// bg_viewKickScale (0.2): 1 = stock flinch, 0 = no flinch, >1 = more. Called each
-// round from onStartGameType (so an RCON change persists across map_restart) and
-// live from the RCON bridge (flinch_<mult>). Returns the clamped multiplier.
+// bg_viewKickScale (0.2): 1 = stock flinch, 0 = no flinch, >1 = more. Gunfight
+// ships 0.5 — half stock, i.e. bg_viewKickScale 0.1. Called each round from
+// onStartGameType (so an RCON change persists across map_restart) and live from
+// the RCON bridge (flinch_<mult>). Returns the clamped multiplier.
 //
 // ⚠ bg_viewKickScale does NOT replicate. Each client scales its OWN damage view
 // kick from its LOCAL copy, so the server-side setDvar alone changes nothing for
@@ -85,7 +86,7 @@ gf_fmtMMSS( secs )
 // whatever we last gave it, so it needs an explicit 0.2 to be put back.
 gf_applyFlinch()
 {
-    scale = gf_cfgFloat( "scr_gf_flinch", 1, 0, 3 );   // seeds the dvar if unset
+    scale = gf_cfgFloat( "scr_gf_flinch", 0.5, 0, 3 ); // seeds the dvar if unset
     setDvar( "bg_viewKickScale", 0.2 * scale );        // 0.2 = stock bg_viewKickScale
 
     // level.players is EMPTY during onStartGameType, so this loop is a no-op on the
@@ -100,12 +101,16 @@ gf_applyFlinch()
     return scale;
 }
 
-// Per-spawn half of the flinch push (see gf_applyFlinch). Skipped at stock (1): a
-// fresh client is already at the engine default 0.2, and the mod's rule is to leave
-// client settings alone unless an admin has actually asked for a non-stock value.
+// Per-spawn half of the flinch push (see gf_applyFlinch). The 0.5 default is not
+// stock, so this normally DOES push. The skip is for an admin who has explicitly
+// asked for stock (1): a fresh client already sits at the engine default 0.2, and
+// the mod's rule is to leave client settings alone when we want what they have.
+// ⚠ This default must stay in lockstep with the one in gf_applyFlinch above —
+// gf_cfgFloat seeds only if the dvar is empty, so a drift here would be silently
+// masked by whichever function ran first.
 gf_applyFlinchClient()
 {
-    scale = gf_cfgFloat( "scr_gf_flinch", 1, 0, 3 );
+    scale = gf_cfgFloat( "scr_gf_flinch", 0.5, 0, 3 );
     if ( scale == 1 )
         return;
     self setClientDvar( "bg_viewKickScale", 0.2 * scale );
@@ -2021,7 +2026,7 @@ gf_startRoundClock()
 {
     // Round length (minutes) -> ms. level.timeLimit is per-mode (small vs _large),
     // re-derived each round in main()/onStartGameType.
-    roundLen = 0.75;
+    roundLen = 0.7;
     if ( isDefined( level.timeLimit ) && level.timeLimit > 0 )
         roundLen = level.timeLimit;
 

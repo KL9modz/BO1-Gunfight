@@ -582,6 +582,14 @@ gf_showWeaponHUD( load )
     else
         self setClientDvar( "ui_gf_lo_w1", 72 );
 
+    // Equipment slot gate. A "none" equipment loadout gives no equipment at all, so its
+    // icon + name itemDefs are hidden (the equipment row's bracket stays — the slot is
+    // simply empty). Pushed BEFORE ui_gf_lo_show so the block never flashes a filled slot.
+    if ( isDefined( load["equipNone"] ) && load["equipNone"] )
+        self setClientDvar( "ui_gf_lo_show4", 0 );
+    else
+        self setClientDvar( "ui_gf_lo_show4", 1 );
+
     // Names (plain client dvars — NOT setText, so no configstring exhaustion).
     self setClientDvar( "ui_gf_lo_name0", load["primaryName"] );
     self setClientDvar( "ui_gf_lo_name1", load["secondaryName"] );

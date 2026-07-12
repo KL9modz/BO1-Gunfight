@@ -444,6 +444,32 @@ rebuild; dvar values/positions are GSC-tunable. Intro slide/fade animations are 
   client dvar. ⚠ The two `gf_cfgFloat` defaults (`gf_applyFlinch` + `gf_applyFlinchClient`) must stay in
   lockstep — the seed is seed-if-empty, so a drift is masked by whichever ran first.
   ([[flinch-bg-viewkickscale-not-replicated]])
+- **Flinch has a SECOND multiplier: `g_fix_viewkick_dupe`** (Plutonium **engine** dvar, not ours; `1` in
+  our `dedicated.cfg`, **engine default `0`**). At `0` the damage view kick is applied **twice**, so felt
+  flinch is ~double what `scr_gf_flinch` says and the two silently stack — `scr_gf_flinch 0.5` with the
+  fix off lands near *stock*, not half of it. Turning it on is what makes `scr_gf_flinch` mean what it
+  claims. ⚠ It is **engine-registered in MP**, despite the Plutonium changelog filing it under SP: it is
+  present in the dvar dump in `console_mp.log`, alongside `g_fix_damageKickReductionPerk` (reads `1`, and
+  **no cfg sets it** — proof the `g_fix_*` family is MP-registered). ⚠ The stock T5ServerConfig template
+  ships this at `0`, so a server built from the template has doubled flinch and does not know it.
+- **Reading engine-dvar defaults:** the dvar dump in `console_mp.log` prints **registered defaults, never
+  live values** (`g_inactivity` 190 vs our cfg's 300; `sv_maxclients` 4 vs 14). It is the cheapest way to
+  read an engine dvar's true default and to prove a dvar is engine-registered at all — a `set` on a name
+  the engine never registers creates a user dvar that looks real in every dump and is read by nothing.
+  For **live** values use the panel (`/api/dvars?fresh=1`), never the dump and never the cfg.
+  ([[engine-dvar-defaults-from-log-dump]], [[read-the-server-not-the-file]])
+- ⚠ **THE `bg_*` / `cg_*` PREFIX RULE — a server-side `set` on one is INERT on a dedicated server.**
+  The prefix *is* the ownership marker: **`g_`/`sv_`/`scr_` = server** (a `set` works), **`bg_` =
+  shared/predicted** and **`cg_` = client game** (every client reads its **own local copy**; the server's
+  copy replicates to nobody). This has now bitten twice — `bg_viewKickScale` (flinch), which is why the
+  mod must **push it per-client** via `setClientDvar` every spawn, and `bg_viewBobAmplitudeBase`, whose
+  `dedicated.cfg` line was commented "bg_* replicates to all clients" and **did nothing for years**.
+  It only ever *appears* to work on a listen host, where the host **is** a client.
+  **Before setting any dvar server-side, read its prefix.** If it is `bg_`/`cg_`, you have exactly three
+  options: push it per-client from GSC (the flinch pattern), hand the player the console command (the
+  panel's 📋 clipboard button on the Bob slider), or accept that it is decoration. `cg_hudGrenadeIcon-
+  ShowFriendly` in `dedicated.cfg.example` is unaudited and likely inert for the same reason.
+  ([[flinch-bg-viewkickscale-not-replicated]])
 - **Vision — the contrast pop is Gunfight's DEFAULT look, in every build** (`_gf_rounds.gsc`,
   shipped): `gf_initRoundVision` (called from `onStartGameType`) stamps `level.gf_defaultVision` =
   the map's own set and threads `gf_applyRoundVision`, which **waits for `prematch_over`** and then
@@ -553,11 +579,12 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_scorelimit` | 6 | Round wins to win the match (the real match-end threshold). |
 | `scr_gf_roundswitch` | 2 | Rounds between side switches. |
 | `scr_gf_roundsperloadout` | 2 | Rounds before the shared loadout rotates (clamp 1-9). |
-| `scr_gf_timelimit` / `_large` | 0.75 / 1.5 | Round length in minutes, small / large mode (0.75 = 45s). |
+| `scr_gf_timelimit` / `_large` | 0.7 / 1.5 | Round length in minutes, small / large mode (0.7 = 42s). |
 | `scr_gf_overtimelimit` / `_large` | 15 / 30 | Overtime seconds, small / large; `0` = OT off (HP decides now). |
-| `gf_capture_time` / `_large` | 3 / 5 | OT zone hold-to-capture seconds, small / large. |
+| `gf_capture_time` / `_large` | 3.5 / 5 | OT zone hold-to-capture seconds, small / large. |
 | `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (auto goes large when a team hits 5+). |
 | `scr_gf_flinch` | 0.5 | Flinch scale (× stock `bg_viewKickScale` 0.2 → 0.1); pushed **per-client** — the server dvar alone doesn't replicate, and the push beats a player's own autoexec (clamp 0-3). |
+| `g_fix_viewkick_dupe` | 1 | **ENGINE** (Plutonium), **engine default 0**, set in `dedicated.cfg`. `0` applies the damage view kick **TWICE** → doubles felt flinch and makes `scr_gf_flinch` mean half what it says. Live-settable, no restart. The stock T5ServerConfig template ships `0`. |
 | `scr_team_maxsize` | 0 (cfg ships 6) | `>0` caps players/team; overflow → spectator on spawn. |
 
 **Match start / pregame lobby** (match's first round only)
@@ -627,6 +654,27 @@ changes them live).
   re-sync with documented multi-minute stalls. Blowing 80s mid-rebuild is much of why new players report
   having to **connect twice**. VPS + example now run **200** (matching the client's own `cl_connectTimeout`).
   It only ever applies before a client finishes loading, so raising it costs nothing.
+
+**The Plutonium `g_fix_*` family — and why Gunfight ships 3 of 4 against the grain.** These are engine-level
+bug fixes Plutonium added, and their **engine defaults split on one line**: a fix with **no gameplay
+semantics ships ON**, a fix that **changes felt gameplay ships OFF**, so a stock server stays
+vanilla-faithful — bugs and all. Gunfight opts into all of them, because a competitive gametype wants
+*correct* damage and flinch, not bug-for-bug BO1 parity. (Engine defaults read from the `console_mp.log`
+dvar dump; see the "Reading engine-dvar defaults" note above.)
+
+| dvar | engine default | GF | what the bug is |
+|---|---|---|---|
+| `g_fix_damageKickReductionPerk` | **1** (on) | 1 (untouched) | Pure fix, already on. No cfg sets it — it's the proof the family is MP-registered. |
+| `g_fix_entity_leaks` | **1** (on) | **1** | Engine entity leaks, incl. the `Hunk_AllocAlign failed on 8 bytes` leak from **weapon switching** — this mod's hot path (a fresh shared loadout every round, 24/7). ⚠ The **T5ServerConfig template sets this to 0**, actively *disabling* a fix the engine ships enabled. Restoring it is the one change here that is not a deviation. |
+| `g_fix_viewkick_dupe` | **0** (off) | **1** | Damage view kick applied **twice** → doubles felt flinch and makes `scr_gf_flinch` mean half what it says. |
+| `g_fixBulletDamageDupe` | **0** (off) | **1** | A bullet through two **intersecting** players deals its damage **twice**. Corrupts three things GF is built on: score **is** cumulative damage dealt, a timed-out round is decided by **most remaining HP**, and rounds are **one life** (a doubled bullet = an unearned instant kill). Bodies overlap constantly in the tight 2v2 spawns. |
+
+⚠ Note the **inconsistent naming** — three are `g_fix_snake_case`, one is `g_fixBulletDamageDupe`
+(camelCase, no underscore). A `g_fix_` grep silently misses it. ⚠ All four are **engine** dvars set in
+`dedicated.cfg`, not seeded by GSC; the panel exposes them under ADVANCED → ENGINE GAMEPLAY. The VPS's
+`dedicated.cfg` lives on the box and is **not** shipped by `deploy.ps1`, so a change here reaches the VPS
+only via the panel (toggle live, then 💾 Save to persist) or a hand edit. ⚠ `g_print_entity_leaks 1` logs
+leaks as they happen — the way to actually verify the entity-leak fix rather than assume it.
 
 ⚠ **Keep every `dedicated.cfg` comment semicolon-free** — the cfg parser splits on `;` *inside* a `//`
 comment and executes each fragment ([[unknown-command-cd-and-cfg-semicolon-parse]]).

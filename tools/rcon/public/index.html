@@ -194,11 +194,11 @@
       <label class="tog ctrl"><input type="checkbox" id="cbPerks" onchange="bridge(cbPerks.checked?'allperks_on':'allperks_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
       <span class="shint">Marathon·Ghost·SoH</span>
     </div>
-    <div class="slider-row" data-eff="live" data-per="dvar" data-via="bridge" data-tip="scr_gf_flinch → bg_viewKickScale&#10;Damage view-kick (flinch) as a MULTIPLIER of stock: 1 = stock, 0 = no flinch, >1 = more. bg_viewKickScale does NOT replicate (each client scales its own view kick from its local copy), so the GSC pushes it per-client — to live players on change, and on every spawn. Persists across rounds (re-applied each onStartGameType). Bridge: flinch_&lt;mult&gt;">
+    <div class="slider-row" data-eff="live" data-per="dvar" data-via="bridge" data-tip="scr_gf_flinch → bg_viewKickScale&#10;Damage view-kick (flinch) as a MULTIPLIER of stock: 1 = stock, 0 = no flinch, >1 = more. GF default: 0.5 (half stock → bg_viewKickScale 0.1). bg_viewKickScale does NOT replicate (each client scales its own view kick from its local copy), so the GSC pushes it per-client — to live players on change, and on every spawn. That push also OVERRIDES whatever a player set in their own autoexec. Persists across rounds (re-applied each onStartGameType). Bridge: flinch_&lt;mult&gt;">
       <span class="slbl" style="min-width:120px">Flinch (view kick)</span>
-      <input type="range" id="sFlinch" min="0" max="2" step="0.05" value="1" oninput="sv('sFlinch','vFlinch')" onchange="bridge('flinch_'+this.value)" class="ctrl">
-      <input type="number" id="vFlinch" class="num ctrl" value="1" min="0" max="3" step="0.05" oninput="su('vFlinch','sFlinch',0,3)">
-      <button class="b-ac b-sm ctrl" onclick="bridge('flinch_'+g('vFlinch').value)">Set</button>      <button class="b-gh b-sm ctrl" onclick="bridge('flinch_1');g('vFlinch').value=g('sFlinch').value=1">↺</button>
+      <input type="range" id="sFlinch" min="0" max="2" step="0.05" value="0.5" oninput="sv('sFlinch','vFlinch')" onchange="bridge('flinch_'+this.value)" class="ctrl">
+      <input type="number" id="vFlinch" class="num ctrl" value="0.5" min="0" max="3" step="0.05" oninput="su('vFlinch','sFlinch',0,3)">
+      <button class="b-ac b-sm ctrl" onclick="bridge('flinch_'+g('vFlinch').value)">Set</button>      <button class="b-gh b-sm ctrl" onclick="bridge('flinch_0.5');g('vFlinch').value=g('sFlinch').value=0.5">↺</button>
     </div>
     <div class="srow" data-tip="RCON console command: noclip&#10;Toggles noclip for the host player. Requires sv_cheats 1&#10;(listen/host only — no host player on a dedicated server)">
       <span class="slbl">Noclip (host only)</span>

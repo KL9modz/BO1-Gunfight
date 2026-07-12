@@ -78,8 +78,15 @@ function validEntry( lo )
 {
     const slots = [ "primary", "secondary", "equip", "lethal", "tactical" ];
     for ( const s of slots )
+    {
         if ( typeof lo[s] !== "string" || !TOKEN_RE.test( lo[s] ) )
             return "slot '" + s + "' is not a valid weapon token: " + JSON.stringify( lo[s] );
+        // "none" is the empty-slot token, and equipment is the only slot that may be empty
+        // (_gf_loadouts.gsc skips the give for it). Anywhere else the engine would hand out
+        // the finger-gun fallback instead of nothing.
+        if ( lo[s] === "none" && s !== "equip" )
+            return "slot '" + s + "' cannot be 'none' — only equipment may be empty";
+    }
     for ( const key of [ "camo", "camoSec" ] )
     {
         const c = lo[key];

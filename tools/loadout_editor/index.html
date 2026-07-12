@@ -156,7 +156,9 @@ const ATT_LABEL = {
   "_grip_extclip":"Grip + Ext Mag","_grip_dualclip":"Grip + Dual Mag","_wager":"Wager"
 };
 
-const EQUIP  = [["camera_spike_mp","Camera Spike"],["scrambler_mp","Jammer"],["acoustic_sensor_mp","Motion Sensor"],["claymore_mp","Claymore"],["satchel_charge_mp","C4"]];
+// "none" is a real, supported token (_gf_loadouts.gsc gf_slotEmpty): the give is skipped and
+// the overview's equipment slot is hidden. Equipment is the only slot that may be empty.
+const EQUIP  = [["none","— None —"],["camera_spike_mp","Camera Spike"],["scrambler_mp","Jammer"],["acoustic_sensor_mp","Motion Sensor"],["claymore_mp","Claymore"],["satchel_charge_mp","C4"]];
 const LETHAL = [["frag_grenade_mp","Frag"],["sticky_grenade_mp","Semtex"],["hatchet_mp","Tomahawk"]];
 const TAC    = [["flash_grenade_mp","Flash"],["concussion_grenade_mp","Stun"],["willy_pete_mp","Smoke"],["tabun_gas_mp","Gas"],["nightingale_mp","Decoy"]];
 const CAMO   = [[-1,"Random (per match)"],[0,"Default"],[1,"Dusty"],[2,"Ice"],[3,"Red"],[4,"OD Green"],[5,"Desert Nevada"],[6,"Desert Sahara"],[7,"Jungle ERDL"],[8,"Jungle Tiger"],[9,"Urban German"],[10,"Urban Warsaw"],[11,"Winter Siberia"],[12,"Winter Yukon"],[13,"Woodland"],[14,"Woodland Flora"],[15,"Gold"]];
