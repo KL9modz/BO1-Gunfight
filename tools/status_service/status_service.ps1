@@ -248,8 +248,14 @@ function Get-LogTail {
 # Banner "----- conn_logger started -----" lines never match the verb group -> skipped.
 # Capped at $maxEvents so the JSON stays small (events are ~120 bytes each).
 $script:ConnLineRx = [regex]'^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})\s+(ONLINE|CONNECT|LEFT)\s+ip=(\S+)\s+name="(.*?)"\s+guid=(\S+)\s+ping=(\S+)(?:\s+session=(\S+))?\s*$'
+#
+# $ignore (the PUBLIC feed passes it; the admin history does NOT) drops muted players HERE,
+# during the read, so $maxEvents caps the events that will actually be PUBLISHED - filtering
+# after the cap would let a muted player's events eat cap slots and silently shorten the feed's
+# reach. It filters the projection, never the source: conn_logger still writes every connect to
+# the day-files, so the admin history stays complete and un-muting is retroactive.
 function Build-ConnHistory {
-    param([string]$dir, [int]$days, [int]$maxEvents)
+    param([string]$dir, [int]$days, [int]$maxEvents, $ignore = $null)
     $events = New-Object System.Collections.ArrayList
     $files = @(Get-ChildItem (Join-Path $dir 'players_*.log') -ErrorAction SilentlyContinue |
                Sort-Object Name -Descending | Select-Object -First $days)   # newest day first
@@ -258,6 +264,7 @@ function Build-ConnHistory {
         for ($i = $lines.Count - 1; $i -ge 0; $i--) {   # bottom-up = newest line first
             $m = $script:ConnLineRx.Match($lines[$i])
             if (-not $m.Success) { continue }
+            if ($null -ne $ignore -and (Test-GfIgnored $ignore $m.Groups[6].Value $m.Groups[5].Value)) { continue }
             [void]$events.Add([ordered]@{
                 date    = $m.Groups[1].Value
                 time    = $m.Groups[2].Value
@@ -313,15 +320,11 @@ function Get-GeoBatch {
 # Project the shared day-file event list into the PUBLIC activity feed: drop ip/guid/ping,
 # keep time/name/event/session, and stamp the country code resolved from the (dropped) IP.
 # This is the ONLY place a log IP is turned into something publishable.
-#
-# Ignored players (tools\ignore.local.json) are dropped HERE, at the projection - never at the
-# source. conn_logger still writes every connect to the day-files, so the private admin history
-# stays complete and un-muting someone retroactively restores their whole 7 days.
+# Muted players are already gone by here - Build-ConnHistory dropped them during the read.
 function Build-PublicActivity {
-    param($events, [hashtable]$geo, $ignore)
+    param($events, [hashtable]$geo)
     $out = New-Object System.Collections.ArrayList
     foreach ($e in $events) {
-        if (Test-GfIgnored $ignore $e.guid $e.name) { continue }
         $bare = ([string]$e.ip -split ':')[0]
         $cc   = if ($geo.ContainsKey($bare)) { $geo[$bare] } else { '' }
         [void]$out.Add([ordered]@{
@@ -575,15 +578,17 @@ while ($true) {
 
         if (-not [string]::IsNullOrEmpty($ActivityOutFile)) {
             try {
-                $pev  = Build-ConnHistory -dir $LogDir -days $ActivityDays -maxEvents $ActivityMax
+                # -ignore ONLY here: muted players are dropped during the read, so $ActivityMax
+                # caps publishable events (they can't eat cap slots and shorten the feed's reach).
+                # The admin history call below deliberately passes no ignore - it stays complete.
+                $pev  = Build-ConnHistory -dir $LogDir -days $ActivityDays -maxEvents $ActivityMax `
+                                          -ignore (Get-GfIgnoreList $IgnoreFile)
                 $pgeo = Get-GeoBatch -ips @($pev | ForEach-Object { $_.ip }) -panelPort $PanelPort
-                # count is the PUBLISHED count, so it can't advertise events the feed withholds.
-                $pub  = @(Build-PublicActivity -events $pev -geo $pgeo -ignore (Get-GfIgnoreList $IgnoreFile))
                 Write-Snapshot -path $ActivityOutFile -obj ([ordered]@{
                     updated = $now.ToString('o')
                     days    = $ActivityDays
-                    count   = $pub.Count
-                    events  = $pub
+                    count   = $pev.Count
+                    events  = (Build-PublicActivity -events $pev -geo $pgeo)
                 })
             } catch { Write-Warning ("activity write failed: {0}" -f $_.Exception.Message) }
         }
