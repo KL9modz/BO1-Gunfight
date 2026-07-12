@@ -5,8 +5,8 @@
 // Feedback is PRIVATE: gf_bridgeNotify prints only to admins listed in gf_admin_guids (not everyone).
 //
 // Commands (send via RCON: set gf_cmd <seq>:<cmd>):
-//   pause              - freeze match clock + all player controls
-//   resume             - resume clock + unfreeze players
+//   pause              - freeze match clock + all player controls; B&W vision + MATCH PAUSED banner
+//   resume             - resume clock + unfreeze players; restore vision + drop the banner
 //   botdiff_easy/normal/hard/fu  - set bot difficulty
 //   endround_allies    - force allies to win this round
 //   endround_axis      - force axis to win this round
@@ -440,12 +440,19 @@ gf_bridgeDispatch( cmd )
 // longer the native one, so bare pauseTimer()/resumeTimer() here would (a) fail to
 // freeze the HUD clock and (b) resume would re-arm the native "time running out"
 // VO/music/beeps the mod suppresses. gf_pauseMatch/gf_resumeMatch freeze the live
-// clock (round or overtime), human controls, AND bots (which ignore freezeControls).
+// clock (round or overtime), human controls, AND bots (which ignore freezeControls),
+// and raises the MATCH PAUSED banner.
+//
+// The B&W desaturation is the bridge's half: visionSetNaked is level-global (bare
+// builtin) and the vision to RESTORE on resume is whatever key the admin has
+// persisted in gf_vis_vision — which only the bridge knows about. Doing it here
+// keeps _gf_rounds free of a dependency on this dev-only file.
 gf_bridgePause()
 {
     if ( level.gf_paused ) return;
     level.gf_paused = true;
     maps\mp\gametypes\_gf_rounds::gf_pauseMatch();
+    visionSetNaked( gf_visionSetForKey( "bw" ), 0.5 );   // cheat_bw — bare = all clients
     gf_bridgeNotify( "^3-- MATCH PAUSED --" );
 }
 
@@ -454,7 +461,20 @@ gf_bridgeResume()
     if ( !level.gf_paused ) return;
     level.gf_paused = false;
     maps\mp\gametypes\_gf_rounds::gf_resumeMatch();
+    gf_bridgeRestoreVision( 0.5 );
     gf_bridgeNotify( "^2-- MATCH RESUMED --" );
+}
+
+// Drop back to whatever vision the admin has standing — the persisted gf_vis_vision
+// key, or the map default if none. Read fresh (not snapshotted at pause time) so a
+// vision_<set> issued DURING the pause is what we resume into.
+gf_bridgeRestoreVision( blend )
+{
+    vkey = getDvar( "gf_vis_vision" );
+    if ( vkey == "" )
+        visionSetNaked( level.gf_defaultVision, blend );
+    else
+        visionSetNaked( gf_visionSetForKey( vkey ), blend );
 }
 
 // "Start Match" from the panel: release the pre-prematch lobby hold NOW. The hold
@@ -793,7 +813,10 @@ gf_bridgeVisReset()
     if ( getDvar( "gf_vis_vision" ) != "" )
     {
         setDvar( "gf_vis_vision", "" );
-        visionSetNaked( level.gf_defaultVision, 0.5 );
+        // Same rule as gf_bridgeVision: a pause owns the vision, so clear the persisted key but let
+        // gf_bridgeRestoreVision do the actual restore on resume.
+        if ( !isDefined( level.gf_paused ) || !level.gf_paused )
+            visionSetNaked( level.gf_defaultVision, 0.5 );
     }
 
     gf_bridgeNotify( "^7Visuals: stock" );
@@ -1276,6 +1299,15 @@ gf_bridgeVision( vkey )
         setDvar( "gf_vis_vision", "" );        // normal/unknown -> stop persisting
     else
         setDvar( "gf_vis_vision", vkey );
+
+    // A pause OWNS the vision (B&W) for as long as it is up, so don't apply now — just persist the
+    // key. gf_bridgeRestoreVision re-reads it on resume, so the admin's pick lands the moment the
+    // match unfreezes instead of silently un-greying a paused match.
+    if ( isDefined( level.gf_paused ) && level.gf_paused )
+    {
+        gf_bridgeNotify( "^5Vision: " + vkey + " ^7(applies on resume — match is paused)" );
+        return;
+    }
 
     visionSetNaked( set, 0.5 );                // bare = global, all clients
     gf_bridgeNotify( "^5Vision: " + vkey );

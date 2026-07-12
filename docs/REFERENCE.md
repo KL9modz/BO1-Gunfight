@@ -67,9 +67,10 @@ Delivery happens through the `level.giveCustomLoadout` hook (`gf_giveCustomLoado
 
 All mod-owned HUD is rendered through the menu layer (`ui_mp/hud_gf_health.menu`) rather than client hudelems, because T5 has a per-client DRAWN render cap (~17-20 elements) shared across all hudelem types; pushing past it silently drops the last-created elements. The server publishes state through `setClientDvar` only, and menu itemDefs read those dvars — costing ~0 client hudelems.
 
-Three HUD systems live in `_gf_hud.gsc`:
+Four HUD systems live in `_gf_hud.gsc`:
 - **Team health panel** — a level thread (`gf_startHealthHUD` -> `gf_updateHealthHUD`, driven by the `gf_health_hud_update` notify and a 0.5s periodic tick) computes per-team totals (`gf_getTeamHealthStats`, counting only players who spawned this round) and publishes them to `level.gf_*`. Each player runs `gf_runHealthHUD`, which pushes those totals to per-client row dvars (`ui_gf_rN_*`, cached so only changes send via `gf_setRowDvar`) and reveals the panel; row 0 is the viewer's own team (green), row 1 the enemy (red). A bottom self-bar (`gf_updateSelfBar`) pushes the viewer's own HP.
 - **Loadout overview** — `gf_showWeaponHUD` pushes 8 icon materials + 8 names + the anchor (`ui_gf_lo_*`) for a create-a-class-style summary (primary, secondary, lethal, tactical, equipment, 3 perks), holds ~7s, then slides out (`gf_slideLoadout`).
+- **Pause banner** — the `gf_pause_hud` menuDef ("MATCH PAUSED" + subline over a scrim), gated on `ui_gf_paused` with the wording pushed via `ui_gf_pause_text`/`ui_gf_pause_sub`. `gf_pushPauseBanner` publishes it from `level.gf_matchPaused` (set by `gf_pauseMatch`/`gf_resumeMatch`); it also runs once per spawn from `gf_runHealthHUD` so a client connecting mid-pause gets the banner and a stale `ui_gf_paused=1` (level state is wiped by `map_restart`) is cleared.
 - **Score popup** — `gf_showScorePopup` reuses the engine's own score element (`self.hud_rankscroreupdate`, a `NewScoreHudElem` from a render-cap-exempt pool) to show "Elimination"/"Assist" in the stock yellow style, with priority so an Assist can't stomp an Elimination.
 
 Damage/score bookkeeping that feeds the popups and scoreboard lives in `gf_onPlayerDamage` (records per-attacker, per-target damage and unique assisters) and `gf_onPlayerKilled` (awards assists, shows popups). Menu *structure* changes need a `mod.ff` rebuild; dvar values and positions are GSC-tunable.
@@ -243,6 +244,9 @@ Drives the round's audio warnings off `level.gf_roundRemaining`. Once at `<= 150
 
 #### `gf_cleanupRoundTimerState()`
 Clears the round-clock vars (`gf_roundClockRunning=false`, remaining/last-time/last-tick → undefined) and deletes/undefines `level.gf_roundTickObject`.
+
+#### `gf_pauseMatch()` / `gf_resumeMatch()`
+Admin match pause, called only by the RCON bridge (`gf_bridgePause`/`gf_bridgeResume`). Freezes whichever mod clock is live — overtime takes priority and routes through the capture pause-depth counter (`gf_pauseOvertimeForCapture`) so an admin pause composes with an in-progress capture; the round clock uses the simple `level.gf_roundPaused` flag (sync remaining, `setGameEndTime(0)` to hide the clock). Freezes bots via `bots_play_move 0` (they ignore `freezeControls`; the framework's `bot_watch_stop_move` pins them), and every player via `freezeControls(true)`. Sets `level.gf_matchPaused` — the sole authority for the `gf_pause_hud` "MATCH PAUSED" banner — and pushes it to each player (`gf_pushPauseBanner`). Resume reverses all of it (resetting `gf_roundLastTime` before clearing the flag so the paused interval is discarded, not caught up) and notifies `botStopMove` so a mid-navigation bot unfreezes. The black-and-white vision is the bridge's half of the pause, not this function's.
 
 #### `gf_endRound( winner )`
 Central round-end helper (mirrors `sd_endGame`). First calls `gf_resolveOvertime(winner)`; if OT is active it returns (the OT path re-enters). Otherwise sets `gf_roundEnding=true`/`gf_roundActive=false`, notifies `gf_round_over`, tears down the round-timer state, forces a health HUD update, and for a non-tie winner bumps `[[level._setTeamScore]]` by 1. Reads/clears the carried `level.gf_endReasonText` for the WIN/LOSS subtitle, then threads `_killcam::startLastKillcam()` and `_globallogic::endGame(winner, reasonText)` for round cycling / win-limit.
@@ -453,6 +457,9 @@ Recomputes both teams' health stats via `gf_getTeamHealthStats()` and publishes 
 
 #### `gf_REVEAL_TIME()`
 Returns the shared spawn-in reveal duration `0.6` (seconds). The health-panel reveal, loadout slide+fade, and self-bar slide all animate over this so they reveal in sync. GSC-tunable (no mod.ff rebuild).
+
+#### `gf_pushPauseBanner()`
+Per-player push of the admin match-pause banner (`gf_pause_hud` menuDef). Reads `level.gf_matchPaused`: when false it pushes `ui_gf_paused 0` and returns; when true it pushes the wording (`ui_gf_pause_text` = "MATCH PAUSED", `ui_gf_pause_sub`) and then `ui_gf_paused 1`. Called for every player by `gf_pauseMatch`/`gf_resumeMatch` and once per spawn from `gf_runHealthHUD`.
 
 #### `gf_runHealthHUD()`
 Per-player thread that builds, reveals, and continuously updates the health panel. Fires/`endon`s `"gf_kill_health_hud"` (singleton) and `endon`s `"disconnect"`; first destroys any prior panel. Sequence: zero `ui_gf_hp_alpha`, seed totals (`gf_updateHealthHUD`), `gf_createHealthPanel`, `gf_updateHealthPanel`, `gf_hideHealthPanelForIntro`, `gf_revealHealthPanel`, thread `gf_hidePanelChromeOnRoundEnd`, wait `gf_REVEAL_TIME()`, then loop `gf_updateHealthPanel()` every 0.1s. Because the panel is menu-rendered (zero client hudelems), it builds immediately on spawn and coexists with the loadout intro.

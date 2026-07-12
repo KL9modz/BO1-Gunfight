@@ -1408,4 +1408,60 @@
 			decoration
 		}
 	}
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// ADMIN MATCH-PAUSE BANNER  (gf_pauseMatch / gf_resumeMatch in _gf_rounds.gsc)
+	// ═══════════════════════════════════════════════════════════════════════════
+	// Menu layer, not a hudelem: the pause banner would otherwise be the LAST element created on an
+	// already-loaded client, which is exactly the one the ~17-20 drawn-per-client cap silently eats.
+	// GSC pushes ui_gf_paused (gate) + ui_gf_pause_text/_sub (wording) per client, so the copy is
+	// tunable without a mod.ff rebuild. Like gf_lobby_hud this is NOT gated on BIT_HUD_VISIBLE — a
+	// pause can land in a state where the engine has cleared that bit, and ui_gf_paused is the sole
+	// authority on whether the banner is up.
+	menuDef
+	{
+		name			"gf_pause_hud"
+		rect			0 0 640 480 HORIZONTAL_ALIGN_FULLSCREEN VERTICAL_ALIGN_FULLSCREEN
+		fullScreen		0
+		visible			1
+		visibilityBits	bits( !BIT_IN_KILLCAM !BIT_UI_ACTIVE )
+
+		// Scrim behind the text — the world is already desaturated (cheat_bw), this just keeps the
+		// wordmark legible over a bright frame. SHADER+white so forecolor A is the alpha.
+		itemDef
+		{
+			rect			-160 -46 320 46 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_CENTER
+			style			WINDOW_STYLE_SHADER
+			background		"white"
+			forecolor		0 0 0 0.45
+			visible			when( dvarInt( "ui_gf_paused" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			-160 -40 320 26 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_CENTER
+			exp				text( dvarString( "ui_gf_pause_text" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.55
+			textalign		ITEM_ALIGN_TOP_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 1 1 1
+			visible			when( dvarInt( "ui_gf_paused" ) )
+			decoration
+		}
+		itemDef
+		{
+			type			ITEM_TYPE_TEXT
+			rect			-160 -12 320 10 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_CENTER
+			exp				text( dvarString( "ui_gf_pause_sub" ) )
+			textfont		UI_FONT_NORMAL
+			textscale		0.22
+			textalign		ITEM_ALIGN_TOP_CENTER
+			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
+			forecolor		1 0.42 0.1 1
+			visible			when( dvarInt( "ui_gf_paused" ) )
+			decoration
+		}
+	}
 }

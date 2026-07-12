@@ -1953,7 +1953,9 @@ gf_cleanupRoundTimerState()
 // (and flipping it back via resumeTimer would re-arm the native "time running out"
 // VO/music/beeps we deliberately suppress). Instead the bridge delegates here:
 // we freeze whichever mod clock is live (overtime takes priority over the round
-// clock, matching gf_onTimeLimit), freeze human controls, and freeze bots.
+// clock, matching gf_onTimeLimit), freeze human controls, freeze bots, and raise
+// the MATCH PAUSED banner (gf_pause_hud menuDef). The B&W vision that completes
+// the look is the bridge's half of the pause — see gf_bridgePause.
 //
 // Bots ignore freezeControls (they're server-driven by the vendored framework,
 // not client input), so we toggle the framework's own bots_play_move dvar — its
@@ -1978,9 +1980,19 @@ gf_pauseMatch()
 
     setDvar( "bots_play_move", 0 );   // framework's bot_watch_stop_move pins every bot in place
 
+    // Sole authority for the gf_pause_hud menuDef ("MATCH PAUSED"). Set BEFORE the push loop so
+    // gf_pushPauseBanner reads the live state, and it is what a mid-pause joiner's spawn-time push
+    // (gf_runHealthHUD) reads too. The B&W vision that goes with it is applied by the caller
+    // (gf_bridgePause) — visionSetNaked is level-global and the bridge owns the vision key it has
+    // to restore to on resume.
+    level.gf_matchPaused = true;
+
     players = level.players;
     for ( i = 0; i < players.size; i++ )
+    {
         players[i] freezeControls( true );
+        players[i] gf_pushPauseBanner();
+    }
 }
 
 gf_resumeMatch()
@@ -2001,6 +2013,8 @@ gf_resumeMatch()
 
     setDvar( "bots_play_move", 1 );
 
+    level.gf_matchPaused = false;
+
     // bots_play_move=1 stops bot_watch_stop_move from re-pinning, but the last-spawned
     // botStopMove(true) loop only ends on this notify (or death/disconnect) — without it
     // a bot that was mid-navigation stays frozen in place for the rest of the round.
@@ -2008,6 +2022,7 @@ gf_resumeMatch()
     for ( i = 0; i < players.size; i++ )
     {
         players[i] freezeControls( false );
+        players[i] gf_pushPauseBanner();          // level.gf_matchPaused is false now -> clears the banner
         if ( isDefined( players[i].pers["isBot"] ) && players[i].pers["isBot"] )
             players[i] notify( "botStopMove" );
     }

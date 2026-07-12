@@ -121,6 +121,25 @@ gf_hudRevealStagger()
     return ( self getEntityNumber() % 6 ) * 0.05;
 }
 
+// Admin match-pause banner (gf_pause_hud menuDef). Pushed to one client. Called for every player by
+// gf_pauseMatch/gf_resumeMatch (_gf_rounds), and once per spawn from gf_runHealthHUD so (a) a client
+// that connects mid-pause still gets the banner and (b) a stale ui_gf_paused=1 — level.gf_matchPaused
+// is level scope, so a map_restart while paused would otherwise leave the banner welded on — is
+// cleared by the next spawn. The wording is pushed, not baked into the menu, so it stays GSC-tunable.
+gf_pushPauseBanner()
+{
+    paused = isDefined( level.gf_matchPaused ) && level.gf_matchPaused;
+    if ( !paused )
+    {
+        self setClientDvar( "ui_gf_paused", "0" );
+        return;
+    }
+
+    self setClientDvar( "ui_gf_pause_text", "MATCH PAUSED" );
+    self setClientDvar( "ui_gf_pause_sub",  "WAITING FOR THE ADMIN TO RESUME" );
+    self setClientDvar( "ui_gf_paused",     "1" );
+}
+
 // The loadout overview is now fully menu-rendered (0 client hudelems), so it no longer competes with
 // the health panel for the ~17 drawn-per-player client-hudelem render cap. The panel is therefore
 // built IMMEDIATELY on spawn and coexists with the loadout intro — no more waiting for the intro to
@@ -141,6 +160,7 @@ gf_runHealthHUD()
         wait staggerDelay;
 
     self setClientDvar( "ui_gf_hp_alpha", 0 );   // menu chrome (border + self bar) starts invisible; reveal fades it in
+    self gf_pushPauseBanner();                   // mid-pause joiner gets the banner; everyone else gets it cleared
 
     gf_updateHealthHUD();              // seed the published totals
     self gf_createHealthPanel();       // build now — loadout HUD is menu-rendered, no client-elem conflict

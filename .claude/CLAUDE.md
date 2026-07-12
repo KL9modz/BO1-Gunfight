@@ -347,9 +347,10 @@ try to bundle the `.iwi` → build error.
   mode (`ui_gf_hp_mode`) is shared so both rows switch together — this **is** the small/large coupling
   threshold. Each skull slot is two itemDefs (alive team-colour + dead white) because forecolor RGB
   isn't exp-drivable, only alpha.
-- **Self health bar**, **loadout overview** (icons via `ui_gf_lo_*`; 3 hardcoded perk icons), and a
-  separate **pregame-lobby menuDef** (`gf_lobby_hud`, gated `!BIT_IN_KILLCAM` not `BIT_HUD_VISIBLE`
-  because the lobby cam clears hud_visible).
+- **Self health bar**, **loadout overview** (icons via `ui_gf_lo_*`; 3 hardcoded perk icons), and two
+  separate menuDefs — **pregame lobby** (`gf_lobby_hud`) and the admin **pause banner** (`gf_pause_hud`,
+  "MATCH PAUSED", gated on `ui_gf_paused`) — both gated `!BIT_IN_KILLCAM` not `BIT_HUD_VISIBLE`
+  (the lobby cam clears hud_visible, and a pause can land in a state that has too).
 - **Kill/score popup:** renders "Elimination"/"Assist" on its own `NewScoreHudElem` (`self.gf_popupElem`,
   a separate pool from the ~17 cap), styled to match the stock yellow popup; the engine's own
   `hud_rankscroreupdate` is parked offscreen each spawn so stock "+N" XP pushes can't race ours.
@@ -411,8 +412,11 @@ non-idempotent command. Telemetry (dedicated-only single-token reads): **`gf_sta
 (`gf_bridgeNotify`); only `saymsg` broadcasts. Team moves: `pteam_<num>_<team>` defers to next-round
 prematch (`pers["gf_pendingTeam"]`, applied on `spawned_player`); `pteamforce_` applies now (respawns).
 ⚠ A live human cannot be moved without dying — deferral is why. Verbs cover bots, balance-teams,
-match-control (pause/resume delegate to the mod clock, `lobbystart`, endround), gameplay toggles, and
-fun/visual commands. `gf_bridgeInit` re-threads its loops every round behind a `gf_bridge_reinit`
+match-control (`lobbystart`, endround, pause/resume), gameplay toggles, and fun/visual commands.
+**Pause** delegates the freeze to the mod clock (`gf_pauseMatch` — live clock + controls + bots +
+`level.gf_matchPaused`, which drives the `gf_pause_hud` "MATCH PAUSED" menuDef) and keeps the B&W
+vision on the bridge side, since only the bridge knows the `gf_vis_vision` key to restore on resume;
+a `vision_*`/`visreset` issued mid-pause persists its key but doesn't apply until resume. `gf_bridgeInit` re-threads its loops every round behind a `gf_bridge_reinit`
 collapse notify ([[onstartgametype-perround-thread-accumulation]]).
 
 **`tools/rcon/`** is a loopback-only (127.0.0.1) Node admin panel (never web-deployed). Its transport is

@@ -78,7 +78,7 @@
     <div class="btitle">MATCH CONTROL</div>
     <div style="display:flex;flex-direction:column;gap:8px">
       <button id="startBtn" class="b-ok b-lg ctrl lobbypulse" style="display:none" data-tip="gf_cmd lobbystart (GSC bridge)&#10;Releases the pre-prematch LOBBY HOLD so the match-start countdown begins.&#10;Appears only while a hold is active (Lobby Hold = Manual, or a load / min-players hold).&#10;Arrange teams first (right-click players), then start." onclick="startMatch()">▶  START MATCH</button>
-      <button id="pauseBtn" class="b-wn b-lg ctrl" data-tip="gf_cmd pause / gf_cmd resume (GSC bridge)&#10;Toggles pauseTimer() / resumeTimer() — freezes the round clock&#10;Button label and color flip on state change" onclick="doPause()">⏸  PAUSE MATCH</button>
+      <button id="pauseBtn" class="b-wn b-lg ctrl" data-tip="gf_cmd pause / gf_cmd resume (GSC bridge)&#10;Freezes the live mod clock (round or overtime), player controls and bots&#10;Also: black & white vision + a MATCH PAUSED banner for everyone&#10;Resume restores whatever vision set was standing&#10;Button label and color flip on state change" onclick="doPause()">⏸  PAUSE MATCH</button>
       <div class="two">
         <button class="b-ok ctrl" data-tip="gf_cmd endround_allies (GSC bridge)&#10;Calls sd_endGame('allies','') — awards round win to Allies immediately" onclick="endRound('allies')">END ROUND → ALLIES</button>
         <button class="b-ng ctrl" data-tip="gf_cmd endround_axis (GSC bridge)&#10;Calls sd_endGame('axis','') — awards round win to Axis immediately" onclick="endRound('axis')">END ROUND → AXIS</button>
