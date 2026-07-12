@@ -21,6 +21,10 @@ zone/
 # Join notifier — real config carries the secret ntfy topic (acts like a password)
 tools/notify/config.json
 
+# Box-local "mute from the activity surfaces" list (status_service + join-notify read it).
+# Holds player GUIDs — account identifiers, and this repo is public. Template is .example
+tools/ignore.local.json
+
 # RCON panel — real rcon_password store (per-profile). Never commit; template is .example
 tools/rcon/secrets.local.json
 

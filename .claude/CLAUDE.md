@@ -64,6 +64,8 @@ wins** takes the match.
 - Site/branding: design pass; server ads; credit Plutonium/bots; show per-map feature support; on-brand
   Discord live-count card ([[discord-widget-csp-frame-src]]). Setup guide: recommend `cg_fov 65`,
   `cg_fovScale 1.4`. BO1 server "role" tied to Discord activity.
+  - Map/mode vote
+  - Perks per class
 
 ---
 
@@ -430,13 +432,18 @@ rebuild; dvar values/positions are GSC-tunable. Intro slide/fade animations are 
 - **Friendly fire is 100% stock** — the mod GSC sets no FF dvar. It's owned by the RCON panel writing the
   stock tweakables `scr_team_fftype` (base) + `scr_gf_team_fftype` (per-gametype override the engine
   re-polls ~5s). FF damage is applied by the engine but never scored. ([[t5-tweakable-override-dvars-live]])
-- **Flinch:** `scr_gf_flinch` (mult of stock `bg_viewKickScale` 0.2), re-applied every round by
-  `gf_applyFlinch`. ⚠ **`bg_viewKickScale` does NOT replicate** — each client scales its own damage view
-  kick from its LOCAL copy, so the server-side `setDvar` alone changes nothing for anyone on a dedicated
-  server (it only ever appeared to work on a listen host, where the host *is* a client). So the value is
-  **pushed per-client**: to live humans in `gf_applyFlinch`, and per-spawn via `gf_applyFlinchClient`
-  (skipped at stock 1 — a fresh client already sits at 0.2). Session-only; `bg_viewKickScale` is not a
-  saved client dvar. ([[flinch-bg-viewkickscale-not-replicated]])
+- **Flinch:** `scr_gf_flinch` (mult of stock `bg_viewKickScale` 0.2; **default 0.5** = half stock →
+  `bg_viewKickScale` 0.1), re-applied every round by `gf_applyFlinch`. ⚠ **`bg_viewKickScale` does NOT
+  replicate** — each client scales its own damage view kick from its LOCAL copy, so the server-side
+  `setDvar` alone changes nothing for anyone on a dedicated server (it only ever appeared to work on a
+  listen host, where the host *is* a client). So the value is **pushed per-client**: to live humans in
+  `gf_applyFlinch`, and per-spawn via `gf_applyFlinchClient` (which skips only at an explicit stock 1 —
+  a fresh client already sits at 0.2; at the 0.5 default it always pushes). ⚠ That per-spawn push
+  **overrides a player's own `bg_viewKickScale`** from their autoexec — the server's value always wins,
+  so the dvar is the one flinch number that matters. Session-only; `bg_viewKickScale` is not a saved
+  client dvar. ⚠ The two `gf_cfgFloat` defaults (`gf_applyFlinch` + `gf_applyFlinchClient`) must stay in
+  lockstep — the seed is seed-if-empty, so a drift is masked by whichever ran first.
+  ([[flinch-bg-viewkickscale-not-replicated]])
 - **Vision — the contrast pop is Gunfight's DEFAULT look, in every build** (`_gf_rounds.gsc`,
   shipped): `gf_initRoundVision` (called from `onStartGameType`) stamps `level.gf_defaultVision` =
   the map's own set and threads `gf_applyRoundVision`, which **waits for `prematch_over`** and then
@@ -550,7 +557,7 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_overtimelimit` / `_large` | 15 / 30 | Overtime seconds, small / large; `0` = OT off (HP decides now). |
 | `gf_capture_time` / `_large` | 3 / 5 | OT zone hold-to-capture seconds, small / large. |
 | `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (auto goes large when a team hits 5+). |
-| `scr_gf_flinch` | 1 | Flinch scale (× stock `bg_viewKickScale` 0.2); pushed **per-client** — the server dvar alone doesn't replicate (clamp 0-3). |
+| `scr_gf_flinch` | 0.5 | Flinch scale (× stock `bg_viewKickScale` 0.2 → 0.1); pushed **per-client** — the server dvar alone doesn't replicate, and the push beats a player's own autoexec (clamp 0-3). |
 | `scr_team_maxsize` | 0 (cfg ships 6) | `>0` caps players/team; overflow → spectator on spawn. |
 
 **Match start / pregame lobby** (match's first round only)
@@ -749,6 +756,16 @@ in-game browser name comes from the Plutonium **server key label**, not `sv_host
 (zero RCON — diffs `admin.json`), `GF-JoinNotify` (ntfy alerts), `GF-Watchdog` (short-lived, re-invoked
 every 3 min so it can't exhaust a retry budget; restarts dead tasks, recovers wedges, `map_rotate`s a
 stuck match).
+
+**Muting a player (the owner's own connects).** `tools/ignore.local.json` (gitignored + `/XF`-excluded,
+so it's box-local; shared loader `tools/ignore_list.ps1`, re-read on change with no restart) lists GUIDs
+that are **excluded from activity, not from presence**. `GF-StatusService` filters them out of the
+`recent` ring and the public `activity.json` **at the projection, never at the source** — `conn_logger`
+still writes every connect to the `players_*.log` day-files, so the admin history stays complete and
+un-muting restores the feed retroactively — while they stay in `status.json`'s live `players` list, so
+the site's "who's on right now" remains truthful. `GF-JoinNotify` applies the same list *harder*: an
+ignored player is treated as **not connected at all**, so they can't count toward "N online" or suppress
+the high-priority "server now active" push when a real player joins.
 ⚠ **Panel-first rule: never add another direct RCON poller on the box** — all readers go through the
 panel API on `127.0.0.1:3000`. The same rule now covers **geo**: the panel is the box's single ip-api
 client (disk-cached `.geocache.json`, paced under the free tier's 45 req/min), and `/api/geoip?ips=`

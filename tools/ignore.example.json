@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy to ignore.local.json (gitignored, lives on the box) to mute a player from the ACTIVITY surfaces. An ignored player fires no ntfy join/leave push and is absent from status.json's `recent` ring and the public 7-day activity.json feed - but STILL appears in the live player list on the website, and is still fully logged to the .secured admin snapshot / admin history / players_*.log day-files. Read live by GF-StatusService and GF-JoinNotify: an edit takes effect within one poll, no service restart needed.",
+  "_guids": "Player GUIDs (the stable id `status` reports). Find one with: Select-String -Path <storage>\\t5\\logs\\players_*.log -Pattern <name>",
+  "guids": [],
+  "_names": "Optional case-insensitive EXACT-name fallback, for a client with no usable GUID. Prefer guids - a name is not identity.",
+  "names": []
+}

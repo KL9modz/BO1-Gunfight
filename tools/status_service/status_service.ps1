@@ -67,6 +67,10 @@ param(
     # that so the box signal only fires if the in-game net also failed.
     [string] $HealthOutFile        = '',
     [int]    $RoundStuckSecs       = 300,
+    # Box-local list of players muted from the ACTIVITY surfaces (the recent ring + the public
+    # activity feed). They stay in the live player list and in the admin snapshot/history - see
+    # tools\ignore_list.ps1. Defaults to tools\ignore.local.json; absent = ignore nobody.
+    [string] $IgnoreFile    = '',
     [int]    $RecvTimeoutMs = 1200,
     [int]    $RecentMax     = 15,
     # Loopback port of the RCON panel (tools\rcon\server.js). When the panel is running,
@@ -77,6 +81,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Shared with GF-JoinNotify: Get-GfIgnoreList (mtime-cached) + Test-GfIgnored.
+. (Join-Path $PSScriptRoot '..\ignore_list.ps1')
+if ([string]::IsNullOrEmpty($IgnoreFile)) { $IgnoreFile = Join-Path $PSScriptRoot '..\ignore.local.json' }
 
 # storage\t5\mods\mp_gunfight\tools\status_service\ -> four parents = storage\t5\
 $storageT5 = $PSScriptRoot
@@ -305,10 +313,15 @@ function Get-GeoBatch {
 # Project the shared day-file event list into the PUBLIC activity feed: drop ip/guid/ping,
 # keep time/name/event/session, and stamp the country code resolved from the (dropped) IP.
 # This is the ONLY place a log IP is turned into something publishable.
+#
+# Ignored players (tools\ignore.local.json) are dropped HERE, at the projection - never at the
+# source. conn_logger still writes every connect to the day-files, so the private admin history
+# stays complete and un-muting someone retroactively restores their whole 7 days.
 function Build-PublicActivity {
-    param($events, [hashtable]$geo)
+    param($events, [hashtable]$geo, $ignore)
     $out = New-Object System.Collections.ArrayList
     foreach ($e in $events) {
+        if (Test-GfIgnored $ignore $e.guid $e.name) { continue }
         $bare = ([string]$e.ip -split ':')[0]
         $cc   = if ($geo.ContainsKey($bare)) { $geo[$bare] } else { '' }
         [void]$out.Add([ordered]@{
@@ -467,11 +480,16 @@ while ($true) {
             $list = @()
             $adminList = @()
             $humanNames = @{}
+            $ignore = Get-GfIgnoreList $IgnoreFile
             foreach ($h in $humansRaw) {
                 $bare = ([string]$h.ip -split ':')[0]
                 $cc   = if ($geo.ContainsKey($bare)) { $geo[$bare] } else { '' }
                 $list      += ,([ordered]@{ name = $h.name; team = $h.team; alive = $h.alive; ping = $h.ping; cc = $cc })
                 $adminList += ,([ordered]@{ name = $h.name; team = $h.team; alive = $h.alive; ping = $h.ping; cc = $cc; ip = $h.ip; guid = $h.guid })
+                # $humanNames feeds ONLY the recent-activity diff below, so an ignored player is
+                # withheld here and nowhere else: they stay in $list (visible on the live player
+                # list, counted in `humans`) but never produce a joined/left entry.
+                if (Test-GfIgnored $ignore $h.guid $h.name) { continue }
                 $humanNames[$h.name] = $cc
             }
 
@@ -559,11 +577,13 @@ while ($true) {
             try {
                 $pev  = Build-ConnHistory -dir $LogDir -days $ActivityDays -maxEvents $ActivityMax
                 $pgeo = Get-GeoBatch -ips @($pev | ForEach-Object { $_.ip }) -panelPort $PanelPort
+                # count is the PUBLISHED count, so it can't advertise events the feed withholds.
+                $pub  = @(Build-PublicActivity -events $pev -geo $pgeo -ignore (Get-GfIgnoreList $IgnoreFile))
                 Write-Snapshot -path $ActivityOutFile -obj ([ordered]@{
                     updated = $now.ToString('o')
                     days    = $ActivityDays
-                    count   = $pev.Count
-                    events  = (Build-PublicActivity -events $pev -geo $pgeo)
+                    count   = $pub.Count
+                    events  = $pub
                 })
             } catch { Write-Warning ("activity write failed: {0}" -f $_.Exception.Message) }
         }

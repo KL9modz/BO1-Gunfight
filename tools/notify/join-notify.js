@@ -71,6 +71,40 @@ function loadConfig() {
   };
 }
 
+// ─── Ignore list (shared with GF-StatusService) ─────────────────────────────
+// tools/ignore.local.json — the same file tools/ignore_list.ps1 reads. An ignored player is
+// treated as NOT CONNECTED here: no JOIN/LEAVE push, and they don't count toward "N online",
+// "server now active" or "server empty" — so the owner idling on his own server can't suppress
+// the high-priority alert that fires when a real player shows up. Re-read on mtime change, so
+// an edit lands within one poll with no restart. Missing/bad file = ignore nobody.
+const IGNORE_FILE = path.resolve(__dirname, '..', 'ignore.local.json');
+let ignoreCache = { guids: [], names: [] };
+let ignoreStamp = null;   // mtimeMs of the loaded file; 0 = absent
+
+function getIgnore() {
+  let stamp = 0;
+  try { stamp = fs.statSync(IGNORE_FILE).mtimeMs; } catch (_) { stamp = 0; }
+  if (stamp === ignoreStamp) return ignoreCache;
+  ignoreStamp = stamp;
+  let guids = [], names = [];
+  if (stamp !== 0) {
+    try {
+      const j = JSON.parse(fs.readFileSync(IGNORE_FILE, 'utf8'));
+      guids = (j.guids || []).map(String).map(s => s.trim()).filter(Boolean);
+      names = (j.names || []).map(String).map(s => s.trim().toLowerCase()).filter(Boolean);
+    } catch (e) { console.error('[ignore] bad ' + IGNORE_FILE + ':', e.message); }
+  }
+  ignoreCache = { guids, names };
+  return ignoreCache;
+}
+
+function isIgnored(ign, guid, name) {
+  const g = String(guid || '').trim();
+  if (g && g !== '0' && ign.guids.includes(g)) return true;   // guid 0 = still connecting: identifies nobody
+  const n = String(name || '').trim().toLowerCase();
+  return !!(n && ign.names.includes(n));
+}
+
 // ─── RCON (UDP OOB) ─────────────────────────────────────────────────────────
 const OOB = Buffer.from([0xff, 0xff, 0xff, 0xff]);
 
@@ -236,7 +270,10 @@ async function tick(cfg) {
     return;   // don't reset baseline on a transient miss → no false joins on recovery
   }
   const now  = Date.now();
-  const real = st.players.filter(p => !p.bot);
+  // Bots AND ignored players drop out in one place, so the join/leave diff, the counts,
+  // wasEmpty, the EMPTY transition and the heartbeat never see them.
+  const ign  = getIgnore();
+  const real = st.players.filter(p => !p.bot && !isIgnored(ign, p.guid, p.name));
   // Carry each staying player's joinedAt forward; stamp newly-seen players with `now`.
   const cur = new Map();
   for (const p of real) {

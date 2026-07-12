@@ -123,3 +123,30 @@ Unregister-ScheduledTask -TaskName "GF Join Notifier" -Confirm:$false
 
 **Currently deployed on the VPS:** topic `gunfight`, `notifyLeaves`/`notifyFirstJoin`/
 `notifyEmpty` on, `heartbeatMins` 60. Running as scheduled task "GF Join Notifier".
+
+## Muting a player (the owner's own connects)
+
+`tools/ignore.local.json` (gitignored, box-local — copy `tools/ignore.example.json`) lists
+players who should not generate alerts. **`GF-StatusService` reads the same file**, so one
+edit covers the phone and the website; it's re-read on change, so no service restart.
+
+```json
+{ "guids": ["2223048"], "names": [] }
+```
+
+The notifier treats an ignored player as **not connected at all** — no JOIN/LEAVE push, and
+they don't count toward "N online", "server now active" or "server empty". That last part is
+the point: the owner idling on his own server must not suppress the high-priority alert that
+fires when a *real* player finally shows up.
+
+Match on **GUID** (stable across name and IP changes — it's the key `status` itself uses).
+The `names` list is a case-insensitive exact-match fallback for a client with no usable GUID;
+prefer GUIDs, a name is not identity. Find a GUID in the day-files:
+
+```powershell
+(Select-String -Path $env:LOCALAPPDATA\Plutonium\storage\t5\logs\players_*.log -Pattern KL9).Line | Select -Last 3
+```
+
+Note the deliberate asymmetry with the website: an ignored player still appears in the live
+player list on gunfight.us (presence is truthful) — they're only withheld from the *activity*
+surfaces. See `tools/ignore_list.ps1`.

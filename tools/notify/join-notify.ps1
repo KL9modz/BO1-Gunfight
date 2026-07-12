@@ -17,6 +17,15 @@
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+# Shared with GF-StatusService: Get-GfIgnoreList (mtime-cached) + Test-GfIgnored. An ignored
+# player is treated as NOT CONNECTED here - no JOIN/LEAVE push, and they don't count toward
+# "N online", "server now active" or "server empty". So the owner idling on his own server
+# can't suppress the high-priority alert that fires when a real player shows up.
+# (status_service applies the same list only to its ACTIVITY feed - an ignored player still
+# appears in the website's live player list. Different surface, deliberately different rule.)
+. (Join-Path $PSScriptRoot '..\ignore_list.ps1')
+$script:IgnoreFile = Join-Path $PSScriptRoot '..\ignore.local.json'
+
 function Write-Log($msg) {
   Write-Host ("[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $msg)
 }
@@ -225,7 +234,11 @@ function Do-Tick($cfg) {
 
   $st   = Parse-Status $text
   $now  = Get-Date
-  $real = @($st.players | Where-Object { -not $_.bot })
+  # Bots AND ignored players are filtered out in one place, so everything downstream (the
+  # join/leave diff, the "N online" count, wasEmpty, the EMPTY transition, the heartbeat)
+  # simply never sees them - no per-alert special cases.
+  $ign  = Get-GfIgnoreList $script:IgnoreFile
+  $real = @($st.players | Where-Object { -not $_.bot -and -not (Test-GfIgnored $ign $_.guid $_.name) })
   $cur  = @{}
   foreach ($p in $real) {
     $k = P-Key $p

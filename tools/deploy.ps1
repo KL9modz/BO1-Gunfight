@@ -492,7 +492,8 @@ function Deploy-Mod {
     #   prefs.local.json         - RCON panel's UI state (the FAVORITES pinboard)
     #   watchdog_state.json      - watchdog's down/last-alert memory
     #   watchdog_maintenance.json- the deploy maintenance marker written just below in Restart-Server
-    $xf = @("config.json", "secrets.local.json", "prefs.local.json", "console_mp.log*",
+    #   ignore.local.json        - players muted from the activity feed + ntfy (holds GUIDs, so untracked)
+    $xf = @("config.json", "secrets.local.json", "prefs.local.json", "ignore.local.json", "console_mp.log*",
             ".dvarcache.json", ".geocache.json", "watchdog_state.json", "watchdog_maintenance.json")
     Invoke-Robocopy -Source $RepoRoot -Destination $ModDest -ExtraArgs (@("/XD") + $xd + @("/XF") + $xf)
     Write-Host "Mod tree + mod.ff deployed$(if ($DryRun) { ' (dry run - nothing changed)' }) to $ModDest"

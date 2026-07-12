@@ -89,3 +89,22 @@ Rules** remove "All users" and add an Allow rule for your admin account; create 
 account in **Computer Management → Local Users**. Then create the marker so the snapshot
 starts: `New-Item C:\inetpub\wwwroot\admin\live\.secured -Force`. Basic auth is HTTPS-only
 here by design (the site already forces HTTPS + HSTS).
+
+### Muting a player from the activity surfaces
+
+`tools/ignore.local.json` (gitignored, box-local — copy `tools/ignore.example.json`; shared
+with `GF-JoinNotify`) lists players by GUID. An ignored player is **excluded from activity,
+not from presence**:
+
+| surface | ignored player |
+|---|---|
+| `status.json` → `players` (live list on the site) | **still shown**, still counted in `humans` |
+| `status.json` → `recent` ring | withheld |
+| `activity.json` (public 7-day feed) | withheld |
+| `admin.json` / `admin_history.json` / `players_*.log` | **still fully logged** |
+| ntfy push (`GF-JoinNotify`) | no alert; not counted at all (see that README) |
+
+The filter runs at the **projection**, never at the source: `conn_logger` still writes every
+connect to the day-files, so the private admin history stays complete and un-muting someone
+restores their whole 7 days retroactively. The file is re-read on change (no restart), and a
+missing or malformed file means "ignore nobody" rather than taking the service down.
