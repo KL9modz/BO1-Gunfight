@@ -74,18 +74,18 @@ gf_getCustomSpawnLocations()
         // set 0
         set = gf_spawnSet();
         a = set["allies"];
-        a[ a.size ] = gf_sp( (436, 2075, -167), -116 );
-        a[ a.size ] = gf_sp( (356, 2103, -167), -106 );
-        a[ a.size ] = gf_sp( (247, 2118, -175), -103 );
-        a[ a.size ] = gf_sp( (149, 2083, -174), -86 );
-        a[ a.size ] = gf_sp( (516, 1930, -171), -134 );
+        a[ a.size ] = gf_sp( (82, 1913, -172), -91 );
+        a[ a.size ] = gf_sp( (299, 1912, -177), -92 );
+        a[ a.size ] = gf_sp( (163, 2000, -175), -90 );
+        a[ a.size ] = gf_sp( (133, 1847, -175), -91 );
+        a[ a.size ] = gf_sp( (154, 2098, -175), -90 );
         set["allies"] = a;
         x = set["axis"];
-        x[ x.size ] = gf_sp( (-68, -1399, -167), 65 );
-        x[ x.size ] = gf_sp( (28, -1409, -169), 81 );
-        x[ x.size ] = gf_sp( (129, -1409, -169), 87 );
-        x[ x.size ] = gf_sp( (227, -1378, -167), 98 );
-        x[ x.size ] = gf_sp( (378, -1358, -167), 111 );
+        x[ x.size ] = gf_sp( (-36, -1185, -169), 86 );
+        x[ x.size ] = gf_sp( (218, -1203, -167), 91 );
+        x[ x.size ] = gf_sp( (120, -1248, -169), 91 );
+        x[ x.size ] = gf_sp( (2, -1346, -170), 88 );
+        x[ x.size ] = gf_sp( (142, -1359, -167), 90 );
         set["axis"] = x;
         result["sets"][ result["sets"].size ] = set;
 
@@ -674,7 +674,7 @@ gf_getCustomOvertimeLocation()
         return gf_ot( (-1295, -199, -317), -34 );
 
     if ( mapname == "mp_area51" )
-        return gf_ot( (-405, -856, 12), 100 );
+        return gf_ot( (-416, -801, 12), 124 );
 
     if ( mapname == "mp_drivein" )
         return gf_ot( (-107, 227, 22), -116 );
@@ -701,7 +701,7 @@ gf_getCustomOvertimeLocation()
         return gf_ot( (-710, -1070, 31), 49 );
 
     if ( mapname == "mp_berlinwall2" )
-        return gf_ot( (616, -1365, 76), -83 );
+        return gf_ot( (759, -1781, 59), 4 );
 
     return undefined;
 }

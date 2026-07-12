@@ -17,9 +17,23 @@ $ErrorActionPreference = "Stop"
 # zip = download). 'main' keeps everything; this script never modifies it.
 #
 # What ships: mod.ff + the gameplay GSC under maps/ + a generated README.md.
-# What is dropped: the dev files below, and any dev wiring wrapped in markers:
+# What is dropped: the $DevFiles in release_common.ps1 (bots, RCON bridge, debug), and any
+# dev wiring wrapped in markers:
 #     // #strip-begin ... // #strip-end
 # (markers are inert // comments on main, so the dev build is unaffected).
+#
+# The result is a STRIPPED-DOWN Gunfight: the gameplay is identical to what the VPS runs
+# (rounds, shared rotating loadouts, overtime + capture zone, auto large/small team-size
+# mode, curated spawns, damage scoring, menu HUD), but none of the dev/ops machinery ships
+# -- no pregame warmup, no lobby/load-gate hold, no bots, no RCON bridge, no debug tooling,
+# and none of their dvars. A public server owner still gets the core admin knobs
+# (scorelimit / timelimit / overtimelimit / roundswitch / roundsperloadout / teamspawnmode /
+# capture_time / flinch / team_maxsize).
+#
+# tools\verify_release_strip.ps1 statically proves the staged GSC still resolves -- run it
+# after touching ANY strip region. A region that removes a function some KEPT code still
+# calls is an "unknown function" compile error that kills the whole server, and it will not
+# show up until a client actually connects.
 #
 # The shipped GSC is also COMMENT-STRIPPED (// line + /* */ block comments) so the
 # public source carries no dev notes/TODOs. Strings that contain comment markers are
@@ -36,21 +50,10 @@ $ErrorActionPreference = "Stop"
 
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
-# Dev-only GSC excluded from the public mod (forward-slash, repo-relative).
-$DevFiles = @(
-    "maps/mp/gametypes/_bot.gsc",
-    "maps/mp/bots/_bot_loadout.gsc",
-    "maps/mp/bots/_bot_script.gsc",
-    "maps/mp/bots/_bot_utility.gsc",
-    "maps/mp/gametypes/_gf_bridge.gsc",
-    "maps/mp/gametypes/_gf_debug.gsc"
-)
-
-function Strip-Markers {
-    param([string]$Content)
-    # Remove every "// #strip-begin ... // #strip-end" region (dev wiring) inclusive.
-    return [regex]::Replace($Content, "(?ms)^[^\r\n]*#strip-begin\b.*?#strip-end[^\r\n]*\r?\n?", "")
-}
+# $DevFiles (what's dropped outright) and Strip-Markers (what's cut from the files that
+# DO ship) live in release_common.ps1 so tools\verify_release_strip.ps1 checks the exact
+# same build this script produces.
+. (Join-Path $PSScriptRoot "release_common.ps1")
 
 function Strip-Comments {
     param([string]$Content)

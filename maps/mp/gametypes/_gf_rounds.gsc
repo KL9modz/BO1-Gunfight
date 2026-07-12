@@ -52,6 +52,7 @@ gf_cfgFloat( dvar, def, lo, hi )
     return clamped;
 }
 
+// #strip-begin - manual-lobby countdown formatter (dev/main only; no lobby in the public build)
 // Whole seconds -> "M:SS" (62 -> "1:02"). Used by the manual-lobby auto-start countdown.
 gf_fmtMMSS( secs )
 {
@@ -63,6 +64,7 @@ gf_fmtMMSS( secs )
         return m + ":0" + s;
     return m + ":" + s;
 }
+// #strip-end
 
 // Flinch (damage view-kick) scale. scr_gf_flinch is a MULTIPLIER of the stock
 // bg_viewKickScale (0.2): 1 = stock flinch, 0 = no flinch, >1 = more. Called each
@@ -125,6 +127,21 @@ gf_nativePrematchTicker()
     tickObj delete();
 }
 
+// #strip-begin - MATCH-START HOLD + LOBBY->MATCH TRANSFER (dev/main only; stripped from public release)
+//
+// This whole region — the pre-prematch load gate, the Auto/Manual pregame lobby it grew into, and
+// the team/bot plan that carries arranged sides across the lobby's map_restart(false) — is absent
+// from the public build. gf.gsc's single call to gf_waitForLoadingClients() is strip-marked too, so
+// with it gone onStartGameType simply returns and the engine threads the prematch immediately: no
+// load wait, no min-players hold, no lobby, no fast-restart.
+//
+// gf_anyTrackedClientLoading() is deliberately kept BELOW this region, outside the markers, because
+// gf_roundWatchdog — live round code, always shipped — calls it. It reads level.gf_loadGateSeen, which
+// only the tracker in here ever populates, and already returns false when that array is undefined, so
+// it degrades to "nobody is loading" exactly as the public build wants. Do not fold it into this region.
+// (gf_closeGraceEarly calls it too, but only from a hold that is itself strip-marked, so that second
+// caller does not exist in the public build.)
+//
 // ─── Pre-prematch load gate ─────────────────────────────────────────────────
 // Clients carried across a map rotation connect while STILL ON THEIR LOADING
 // SCREEN: Callback_PlayerConnect fires immediately (statusicon
@@ -908,6 +925,7 @@ gf_reseatRespawn()
             self thread [[level.spawnClient]]();
     }
 }
+// #strip-end
 
 // True while any load-gate-tracked HUMAN still has the connecting statusicon
 // (i.e. is on its loading screen). Reads the frozen level.gf_loadGateSeen
@@ -934,6 +952,11 @@ gf_anyTrackedClientLoading()
     return false;
 }
 
+// #strip-begin - PREGAME LOBBY PRESENTATION (dev/main only; stripped from public release)
+// The lobby camera, its live roster/icon HUD, the map-name table, and the lobby HUD blanker. All of
+// it is driven from gf_waitForLoadingClients (stripped above), so the public build reaches none of
+// it. Ends just before the team-size mode section.
+//
 // ─── Lobby camera (Auto/Manual pregame lobby) ──────────────────────────────
 // During the Auto/Manual pregame hold, float every begun HUMAN in the INTERMISSION camera — the fixed
 // map-overview the engine uses at match end — so the lobby reads as a real staging screen instead of
@@ -1206,6 +1229,7 @@ gf_hideLobbyHUD()
     self setClientDvar( "ui_gf_self_show",  "0" );
     self setClientDvar( "ui_gf_popup_show", "0" );
 }
+// #strip-end
 
 // ─── Team-Size Spawn/Barrier Mode ──────────────────────────────────────────
 // Resolves "large" (full-map TDM spawns, wager barriers deleted, OT flag at the
@@ -1419,7 +1443,9 @@ gf_playerSpawnedCB()
     // is client-scaled and unreplicated, so a joiner needs it pushed on spawn.
     if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
     {
+        // #strip-begin - RCON gf_vis_* r_* push (dev/main only; the public build never touches client video dvars)
         self gf_applyVisTweaks();
+        // #strip-end
         self gf_applyFlinchClient();
     }
     self thread gf_onSpawned();
@@ -1453,6 +1479,72 @@ gf_playerSpawnedCB()
 }
 
 
+// ─── Round vision (Gunfight's default look) ────────────────────────────────
+// Gunfight ships a vision set as its DEFAULT: "enhance" (the engine's "default_night" set —
+// saturation 1, contrast 1.2), the contrast pop the mod is meant to look like. This is core, not an
+// admin tweak, so it lives here (shipped) rather than in the bridge, and every build gets it.
+//
+// It CANNOT be applied from onStartGameType: the stock prematch flow stomps vision AFTERWARDS —
+// matchStartTimer forces "mpIntro" for the countdown and at T-2s blends back to the MAP vision over
+// 3s (_globallogic.gsc:398/424). So we wait for prematch_over and take over the tail of that blend
+// (a newer visionSetNaked call retargets the in-progress lerp). The 3.0s transition mirrors the
+// stock blend it replaces, so the reveal reads as native rather than as a snap.
+//
+// visionSetNaked is a BARE builtin in the MP VM (level-global, all clients) — the self-method form
+// throws unknown-function ([[vector-scale-in-common-scripts-utility]]).
+//
+// ⚠ Vision is LEVEL state, so the between-round map_restart resets it to the map default and this
+// has to re-run every round. Called from onStartGameType.
+gf_initRoundVision()
+{
+    level.gf_defaultVision = getDvar( "mapname" );   // the map's OWN vision set — what "normal" means
+    level thread gf_applyRoundVision();
+}
+
+gf_applyRoundVision()
+{
+    level endon( "game_ended" );
+
+    level waittill( "prematch_over" );
+
+    visionSetNaked( gf_visionSetForKey( gf_roundVisionKey() ), 3.0 );
+}
+
+// The vision key in force this round. The public build has exactly one answer — the Gunfight default.
+// Dev/VPS lets an admin override it live (RCON vision_<key>), persisted in gf_vis_vision so it
+// survives the between-round map_restart; "normal" is stored EXPLICITLY (not as an empty dvar) so
+// that clearing an override means "map default", not "fall back to the gf default" — see
+// gf_bridgeVision.
+gf_roundVisionKey()
+{
+    // #strip-begin - RCON vision override (dev/main only; the public build is always the gf default)
+    vkey = getDvar( "gf_vis_vision" );
+    if ( vkey != "" )
+        return vkey;
+    // #strip-end
+    return "enhance";   // Gunfight's default look
+}
+
+gf_visionSetForKey( vkey )
+{
+    if ( vkey == "enhance"  ) return "default_night";    // sat1/contrast1.2 pop — the GF DEFAULT
+    if ( vkey == "bw"       ) return "cheat_bw";         // pure grayscale
+    if ( vkey == "berserk"  ) return "berserker";        // warm, contrast 1.5
+    if ( vkey == "thermal"  ) return "infrared";         // dark desat night/thermal
+    if ( vkey == "hotsnow"  ) return "infrared_snow";    // bright grayscale thermal
+    if ( vkey == "nuke"     ) return "mp_nuked";         // warm hazy
+    if ( vkey == "film"     ) return "flashpoint";       // warm cinematic / sepia
+    if ( vkey == "bleak"    ) return "wmd";              // cold desaturated
+
+    // legacy aliases (old panel keys) -> honest equivalents, so nothing 404s
+    if ( vkey == "contrast" ) return "default_night";
+    if ( vkey == "invert"   ) return "default_night";
+    if ( vkey == "night"    ) return "infrared";
+
+    return level.gf_defaultVision;             // "normal" / unknown -> the map's own vision
+}
+
+// #strip-begin - RCON video tweaks (dev/main only; stripped from public release)
 // ─── Video tweaks (RCON-tunable, stock by default) ─────────────────────────
 // gf_vis_<key> server dvar -> client video dvar. All default UNSET ("") = the
 // mod never touches that setting. The RCON Visuals sliders write these through
@@ -1461,6 +1553,10 @@ gf_playerSpawnedCB()
 // clears the gf_vis_* dvar and one-shots the engine default (gf_visEngineDefault).
 // r_gamma is deliberately NOT in the map: it is a SAVED client dvar and Plutonium
 // blocks servers from writing those (the write never applies).
+//
+// The whole family is RCON-only (nothing else writes a gf_vis_* dvar), so the public build — which
+// has no bridge — would never push any of it. Stripped rather than left inert so the public source
+// carries no dead r_* machinery.
 
 gf_visTweakMap()
 {
@@ -1497,11 +1593,13 @@ gf_applyVisTweaks()
             self setClientDvar( m[keys[i]], v );
     }
 }
+// #strip-end
 
 gf_onSpawnSpectator( origin, angles )
 {
     maps\mp\gametypes\_globallogic_defaults::default_onSpawnSpectator( origin, angles );
 
+    // #strip-begin - lobby spectator branch (dev/main only; calls gf_hideLobbyHUD, which the public build strips)
     // ── Pregame lobby (Auto/Manual) ──────────────────────────────────────────
     // Keep this a CLEAN spectator: hide the whole gunfight HUD. The team-select menu the engine would
     // open for a teamless connector is prevented upstream by level.forceAutoAssign (set at the hold
@@ -1515,6 +1613,7 @@ gf_onSpawnSpectator( origin, angles )
         self gf_hideLobbyHUD();
         return;
     }
+    // #strip-end
 
     // Mid-match spectator (a late joiner or a REJOIN): clear any stale lobby HUD. A client that was in a
     // prior lobby got ui_gf_lobby_show=1; if it left before the release that zeroes it, that 1 persists on
@@ -1879,6 +1978,7 @@ gf_closeGraceEarly( floorTime )
     while ( gettime() < floorTime )
         wait 0.1;
 
+    // #strip-begin - straggler-loader grace hold (dev/main only; the public build has no load gate)
     // Keep grace open past the floor while a rotation-carried client is still
     // loading the map, so it can still take its round-1 first spawn instead of
     // spectating (see gf_waitForLoadingClients, which raised level.gracePeriod so
@@ -1887,6 +1987,13 @@ gf_closeGraceEarly( floorTime )
     // round-1 team wipe can't END the round until grace closes — bounded by the
     // ceiling and by round length. No-op when nobody is loading (the common case),
     // when scr_gf_load_grace is 0 (off), or on rounds 2+ (snapshot is wiped).
+    //
+    // Stripped rather than left inert: the only thing that populates the tracker this reads
+    // (gf_armLoadGate -> level.gf_loadGateSeen) is itself stripped, so in the public build
+    // gf_anyTrackedClientLoading() is always false and the loop can never spin — but the
+    // gf_cfgFloat call would still REGISTER scr_gf_load_grace, publishing a knob the public
+    // build cannot honour. The enclosing gf_closeGraceEarly stays (live round code calls it);
+    // only this hold goes, leaving the stock grace floor.
     loadGrace = gf_cfgFloat( "scr_gf_load_grace", 20, 0, 60 );
     if ( loadGrace > 0 )
     {
@@ -1894,6 +2001,7 @@ gf_closeGraceEarly( floorTime )
         while ( gf_anyTrackedClientLoading() && gettime() < graceCeiling )
             wait 0.2;
     }
+    // #strip-end
 
     level.inGracePeriod = false;
     level thread maps\mp\gametypes\_globallogic::updateTeamStatus();
@@ -2059,6 +2167,12 @@ gf_cleanupRoundTimerState()
     }
 }
 
+// #strip-begin - ADMIN MATCH PAUSE (dev/main only; stripped from public release)
+// Only the RCON bridge calls gf_pauseMatch / gf_resumeMatch, so the public build — which has no
+// bridge — can never enter a pause. NOTE gf_pushPauseBanner() lives in _gf_hud.gsc and is NOT
+// stripped: gf_runHealthHUD calls it on every spawn, and with level.gf_matchPaused never set it
+// simply clears the banner. Same for the gf_pause_hud menuDef in mod.ff, which stays inert.
+//
 // ─── Admin Match Pause (RCON bridge) ───────────────────────────────────────
 // The live round timer is now mod-owned (gf_roundClock / gf_syncRoundRemaining),
 // so the stock pauseTimer() the bridge used to call no longer freezes the visible
@@ -2140,6 +2254,7 @@ gf_resumeMatch()
             players[i] notify( "botStopMove" );
     }
 }
+// #strip-end
 
 // ─── Round End ─────────────────────────────────────────────────────────────
 
@@ -2292,9 +2407,11 @@ gf_overtime()
     // two cleanup paths mutually exclusive.
     level thread gf_overtimeZoneGameEndCleanup( zone );
 
+    // #strip-begin - bot OT capture AI (dev/main only; the public build ships no bots)
     // Steer any bots onto the flag so they can win OT by capture, not just HP.
     if ( isDefined( zone ) )
         level thread gf_botOvertimeAI( zone );
+    // #strip-end
 
     level thread gf_overtimeClock();
     level waittill( "gf_ot_done", winner );
@@ -2847,6 +2964,10 @@ gf_onZoneCapture( player )
     gf_resolveOvertime( player.pers["team"] );
 }
 
+// #strip-begin - BOT OVERTIME CAPTURE AI (dev/main only; stripped from public release)
+// The public build ships no bot framework (_bot.gsc and maps/mp/bots/* are dropped) and no
+// reconciler to add bots, so nothing here would ever have a bot to steer.
+//
 // ─── Bot Overtime Capture AI ───────────────────────────────────────────────
 // Bots have no built-in concept of our overtime flag, so during OT we steer
 // them onto it the same way stock bots cap a DOM flag (_bot_script::bot_cap_get_flag):
@@ -2922,6 +3043,7 @@ gf_botSetGoal( origin, radius )
     waittillframeend;
     self notify( "new_goal" );
 }
+// #strip-end
 
 
 // Called by _globallogic to determine the overall match leader at round end.

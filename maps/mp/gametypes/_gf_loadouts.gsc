@@ -225,11 +225,15 @@ gf_giveCustomLoadout()
     // weapon-swap speed. Admins opt in via the RCON Perks tab (adds it to gf_perk_on below), which
     // both grants the perk and makes the "Weapon Switch Speed" slider take effect.
 
+    // #strip-begin - RCON perk overrides (dev/main only; the public build ships the base perk set only)
     // RCON perk overrides — admin-managed extra/removed perks (rcon Perks tab).
     // Applied AFTER the base set so toggles win. Empty dvars return early, so
     // this is effectively free when no overrides are set.
+    // gf_perk_on/gf_perk_off are written ONLY by the bridge, so the public build (no bridge) would
+    // always read them empty — stripped so the public source carries no RCON-only dvar reads.
     self gf_applyPerkList( getDvar( "gf_perk_on"  ), true  );
     self gf_applyPerkList( getDvar( "gf_perk_off" ), false );
+    // #strip-end
 
     // Humans only: gf_showWeaponHUD pushes ~21 setClientDvar (8 icons + 8 names + anchor/anim) to
     // build the menu-rendered loadout overview. A bot has no client, so pushing to it is pure waste

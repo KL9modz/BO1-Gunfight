@@ -137,15 +137,12 @@ gf_bridgeInit()
     level.gf_expBullets    = false;
     level.gf_drunk         = false;
     level.gf_invisible     = false;
-    level.gf_defaultVision = getDvar( "mapname" );   // for vision_normal reset
-
-    // Re-apply a persisted vision set (gf_vis_vision) each round. It CANNOT be
-    // applied here at init: the stock prematch flow stomps vision AFTER
-    // onStartGameType — matchStartTimer forces "mpIntro" for the countdown and
-    // at T-2s blends back to the MAP vision over 3s (_globallogic.gsc:398/424).
-    // So a watcher waits for prematch_over and takes over the tail of that
-    // blend (a newer visionSetNaked call retargets the in-progress lerp).
-    level thread gf_bridgeVisionPersist();
+    // Vision is NOT owned here anymore. level.gf_defaultVision (the map's own set) and the per-round
+    // apply both live in _gf_rounds::gf_initRoundVision, because the "enhance" contrast pop is now the
+    // mod's DEFAULT look rather than an admin tweak — the public build needs it too, and the bridge is
+    // stripped from that build. The bridge only OVERRIDES it: vision_<key> persists a key into
+    // gf_vis_vision, which _gf_rounds::gf_roundVisionKey reads back each round. Re-applying it here as
+    // well would double-fire the same visionSetNaked at prematch_over.
 
     // Persistent loops: exactly ONE live set at a time, re-threaded every round with a COLLAPSE
     // NOTIFY (the _bot::init "bot_reinit" idiom), NOT a game[] guard. gf_bridgeInit is re-threaded on
@@ -462,7 +459,7 @@ gf_bridgePause()
     if ( level.gf_paused ) return;
     level.gf_paused = true;
     maps\mp\gametypes\_gf_rounds::gf_pauseMatch();
-    visionSetNaked( gf_visionSetForKey( "bw" ), 0.5 );   // cheat_bw — bare = all clients
+    visionSetNaked( maps\mp\gametypes\_gf_rounds::gf_visionSetForKey( "bw" ), 0.5 );   // cheat_bw — bare = all clients
     gf_bridgeNotify( "^3-- MATCH PAUSED --" );
 }
 
@@ -475,16 +472,14 @@ gf_bridgeResume()
     gf_bridgeNotify( "^2-- MATCH RESUMED --" );
 }
 
-// Drop back to whatever vision the admin has standing — the persisted gf_vis_vision
-// key, or the map default if none. Read fresh (not snapshotted at pause time) so a
-// vision_<set> issued DURING the pause is what we resume into.
+// Drop back to whatever vision is standing — the admin's persisted gf_vis_vision key, or Gunfight's
+// own default ("enhance") if none. gf_roundVisionKey owns that fallback, so pause/resume can never
+// disagree with what a round start would have applied. Read fresh (not snapshotted at pause time) so
+// a vision_<set> issued DURING the pause is what we resume into.
 gf_bridgeRestoreVision( blend )
 {
-    vkey = getDvar( "gf_vis_vision" );
-    if ( vkey == "" )
-        visionSetNaked( level.gf_defaultVision, blend );
-    else
-        visionSetNaked( gf_visionSetForKey( vkey ), blend );
+    key = maps\mp\gametypes\_gf_rounds::gf_roundVisionKey();
+    visionSetNaked( maps\mp\gametypes\_gf_rounds::gf_visionSetForKey( key ), blend );
 }
 
 // "Start Match" from the panel: release the pre-prematch lobby hold NOW. The hold
@@ -930,13 +925,17 @@ gf_bridgeVisReset()
             players[j] setClientDvar( m[keys[i]], def );
     }
 
+    // "Stock" for VISION means Gunfight's default look (the "enhance" contrast pop), NOT the map's
+    // bare vision — the pop is part of the mod now, so a reset must land back on it, the same place a
+    // fresh round would. Clearing the dvar IS that reset (gf_roundVisionKey falls back to "enhance").
+    // An admin who genuinely wants the untouched map vision asks for it explicitly: vision_normal.
     if ( getDvar( "gf_vis_vision" ) != "" )
     {
         setDvar( "gf_vis_vision", "" );
         // Same rule as gf_bridgeVision: a pause owns the vision, so clear the persisted key but let
         // gf_bridgeRestoreVision do the actual restore on resume.
         if ( !isDefined( level.gf_paused ) || !level.gf_paused )
-            visionSetNaked( level.gf_defaultVision, 0.5 );
+            gf_bridgeRestoreVision( 0.5 );
     }
 
     gf_bridgeNotify( "^7Visuals: stock" );
@@ -1370,53 +1369,20 @@ gf_bridgeTeamLabel( team )
 // PERSISTENCE: vision is level state, so the between-round map_restart resets
 // it to the map default — and the stock prematch countdown then forces
 // "mpIntro" + blends back to the map vision. The chosen KEY is persisted in
-// gf_vis_vision and re-applied AFTER each prematch by gf_bridgeVisionPersist
-// (threaded from gf_bridgeInit); "normal" (or visreset) clears it. The key is
-// stored (not the set name) so re-apply always goes through the same mapping.
-
-gf_visionSetForKey( vkey )
-{
-    if ( vkey == "enhance"  ) return "default_night";    // sat1/contrast1.2 pop
-    if ( vkey == "bw"       ) return "cheat_bw";         // pure grayscale
-    if ( vkey == "berserk"  ) return "berserker";        // warm, contrast 1.5
-    if ( vkey == "thermal"  ) return "infrared";         // dark desat night/thermal
-    if ( vkey == "hotsnow"  ) return "infrared_snow";    // bright grayscale thermal
-    if ( vkey == "nuke"     ) return "mp_nuked";         // warm hazy
-    if ( vkey == "film"     ) return "flashpoint";       // warm cinematic / sepia
-    if ( vkey == "bleak"    ) return "wmd";              // cold desaturated
-
-    // legacy aliases (old panel keys) -> honest equivalents, so nothing 404s
-    if ( vkey == "contrast" ) return "default_night";
-    if ( vkey == "invert"   ) return "default_night";
-    if ( vkey == "night"    ) return "infrared";
-
-    return level.gf_defaultVision;             // map default (mapname vision)
-}
-
-// Round-start persistence watcher (threaded by gf_bridgeInit). Waits out the
-// stock prematch vision sequence, then quietly re-applies the persisted set.
-// 3.0s transition mirrors the stock T-2s blend it takes over from, so the
-// reveal feels native. Reads the dvar AFTER prematch so a vision set (or
-// vision_normal) issued during the countdown is honored.
-gf_bridgeVisionPersist()
-{
-    level endon( "game_ended" );
-
-    level waittill( "prematch_over" );
-
-    vkey = getDvar( "gf_vis_vision" );
-    if ( vkey == "" )
-        return;
-
-    visionSetNaked( gf_visionSetForKey( vkey ), 3.0 );
-}
+// gf_vis_vision and re-applied AFTER each prematch by _gf_rounds::gf_applyRoundVision.
+// The key is stored (not the set name) so re-apply always goes through the same
+// mapping (_gf_rounds::gf_visionSetForKey, which also owns the key->set table).
+//
+// ⚠ EMPTY gf_vis_vision does NOT mean "map default" — it means "the Gunfight DEFAULT" (enhance).
+// The map's own vision is reachable only via the EXPLICIT "normal" key, which is why gf_bridgeVision
+// below persists "normal" as a string instead of clearing the dvar.
 
 gf_bridgeVision( vkey )
 {
-    set = gf_visionSetForKey( vkey );
+    set = maps\mp\gametypes\_gf_rounds::gf_visionSetForKey( vkey );
 
     if ( set == level.gf_defaultVision )
-        setDvar( "gf_vis_vision", "" );        // normal/unknown -> stop persisting
+        setDvar( "gf_vis_vision", "normal" );  // EXPLICIT map default -- clearing would fall back to the gf "enhance" default
     else
         setDvar( "gf_vis_vision", vkey );
 

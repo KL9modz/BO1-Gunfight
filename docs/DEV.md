@@ -83,6 +83,7 @@ When the compiler throws `unknown function: @ scripts/mp/<file>::<func>`, the br
 
 - `mp/gametypesTable.csv`
 - `localizedstrings/gf.str`
+- `localizedstrings/cgame.str` (**overrides of stock engine strings** — a localizedstring in our `mod.ff` beats the game's own shipped-zone copy. The asset name is `<STR FILENAME>_<REFERENCE>`, so an engine `CGAME_*` string only takes effect from a file literally named `cgame.str`; the same entry in `gf.str` would compile to `GF_*` and be read by nothing.)
 - `ui_mp/hud_gf.txt` or `ui_mp/hud_gf_health.menu` (menu **structure**)
 - any `raw/fx/misc/*.efx`
 

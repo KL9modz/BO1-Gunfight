@@ -575,16 +575,250 @@ document.addEventListener('click',hideCtx);
 document.addEventListener('keydown',e=>{if(e.key==='Escape')hideCtx();});
 
 // ─── Tabs ───────────────────────────────────────────────────────────────────
-const TABS=['match','maps','srv','con'];
+// Order must match the .tab buttons in index.html (tab() maps by index).
+const TABS=['fav','match','maps','srv','con'];
+let _tab='fav';
 function tab(n){
+  if(_tab==='fav' && n!=='fav') favReturn();   // hand the borrowed rows back before their panel shows
+  _tab=n;
   document.querySelectorAll('.panel').forEach(e=>e.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(e=>e.classList.remove('active'));
   g('p-'+n).classList.add('active');
   const i=TABS.indexOf(n);
   document.querySelectorAll('.tab')[i].classList.add('active');
+  if(n==='fav') favBuild();   // borrow the pinned rows in (needs the panel active to measure columns)
   layoutColumns(g('p-'+n));   // first reveal of a settings panel lays out its columns
   if(n==='maps' && live) loadRotation();
 }
+
+// ─── FAVORITES (landing tab) ──────────────────────────────────────────────────
+// A pinboard for the handful of settings you actually retune. Click a row's ☆ on DASHBOARD or
+// ADVANCED to pin it; the pinboard is persisted in localStorage.
+//
+// A pinned row is the SAME DOM node, BORROWED — never a copy. Every read (readAllFromServer →
+// srvApplyValues) and every write (sdve/sdvv, Set All, 💾 Save) is keyed by the control's element
+// id or its row's data-dvar, so a second copy of a control would carry a duplicate id and silently
+// drift out of sync with the server. Instead the row is moved out of its home block while
+// FAVORITES is open and put straight back — same parent, same slot — the moment you leave the tab.
+// Only one panel is ever visible, so nothing can be looking at the home block while it's on loan.
+//
+// Rows in the ADVANCED per-gametype block (#srv-gt-body) are deliberately NOT pinnable: that block
+// is re-rendered whenever the gametype dropdown changes, which would destroy a borrowed row's home.
+// WHERE THE PINBOARD LIVES: server-side, in the panel's gitignored prefs.local.json (/api/prefs),
+// NOT in the browser — so it follows the PANEL you're pointed at. The VPS panel is one pinboard
+// whether you reach it by RDP on the box or over the SSH tunnel from the laptop; a laptop's own
+// local panel keeps its own. localStorage is only a same-origin CACHE, so the landing tab paints
+// its pins before the fetch lands (and still works if the prefs file can't be read/written).
+const FAV_KEY='gf_favs';
+// First-run pinboard, so the landing tab is never empty on a fresh panel.
+const FAV_DEFAULT=['dv:scr_gf_scorelimit','dv:scr_gf_timelimit','dv:scr_gf_overtimelimit',
+                   'dv:scr_gf_teamspawnmode','dv:scr_team_fftype','lb:DASHBOARD|BOTS|Fill (per team)'];
+let _favs=[];     // pinned row keys, in pin order
+let _favLent=[];  // rows currently on loan to #p-fav: {row, parent, next} = where each came from
+try{ const _fs=localStorage.getItem(FAV_KEY); _favs=_fs?JSON.parse(_fs):FAV_DEFAULT.slice(); }catch(_){ _favs=FAV_DEFAULT.slice(); }
+if(!Array.isArray(_favs)) _favs=FAV_DEFAULT.slice();
+function favSave(){
+  try{ localStorage.setItem(FAV_KEY,JSON.stringify(_favs)); }catch(_){}   // cache for the next paint
+  fetch(API+'/prefs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({favs:_favs})})
+    .then(r=>r.json()).then(r=>{ if(!r||!r.ok) toast('Favorites not saved on the server: '+((r&&r.error)||'?'),'err'); })
+    .catch(()=>toast('Favorites not saved on the server (panel API unreachable)','err'));
+}
+// Adopt the panel's pinboard on load. An empty/absent server pinboard is SEEDED from this browser's
+// cache (first run after the feature ships), so an existing local pinboard isn't thrown away.
+async function favSyncFromServer(){
+  let r; try{ r=await (await fetch(API+'/prefs')).json(); }catch(_){ return; }   // API down → keep the cache
+  if(!r||!r.ok) return;
+  const remote=(r.prefs&&Array.isArray(r.prefs.favs))?r.prefs.favs:null;
+  if(!remote){ favSave(); return; }
+  if(JSON.stringify(remote)===JSON.stringify(_favs)) return;
+  _favs=remote;
+  try{ localStorage.setItem(FAV_KEY,JSON.stringify(_favs)); }catch(_){}
+  if(_tab==='fav') favBuild(); else favSyncStars();
+}
+function _favSrc(row){ return row.closest('#p-srv')?'ADVANCED':'DASHBOARD'; }
+function _favBlock(row){ const b=row.closest('.block'); return b?_gsClean(b.querySelector('.btitle')):'PINNED'; }
+// Stamp every pinnable row with a stable key + its ☆ button. The key is the row's dvar where it has
+// one (survives a label/section edit); a static or bridge-only row falls back to tab|block|label.
+// The button is wired via the onclick PROPERTY, not an attribute, so it stays invisible to the
+// innerHTML scrapes in _gsDvar() / collectBlockDvars().
+function hydrateStars(){
+  const seen={};
+  document.querySelectorAll('#p-match .srow, #p-match .slider-row, #p-srv .srow, #p-srv .slider-row').forEach(row=>{
+    if(row.closest('#srv-gt-body')) return;
+    const lbl=row.querySelector('.slbl'); if(!lbl) return;
+    const dv=row.getAttribute('data-dvar');
+    let key=dv?('dv:'+dv):'';
+    if(!key||seen[key]) key='lb:'+_favSrc(row)+'|'+_favBlock(row)+'|'+_gsClean(lbl);
+    if(seen[key]) return;          // an exact duplicate row stays unpinnable rather than aliasing
+    seen[key]=1; row.dataset.favkey=key;
+    const b=document.createElement('button');
+    b.className='fav-star'; b.type='button';
+    b.onclick=()=>favToggle(row);
+    row.insertBefore(b,row.firstChild);
+  });
+  favSyncStars();
+}
+function favSyncStars(){
+  document.querySelectorAll('[data-favkey]').forEach(row=>{
+    const s=row.querySelector(':scope > .fav-star'); if(!s) return;
+    const on=_favs.indexOf(row.dataset.favkey)>=0;
+    s.classList.toggle('on',on);
+    s.textContent=on?'★':'☆';
+    s.title=on?'Unpin from FAVORITES':'Pin this setting to the FAVORITES tab';
+  });
+}
+function favToggle(row){
+  const k=row.dataset.favkey; if(!k) return;
+  const i=_favs.indexOf(k);
+  if(i>=0) _favs.splice(i,1); else _favs.push(k);
+  favSave();
+  if(_tab==='fav') favBuild(); else favSyncStars();   // favBuild re-syncs the stars itself
+  toast(i>=0?'Unpinned':'Pinned to FAVORITES','info');
+}
+// Put every borrowed row back exactly where it came from. Reverse order: a row's recorded anchor
+// can be a later sibling that was itself borrowed, and reverse restores that anchor first.
+function favReturn(){
+  for(let i=_favLent.length-1;i>=0;i--){
+    const e=_favLent[i];
+    const anchor=(e.next&&e.next.parentNode===e.parent)?e.next:null;
+    try{ e.parent.insertBefore(e.row,anchor); }catch(_){ e.parent.appendChild(e.row); }
+  }
+  _favLent=[];
+}
+function favBuild(){
+  const p=g('p-fav'); if(!p) return;
+  favReturn();                                          // never wipe the panel with rows still on loan
+  p.querySelectorAll(':scope > .cols, :scope > .block').forEach(e=>e.remove());
+  p._items=null; p._cols=null;                          // layoutColumns caches the block list per panel
+  // Group the pinned rows under their home block, in page order (DASHBOARD blocks, then ADVANCED).
+  const groups=[], by={};
+  document.querySelectorAll('#p-match [data-favkey], #p-srv [data-favkey]').forEach(row=>{
+    if(_favs.indexOf(row.dataset.favkey)<0) return;
+    const t=_favSrc(row)+' › '+_favBlock(row);
+    if(!by[t]){ by[t]={title:t,rows:[]}; groups.push(by[t]); }
+    by[t].rows.push(row);
+  });
+  if(!groups.length){
+    const b=document.createElement('div'); b.className='block';
+    b.innerHTML='<div class="btitle">FAVORITES</div>'
+      +'<div class="dm" style="font-style:italic;line-height:1.7">Nothing pinned yet. Click the '
+      +'<span class="fav-star on">★</span> on any setting in the <b style="color:var(--ac)">DASHBOARD</b> '
+      +'or <b style="color:var(--ac)">ADVANCED</b> tab to pin it here.</div>';
+    p.appendChild(b);
+  } else groups.forEach(gr=>{
+    const b=document.createElement('div'); b.className='block';
+    const t=document.createElement('div'); t.className='btitle'; t.textContent=gr.title;
+    b.appendChild(t);
+    gr.rows.forEach(row=>{ _favLent.push({row,parent:row.parentNode,next:row.nextSibling}); b.appendChild(row); });
+    // Set All / 💾 Save walk the [data-dvar] rows of whatever .block they're clicked in, so they
+    // work on a borrowed set unchanged — and each group is one home block, so Save stays coherent.
+    if(gr.rows.some(r=>r.hasAttribute('data-dvar')||r.querySelector('[onclick^="sdve("]')))
+      b.insertAdjacentHTML('beforeend','<div class="set-all-row"><button class="b-gh b-sm ctrl" data-tip="Write this block&#39;s values to dedicated.cfg (persists across restarts).&#10;A .bak backup is made; takes effect on next server start or `exec dedicated.cfg`." onclick="saveBlockToCfg(this)">💾 Save</button><button class="b-ac b-sm ctrl" onclick="setAllInBlock(this)">Set All</button></div>');
+    p.appendChild(b);
+  });
+  favSyncStars();
+  restoreCollapse();                  // a pinboard block folds like any other (own title = own key)
+  setCtrl(live); applyServerMode();   // the Set All / Save buttons above are freshly built .ctrl nodes
+  layoutColumns(p,true);
+}
+
+// ─── Settings-row right-click menu ────────────────────────────────────────────
+// Right-click ANY settings row (DASHBOARD / ADVANCED / FAVORITES): copy its dvar, pin/unpin it,
+// reset it to default. Reuses the player #ctx-menu shell. Delegated, so it also covers the rows
+// buildGtSection() re-renders and the rows FAVORITES has on loan.
+//
+// The default is read from the DOM's own defaultValue / defaultChecked — i.e. the value srvRow
+// rendered from the data model's v.def, or the authored HTML attribute on a static row. Nothing has
+// to carry a second copy of the default, and a live dvar read (which writes .value / .checked) can't
+// overwrite it.
+let _ctxRow=null;
+// data-dvar (data-driven rows) → the sdve/sdvv call a static row wires (_gsDvar) → the dvar a static
+// row names at the head of its tooltip. That last fallback needs its own regex: _gsDvar only accepts a
+// first line that is EXACTLY a dvar, so a row documented as "scr_gf_flinch → bg_viewKickScale" reads as
+// having none. Require an underscore in the token, which is what separates a dvar from prose ("level."
+// in "level.healthRegenDisabled + …", "Gives: Marathon…") — every T5 dvar has one, no sentence starts
+// with one.
+function _rowDvar(row){
+  const d=row.getAttribute('data-dvar')||_gsDvar(row);
+  if(d) return d;
+  const first=((row.getAttribute('data-tip')||'').split(/&#10;|\n/)[0]||'').trim();
+  const m=first.match(/^([a-z][a-z0-9]*_[a-z0-9_]+)\b/i);
+  return m?m[1]:'';
+}
+function _ctlDef(el){
+  if(el.type==='checkbox') return el.defaultChecked?'1':'0';
+  if(el.tagName==='SELECT'){ const o=el.querySelector('option[selected]')||el.options[0]; return o?o.value:''; }
+  return el.defaultValue;
+}
+// The controls a reset would rewrite. TEXT inputs are excluded: their default is the empty string
+// and firing the row's apply button would push it (Broadcast would send an empty message).
+function _rowCtls(row){ return Array.from(row.querySelectorAll('input,select')).filter(el=>el.type!=='text'); }
+function showRowCtx(e,row){
+  e.preventDefault(); e.stopPropagation();
+  _ctxRow=row;
+  const lbl=_gsClean(row.querySelector('.slbl'))||'Setting';
+  const dv=_rowDvar(row), key=row.dataset.favkey;
+  const pinned=key&&_favs.indexOf(key)>=0;
+  const ctls=_rowCtls(row), def=ctls.length?_ctlDef(ctls[0]):'';
+  const m=g('ctx-menu');
+  m.innerHTML=`<div class="ctx-header">${x(lbl)}${dv?`<span class="ctx-dv">${x(dv)}</span>`:''}</div>`
+    + (dv ? `<div class="ctx-item" onclick="rowCtxAction('copy')">Copy dvar name</div>`
+          : `<div class="ctx-item cur" title="No dvar behind this row — it is a pure GSC-bridge command.">Copy dvar name <span style="opacity:.6">— none</span></div>`)
+    + (key ? `<div class="ctx-item" onclick="rowCtxAction('pin')">${pinned?'★ Remove from FAVORITES':'☆ Add to FAVORITES'}</div>`
+           : `<div class="ctx-item cur" title="Per-gametype rows are re-rendered whenever the gametype dropdown changes, so a pinned one would lose its home.">☆ Add to FAVORITES <span style="opacity:.6">— n/a</span></div>`)
+    + '<div class="ctx-sep"></div>'
+    + (ctls.length ? `<div class="ctx-item yellow" onclick="rowCtxAction('reset')">↺ Reset to default${def!==''?' ('+x(def)+')':''}</div>`
+                   : `<div class="ctx-item cur">↺ Reset to default <span style="opacity:.6">— n/a</span></div>`);
+  m.style.display='block';
+  const vw=window.innerWidth,vh=window.innerHeight;
+  let lft=e.clientX+4, top=e.clientY+4;
+  if(lft+210>vw) lft=Math.max(4,e.clientX-214);
+  if(top+140>vh) top=Math.max(4,vh-144);
+  m.style.left=lft+'px'; m.style.top=top+'px';
+}
+async function rowCtxAction(act){
+  const row=_ctxRow; hideCtx(); if(!row) return;
+  if(act==='pin'){ favToggle(row); return; }
+  if(act==='reset'){ rowReset(row); return; }
+  if(act==='copy'){
+    const dv=_rowDvar(row); if(!dv) return;
+    try{ await navigator.clipboard.writeText(dv); toast('Copied '+dv,'ok'); actLog('Copied dvar: '+dv,'ok'); }
+    catch(_){ toast('Clipboard blocked — '+dv,'err'); }
+  }
+}
+// Restore the row's authored value, then push it the way the ROW ITSELF pushes: its primary
+// (Set / Apply) button when it has one, else a synthetic change on its control. The reset therefore
+// travels the row's own transport — plain `set`, the gf_* mirror + svsync, or the GSC bridge — and
+// can't drift from it.
+function rowReset(row){
+  const ctls=_rowCtls(row); if(!ctls.length) return;
+  const lbl=_gsClean(row.querySelector('.slbl'))||_rowDvar(row);
+  ctls.forEach(el=>{
+    const d=_ctlDef(el);
+    if(el.type==='checkbox') el.checked=(d==='1'); else el.value=d;
+    el.dispatchEvent(new Event('input',{bubbles:true}));   // slider readouts + paired number boxes
+  });
+  if(!live){ toast('Not connected — field reset, nothing sent','info'); return; }
+  const btn=row.querySelector('button.b-ac');
+  if(btn && !btn.disabled) btn.click();
+  else {
+    const p=ctls.find(el=>el.getAttribute('onchange')||el.onchange);
+    if(!p){ toast('No apply path on this row','err'); return; }
+    p.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  row.classList.remove('unsynced');   // we just wrote this value, so it's no longer an unread default
+  actLog('Reset '+lbl+' → default','wn');
+}
+document.addEventListener('contextmenu',e=>{
+  const row=e.target.closest('.srow,.slider-row');
+  if(!row) return;
+  // The CLIENT SETTINGS rows own their right-click already: each carries an inline oncontextmenu that
+  // copies the dvar for the player's own console (their tooltips advertise it). Those handlers
+  // preventDefault() but don't stopPropagation(), so without this bail the event still reaches us and
+  // one right-click would BOTH copy to the clipboard and open this menu. The row's own gesture wins.
+  if(row.hasAttribute('oncontextmenu')) return;
+  showRowCtx(e,row);
+});
 
 // ─── Global settings search ───────────────────────────────────────────────────
 // Indexes every labelled control in the DASHBOARD + ADVANCED tabs (DOM scan), plus the
@@ -1395,7 +1629,9 @@ const SRV_SECTIONS = [
     { n:'g_password',               lbl:'Join Password',          type:'text',   def:'',    tip:'g_password\nServer join password. Blank = open to all.' },
     { n:'g_allowvote',              lbl:'Allow Voting',           type:'tog',    def:'1',   tip:'g_allowvote\nLet players call /callvote in console. GF default: 1' },
     { n:'g_inactivity',             lbl:'AFK Kick Timer (s)',     type:'num',    def:'300', tip:'g_inactivity\nSeconds of INPUT inactivity before auto-kick (spectators included). 0 = disabled. GF default: 300. The Plutonium T5ServerConfig template ships 190, which kicks anyone quietly spectating a match after ~3 min.' },
-    { n:'party_minplayers',         lbl:'Lobby Min Players (pregame)', type:'num', def:'2',   tip:'party_minplayers\nEngine PREGAME-lobby dvar — does NOT gate the Gunfight match (stock waitForPlayers() is an empty stub; party_minplayers only affects the _pregame lobby gametype + the wager bet calc). For Gunfight’s min-players-to-start, use Min Players in ADVANCED → MATCH START (scr_gf_min_players). Left here for non-gf gametypes.' },
+    { n:'sv_timeout',               lbl:'In-Game Timeout (s)',    type:'num',    def:'240', tip:'sv_timeout\nSeconds the server waits without receiving a packet from an ALREADY-IN-GAME client before dropping it. Engine default: 240. GF default: 240.\n⚠ The Plutonium T5ServerConfig template ships 15, which drops anyone who alt-tabs out of EXCLUSIVE FULLSCREEN — Windows minimizes the window, the client stops pumping its main loop and stops sending, so the server drops it 15s later. Borderless/windowed keeps running while unfocused and never hits this.\n⚠ At 15 the server also gave up ~3x sooner than the client itself does (the client’s own cl_timeout is 40), so a lag spike or packet-loss burst dropped players who were still sitting there waiting. A server must never be stricter than its own clients — keep this ≥ cl_timeout (40).\nRaising it costs you nothing but the time a hard-crashed client holds its player slot. AFK kicking is g_inactivity, not this; the CONNECTING/loading phase is sv_connectTimeout, not this.' },
+    { n:'sv_connectTimeout',        lbl:'Connect/Load Timeout (s)',type:'num',   def:'200', tip:'sv_connectTimeout\nSeconds the server waits for a client that is still CONNECTING / LOADING (before it goes active). Separate dvar from sv_timeout, which only governs clients already in the game. Engine default: 80. GF default: 200 (matches the client’s own cl_connectTimeout of 200).\n⚠ This is the one that governs FIRST JOINS, and 80 is thin. A first-time joiner downloads mod.ff over FastDL, then the Plutonium client switches fs_game IN PLACE with no loading UI — it destroys and recreates the D3D9 device (the black screen) and reloads ~180MB of zones, a 30–60s stall — and then runs a full Demonware stats/CAC re-sync that has documented multi-minute stalls. Blowing the 80s budget mid-rebuild is a large part of why new players report having to connect twice.\nCosts nothing: it only ever applies to a client that has not finished loading.' },
+    { n:'party_minplayers',         lbl:'Warmup Min Players',        type:'num', def:'2',   tip:'party_minplayers\nHow many players the engine’s PRE-MATCH WARMUP (ADVANCED → MATCH START → Pre-Match Warmup) waits for before it starts the match. This is the warmup’s ONLY gate.\n⚠ Counts any non-spectator, so BOTS count toward it — a bot-filled server can satisfy it on its own.\n⚠ The warmup snapshots this at level load, so changing it mid-warmup does nothing until the next map.\nDoes NOT gate the Gunfight match itself (stock waitForPlayers() is an empty stub) — for that, use Min Players in ADVANCED → MATCH START (scr_gf_min_players). Also feeds the wager bet calc.' },
     { n:'sv_maxclients',            lbl:'Max Players',            type:'num',    def:'14',  eff:'restart', tip:'sv_maxclients\nMaximum simultaneous connections the server accepts. GF: 14 = 12 playing (up to 6v6) + 2 spectator headroom.' },
     { n:'sv_floodProtect',          lbl:'Chat Flood Protection',  type:'num',    def:'4',   tip:'sv_floodProtect\nThrottle rapid chat messages. Set to 20 when using an RCON tool.' },
     { n:'sv_kickBanTime',           lbl:'Kick Ban Duration (s)',  type:'num',    def:'300', tip:'sv_kickBanTime\nHow long a kicked player must wait before reconnecting.' },
@@ -1589,9 +1825,11 @@ const GF_MATCH_VARS = [
     { n:'gf_capture_time_large',      lbl:'OT Capture — Large (s)',   type:'num', def:'5',    tip:'gf_capture_time_large\nSeconds to capture the OT zone in LARGE mode.' },
 ];
 const GF_START_VARS = [
-    { n:'scr_gf_lobby',               lbl:'Match Start',               type:'sel', def:'0', opts:[['0','Normal (no lobby)'],['1','Auto lobby (min-players)'],['2','Manual lobby (START)']], tip:'scr_gf_lobby\nHow the match FIRST round starts (before the prematch countdown):\n• Normal = no lobby; the match starts in place (still waits for loaders / Min Players, then the countdown plays).\n• Auto = hold a pregame lobby (desaturated screen) until everyone is loaded and Min Players humans are in, then FAST-RESTART into a fresh match — re-firing the full start presentation (gun-rack, music, welcome). ~1s, no map reload.\n• Manual = hold the lobby until you click START MATCH (Match Control rail) — arrange teams first — then fast-restart. Auto-starts on its own after Manual Lobby Timer seconds (scr_gf_lobby_timer, default 600; 0 = never) so a forgotten hold can’t wedge the server.\nAuto/Manual: START MATCH is an instant override. Match-start only. Manual needs the RCON bridge (this panel).' },
+    { n:'scr_gf_lobby',               lbl:'Match Start',               type:'sel', def:'0', opts:[['0','Normal (no lobby)'],['1','Auto lobby (min-players)'],['2','Manual lobby (START)']], tip:'scr_gf_lobby\nHow the match FIRST round starts (before the prematch countdown):\n• Normal = no lobby; the match starts in place (still waits for loaders / Min Players, then the countdown plays).\n• Auto = hold a pregame lobby (desaturated screen) until everyone is loaded and Min Players humans are in, then FAST-RESTART into a fresh match — re-firing the full start presentation (gun-rack, music, welcome). ~1s, no map reload.\n• Manual = hold the lobby until you click START MATCH (Match Control rail) — arrange teams first — then fast-restart. Auto-starts on its own after Manual Lobby Timer seconds (scr_gf_lobby_timer, default 600; 0 = never) so a forgotten hold can’t wedge the server.\nAuto/Manual: START MATCH is an instant override. Match-start only. Manual needs the RCON bridge (this panel).\nSeparate from the PRE-MATCH WARMUP below, which is the engine’s own lobby gametype and runs BEFORE any of this.' },
     { n:'scr_gf_lobby_timer',         lbl:'Manual Lobby Timer (s, 0=off)', type:'num', def:'600', tip:'scr_gf_lobby_timer\nMANUAL lobby only (Match Start = Manual). Seconds the pregame lobby waits before it AUTO-STARTS the match on its own, if you never click START MATCH. Replaces the old hardcoded 10-min backstop.\nThe lobby HUD shows a live "auto-starts in M:SS" countdown while this is running.\n0 = never auto-start — the lobby holds until you click START MATCH (a forgotten lobby then sits there indefinitely).\nDefault 600 (10 min). Clamped 0-3600. Has no effect in Normal or Auto (Auto releases on its own load/min-players gates).' },
-    { n:'scr_gf_min_players',         lbl:'Min Players to Start',      type:'num', def:'1',  tip:'scr_gf_min_players\nHold the FIRST round (BEFORE the prematch countdown) until at least this many HUMAN players are here (bots do not count). Match-start only — once live it never re-holds, even if players leave. Nobody is spawned yet during the hold, so there is no freeze/damage-void. By default the lobby holds until enough humans arrive or an admin clicks START (a pure-bot lobby never stalls); set Min Players Timer below for a start-anyway ceiling. 1 = effectively off. Clamped 1-8.\n(This is Gunfight’s min-players gate. The ADVANCED → GENERAL party_minplayers does NOT affect gf.)' },
+    { n:'scr_gf_min_players',         lbl:'Min Players to Start',      type:'num', def:'1',  tip:'scr_gf_min_players\nHold the FIRST round (BEFORE the prematch countdown) until at least this many HUMAN players are here (bots do not count). Match-start only — once live it never re-holds, even if players leave. Nobody is spawned yet during the hold, so there is no freeze/damage-void. By default the lobby holds until enough humans arrive or an admin clicks START (a pure-bot lobby never stalls); set Min Players Timer below for a start-anyway ceiling. 1 = effectively off. Clamped 1-8.\n(This is Gunfight’s min-players gate for the MATCH. The engine’s PRE-MATCH WARMUP has its own, separate gate — party_minplayers.)' },
+    { n:'g_pregame_enabled',          lbl:'Pre-Match Warmup',          type:'tog', def:'0', eff:'nextmap', tip:'g_pregame_enabled\nENGINE dvar — turns on BO1’s own PRE-MATCH lobby: a playable no-XP free-for-all on the map while the server waits for players, which then hands off into the Gunfight match on its own. 100% stock (maps/mp/gametypes/_pregame) — when this is set the engine loads that gametype INSTEAD of gf, then restarts back into gf once enough players are in. g_gametype still reads "gf" throughout.\n⚠ TAKES EFFECT ON THE NEXT MAP — the engine reads this at LEVEL LOAD (same constraint as xblive_wagermatch). Setting it mid-match does nothing until the map changes; `map_restart` is enough to trigger it.\n• How many players it waits for: party_minplayers (ADVANCED → GENERAL), NOT Min Players above.\n• How long before it gives up: Warmup Time Limit below — leave at 0 or it will END THE GAME and rotate the map instead of starting the match.\n• The warmup runs stock classes, not the Gunfight shared loadout, and the RCON bridge does not run during it (the dashboard goes stale until the match starts).' },
+    { n:'scr_pregame_timelimit',      lbl:'Warmup Time Limit (0=off)', type:'num', def:'0', eff:'nextmap', tip:'scr_pregame_timelimit\nMinutes the PRE-MATCH WARMUP may run before it times out. ⚠ KEEP THIS AT 0. BO1 defaults it to 5, and the warmup’s time-out path calls endGame — which ROTATES THE MAP instead of starting the match, so an under-populated server just cycles maps every 5 minutes. 0 = no limit: the warmup waits until party_minplayers players are in, then starts the match.' },
     { n:'scr_gf_minplayers_timer',    lbl:'Min Players Timer (s, 0=off)', type:'num', def:'0', tip:'scr_gf_minplayers_timer\nMin-players "start anyway" ceiling. Seconds the FIRST-round hold waits for enough humans (Min Players) before it STARTS THE MATCH ANYWAY with too few players.\n0 = never auto-start (DEFAULT) — the lobby holds until Min Players humans arrive or an admin clicks START MATCH. Replaces the old hardcoded 90s ceiling that started too-thin matches on its own.\nA pure-bot lobby (0 humans) always releases regardless. Clamped 0-3600. Has no effect if Min Players is 1 (gate off).' },
     { n:'scr_gf_load_wait',           lbl:'Load Wait (s, 0=off)',      type:'num', def:'0', tip:'scr_gf_load_wait\nMax seconds the match FIRST round holds BEFORE the prematch countdown until every map-loading client is in, so everyone sees the intro/countdown together (and slow loaders are not grace-locked into spectating round 1). Bots + demo clients excluded. Shows a "Waiting for teams N/M" readout. First-time FastDL downloaders are not fully absorbed. Default 0 = off (no wait; a slow loader may miss the intro / spectate round 1, and Load Grace goes inert). Clamped 0-120.\nSame hold also enforces Min Players above.' },
     { n:'scr_gf_match_prematch_seconds', lbl:'Prematch (s)',          type:'num', def:'15', tip:'scr_gf_match_prematch_seconds\nIntro countdown before the first round of the match (MATCH STARTING IN). Runs AFTER the Match Start hold. Clamped 2-30. (Stock scr_game_prematchperiod is overridden by this and has no effect.)' },
@@ -1691,6 +1929,7 @@ const _EFF = {
   live:    ['LIVE',    'Applies immediately to the running match.'],
   next:    ['NEXT',    'Applies on the next round.'],
   restart: ['RESTART', 'Needs a map_restart to take effect on the running match.'],
+  nextmap: ['NEXT MAP','Read by the ENGINE at level load, so it cannot apply to a running match — it takes effect when the map next changes. Same constraint as xblive_wagermatch.'],
 };
 const _PER = {
   dvar:      ['STICKY', 'Survives map_restart. Use the block’s 💾 Save to persist across a full server restart.'],
@@ -1715,6 +1954,7 @@ const LEGEND_HTML =
   + '<span class="pill eff-live">LIVE</span><span class="dm">now</span>'
   + '<span class="pill eff-next">NEXT</span><span class="dm">next round</span>'
   + '<span class="pill eff-restart">RESTART</span><span class="dm">needs map_restart</span>'
+  + '<span class="pill eff-nextmap">NEXT MAP</span><span class="dm">engine reads it at level load</span>'
   + '<span class="lg-sep">|</span><span class="dm">Sticks:</span>'
   + '<span class="pill per-dvar">STICKY</span><span class="dm">survives map_restart · 💾 Save → cfg</span>'
   + '<span class="pill per-transient">TEMP</span><span class="dm">resets on map_restart</span>'
@@ -1781,7 +2021,7 @@ function _wantCols(){
 }
 function layoutColumns(panel,force){
   if(!panel||!panel.classList.contains('active')) return;   // a hidden panel can't be measured
-  if(panel.id!=='p-match'&&panel.id!=='p-srv') return;      // MAPS/CONSOLE keep their own flow
+  if(panel.id!=='p-match'&&panel.id!=='p-srv'&&panel.id!=='p-fav') return;   // MAPS/CONSOLE keep their own flow
   const cols=_wantCols();
   if(!panel._items){
     // Canonical order, captured BEFORE any re-parenting (afterwards DOM order is col1+col2).
@@ -1813,7 +2053,9 @@ function layoutColumns(panel,force){
   });
   finish();
 }
-function layoutActivePanel(force){ layoutColumns(document.querySelector('#p-match.active, #p-srv.active'),force); }
+// #p-fav is here because FAVORITES is the landing tab: leave it out and the pinboard is the one
+// panel that never re-columns on a resize / sidebar drag. Keep in lockstep with layoutColumns' guard.
+function layoutActivePanel(force){ layoutColumns(document.querySelector('#p-match.active, #p-srv.active, #p-fav.active'),force); }
 let _relayoutT=null;
 window.addEventListener('resize',()=>{ clearTimeout(_relayoutT); _relayoutT=setTimeout(()=>layoutActivePanel(),120); });
 
@@ -2191,14 +2433,18 @@ buildMatchGf();
 buildDashGameplay();
 buildMatchModifiers();
 hydrateBadges();   // badge the static (hand-written) blocks/rows via their data-eff/data-per
+hydrateStars();    // ☆ pin button + a stable key on every pinnable DASHBOARD/ADVANCED row
 buildSearchIndex();// index every DASHBOARD + ADVANCED setting for the global search bar
 buildLegendFooters();// collapsible pill-legend strip at the bottom of each settings tab
 buildLogoPicker(); // brand logo swatches + restore the saved choice
 restoreCollapse(); // re-apply any folded sections from a previous session
 initResizers();    // restore + wire the sidebar-width / activity-height drag handles
-layoutActivePanel();// distribute the visible panel's blocks into stable columns (after collapse state)
-// Deep-link a tab: ?tab=match|maps|srv|con (composable with ?profile= / ?autoconnect).
-try{ const _t=new URLSearchParams(location.search).get('tab'); if(_t&&TABS.indexOf(_t)>=0) tab(_t); }catch(_){}
+// FAVORITES is the landing tab; ?tab=fav|match|maps|srv|con deep-links another one
+// (composable with ?profile= / ?autoconnect). tab() lays out the panel it opens.
+let _tab0='fav';
+try{ const _t=new URLSearchParams(location.search).get('tab'); if(_t&&TABS.indexOf(_t)>=0) _tab0=_t; }catch(_){}
+tab(_tab0);
+favSyncFromServer();   // adopt THIS panel's pinboard (localStorage above was only the first paint)
 
 let _gtVal = 'gf';
 

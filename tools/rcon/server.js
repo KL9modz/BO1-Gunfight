@@ -34,6 +34,12 @@ const CFG_PATH     = path.resolve(__dirname, '..', '..', '..', '..', 'dedicated.
 // reads/writes it over the loopback-only API so passwords never sit in browser localStorage
 // or in any tracked file. See secrets.local.json.example.
 const SECRETS_PATH = path.join(__dirname, 'secrets.local.json');
+// Panel UI state (today: the FAVORITES pinboard) — gitignored, box-local, and kept HERE rather
+// than in browser localStorage so it follows the PANEL PROCESS, not the browser. The VPS panel
+// then shows one pinboard whether you reach it by RDP on the box or over the SSH tunnel from a
+// laptop, and a laptop's own local panel keeps its own. deploy.ps1 /XF-excludes it so a deploy's
+// /MIR can't delete it. Shape: { "favs": ["dv:scr_gf_scorelimit", ...] }.
+const PREFS_PATH   = path.join(__dirname, 'prefs.local.json');
 
 // ─── RCON UDP ─────────────────────────────────────────────────────────────────
 
@@ -425,6 +431,20 @@ function saveSecret(name, pass) {
   fs.writeFileSync(SECRETS_PATH, JSON.stringify(obj, null, 2) + '\n');
 }
 
+// ─── Panel prefs (gitignored UI state — see PREFS_PATH) ───────────────────────
+// Missing file / bad JSON is not an error: a fresh clone simply has no pinboard yet, and the UI
+// falls back to its localStorage cache (and to the seeded defaults) in that case.
+function loadPrefs() {
+  try {
+    const obj = JSON.parse(fs.readFileSync(PREFS_PATH, 'utf8'));
+    if (obj && typeof obj === 'object') return obj;
+  } catch (_) {}
+  return {};
+}
+function savePrefs(prefs) {
+  fs.writeFileSync(PREFS_PATH, JSON.stringify(prefs, null, 2) + '\n');
+}
+
 // ─── Geo IP (the box's ONE ip-api client: disk-cached + rate-paced) ───────────
 // Every box-side "where is this player from" consumer reads through here:
 //   • the panel UI's right-click "Locate" (single IP, admin-initiated)
@@ -811,6 +831,26 @@ const server = http.createServer(async (req, res) => {
     const pass = String(body.pass == null ? '' : body.pass).slice(0, 256);
     try { saveSecret(name, pass); return sendJson(res, { ok: true }); }
     catch (err) { return sendJson(res, { ok: false, error: err.message }); }
+  }
+
+  // ── GET /api/prefs ── panel UI state (the FAVORITES pinboard)
+  if (req.method === 'GET' && pathname === '/api/prefs') {
+    return sendJson(res, { ok: true, prefs: loadPrefs() });
+  }
+
+  // ── POST /api/prefs ── replace the pinboard. Bounded on purpose: the entries are row keys
+  // ("dv:<dvar>" / "lb:<tab>|<block>|<label>"), not free text, so cap the count and the length.
+  if (req.method === 'POST' && pathname === '/api/prefs') {
+    let body;
+    try { body = JSON.parse(await readBody(req)); } catch (_) { return sendJson(res, { ok: false, error: 'Bad JSON' }, 400); }
+    if (!Array.isArray(body.favs)) return sendJson(res, { ok: false, error: 'favs must be an array' }, 400);
+    const favs = body.favs.filter(k => typeof k === 'string').slice(0, 200).map(k => k.slice(0, 120));
+    try {
+      const prefs = loadPrefs();
+      prefs.favs = favs;
+      savePrefs(prefs);
+      return sendJson(res, { ok: true });
+    } catch (err) { return sendJson(res, { ok: false, error: err.message }); }
   }
 
   // ── POST /api/batch ──

@@ -148,8 +148,20 @@ tr.grp-u td{color:var(--dm);border-left-color:var(--bd)}
 .panel.active{display:flex}
 /* Cap panels to a readable width, left-aligned next to the sidebar; shrinks below the cap.
    (PANEL_CAP in app.js mirrors the 1380 for the rail positioner.) */
-#p-match,#p-maps,#p-srv{max-width:2100px}
+#p-fav,#p-match,#p-maps,#p-srv{max-width:2100px}
 #p-con{max-width:960px}
+
+/* ── FAVORITES ──
+   The ☆ that pins a settings row to the FAVORITES tab. order:-1 keeps it at the head of the row
+   whatever else the row holds (.srow orders its toggle/hint explicitly). It is NOT a .ctrl, so it
+   stays clickable while disconnected. Quiet until you hover the row it belongs to; gold when on. */
+.fav-star{order:-1;flex:0 0 auto;background:none;border:none;padding:0 5px 0 0;margin:0;font:400 13px var(--fn);line-height:1;color:var(--dm);opacity:.2;cursor:pointer;transition:opacity .12s,color .12s}
+.srow:hover>.fav-star,.slider-row:hover>.fav-star{opacity:.55}
+.fav-star:hover{opacity:1;color:var(--wn)}
+.fav-star.on{opacity:1;color:var(--wn)}
+.fav-note{font-size:11px;font-style:italic;color:var(--dm)}
+/* dvar name in the settings-row right-click header */
+.ctx-dv{font-family:monospace;font-size:10px;font-weight:400;letter-spacing:0;text-transform:none;color:var(--ac);margin-left:7px}
 /* ── Two-column layout for the settings tabs (DASHBOARD + ADVANCED) ──
    TWO EXPLICIT FLEX COLUMNS, not CSS multi-columns. Multi-columns rebalance by height, so
    any height change (zoom, collapsing a block) reshuffles which block lands in which column
@@ -256,6 +268,9 @@ input.sld{flex:1 1 40px;min-width:40px;accent-color:var(--ac);background:none;bo
 .pill.eff-live{color:var(--ok);border-color:rgba(46,198,83,.45)}
 .pill.eff-next{color:var(--ac);border-color:rgba(0,180,255,.45)}
 .pill.eff-restart{color:var(--wn);border-color:rgba(255,214,10,.45)}
+/* Strongest "not now" on the axis: the ENGINE reads it at level load, so not even a map_restart
+   applies it — hence warmer/heavier than RESTART. */
+.pill.eff-nextmap{color:#ff8a5b;border-color:rgba(255,138,91,.5);background:rgba(255,138,91,.08)}
 .pill.per-dvar{color:#79b8d6;border-color:rgba(121,184,214,.35)}
 .pill.per-transient{color:var(--dm);border-color:var(--bd)}
 .pill.per-client{color:#b18cff;border-color:rgba(177,140,255,.4)}

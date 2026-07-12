@@ -1,0 +1,34 @@
+VERSION             "1"
+CONFIG              ""
+FILENOTES           ""
+
+// Overrides of STOCK engine strings (the game's own zone ships these; a copy baked
+// into mod.ff wins). A localized asset is named <STR FILENAME>_<REFERENCE>, so the
+// engine's CGAME_* strings MUST live in cgame.str - the same entries in gf.str would
+// compile to GF_* and be read by nothing. Verified: an EMPTY value renders as nothing
+// (the engine does not fall back to printing the raw key).
+//
+// Keep overrides to single-purpose keys. The scoreboard's other columns come from
+// MPUI_* (KILLS/DEATHS/ASSISTS/...), which are ALSO used by the combat record,
+// leaderboards and after-action report - renaming one changes it everywhere in the
+// client UI, not just the scoreboard.
+
+// Score in Gunfight IS cumulative damage dealt (gf_onPlayerDamage), so the stock
+// "Score" header actively misleads. CGAME_SB_SCORE is scoreboard-scoped, so this
+// rename is contained.
+REFERENCE           SB_SCORE
+LANG_ENGLISH        "Damage"
+
+// Blanks the between-rounds "Connection Interrupted" banner. It is drawn by client
+// engine code (CG_DrawDisconnect) and there is NO dvar to disable it - the client has
+// no cg_drawDisconnect - so blanking its localized string is the only lever available.
+// What it was: the SOFT overlay the client draws after ~270ms with no acked snapshot.
+// Stock map_restart(true) round cycling goes snapshot-silent, so it fired on the
+// round-end killcam and read as a server fault when nothing was wrong. The gap itself
+// is the irreducible floor of native SD round cycling (sv_maxRate 25000 + the HUD push
+// stagger already shrink it); this hides the banner, it does not close the gap.
+// TRADE-OFF: this ALSO suppresses the warning for genuine lag / packet loss.
+REFERENCE           CONNECTIONINTERUPTED
+LANG_ENGLISH        ""
+
+ENDMARKER

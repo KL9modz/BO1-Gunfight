@@ -269,6 +269,7 @@ onStartGameType()
     level.healthRegenDisabled            = true;
     level.playerHealth_RegularRegenDelay = 99999;
 
+    // #strip-begin - pregame-lobby + bot-fill spawn hook (dev/main only; stripped from public release).
     // Restart-lobby: route the throwaway "spawn" straight to spectator. maySpawn() calls this hook
     // FIRST (_globallogic_spawn.gsc:28), and a false sends the engine down its own maySpawn-false
     // path (:566-583) — self thread [[level.spawnSpectator]] — instead of a full frozen spawnPlayer.
@@ -277,7 +278,10 @@ onStartGameType()
     // set, so the real match after map_restart (and every normal round) spawns exactly as before and
     // the stock maySpawn grace/lives logic is untouched. Re-set here every onStartGameType because
     // map_restart wipes level.*.
+    // The public build has neither a lobby nor a bot reconciler, so it installs NO hook — stock
+    // maySpawn guards with isDefined( level.maySpawn ) and falls through to its own grace/lives logic.
     level.maySpawn = ::gf_lobbyMaySpawn;
+    // #strip-end
 
     gf_registerLoadoutCycleDvar(); // also sets level.gf_cfg_roundsPerLoadout
     gf_registerOvertimeLimitDvar(); // also sets level.gf_cfg_overtimeLimit
@@ -314,6 +318,17 @@ onStartGameType()
     // required for the engine to render the timer). The native prematch freezes controls (incl.
     // firing), plays the intro VO, shows the objective hint, and hides the round timer until
     // prematch_over — gf_tryActivateRound waits for prematch_over before starting our round clock.
+    // #strip-begin - match-start machinery (dev/main only; stripped from public release).
+    //
+    // Everything seeded below belongs to a system the PUBLIC build does not have: the
+    // pre-prematch hold (load gate / min-players / Auto-Manual lobby), the engine's pregame
+    // warmup, and the bot-fill reconciler. The public build runs the native prematch straight
+    // through into the round — no waiting on loaders, no min-player hold, no lobby, no warmup,
+    // no bots — so seeding their dvars would only publish knobs that nothing reads.
+    //
+    // The prematch LENGTH is the one exception worth keeping tunable here: the public build
+    // pins it to the fixed 15s/7s assigned below (see level.prematchPeriod), while dev/VPS gets
+    // these two dvars so the RCON panel can retune it live.
     if ( getDvar( "scr_gf_match_prematch_seconds" ) == "" )
         setDvar( "scr_gf_match_prematch_seconds", "15" );   // first round of the match (longer intro)
     if ( getDvar( "scr_gf_prematch_seconds" ) == "" )
@@ -335,18 +350,44 @@ onStartGameType()
         setDvar( "scr_gf_lobby", "0" );           // Match Start: 0 = Normal (default, off), 1 = Auto lobby (min-players -> fast-restart), 2 = Manual lobby (admin START -> fast-restart)
     if ( getDvar( "scr_gf_lobby_timer" ) == "" )
         setDvar( "scr_gf_lobby_timer", "600" );   // MANUAL lobby auto-start timer (s). Was the hardcoded 10-min backstop; now RCON-adjustable. 0 = never auto-start (hold until START)
+
+    // PRE-MATCH WARMUP — 100% stock, zero mod GSC. g_pregame_enabled is an ENGINE dvar (it lives in
+    // BlackOpsMP.exe, alongside the hardcoded script path "maps/mp/gametypes/_pregame"): when it is
+    // set, the engine loads BO1's own _pregame gametype INSTEAD of this one — a no-XP free-for-all
+    // that waits for party_minplayers players, then pregamestartgame() + map_restart(false) hands off
+    // back into g_gametype (which reads "gf" throughout). We own NONE of that; we only expose the
+    // switch in the RCON panel. Seeded if-empty purely so the panel's connect-sweep never reads it by
+    // bare name and gets "Unknown cmd". ⚠ Read at LEVEL LOAD → only ever affects the NEXT map.
+    //
+    // Not seeding it is exactly what keeps the warmup OUT of the public build: the engine defaults
+    // it to 0, nothing else writes it, so BO1's pregame gametype can never come up. (This is also
+    // why there is no _pregame.gsc to exclude — the warmup carries no mod GSC at all.)
+    if ( getDvar( "g_pregame_enabled" ) == "" )
+        setDvar( "g_pregame_enabled", "0" );
+    // ⚠ MUST be 0, and it is OUR job to make it so. The warmup's OWN time limit is registered by stock
+    // _pregame::main() -> registerTimeLimitDvar( "pregame", 5, 0, 1440 ) on PC, and registerTimeLimitDvar
+    // is SEED-IF-EMPTY — so an unregistered scr_pregame_timelimit lands on FIVE MINUTES. _pregame's
+    // onTimeLimit then calls _globallogic::endGame, and on the time-out path it never reaches
+    // pregamestartgame(): the map ROTATES instead of starting the match, so an under-populated server
+    // just cycles maps every 5 min forever. Seeding "0" here pre-empts that (0 = no time limit: stock
+    // timeLimitClock gates on `level.timeLimit`, which 0 makes falsy) — the seed survives into the
+    // warmup's level load because dvars outlive a map change, and _pregame's seed-if-empty then leaves
+    // our 0 alone. dedicated.cfg.example sets it too, for the boot-straight-into-a-warmup case where
+    // this callback has never run.
+    if ( getDvar( "scr_pregame_timelimit" ) == "" )
+        setDvar( "scr_pregame_timelimit", "0" );
     // Dynamic bot fill. gf_fill_n is the PER-TEAM target N (humans+bots per side): the Gunfight
     // round-boundary reconciler (gf_reconcilerInit in _bot.gsc, dev-only) pads each side to exactly
     // N with bots at each round boundary — mid-round roster changes are absorbed at the next round
     // start. It MUST be a dvar — the only state that survives the lobby's map_restart(false).
-    // Seeded here (public file) so it's always in the dvar table for the RCON panel even on a
-    // public build with no reconciler reading it.
     if ( getDvar( "gf_fill_n" ) == "" )
         setDvar( "gf_fill_n", "0" );              // 0 = fill off; 3 = 3v3, 4 = 4v4, ... (clamped 0-6 on read)
     if ( getDvar( "gf_fill_kick_floor" ) == "" )
         setDvar( "gf_fill_kick_floor", "2" );     // client slots kept free for humans: a parked bot is KICKED (not parked) once level.players >= sv_maxclients - this
     if ( getDvar( "gf_teamplan" ) == "" )
         setDvar( "gf_teamplan", "" );             // lobby->match transfer: "<guid>:<a|x|s>,..." snapshot written pre-restart, re-applied post-restart (survives map_restart(false))
+    // #strip-end
+
     // Register scr_team_maxsize with its documented default (0 = no cap) so it always exists
     // in the dvar table. The mod reads it via getDvarInt (0 when unset), but an UNregistered
     // dvar echoes "Unknown cmd scr_team_maxsize" when the RCON panel's connect-sweep reads it
@@ -386,18 +427,36 @@ onStartGameType()
     // holds on the dedicated VPS. RCON bridge: flinch_<mult> for a live change.
     gf_applyFlinch();
 
+    // Gunfight's default LOOK: the "enhance" vision set (contrast pop). Core to the mod, so every
+    // build gets it — the RCON vision_<key> override is layered on top inside gf_roundVisionKey.
+    // Re-run every round (vision is level state, wiped by map_restart) and must be BEFORE the bridge
+    // init below, which reads the level.gf_defaultVision this establishes. The actual apply is
+    // deferred to prematch_over — the stock countdown stomps vision after this callback returns.
+    gf_initRoundVision();
+
     // roundsplayed == 0 is the match's first round (longer intro); later rounds get the shorter one.
+    // These fixed values ARE the public build's prematch — it has no dvars for this (see the
+    // strip-marked seeds above), so the countdown, intro VO, freeze and gun-rack all still play,
+    // they are just not retunable. Dev/VPS overrides both from scr_gf_*_prematch_seconds below.
     if ( game["roundsplayed"] == 0 )
     {
-        level.prematchPeriod = maps\mp\gametypes\_globallogic_utils::getValueInRange( getDvarInt( "scr_gf_match_prematch_seconds" ), 2, 30 );
+        level.prematchPeriod = 15;
     }
     else
     {
-        level.prematchPeriod = maps\mp\gametypes\_globallogic_utils::getValueInRange( getDvarInt( "scr_gf_prematch_seconds" ), 2, 20 );
+        level.prematchPeriod = 7;
         // matchStartTimer setText's game["strings"]["match_starting_in"]; round 1 keeps the engine's
         // "MATCH STARTING IN", rounds 2+ say "ROUND BEGINS IN" (raw string is fine — no rebuild).
         game["strings"]["match_starting_in"] = "ROUND BEGINS IN";
     }
+    // #strip-begin - RCON-tunable prematch length (dev/main only; the public build keeps the fixed 15/7 above)
+    if ( game["roundsplayed"] == 0 )
+        level.prematchPeriod = maps\mp\gametypes\_globallogic_utils::getValueInRange( getDvarInt( "scr_gf_match_prematch_seconds" ), 2, 30 );
+    else
+        level.prematchPeriod = maps\mp\gametypes\_globallogic_utils::getValueInRange( getDvarInt( "scr_gf_prematch_seconds" ), 2, 20 );
+    // #strip-end
+
+    // #strip-begin - pre-prematch load gate (dev/main only; the public build has no match-start hold)
     // Arm the load-gate's connect tracker NOW: the engine delivers "connecting"
     // callbacks (which fire for rotation-carried clients while they are STILL on
     // their loading screen) as soon as this Callback_StartGameType slice first
@@ -406,6 +465,7 @@ onStartGameType()
     // prematch tick also moved there: it loops on inPrematchPeriod, which is
     // already true during the hold, and would have beeped through it from here.)
     gf_armLoadGate();
+    // #strip-end
 
     level.gf_roundActive     = false;
     level.gf_roundEnding     = false;
@@ -541,6 +601,7 @@ onStartGameType()
     level thread gf_hitchMonitor();
     // #strip-end
 
+    // #strip-begin - pre-prematch hold (dev/main only; stripped from public release)
     // Pre-prematch load gate — MUST be the last statement: the engine threads
     // startGame() (prematch countdown -> prematch_over) the moment this callback
     // returns, and everything above (spawn points, gameobjects, bridge, bots)
@@ -549,7 +610,12 @@ onStartGameType()
     // the loading screen (bounded by scr_gf_load_wait) so the full countdown and
     // intro play for everyone at once, and slow loaders can no longer be
     // grace-locked into spectating round 1. See _gf_rounds.gsc.
+    //
+    // The public build has NO hold: with this call gone, onStartGameType simply returns and the
+    // engine threads the prematch immediately. That is the whole "no lobby / no wait times" of the
+    // public build — there is nothing else to switch off, because every hold hangs off this one call.
     gf_waitForLoadingClients();
+    // #strip-end
 
     level thread gf_nativePrematchTicker();      // engine matchStartTimer is silent — re-add the per-second tick (start only now, post-hold)
 }
@@ -633,12 +699,14 @@ gf_registerLoadoutCycleDvar()
 
 onSpawnPlayer( teamOverride )
 {
+    // #strip-begin - lobby throwaway-spawn music suppression (dev/main only; no lobby in the public build)
     // Restart-lobby: pre-arm the stock spawn-music flag so the prematch spawn sting
     // (_globallogic_spawn.gsc ~line 199) is skipped for the throwaway lobby spawn. map_restart(false)
     // on release wipes pers, so the real match's first spawn still plays the music fresh. Gated on the
     // RESTART hold (not gf_inLobbyHold) so a non-restart Normal-mode hold still gets its music.
     if ( isDefined( level.gf_lobbyRestartHold ) && level.gf_lobbyRestartHold && isDefined( self.pers["music"] ) )
         self.pers["music"].spawn = true;
+    // #strip-end
 
     self.sessionstate = "playing";
     self.usingObj     = undefined;
@@ -694,11 +762,13 @@ onSpawnPlayer( teamOverride )
 
 onSpawnPlayerUnified()
 {
+    // #strip-begin - lobby throwaway-spawn music suppression (dev/main only; no lobby in the public build)
     // Restart-lobby: suppress the stock prematch spawn-music sting for the throwaway lobby spawn
     // (see onSpawnPlayer). Also covers large mode, which routes to _spawning::onSpawnPlayer_Unified
     // instead of our onSpawnPlayer.
     if ( isDefined( level.gf_lobbyRestartHold ) && level.gf_lobbyRestartHold && isDefined( self.pers["music"] ) )
         self.pers["music"].spawn = true;
+    // #strip-end
 
     self.usingObj = undefined;
 
@@ -721,12 +791,17 @@ onSpawnPlayerUnified()
     maps\mp\gametypes\_spawning::onSpawnPlayer_Unified();
 }
 
+// #strip-begin - level.maySpawn hook (dev/main only; the public build installs no hook at all)
 // level.maySpawn hook. Returns false ONLY during the restart-lobby hold, so maySpawn()
 // (_globallogic_spawn.gsc:28) short-circuits and the engine routes the player to spawnSpectator
 // (:581) instead of a frozen spawnPlayer — no loadout, spawn music, team splash, or score bar. Any
 // other time returns true, leaving the full stock maySpawn (grace/lives/overtime) logic to run. Kept
 // deliberately strict (single flag) because a stray false during the live match would block ALL
 // spawning.
+//
+// Both of its jobs are dev-only (the lobby hold, and the bot reconciler's surplus-bot park), so the
+// public build ships neither the hook nor its assignment in onStartGameType — stock maySpawn guards
+// with isDefined( level.maySpawn ), so it falls straight through to its own grace/lives logic.
 gf_lobbyMaySpawn()
 {
     if ( isDefined( level.gf_lobbyRestartHold ) && level.gf_lobbyRestartHold )
@@ -750,4 +825,5 @@ gf_lobbyMaySpawn()
 
     return true;
 }
+// #strip-end
 

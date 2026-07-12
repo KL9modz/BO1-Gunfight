@@ -124,7 +124,8 @@ mp_gunfight/  (GitHub: KL9modz/BO1-Gunfight)
   .claude/CLAUDE.md                  <- this file
   mod.csv                            <- build manifest the linker reads
   mp/gametypesTable.csv              <- registers the 'gf' (+ wager gun/oic/hlnd/shrp) UI rows
-  localizedstrings/gf.str            <- localized UI strings
+  localizedstrings/gf.str            <- localized UI strings (assets are named GF_<REFERENCE>)
+  localizedstrings/cgame.str         <- OVERRIDES of stock engine strings (see below)
   ui_mp/
     hud_gf.txt                       <- menufile loader (loadMenu hud_team + hud_gf_health)
     hud_gf_health.menu               <- ALL mod HUD (health panel, loadout overview, self bar, lobby)
@@ -290,6 +291,46 @@ must **yield before its first roster read** (it runs from the tail of `onStartGa
 restores the life and re-drives `spawnClient` ([[stock-teamswitch-suicide-no-life-restore]]).
 `scr_gf_load_grace` (non-restart path) keeps round-1 grace open for a still-loading straggler.
 
+### Pre-match warmup — `g_pregame_enabled` (100% stock, zero mod GSC)
+BO1 ships a **pre-match lobby gametype**: a playable no-XP free-for-all on the map while the server
+waits for players, which then hands itself off into the real match. It is fully native and we own
+**none** of it — we only expose the switch in the RCON panel.
+
+- **How the engine does it:** `BlackOpsMP.exe` carries the dvar **`g_pregame_enabled`** and the
+  hardcoded script path `maps/mp/gametypes/_pregame`. When the dvar is set, the engine loads **that
+  stock script instead of `<g_gametype>.gsc`** at level load. `g_gametype` still reads `gf` throughout,
+  so `level.gameType`, the server browser and the panel all still say "gf". `_pregame::main()` sets
+  `level.pregame = true` → `isPregame()` → stock `_globallogic` turns off XP/rank/AAR/leader-dialog and
+  skips the prematch countdown. On release it calls the engine builtin **`pregamestartgame()`** (which
+  latches `isPregameGameStarted()`, so a between-round `map_restart` does **not** re-enter the warmup)
+  + `SetPreGameTeam`/`SetPregameClass` to carry players, then `map_restart(false)` into `gf`.
+  ✅ Verified working on the Plutonium dedicated VPS — `set g_pregame_enabled 1` + `map_restart`.
+- ⚠ **Read at LEVEL LOAD** → only ever affects the **next** map (same constraint as `xblive_wagermatch`).
+  A `map_restart` is enough to trigger it. The panel badges it `NEXT MAP`. Seeded if-empty in
+  `gf.gsc onStartGameType` purely so the panel's connect-sweep doesn't get "Unknown cmd".
+- **Gate = `party_minplayers`** (NOT `scr_gf_min_players`). Snapshotted at level load, and it counts any
+  non-spectator, so **bots count toward it**.
+- ⚠ **`scr_pregame_timelimit` must be 0 — and the mod is what makes it so.** Stock `_pregame::main()`
+  registers it via `registerTimeLimitDvar("pregame", 5, …)`, which is **seed-if-empty**, so an
+  unregistered dvar lands on **5 minutes**; the warmup's `onTimeLimit` then calls
+  `_globallogic::endGame`, and on *that* path it never reaches `pregamestartgame()` — the map
+  **rotates** instead of starting the match, so an under-populated server just cycles maps every 5 min.
+  `gf.gsc onStartGameType` therefore seeds it to `0` (strip-marked, next to the `g_pregame_enabled`
+  seed): dvars outlive a map change, so our 0 is already in the table when the warmup loads and its
+  seed-if-empty leaves it alone. `dedicated.cfg.example` sets it too, for the boot-straight-into-a-
+  warmup case where that callback has never run.
+- Known costs of staying stock (accept, or own with a documented reason): the warmup gives **stock
+  classes**, not the Gunfight shared loadout; **no mod GSC runs during it**, so the RCON bridge is dead
+  and `gf_state` goes stale (watch for `GF-Watchdog`'s `roundStuck` → `map_rotate` if a warmup with
+  humans on it outlives `RoundStuckSecs` = 300s); and the `ui_gf_*` **client** dvars survive the map
+  load, so a client that was last in a gf lobby renders the `gf_lobby_hud` menuDef *over* the warmup
+  (stale "auto-starts in M:SS" and all). That overlay is an accident, not a feature — it only appears
+  for clients that saw a lobby earlier.
+
+⚠ **Do NOT ship a mod `maps/mp/gametypes/_pregame.gsc`.** One was written and reverted (2026-07-12): the
+native path already does the job, and overriding the stock script also means keeping its whole public
+surface or the server won't compile — see the `unknown function` rule in the T5 cheatsheet below.
+
 ### Team-size mode (large vs small)
 `level.gf_largeMode` (re-derived each round by `gf_resolveTeamMode`) is the single flag driving spawns,
 the wager-blocker allow-list, the OT flag choice, and which `_large` dvar variant is read.
@@ -396,10 +437,24 @@ rebuild; dvar values/positions are GSC-tunable. Intro slide/fade animations are 
   **pushed per-client**: to live humans in `gf_applyFlinch`, and per-spawn via `gf_applyFlinchClient`
   (skipped at stock 1 — a fresh client already sits at 0.2). Session-only; `bg_viewKickScale` is not a
   saved client dvar. ([[flinch-bg-viewkickscale-not-replicated]])
-- **Vision/video:** stock by default. `gf_vis_*` server dvars map to client `r_*` (ambient/gridint/
-  gridcon/hdr/fog), pushed per human spawn only if non-empty — but these are cheat-protected and
-  **unreliable on dedicated**; the VPS-safe look lever is `visionSetNaked` via the bridge, not r_*
-  ([[rcon-dedicated-dvar-push-limits]]). `r_gamma` is a saved client dvar Plutonium blocks.
+- **Vision — the contrast pop is Gunfight's DEFAULT look, in every build** (`_gf_rounds.gsc`,
+  shipped): `gf_initRoundVision` (called from `onStartGameType`) stamps `level.gf_defaultVision` =
+  the map's own set and threads `gf_applyRoundVision`, which **waits for `prematch_over`** and then
+  `visionSetNaked( "default_night", 3.0 )` — the `"enhance"` key (saturation 1, contrast 1.2).
+  ⚠ It **cannot** be applied from `onStartGameType`: the stock prematch stomps vision *afterwards*
+  (matchStartTimer forces `mpIntro`, then at T-2s blends back to the map vision over 3s), so we take
+  over the tail of that blend — the 3.0s transition is what makes the reveal read as native. Vision is
+  `level` state, so `map_restart` wipes it and this re-runs **every round**.
+  The RCON `vision_<key>` override layers on top: it persists a key in `gf_vis_vision`, which
+  `gf_roundVisionKey()` reads **inside a strip region** — so the public build has no dvar read at all
+  and is always the default. ⚠ **Empty `gf_vis_vision` means "the gf default", NOT "the map vision"** —
+  the bare map vision is reachable only via the *explicit* `normal` key, which is why `gf_bridgeVision`
+  persists the string `"normal"` instead of clearing the dvar, and why `visreset` restores *enhance*.
+- **Video (`r_*`) is stock and stays stock.** `gf_vis_*` server dvars map to client `r_*` (ambient/
+  gridint/gridcon/hdr/fog), pushed per human spawn only if non-empty — but these are cheat-protected
+  and **unreliable on dedicated**, which is exactly why the look lever above is `visionSetNaked` and
+  not r_* ([[rcon-dedicated-dvar-push-limits]]). RCON-only, stripped from public builds. `r_gamma` is a
+  saved client dvar Plutonium blocks.
 - **Headshots-only** (`level.gf_headshotsOnly`) is a dev-bridge flag, off/undefined in public builds.
 
 ### Spawns & wager map zone
@@ -454,9 +509,23 @@ the load-bearing part: Plutonium answers ~1 RCON reply per 0.7s and silently dro
 **everything goes through one paced (`RCON_MIN_GAP=850ms`), priority, coalescing queue**. The UI runs a
 single self-scheduling `pollTick` → `/api/tick` (chains `status;gf_state;gf_roster` into one send).
 ⚠ **Never add another RCON poller** — box services read through the panel API instead
-([[rcon-panel-queue-saturation]]). Panel UI: DASHBOARD / MAPS (live `sv_maprotation` editor —
-[[rcon-map-rotation-editor]]) / ADVANCED / CONSOLE tabs; explicit-flex `layoutColumns` (not CSS
-multicolumn); a dead-dvar cache silences "Unknown cmd" probing ([[rcon-connect-sweep-unknown-cmd-spam]]).
+([[rcon-panel-queue-saturation]]). Panel UI: FAVORITES (landing tab) / DASHBOARD / MAPS (live
+`sv_maprotation` editor — [[rcon-map-rotation-editor]]) / ADVANCED / CONSOLE tabs; explicit-flex
+`layoutColumns` (not CSS multicolumn); a dead-dvar cache silences "Unknown cmd" probing
+([[rcon-connect-sweep-unknown-cmd-spam]]). **FAVORITES** is a pinboard: a ☆ on every DASHBOARD/
+ADVANCED settings row pins it, and the pinned row is the **same DOM node, borrowed** — moved out of
+its home block while the tab is open and put straight back on leaving. Never render a second copy of
+a control: reads (`srvApplyValues`) and writes (`sdve`/`sdvv`, Set All, 💾 Save) are keyed by element
+id / `data-dvar`, so a duplicate id silently drifts out of sync with the server. Per-gametype rows
+(`#srv-gt-body`) are deliberately not pinnable — that block is re-rendered on every dropdown change,
+which would destroy a borrowed row's home. ⚠ **The pinboard is stored SERVER-side** — the panel's
+gitignored `tools/rcon/prefs.local.json` via `GET`/`POST /api/prefs`, `localStorage.gf_favs` is only a
+first-paint cache — so it follows the **panel process**, not the browser: the VPS panel is one pinboard
+whether you reach it by RDP or over the SSH tunnel from the laptop, and a laptop's own local panel keeps
+its own. `deploy.ps1` `/XF`-excludes the file so `/MIR` can't delete it. Any settings row also answers a
+**right-click** (`showRowCtx`): copy its dvar, pin/unpin, reset to default — the default read from the
+DOM's own `defaultValue`/`defaultChecked` (so nothing carries a second copy of it), and pushed back
+through the row's **own** apply button / change handler, so a reset can't drift from the row's transport.
 Per-profile passwords live in gitignored `secrets.local.json`. ⚠ Status/dvar parsing is **end-anchored**
 because names can contain spaces (a bot "MCG Gordon" would otherwise leak in as a human —
 [[status-parser-name-spaces-bot-miscount]]).
@@ -494,6 +563,9 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_load_grace` | 20 | s past prematch_over to keep round-1 grace open for a straggler loader (0 = off). |
 | `scr_gf_lobby` | 0 | Match Start: **0 Normal** / **1 Auto** / **2 Manual** (Auto/Manual fast-restart via `map_restart(false)`). |
 | `scr_gf_lobby_timer` | 600 | Manual-lobby auto-start ceiling (s); 0 = never auto-start. |
+| `g_pregame_enabled` | 0 | **ENGINE** dvar, read at **level load** → **next map only**. `1` = run BO1's stock pre-match warmup lobby (`maps/mp/gametypes/_pregame`) before the match. 100% native; the mod only seeds + exposes it. |
+| `party_minplayers` | 2 | Players the **stock warmup** waits for (its only gate). Counts bots. Unrelated to `scr_gf_min_players`. |
+| `scr_pregame_timelimit` | 0 | Warmup time limit (min). ⚠ Keep **0** — stock registers it seed-if-empty at 5, and its time-out **rotates the map** instead of starting the match. Seeded to 0 by `gf.gsc` (strip-marked) + `dedicated.cfg.example`. |
 
 **Bots** (dev-only reconciler)
 | dvar | default | meaning |
@@ -530,6 +602,28 @@ armed whenever `level.rankedMatch` is true — which it **is** on our dedicated 
 team-assigned without spawning (a whole Auto/Manual lobby hold; a large-mode late joiner), so `gf.gsc`
 pins it to **3600**.
 
+**Connect/timeout drops are a separate axis from AFK — and are TWO dvars, not one**
+([[sv-timeout-and-connecttimeout-template-defaults]]). Both measure *packet silence*, never input, and
+both are **engine-registered** (no `gf.gsc` seed needed) and **not latched** (the panel's ADVANCED tab
+changes them live).
+- **`sv_timeout`** — an **already-in-game** client. The `T5ServerConfig` template ships **15**, which is
+  hostile two ways: it drops anyone who alt-tabs out of **exclusive fullscreen** (Windows minimizes the
+  window, the client stops pumping its main loop and stops sending — borderless/windowed keeps running
+  unfocused and never hit it), and it makes the **server ~3× stricter than the client** (`cl_timeout` is
+  **40**), so an ordinary lag spike drops a player who is still sitting there waiting. **Never set this
+  below `cl_timeout` (40).** VPS + example now run **240** (the engine default). Raising it only costs the
+  time a hard-crashed client keeps its player slot.
+- **`sv_connectTimeout`** — a client still **connecting/loading**, i.e. the **first-join budget**. Engine
+  default **80**, which is thin: a first-timer FastDL-downloads `mod.ff`, then the Plutonium client rebuilds
+  its engine *in place* with no loading UI (D3D9 device destroyed + recreated, ~180MB of zones reloaded — a
+  30-60s black screen, [[fastdl-first-join-black-screen-rebuild]]) and then runs a Demonware stats/CAC
+  re-sync with documented multi-minute stalls. Blowing 80s mid-rebuild is much of why new players report
+  having to **connect twice**. VPS + example now run **200** (matching the client's own `cl_connectTimeout`).
+  It only ever applies before a client finishes loading, so raising it costs nothing.
+
+⚠ **Keep every `dedicated.cfg` comment semicolon-free** — the cfg parser splits on `;` *inside* a `//`
+comment and executes each fragment ([[unknown-command-cd-and-cfg-semicolon-parse]]).
+
 **Retired / inert dvars** (no longer read; a stale
 cfg value does nothing): `scr_gf_largemode_minplayers`, `scr_gf_roster_wait`, `scr_gf_lobby_hold`/
 `_restart`/`_restart_full`, `scr_gf_ff`/`scr_team_ff`, and the `bots_manage_*`/`bots_team_*` family as
@@ -541,9 +635,28 @@ Gunfight controls (still seeded for the vendored BotWarfare AI — don't delete 
 
 `mod.ff` is a **gitignored build output** (registers the UI rows + strings + menus, compiles the custom
 FX). **Pure GSC changes never need a rebuild** — edit + `map_restart`. Rebuild only when a *compiled*
-asset changes: `mp/gametypesTable.csv`, `localizedstrings/gf.str`, `ui_mp/hud_gf.txt` or
-`ui_mp/hud_gf_health.menu` **structure** (dvar values/positions are runtime-tunable), or a
-`raw/fx/misc/*.efx`.
+asset changes: `mp/gametypesTable.csv`, `localizedstrings/gf.str`, `localizedstrings/cgame.str`,
+`ui_mp/hud_gf.txt` or `ui_mp/hud_gf_health.menu` **structure** (dvar values/positions are
+runtime-tunable), or a `raw/fx/misc/*.efx`.
+
+### Overriding stock engine strings (`localizedstrings/cgame.str`)
+A localizedstring baked into **our** `mod.ff` **overrides the game's own shipped-zone copy** — so any
+single-purpose engine string can be retitled or blanked. ⚠ **The asset name is `<STR FILENAME>_<REFERENCE>`**,
+so an engine `CGAME_*` string MUST be declared in a file literally named `cgame.str` (+ `localize,cgame`
+in `mod.csv`); the same reference in `gf.str` compiles to `GF_*`, which nothing reads — a **silent no-op**.
+An empty value renders as **nothing** (the engine does not fall back to printing the raw key). Currently
+shipped: `SB_SCORE` → **"Damage"** (score in this mod IS cumulative damage dealt) and
+`CONNECTIONINTERUPTED` → **""** (blanks the between-rounds banner — note the engine's own typo, one R).
+
+The banner blank is the **only** lever that exists: `CG_DrawDisconnect` is client engine code and the
+client has **no `cg_drawDisconnect` dvar** (verified against `BlackOpsMP.exe`), so GSC and the menu layer
+can't reach it. It **hides** the banner; it does not close the snapshot gap (the irreducible floor of stock
+`map_restart(true)` round cycling — see [[connection-interrupted-mitigations]]). ⚠ It also suppresses the
+warning for **genuine** lag/packet loss. ⚠ Keep overrides to single-purpose keys: the scoreboard's other
+columns are `MPUI_*`, which the combat record / leaderboards / after-action report also use — renaming one
+changes it **everywhere**. ⚠ Overrides only reach clients that downloaded `mod.ff`, i.e. players **already
+on the server** — a messaging surface, never an ads/acquisition one. Full detail →
+[[stock-engine-string-override-via-modff]].
 
 **Always build via `tools/build_ff.ps1`** — it stages `mod.csv` to all five zone-source paths (the
 linker reads the **assetlist** copy), stages the transitive `hud_gf_health.menu` explicitly, runs the
@@ -574,6 +687,35 @@ content), so `git checkout main` after cloning and push `main` with `tools/push_
   `mod.ff` + gameplay GSC + README. Dev files excluded by name; `// #strip-begin … #strip-end` regions
   removed, then comments stripped. ⚠ **Strip order is load-bearing** — markers before comments, or the
   dev body leaks (the marker lines are themselves comments; the wiring between them is real code).
+  `tools/release_common.ps1` holds the shared drop-list + strip regex (one source of truth for the
+  packager AND the verifier below).
+- **The public build is a STRIPPED-DOWN Gunfight** — same *gameplay* as the VPS (rounds, shared
+  rotating loadouts, overtime + capture zone, auto large/small team mode, curated spawns, damage
+  scoring, menu HUD), **none of the dev/ops machinery**. Cut: the whole match-start hold
+  (`gf_waitForLoadingClients` and everything it drives — load gate, min-players, Auto/Manual lobby +
+  its camera/roster HUD, the team/bot plan transfer), the engine pregame warmup (the
+  `g_pregame_enabled` seed is strip-marked — unseeded, the engine defaults it to 0 and BO1's own
+  `_pregame` gametype can never come up, so there is **no `_pregame.gsc` to exclude**), bots, the RCON
+  bridge, debug tooling, admin pause, the `gf_vis_*` r_* push, the RCON perk overrides, and the
+  `level.maySpawn` hook (stock guards it with `isDefined`, so the public build installs none and falls
+  through to stock grace/lives). The prematch **countdown stays** — pinned at a fixed 15s/7s, with the
+  dvar-tunable version strip-marked behind it. A public server owner still gets the core knobs:
+  `scr_gf_scorelimit` / `_timelimit(_large)` / `_overtimelimit(_large)` / `_roundswitch` /
+  `_roundsperloadout` / `_teamspawnmode` / `gf_capture_time(_large)` / `scr_gf_flinch` /
+  `scr_team_maxsize`.
+  ⚠ Two functions are deliberately kept OUTSIDE the strip regions because **live-round code still
+  calls them**: `gf_anyTrackedClientLoading()` (called by `gf_roundWatchdog` + `gf_closeGraceEarly`;
+  already returns false when the tracker never armed, so it degrades to "nobody is loading") and
+  `gf_pushPauseBanner()` (called by `gf_runHealthHUD` every spawn; with `gf_matchPaused` never set it
+  just clears the banner). The ~8 inert `isDefined( level.gf_inLobbyHold )` guards in
+  `gf_playerSpawnedCB` / `_gf_loadouts` are likewise left in place — they degrade correctly and
+  excising conditions from live `if` expressions is pure compile risk for zero behavior change.
+- **`tools/verify_release_strip.ps1`** — **run after touching ANY strip region.** GSC resolves symbols
+  at *compile* time, so a region that removes a function some KEPT code still calls is an `unknown
+  function` that fails the **whole server**, and it won't surface until a client connects. The verifier
+  applies the strip regions and statically proves: no kept call lands in stripped code, no kept
+  `#include` points at a dropped file, and no dev-only dvar leaked. It does **not** prove the GSC
+  parses — a real map load is still the final word.
 - **`package_server.ps1`** builds the PRIVATE VPS bundle: the **entire `main` tree** + `mod.ff` +
   `dedicated.cfg`. ⚠ It does **not** strip — the VPS runs dev wiring live by design; only a hardcoded
   `rcon_password` in GSC is blocked ([[package-server-does-not-strip-markers]]).
@@ -645,8 +787,16 @@ and the engine disables regen itself.
 
 **Compile-error diagnosis:** `unknown function: @ scripts/mp/<file>::<func>` means the broken call is
 *inside* the named function — scan every call within it for (a) a T5-incompatible builtin, (b) a helper
-in an un-`#include`d file, or (c) a bare builtin called with a method prefix. Both file-scope causes are
-covered in [[vector-scale-in-common-scripts-utility]].
+in an un-`#include`d file, (c) a bare builtin called with a method prefix, or (d) **a function you
+deleted from a stock script you override**. Causes (b)/(c) → [[vector-scale-in-common-scripts-utility]].
+
+⚠ **(d) — overriding a stock script means keeping its ENTIRE public surface.** GSC resolves symbols at
+**compile** time, so a stock caller links against your file *unconditionally* — even from inside a
+runtime guard that would never be true. `_globallogic_ui::menuClass` does `if (isPregame()) self
+maps\mp\gametypes\_pregame::OnPlayerClassChange(response);`, so shipping a `_pregame.gsc` without that
+function fails the WHOLE server with `unknown function @ _globallogic_ui::menuclass` — naming the
+caller, not the missing symbol. Before overriding any stock script, grep the raw dump for
+`<scriptname>::` and keep every function you find, stubbed if unused.
 
 ## T5 engine reference
 

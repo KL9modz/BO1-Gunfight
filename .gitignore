@@ -24,6 +24,10 @@ tools/notify/config.json
 # RCON panel — real rcon_password store (per-profile). Never commit; template is .example
 tools/rcon/secrets.local.json
 
+# RCON panel — box-local UI state (the FAVORITES pinboard). Lives with the PANEL, not the browser,
+# so the VPS panel shows one pinboard over RDP and over the SSH tunnel alike. Regenerated on demand.
+tools/rcon/prefs.local.json
+
 # RCON panel — learned per-server cache of dvars the game server rejects as "Unknown command"
 # (so the connect-sweep stops bare-sending them). Machine/server-specific; regenerated on demand.
 tools/rcon/.dvarcache.json

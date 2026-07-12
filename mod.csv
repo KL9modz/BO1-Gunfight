@@ -10,6 +10,11 @@ rawfile,maps/mp/gametypes/gf.txt
 fx,misc/fx_ui_flagbase_gf_white
 stringtable,mp/gametypesTable.csv
 localize,gf
+# Overrides two STOCK engine strings (a mod.ff localizedstring wins over the game's
+# own zone copy): the scoreboard "Score" header -> "Damage", and the between-rounds
+# "Connection Interrupted" banner -> blank. Clients get these via the FastDL mod.ff,
+# so BOTH are gated on the client having the current zone. See localizedstrings/cgame.str.
+localize,cgame
 # GSC is intentionally NOT baked into the zone. Plutonium loads .gsc as loose
 # rawfiles from the mod folder at runtime; the server + the release zip both ship
 # the loose .gsc, and a client never needs gametype GSC (gameplay is server-side -

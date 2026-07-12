@@ -29,7 +29,12 @@
 set g_allowvote "0"                                 // Allow Vote.
 set g_inactivity "300"                              // Enable or Disable auto kick feature for idle/AFK players.
 set g_password ""                                   // Password Protected Game. Leave blank if you want players to join.
-set party_minplayers "2"                            // Pre-Match Lobby (2 = public; set to 1 for solo local testing)
+set party_minplayers "2"                            // Pre-Match Lobby. 2 = public. Set to 1 for solo local testing. This is the STOCK WARMUP's only gate and it counts bots. Unrelated to scr_gf_min_players.
+// The stock pre-match warmup (g_pregame_enabled, an engine dvar read at LEVEL LOAD) has its OWN time
+// limit, and BO1 defaults it to FIVE MINUTES. Its time-out does not start the match. It calls endGame,
+// which ROTATES THE MAP, so an under-populated server would just cycle maps every 5 minutes. Keep 0.
+// 0 means no time limit, so the warmup waits for party_minplayers however long that takes.
+set scr_pregame_timelimit "0"                       // Stock warmup time limit in minutes. Keep 0. See above.
 set scr_team_maxsize "6"                            // Gunfight: max players per team (up to 6v6). Overflow past this is sent to spectator on spawn. sv_maxclients (launch bat) = 14 -> 12 play + 2 spectator/headroom. Set 4 for a 4v4-capped server.
 // scr_gf_largemode_minplayers is RETIRED (no longer read). Small/large is hard-wired to the health-panel skull cap: <=4v4 small, any team of 5+ large. Force a mode with scr_gf_teamspawnmode "large" | "small".
 set scr_xpscale "1"                                 // Round end XP multiplicator (score * scr_xpscale = xp)
@@ -54,7 +59,30 @@ set sv_privatePassword ""                           // Password needed to use a 
 set sv_pure "0"                                     // Match data with both the cilent and server.
 set sv_reconnectlimit "3"                           // How many times you can try to reconnect.
 set sv_zombietime "2"                               // Your idle time period before getting kicked.
-set sv_timeout "15"                                 // Timeout time period. You will timeout after x seconds when attempting to connect or if you are getting connection interruptions. (Defualt 240)
+// ── Timeouts. Two SEPARATE dvars. The template's value for the first one was actively hostile. ──
+// (Keep every comment in this file SEMICOLON-FREE. The CoD/Pluto cfg parser splits a line on the
+//  semicolon character even INSIDE a // comment, then tries to execute each fragment as a command
+//  and prints a bogus Unknown command for it. That is where the console spam comes from.)
+// sv_timeout governs an ALREADY-IN-GAME client. sv_connectTimeout governs one still CONNECTING/LOADING.
+//
+// The T5ServerConfig template ships sv_timeout 15. Two ways that bites:
+//   1. Alt-tab out of EXCLUSIVE FULLSCREEN — Windows minimizes the window, the client stops pumping its
+//      main loop and stops sending, so the server drops it 15s later. (Borderless/windowed keeps running
+//      while unfocused and never hit this.)
+//   2. It made the server ~3x STRICTER THAN THE CLIENT: cl_timeout is 40, so a lag spike or packet-loss
+//      burst had the server drop a player who was still sitting there waiting for it. Never run this
+//      below cl_timeout (40) — a server stricter than its own clients is never correct.
+// Cost of a high value: a hard-crashed client holds its player slot that long. AFK enforcement is
+// g_inactivity (input-idle, 300) — sv_timeout is only about packet silence.
+set sv_timeout "240"                                // In-game client packet silence before drop. (Engine default 240. Template ships a hostile 15.)
+//
+// sv_connectTimeout is the FIRST-JOIN budget, and the engine default of 80 is thin. A first-time joiner
+// downloads mod.ff over FastDL, then the Plutonium client switches fs_game IN PLACE with no loading UI:
+// it destroys + recreates the D3D9 device (that blank window IS the black screen) and reloads ~180MB of
+// zones — 30-60s — then runs a full Demonware stats/CAC re-sync with documented multi-minute stalls.
+// Blowing 80s mid-rebuild is a large part of why new players report having to connect TWICE.
+// 200 matches the client's own cl_connectTimeout. Costs nothing: it only applies pre-load-complete.
+set sv_connectTimeout "200"                         // Connecting/loading client budget. (Engine default 80)
 set sv_voice "1"                                    // Allow Voice Chat
 set sv_voicequality "9"                             // Voice Quality, 9 for high, 1 for low. More bandwidth better quality.
 set g_voiceChatTalkingDuration "500"                // Duration you can chat.
@@ -236,7 +264,7 @@ set con_displayRconOutput "0"                       // Print the output of comma
 //set scr_team_kickteamkillers "0"                  // kick team killers?
 //set scr_team_teamkillpointloss "1"                // Point penalty for teamkills?
 //set scr_team_teamkillspawndelay "20"              // Delay spawns of teamkillers?
-set scr_teambalance "1"                             // Block joining the already-larger team (real T5 dvar; _teams.gsc reads it).
+set scr_teambalance "1"                             // Block joining the already-larger team. Real T5 dvar, read by _teams.gsc.
 // scr_teamup removed: it's a CoD4/WaW dvar that does NOT exist in Black Ops (T5) — nothing reads it, and a bare RCON read of it prints "Unknown cmd".
 //set scr_teamKillPunishCount "4"                   // After how many teamkills are players punished?
 
