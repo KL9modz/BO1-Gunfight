@@ -223,6 +223,15 @@ onStartGameType()
     setDvar( "scr_disable_cac", "1" );
     setDvar( "scr_disable_weapondrop", "1" );
     setDvar( "scr_showperksonspawn", "0" );   // pinned: stock perk popup off; the custom loadout HUD (gf_showWeaponHUD) owns perk display
+    // Stock "spawn within N seconds or be dropped" kick (_globallogic_spawn::kickIfIDontSpawnInternal).
+    // The engine REGISTERS scr_kick_time at 60, and the thread is armed whenever level.rankedMatch is
+    // true — which it is on our dedicated server (onlinegame 1 + xblive_privatematch 0). It exempts
+    // pers["team"] == "spectator", so a real spectator is safe, but it kicks anyone Gunfight holds
+    // team-assigned WITHOUT spawning: every human in an Auto/Manual pregame lobby hold (forceAutoAssign
+    // seats them on a team and nobody spawns for up to scr_gf_lobby_timer = 600s), and a large-mode late
+    // joiner (90s round + killcam outlasts 60s). Push it out of reach — AFK enforcement is g_inactivity's
+    // job (dedicated.cfg), which kicks on real input inactivity instead of on "hasn't spawned yet".
+    setDvar( "scr_kick_time", "3600" );
     // Weapon-swap speed left fully stock by default: we neither force perk_weapSwitchMultiplier nor
     // grant specialty_fastweaponswitch (gf_giveCustomLoadout no longer adds it). To speed up swaps,
     // an admin enables Fast Weapon Switch in the RCON Perks tab (-> gf_perk_on), then tunes the
@@ -512,6 +521,15 @@ onStartGameType()
         setDvar( "bots_manage_add", 0 );
         thread maps\mp\gametypes\_bot::init();
     }
+
+    // Default bot difficulty. bot_difficulty is BotWarfare's own dvar: _bot::diffBots re-reads it
+    // every 1.5s and re-applies the whole sv_bot* preset from it. Nothing seeded it, and an unset
+    // value falls through bot_set_difficulty's final else to "normal" (which then writes the dvar
+    // back) — so the default was normal by fallthrough, not by choice. Seed-if-empty: a
+    // dedicated.cfg value and a live panel botdiff_* both still win, and because the preset writes
+    // the dvar back this only ever fires on the first round after a server boot.
+    if ( getDvar( "bot_difficulty" ) == "" )
+        setDvar( "bot_difficulty", "fu" );
 
     // Frame-hitch / slow-mo diagnostic (dev only). Chases the "prematch/preround
     // countdown + whole game runs in slow-motion until it hits 0" report: samples

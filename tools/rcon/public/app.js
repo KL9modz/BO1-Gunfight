@@ -251,7 +251,7 @@ async function doConn(){
   const btn=g('cBtn');btn.disabled=true;btn.textContent='…';
   try{
     const d=await fetchStatus();
-    if(d.ok){setLive(true);tick(d);actLog('Connected to '+((_profiles[_activeProfile]||{}).name||conn().host)+' ('+conn().host+')','ok');reqNotifyPerm();pushAdminGuid();seedCmdSeq();readServerDvars();readMatchDvars();loadRotation();}
+    if(d.ok){setLive(true);tick(d);actLog('Connected to '+((_profiles[_activeProfile]||{}).name||conn().host)+' ('+conn().host+')','ok');reqNotifyPerm();pushAdminGuid();seedCmdSeq();readServerDvars();readMatchDvars();readBotDiff();loadRotation();}
     else{toast('Failed: '+d.error,'err');setLive(false);}
   }catch(e){toast('Error: '+e.message,'err');setLive(false);}
   btn.disabled=false;
@@ -265,8 +265,6 @@ function setLive(v){
     bdg.textContent='● Connected';bdg.className='bdg on';
     if(hr)hr.style.display='';if(hk)hk.style.display='';   // header Read + Kill Server
     setCtrl(true);
-    // Default bot difficulty is normal — highlight until user changes it
-    ['easy','normal','hard','fu'].forEach(k=>g('d-'+k).classList.toggle('sel',k==='normal'));
     startPoll();
   }else{
     btn.textContent='Connect';btn.className='';
@@ -795,6 +793,20 @@ async function endRound(team){
   const ok=await bridge('endround_'+team,'End round → '+team);
   if(ok){ actLog('End round → '+team,'wn'); toast('Ending round — '+team,'info'); }
 }
+// Replay the current round (no score, no loadout rotation, no side switch). Goes through the
+// bridge, NOT a raw fast_restart — that console command skips _globallogic::endGame, so the round's
+// endon("game_ended") threads would survive into the replay as a second copy.
+async function restartRound(){
+  const ok=await bridge('roundrestart','Restart round');
+  if(ok){ actLog('Restart round','wn'); toast('Restarting round…','info'); }
+}
+// Restart the whole match (scores 0-0, round 1, same map + teams) via map_restart(false) in GSC.
+// Confirmed because it throws away a match in progress.
+async function restartMatch(){
+  if(!confirm('Restart the MATCH?\n\nScores go back to 0-0 and the match starts again at round 1 on the same map, with the current teams.'))return;
+  const ok=await bridge('matchrestart','Restart match');
+  if(ok){ actLog('Restart match','wn'); toast('Restarting match…','wn'); }
+}
 // ─── Lobby hold (pre-prematch) ────────────────────────────────────────────────
 // The GSC gate holds the FIRST round before the prematch countdown when Lobby Hold=Manual
 // (or a load / min-players hold is up). gf_state's 7th field (lobbyHold) tells us it's live;
@@ -996,9 +1008,20 @@ async function botTeam(act,team){
 async function botDiff(d){
   const ok=await bridge(`botdiff_${d}`);
   if(ok){
-    ['easy','normal','hard','fu'].forEach(k=>g('d-'+k).classList.toggle('sel',k===d));
+    hlBotDiff(d);
     actLog('Bot diff: '+d.toUpperCase(),'ok');toast('Bot diff: '+d.toUpperCase(),'info');
   }
+}
+function hlBotDiff(d){ ['easy','normal','hard','fu'].forEach(k=>g('d-'+k).classList.toggle('sel',k===d)); }
+// The live difficulty IS the bot_difficulty dvar (_bot::diffBots re-applies the preset from it every
+// 1.5s and writes it back, so it always reflects reality). Read it on connect rather than assuming a
+// default — gf.gsc seeds "fu" at boot, and dedicated.cfg may override that. One-name read, connect only.
+async function readBotDiff(){
+  if(!live) return;
+  try{
+    const r=await fetchDvars(['bot_difficulty']);
+    if(r&&r.ok) hlBotDiff(String(r.values['bot_difficulty']||'').trim().toLowerCase());
+  }catch(_){}
 }
 
 // ─── Maps ────────────────────────────────────────────────────────────────────
@@ -1371,7 +1394,7 @@ const SRV_SECTIONS = [
   { title: 'GENERAL', eff: 'live', per: 'dvar', vars: [
     { n:'g_password',               lbl:'Join Password',          type:'text',   def:'',    tip:'g_password\nServer join password. Blank = open to all.' },
     { n:'g_allowvote',              lbl:'Allow Voting',           type:'tog',    def:'1',   tip:'g_allowvote\nLet players call /callvote in console. GF default: 1' },
-    { n:'g_inactivity',             lbl:'AFK Kick Timer (s)',     type:'num',    def:'190', tip:'g_inactivity\nSeconds of inactivity before auto-kick. 0 = disabled.' },
+    { n:'g_inactivity',             lbl:'AFK Kick Timer (s)',     type:'num',    def:'300', tip:'g_inactivity\nSeconds of INPUT inactivity before auto-kick (spectators included). 0 = disabled. GF default: 300. The Plutonium T5ServerConfig template ships 190, which kicks anyone quietly spectating a match after ~3 min.' },
     { n:'party_minplayers',         lbl:'Lobby Min Players (pregame)', type:'num', def:'2',   tip:'party_minplayers\nEngine PREGAME-lobby dvar — does NOT gate the Gunfight match (stock waitForPlayers() is an empty stub; party_minplayers only affects the _pregame lobby gametype + the wager bet calc). For Gunfight’s min-players-to-start, use Min Players in ADVANCED → MATCH START (scr_gf_min_players). Left here for non-gf gametypes.' },
     { n:'sv_maxclients',            lbl:'Max Players',            type:'num',    def:'14',  eff:'restart', tip:'sv_maxclients\nMaximum simultaneous connections the server accepts. GF: 14 = 12 playing (up to 6v6) + 2 spectator headroom.' },
     { n:'sv_floodProtect',          lbl:'Chat Flood Protection',  type:'num',    def:'4',   tip:'sv_floodProtect\nThrottle rapid chat messages. Set to 20 when using an RCON tool.' },

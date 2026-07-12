@@ -220,7 +220,10 @@ node tools\rcon\server.js     # then open http://127.0.0.1:3000
 
 The bridge polls the `gf_cmd` dvar every 0.5s and dispatches dev/admin commands sent over RCON (`set gf_cmd <command>`), and publishes the `gf_state` telemetry dvar every 2s (`alliesWins:axisWins:round:aliveAllies:aliveAxis:gametype`). Notable commands:
 
-- **Match control:** `pause` / `resume`, `endround_allies` / `endround_axis`.
+- **Match control:** `pause` / `resume`, `endround_allies` / `endround_axis`, plus the two restarts:
+  - `roundrestart` — replays the current round: ends it as a `"tie"` through `gf_endRound` (no score), with `game["roundsplayed"]` pre-decremented (endGame's `++` nets it back, so the loadout doesn't rotate) and `level.roundswitch` zeroed for that cycle (so the sides don't switch).
+  - `matchrestart` — restarts the whole match: scores 0-0, round 1, same map + teams. Snapshots the sides into `gf_teamplan`/`gf_botplan` and sets `gf_matchArmed=1` (dvars — they have to survive the wipe), fires `game_ended`, then `map_restart(false)` (fast, no map reload, re-fires the full match-start presentation). The post-restart `gf_waitForLoadingClients` pass consumes `gf_matchArmed`, skips the lobby hold and re-applies the plan.
+  - ⚠ Neither is a raw `fast_restart` / `map_restart` console command, and a running match must never be restarted with one: GSC threads survive a `map_restart`, and the **only** thing that retires them is the `game_ended` notify `_globallogic::endGame` fires at each round end. Restart without it and the engine's re-`InitGame` threads a second `startGame()` → `prematchPeriod()`/`gameTimer()` on top of the survivors (double countdown), plus a second copy of every HUD/gate loop.
 - **Perks:** `allperks_on/off`, `perksync` (re-applies the `gf_perk_on` / `gf_perk_off` override lists to live players without waiting for respawn — the loadout re-applies the same lists each spawn), plus bot difficulty `botdiff_easy/normal/hard/fu`.
 - **Cheats/toggles:** `god_on/off`, `infammo_on/off` (native `sv_FullAmmo`), `radar_on/off` (`scr_game_forceradar` + match flags), `headshots_on/off` (sets `level.gf_headshotsOnly`, read by the damage handler), `killstreaks_on/off`, `regen_on/off`.
 - **Per-player** (by entity number): `pgod_<n>`, `pfreeze_<n>`, `punfreeze_<n>`, `pperks_<n>`, `pnoclip_<n>`.
@@ -237,7 +240,7 @@ The bot framework is vendored under `maps/mp/bots/` (`_bot_loadout`, `_bot_scrip
 Gunfight-specific behavior that matters:
 
 - The reconciler acts **only at round boundaries** — round end (inside the killcam), the match-start gate release, and one roster-settle pass after init — and only through suicide-free primitives: a quiet pers reassign (`gf_botQuietSetTeam`) for un-"playing" bots, a deferred `pers["gf_parkPending"]` mark (consumed pre-spawn by `gf_lobbyMaySpawn`) for alive ones, kicks, and 0.5s-staggered generation-stamped adds. It never moves a bot mid-round and never stock-switches one (the stock team switch suicides any "playing" client — the historical "bots suicide at spawn" bug).
-- `bot_set_difficulty()` (`easy` / `normal` / `hard` / `fu`) is the dvar set behind the bridge's `botdiff_*` commands.
+- `bot_set_difficulty()` (`easy` / `normal` / `hard` / `fu`) is the dvar set behind the bridge's `botdiff_*` commands. It rewrites the whole `sv_bot*` preset from whatever `bot_difficulty` holds, and `diffBots` re-runs it every 1.5s — so `bot_difficulty` always reflects the live difficulty (the panel reads it on connect to highlight the right button). The default is **`fu`**, seeded if-empty in `gf.gsc`'s bot block; a `dedicated.cfg` value or a live `botdiff_*` still wins, since the preset writes the dvar back and the seed only fires when it's empty (first round after a server boot).
 
 Bots run on both a local listen server and the dedicated VPS. The current Plutonium T5 build spawns test clients on a dedicated server without any executable patch (confirmed live 2026-07-04). On the VPS bots are enabled at **runtime via the RCON panel** (`gf_fill_n`, set over rcon), so they never appear in `dedicated.cfg` — a config grep does not prove "no bots."
 

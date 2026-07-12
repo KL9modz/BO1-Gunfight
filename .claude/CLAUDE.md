@@ -17,6 +17,14 @@ wins** takes the match.
 ## TODO
 
 ### Open bugs
+- **Which client orphans `.killcam` in the round-end deadlock is still unproven.** The deadlock itself is
+  now broken by `gf_postRoundWatchdog` (the infinite round can't recur), but the *leaker* was never pinned:
+  `finalKillcam`'s only live endon is `self endon("disconnect")`, and a disconnected player leaves
+  `level.players` — yet the observed hang persisted after the disconnector left again, so the leaker was a
+  client that STAYED. Prime suspect is a fill bot added into the killcam window (`gf_boundaryListener` adds
+  at `gf_round_over` +0.5s, and `startLastKillcam` snapshots `level.players` *after* `play_final_killcam`).
+  **Next occurrence: read the `GF_ENDWATCH:` log line — it names the client and the flag.**
+  ([[infinite-round-orphaned-killcam-flag]])
 - **Pregame lobby can end on its own** (should end only via the load/min gate or an admin START) — only
   reachable when `scr_gf_lobby` is Auto/Manual (default Normal has no hold, so masked by default).
 - **Prematch/intro countdown runs in slow-motion (~1 fps) during a fast-restart burst** — a transient
@@ -196,11 +204,24 @@ clock. Staleness is handled by **capturing `myGen` and bailing if `gf_roundGen` 
 The round ends by three paths, all → `gf_endRound(winner)` → `_globallogic::endGame`:
 elimination (`gf_onDeadEvent`), clock expiry (`gf_onTimeLimit` → HP decision or overtime), or OT
 capture. `gf_endRound` adds 1 to the winner's team score (not for "tie"), sets the WIN/LOSS banner
-subtitle (`gf_reasonText`), and starts the last killcam. `gf_roundWatchdog` is the **only** round-end
+subtitle (`gf_reasonText`), and starts the last killcam. `gf_roundWatchdog` is the only **in-round**
 backstop (the mod suppresses every native fallback), gettime()-anchored, 1 Hz: it force-closes a stuck
 grace after >65s and force-ends a round when a team has 0 alive out of grace for >3s.
 
+**`gf_postRoundWatchdog` is the round-END half**, threaded from `gf_endRound` *before* `endGame`, because
+`gf_roundWatchdog` carries `endon("gf_round_over")` and so retires exactly when the round-end hazard
+opens. Stock's end sequence is **synchronous** (`endGame` → `startNextRound` → `displayRoundEnd` →
+`executePostRoundEvents` → `map_restart(true)`) and two of its gates are unbounded: `finalKillcamWaiter()`
+spins while **any** player merely has `.killcam` *defined*, and `roundEndWait()` spins while any player has
+`.doingNotify` true. An orphaned flag on one client therefore blocks `map_restart` **forever** — and the
+engine's own force-clear (`endedFinalKillcamCleanup`) waits on `game_ended`, which `endGame` already fired
+*before* the final killcam starts, so it is **dead code on this path**. The watchdog is gen-token retired,
+clears both flags after 20s, and logs which client/flag leaked (`GF_ENDWATCH:`)
+([[infinite-round-orphaned-killcam-flag]]).
+
 ⚠ Never re-add an `endon` to the committing activator. ⚠ `gf_roundWatchdog` must stay.
+⚠ `gf_postRoundWatchdog` must **not** carry `endon("game_ended")` (endGame fires it within a frame of the
+thread starting) and must stay armed on the last round (the same waiter gates the match-end podium).
 
 ### Custom round clock & warnings
 The live round timer is mod-owned because stock `timeLimitClock` fires its time-out sequence (announcer
@@ -412,7 +433,16 @@ non-idempotent command. Telemetry (dedicated-only single-token reads): **`gf_sta
 (`gf_bridgeNotify`); only `saymsg` broadcasts. Team moves: `pteam_<num>_<team>` defers to next-round
 prematch (`pers["gf_pendingTeam"]`, applied on `spawned_player`); `pteamforce_` applies now (respawns).
 ⚠ A live human cannot be moved without dying — deferral is why. Verbs cover bots, balance-teams,
-match-control (`lobbystart`, endround, pause/resume), gameplay toggles, and fun/visual commands.
+match-control (`lobbystart`, endround, the two restarts, pause/resume), gameplay toggles, and fun/visual
+commands. **`roundrestart`** replays the round with no score/loadout-rotation/side-switch by ending it as
+a `"tie"` through `gf_endRound` with `game["roundsplayed"]` pre-decremented (endGame's `++` nets it back)
+and `level.roundswitch` zeroed for the cycle. **`matchrestart`** restarts the match (scores 0-0, round 1,
+same map + teams) by reusing the lobby's fast-restart plumbing: snapshot the sides into the
+`gf_teamplan`/`gf_botplan` dvars + `gf_matchArmed=1`, fire `game_ended`, `map_restart(false)` — so the
+post-restart gate skips the lobby hold and re-applies the plan. ⚠ Neither restart may be a raw
+`fast_restart` / `map_restart`: those skip `_globallogic::endGame`, so the `game_ended` notify that tears
+down every per-round `endon("game_ended")` thread never fires — the old round's loops survive as a second
+copy AND the engine's re-`InitGame` stacks a second `prematchPeriod()`/`gameTimer()` (double countdown).
 **Pause** delegates the freeze to the mod clock (`gf_pauseMatch` — live clock + controls + bots +
 `level.gf_matchPaused`, which drives the `gf_pause_hud` "MATCH PAUSED" menuDef) and keeps the B&W
 vision on the bridge side, since only the bridge knows the `gf_vis_vision` key to restore on resume;
@@ -470,7 +500,7 @@ tables → `docs/REFERENCE.md`.
 |---|---|---|
 | `gf_fill_n` | 0 | Per-team fill target N (3 = 3v3); **0 = reconciler inert** (manual bot control sticks). Clamp 0-6. |
 | `gf_fill_kick_floor` | 2 | Client slots kept free for humans; a parked bot is kicked once total ≥ `sv_maxclients − this`. |
-| `bot_difficulty` | — | BotWarfare AI difficulty (easy/normal/hard/fu). |
+| `bot_difficulty` | fu | BotWarfare AI difficulty (easy/normal/hard/fu). Seeded if-empty in `gf.gsc` (a `dedicated.cfg` value or a live panel `botdiff_*` wins); `_bot::diffBots` re-applies the preset from it every 1.5s. |
 
 **Perks / RCON-managed / plumbing**
 | dvar | default | meaning |
@@ -488,7 +518,19 @@ lobby) — see `docs/REFERENCE.md`. **Dev/debug** (strip-wrapped): `gf_debug_spa
 `gf_diag_cd_no_lobby_dvars`.
 
 **Friendly fire** is set via the **stock** tweakables `scr_team_fftype` + `scr_gf_team_fftype` by the
-RCON panel — the mod GSC has **zero** FF references. **Retired / inert dvars** (no longer read; a stale
+RCON panel — the mod GSC has **zero** FF references.
+
+**Idle/AFK kicks are stock, not the mod** ([[stock-afk-and-spawn-kick-timers]]) — two independent
+sub-5-minute timers, neither with a single `kick()` call in mod GSC. **`g_inactivity`** (input-idle kick,
+**spectators included**) is owned by `dedicated.cfg`: the Plutonium `T5ServerConfig` template ships **190**
+(kicks a quiet spectator at ~3 min), the VPS + our example now run **300**; the panel's ADVANCED tab edits
+it live (cfg is boot-read). **`scr_kick_time`** (stock spawn-or-be-dropped) is *engine-registered at 60* and
+armed whenever `level.rankedMatch` is true — which it **is** on our dedicated (`onlinegame 1` +
+`xblive_privatematch 0`). It exempts `pers["team"] == "spectator"`, but would kick anyone the mod holds
+team-assigned without spawning (a whole Auto/Manual lobby hold; a large-mode late joiner), so `gf.gsc`
+pins it to **3600**.
+
+**Retired / inert dvars** (no longer read; a stale
 cfg value does nothing): `scr_gf_largemode_minplayers`, `scr_gf_roster_wait`, `scr_gf_lobby_hold`/
 `_restart`/`_restart_full`, `scr_gf_ff`/`scr_team_ff`, and the `bots_manage_*`/`bots_team_*` family as
 Gunfight controls (still seeded for the vendored BotWarfare AI — don't delete the seeds; use `gf_fill_n`).
@@ -640,6 +682,9 @@ core `_globallogic::endGame(winner, reasonText)`. Score: `_setTeamScore(team, n)
 **Critical gotchas:** `map_restart(true)` keeps `pers[]`/`game[]` and player positions but wipes all
 `level.*` + entities; `false` wipes `pers[]`/`game[]` too (only dvars survive); threads survive both.
 `updateTeamStatus()` runs `waittillframeend` → `level.aliveCount` can be one frame stale after a kill.
+A **demo client is neither a human nor a bot** (`isdemoclient()` true, `istestclient()` **false**, no
+`pers["isBot"]`, stock connect parks it teamless at `pers["team"] = ""`), so a bot filter must never be
+written as the inverse of a humans-only filter — the real-bot test is `istestclient() && !isdemoclient()`.
 `level.inGracePeriod=true` blocks forfeit/dead-event checks; `level.inOvertime=true` blocks new spawns.
 `scr_disable_cac 1` auto-assigns `level.defaultClass="CLASS_ASSAULT"` and auto-spawns.
 

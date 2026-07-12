@@ -84,9 +84,10 @@
         <button class="b-ng ctrl" data-tip="gf_cmd endround_axis (GSC bridge)&#10;Calls sd_endGame('axis','') — awards round win to Axis immediately" onclick="endRound('axis')">END ROUND → AXIS</button>
       </div>
       <div class="two">
-        <button class="b-gh ctrl" data-tip="fast_restart (RCON console command)&#10;Restarts current round instantly — round state resets, scores carry over" onclick="cmd('fast_restart')">Fast Restart</button>
-        <button class="b-gh ctrl" data-tip="map_restart (RCON console command)&#10;Full map reload — resets all scores, round state, and game entities" onclick="cmd('map_restart')">Map Restart</button>
+        <button class="b-wn ctrl" data-tip="gf_cmd roundrestart (GSC bridge)&#10;Replays the CURRENT round from the top: nobody scores, the shared loadout does not rotate, the sides do not switch.&#10;Ends the round as a draw (short killcam, DRAW banner), then the normal between-rounds restart.&#10;Refused while the round is already ending, or while the match is paused (resume first)." onclick="restartRound()">↺  RESTART ROUND</button>
+        <button class="b-wn ctrl" data-tip="gf_cmd matchrestart (GSC bridge)&#10;Restarts the whole MATCH: scores 0-0, back to round 1, same map, same teams.&#10;Fast — map_restart(false), no map reload — and re-fires the full match-start presentation (gun rack, spawn music, welcome splash).&#10;Refused while a round is ending, or while the match is paused (resume first)." onclick="restartMatch()">↻  RESTART MATCH</button>
       </div>
+      <button class="b-gh ctrl" data-tip="map_restart (RCON console command)&#10;RAW engine restart — full map reload, resets all scores and round state.&#10;Slower than RESTART MATCH and it bypasses the mod's round funnel; use it to apply a gametype change, not to restart a running match." onclick="cmd('map_restart')">Map Restart (reload)</button>
       <button class="b-gh ctrl" data-tip="gf_cmd balanceteams (GSC bridge)&#10;Evens out allies vs axis, moving from the larger team to the smaller.&#10;Prefers moving BOTS first. Applies now during prematch/lobby; mid-round moves defer to next round (so live humans aren't killed)." onclick="balanceTeams()">⚖  Balance Teams</button>
     </div>
   </div>

@@ -10,6 +10,10 @@
 //   botdiff_easy/normal/hard/fu  - set bot difficulty
 //   endround_allies    - force allies to win this round
 //   endround_axis      - force axis to win this round
+//   roundrestart       - replay the current round: nobody scores, the loadout does not
+//                        rotate, the sides do not switch
+//   matchrestart       - restart the whole match: scores 0-0, back to round 1, same map + teams,
+//                        full match-start presentation (map_restart(false), no map reload)
 //   god_on / god_off   - toggle invulnerability for all players
 //   allperks_on        - give all players a useful dev perk set
 //   allperks_off       - remove those perks
@@ -310,6 +314,8 @@ gf_bridgeTelemetry()
 // ';'. team/pending are single-char codes (a/x/s/-), alive is 1/0. No spaces, so the whole
 // value reads back as one bare rcon token. Keyed by getEntityNumber() to match the panel's
 // status "num" column (the same id the per-player pgod_/pfreeze_/pteam_ commands target).
+// The server-side democlient is omitted entirely: it is neither a human nor a bot (it would
+// report bot=0, i.e. as a human), and it is never a valid target for a team/god/freeze command.
 gf_bridgeRosterString()
 {
     s = "";
@@ -317,7 +323,9 @@ gf_bridgeRosterString()
     for ( i = 0; i < players.size; i++ )
     {
         p = players[i];
-        if ( i > 0 )
+        if ( !isDefined( p ) || p isdemoclient() )
+            continue;
+        if ( s != "" )                       // separator keys off what's emitted, not the loop index
             s += ";";
         alive = "0";
         if ( isDefined( p.health ) && p.health > 0 )
@@ -362,6 +370,8 @@ gf_bridgeDispatch( cmd )
 
     if ( cmd == "endround_allies" ) { maps\mp\gametypes\sd::sd_endGame( "allies", "" ); return; }
     if ( cmd == "endround_axis"   ) { maps\mp\gametypes\sd::sd_endGame( "axis",   "" ); return; }
+    if ( cmd == "roundrestart"    ) { gf_bridgeRestartRound(); return; }
+    if ( cmd == "matchrestart"    ) { gf_bridgeRestartMatch(); return; }
 
     // Visual tweaks -- setClientDvar sent to all players
     // Format: vis<key>_<value>  e.g. visambient_0.2
@@ -492,6 +502,116 @@ gf_bridgeLobbyStart()
     }
     level.gf_lobbyStart = true;
     gf_bridgeNotify( "^2-- STARTING MATCH --" );
+}
+
+// "Restart Round" from the panel: replay the round from the top — nobody scores, the shared
+// loadout does NOT rotate, and the sides do NOT switch.
+//
+// Routed through the mod's own round-end funnel (gf_endRound -> _globallogic::endGame) on
+// purpose. A raw fast_restart / map_restart(true) skips endGame, so "game_ended" never fires —
+// and that notify is what tears down every persistent endon("game_ended") thread each round, so
+// the old round's clock/HUD/gate loops would survive into the next round as a second copy.
+//
+// Winner "tie" is the existing no-score path (a mutual wipe / equal-HP draw already uses it).
+// The two counters endGame moves have to be neutralized here:
+//   - game["roundsplayed"]++ (endGame) would rotate the shared loadout every other restart, so we
+//     pre-decrement — the ++ nets it back to the value this round already ran with.
+//   - checkRoundSwitch() reads that same counter right after the ++ and would flip sides, so
+//     level.roundswitch is zeroed for this cycle only (a level var: the restart re-derives it
+//     from scr_gf_roundswitch next round).
+// In overtime this still resolves: gf_endRound routes through gf_resolveOvertime, which tears the
+// OT clock + zone down and re-enters gf_endRound with the same winner.
+gf_bridgeRestartRound()
+{
+    // endGame() early-returns once the round is already ending (postgame / gameEnded) — but the
+    // roundsplayed pre-decrement below would still stick, permanently shifting the loadout
+    // rotation and the side-switch cadence. So bail BEFORE touching game[] state.
+    if ( gf_bridgeRoundEnding() )
+    {
+        gf_bridgeNotify( "^3Restart Round: the round is already ending" );
+        return;
+    }
+
+    // A restart wipes level.* (so the pause state) but the panel's PAUSE/RESUME button tracks its
+    // own flag — resume first rather than desync it.
+    if ( isDefined( level.gf_paused ) && level.gf_paused )
+    {
+        gf_bridgeNotify( "^3Restart Round: resume the match first" );
+        return;
+    }
+
+    level.roundswitch = 0;
+
+    // Round 1 dips to -1 here; endGame's ++ restores it in the same yield-free block (gf_endRound
+    // threads endGame, and a GSC thread runs immediately up to its first wait), so it never sticks.
+    game["roundsplayed"]--;
+
+    gf_bridgeNotify( "^3-- RESTARTING ROUND --" );
+    maps\mp\gametypes\_gf_rounds::gf_endRound( "tie" );
+}
+
+// "Restart Match" from the panel: the whole match starts over — scores 0-0, back to round 1, same
+// map, same teams — with the full match-start presentation (gun rack, spawn music, welcome splash).
+//
+// map_restart(FALSE) is the fresh reset: it wipes game[]/pers[] (so the scores and the round counter
+// go with them) and re-fires that presentation, and it does NOT reload the map, so it's fast. Same
+// call the Auto/Manual lobby fast-restart uses on release — including its team plumbing: gf_teamplan
+// / gf_botplan are DVARS precisely because they have to survive this wipe, and gf_matchArmed tells
+// the post-restart gate "this pass IS the match" so it skips the lobby hold and applies the plan.
+//
+// ⚠ The notify below is load-bearing and is why this can't be the raw `fast_restart` / `map_restart`
+// console command. GSC threads SURVIVE a map_restart; the only thing that retires them is the
+// "game_ended" notify _globallogic::endGame fires at every round end. Restart without it and the
+// engine's re-InitGame threads a SECOND startGame() -> prematchPeriod()/gameTimer() on top of the
+// survivors (double countdown), plus a second copy of every HUD/gate loop.
+gf_bridgeRestartMatch()
+{
+    // Mid-teardown the round-end thread (endGame -> displayRoundEnd -> map_restart(true)) is already
+    // in flight and does NOT endon game_ended — it would survive our wipe and fire its own restart on
+    // top of the fresh match. Let the round land first.
+    if ( gf_bridgeRoundEnding() )
+    {
+        gf_bridgeNotify( "^3Restart Match: wait for the round to finish ending" );
+        return;
+    }
+
+    if ( isDefined( level.gf_paused ) && level.gf_paused )
+    {
+        gf_bridgeNotify( "^3Restart Match: resume the match first" );
+        return;
+    }
+
+    gf_bridgeNotify( "^3-- RESTARTING MATCH --" );
+
+    // Snapshot the current sides into the dvars the post-restart gate reads back, so a restart keeps
+    // the teams it had instead of re-autoassigning everyone.
+    setDvar( "gf_matchArmed", "1" );
+    maps\mp\gametypes\_gf_rounds::gf_writeTeamPlan();
+    maps\mp\gametypes\_gf_rounds::gf_writeBotPlan();
+
+    // Yield once before the notify: gf_bridgePoll endons "game_ended", and it writes this command's
+    // ack right after the dispatch thread first yields. Notifying synchronously would kill the poll
+    // before that write, and the panel would show the command as never received.
+    wait 0.1;
+
+    level.gameEnded = true;
+    level notify( "game_ended" );
+    wait 0.05;                     // let the endon'd threads unwind before the wipe
+
+    map_restart( false );
+}
+
+// Shared precondition for both restarts: a round end is in flight (or the match is over), so the
+// round-cycle machinery owns the next map_restart and we must not touch game[] state or fire one.
+gf_bridgeRoundEnding()
+{
+    if ( isDefined( level.gameEnded ) && level.gameEnded )
+        return true;
+    if ( game["state"] != "playing" )
+        return true;
+    if ( isDefined( level.gf_roundEnding ) && level.gf_roundEnding )
+        return true;
+    return false;
 }
 
 // --- God mode ----------------------------------------------------------------

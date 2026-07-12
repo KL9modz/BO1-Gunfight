@@ -681,7 +681,10 @@ gf_writeBotPlan()
         p = players[i];
         if ( !isDefined( p ) )
             continue;
-        if ( !( p istestclient() || p isdemoclient() ) )   // bots only (the inverse of gf_writeTeamPlan)
+        // Bots only. NOT the plain inverse of gf_writeTeamPlan's humans-only test: a demo client is
+        // neither a human nor a bot (isdemoclient true, istestclient FALSE), so it must be dropped by
+        // BOTH filters — matching _bot.gsc's real-bot test.
+        if ( !( p istestclient() ) || p isdemoclient() )
             continue;
         t = p.pers["team"];
         if ( !isDefined( t ) )
@@ -800,8 +803,8 @@ gf_applyBotPlan()
             p = players[i];
             if ( !isDefined( p ) )
                 continue;
-            if ( !( p istestclient() || p isdemoclient() ) )
-                continue;                // bots only
+            if ( !( p istestclient() ) || p isdemoclient() )
+                continue;                // bots only — the democlient is NOT one (see gf_writeBotPlan)
             if ( isDefined( p.gf_botPlanSeated ) )
                 continue;                // one-shot per bot
             if ( !isDefined( p.pers["team"] ) )
@@ -1753,6 +1756,116 @@ gf_roundWatchdog( myGen )
     }
 }
 
+// POST-ROUND WATCHDOG — the round-END half of the safety net. gf_roundWatchdog is
+// endon("gf_round_over"), so it retires at the exact moment this hazard opens, and
+// nothing else watches the stock round-end sequence. That sequence runs SYNCHRONOUSLY
+// inside _globallogic::startNextRound and only reaches its map_restart(true) after
+//   executePostRoundEvents -> _killcam::postRoundFinalKillcam -> finalKillcamWaiter()
+// which spins while level.inFinalKillcam — and THAT only clears once
+// _killcam::areAnyPlayersWatchingTheKillcam() reports false, which it does only when NO
+// player has .killcam merely DEFINED.
+//
+// .killcam is set in _killcam::finalKillcam and cleared ONLY by endKillcam() off the
+// "end_killcam" notify. finalKillcam carries `self endon("disconnect")`, and its own
+// cleanup thread (endedFinalKillcamCleanup) waits on "game_ended" — which endGame ALREADY
+// fired, seconds before the final killcam even starts (play_final_killcam lands later,
+// past roundEndWait). So the engine's own net is structurally DEAD on this path: once a
+// client's .killcam is orphaned, nothing on the box will ever clear it, map_restart is
+// never reached, and the round hangs FOREVER with the server otherwise healthy — ticking
+// normally, still accepting joins, RCON fine. (Observed 2026-07-11 on the VPS: a human
+// left mid-round, the round ended, and the match sat in one round until it was restarted
+// by hand.) The same sequence's other unbounded gate is _globallogic::roundEndWait, which
+// spins while any player has .doingNotify true — orphaned the same way if a
+// showNotifyMessage thread dies before its cleanup.
+//
+// So: give the round end a generous grace, then break BOTH deadlocks by clearing the
+// orphaned flags. A healthy round end restarts the map long before the threshold and the
+// gen check retires this thread with it. NOTE: no endon("game_ended") — endGame fires that
+// notify within a frame of us being threaded, and this must outlive it. It must also stay
+// armed on the LAST round: the same finalKillcamWaiter gates the match end (podium), so
+// the identical wedge can hang the intermission.
+gf_postRoundWatchdog( myGen )
+{
+    start = gettime();
+
+    for ( ;; )
+    {
+        wait 1;
+
+        // map_restart(true) landed -> the round end completed on its own. Threads survive
+        // the restart, so this gen check is what retires us on the happy path.
+        if ( gf_roundGenChanged( myGen ) )
+            return;
+
+        elapsed = gettime() - start;
+
+        // Well past any legit final killcam + roundEndDelay. Under the threshold we never
+        // touch a thing, so a normal killcam is never cut short.
+        if ( elapsed < 20000 )
+            continue;
+
+        if ( gf_breakRoundEndDeadlock( elapsed ) )
+            return;
+
+        // Nothing orphaned but the round end still hasn't restarted the map: not a state we
+        // know how to fix from here. Stop burning a tick every second (the box-side watchdog
+        // map_rotates a match that stays stuck).
+        if ( elapsed > 180000 )
+        {
+            logPrint( "GF_ENDWATCH: round end still hung after " + elapsed + "ms with no orphaned flag — giving up\n" );
+            return;
+        }
+    }
+}
+
+// Clear the two flags that can pin the stock round-end sequence open, and LOG exactly who
+// and which — this log line is the diagnostic that identifies the leaking client (human vs
+// bot vs democlient, and whether it was a fresh mid-round-end connect) the next time this
+// fires. Returns the number of clients unwedged.
+gf_breakRoundEndDeadlock( elapsed )
+{
+    cleared = 0;
+    players = level.players;
+
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( !isDefined( p ) )
+            continue;
+
+        who = "";
+        if ( isDefined( p.name ) )
+            who = p.name;
+        kind = "human";
+        if ( p isdemoclient() )
+            kind = "demo";
+        else if ( p istestclient() )
+            kind = "bot";
+
+        // Orphaned final-killcam flag -> areAnyPlayersWatchingTheKillcam() never goes false
+        // -> finalKillcamWaiter() spins -> map_restart never runs.
+        if ( isDefined( p.killcam ) )
+        {
+            p.killcam = undefined;
+            p notify( "end_killcam" );   // release a finalKillcam still parked on its waittill
+            logPrint( "GF_ENDWATCH: orphaned .killcam on " + kind + " '" + who + "' after "
+                      + elapsed + "ms — cleared (round end was deadlocked)\n" );
+            cleared++;
+        }
+
+        // Orphaned notify flag -> roundEndWait() never completes.
+        if ( isDefined( p.doingNotify ) && p.doingNotify )
+        {
+            p.doingNotify = false;
+            logPrint( "GF_ENDWATCH: orphaned .doingNotify on " + kind + " '" + who + "' after "
+                      + elapsed + "ms — cleared (round end was deadlocked)\n" );
+            cleared++;
+        }
+    }
+
+    return cleared;
+}
+
 // Closes the grace period once floorTime has passed. Closing grace reopens
 // onDeadEvent (a wipe can end the round again) and shuts maySpawn's first-spawn
 // window. Mirror stock gracePeriod()'s close with an updateTeamStatus pass so a
@@ -2057,6 +2170,12 @@ gf_endRound( winner )
     if ( isDefined( level.gf_endReasonText ) )
         reasonText = level.gf_endReasonText;
     level.gf_endReasonText = undefined;
+
+    // Arm the round-END net BEFORE handing off to stock. From here the whole restart hangs
+    // off _globallogic's synchronous end sequence, which an orphaned .killcam / .doingNotify
+    // can pin open forever — and gf_roundWatchdog just retired on gf_round_over. Must be
+    // threaded before endGame: endGame fires "game_ended" within a frame.
+    level thread gf_postRoundWatchdog( level.gf_roundGen );
 
     level thread maps\mp\gametypes\_killcam::startLastKillcam();
     level thread maps\mp\gametypes\_globallogic::endGame( winner, reasonText );
