@@ -234,7 +234,7 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .block.collapsed>*:not(.btitle){display:none}
 .sgroup{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ac);margin:12px 0 3px;padding-top:9px;border-top:1px solid var(--bd)}
 .btitle + .sgroup{margin-top:2px;padding-top:0;border-top:none}
-.srow{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd)}
+.srow{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:6px 8px;padding:5px 0;border-bottom:1px solid var(--bd);min-width:0}
 .srow:last-child{border-bottom:none;padding-bottom:0}.srow:first-child{padding-top:0}
 .slbl{flex:1;font-size:13px}.shint{color:var(--dm);font-size:11px;min-width:110px;text-align:right}
 /* Unsynced: the live RCON read returned null, so the shown value is only the hardcoded
@@ -244,8 +244,11 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .srow.unsynced label.tog .tog-t{box-shadow:0 0 0 1px var(--wn) inset}
 /* Any hint/state text that follows a toggle renders to the toggle's LEFT (toggle ordered last). */
 .srow label.tog{order:2}.srow .shint,.srow .tlbl{order:1}
-input.num{width:72px}
-input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:none;padding:0}
+input.num{width:72px;flex:0 0 auto}
+/* Same squeeze rule as .slider-row: the generated (srvBlock) slider track shrinks first, and
+   the readout + Set button that follow it never get pushed out of the card. */
+input.sld{flex:1 1 40px;min-width:40px;accent-color:var(--ac);background:none;border:none;padding:0}
+.srow>button,.srow>.sldval{flex:0 0 auto}
 .sldval{min-width:42px;text-align:right;color:var(--ac);font-size:12px;font-variant-numeric:tabular-nums}
 /* Behavior pills — when a control takes effect + how long it sticks (see badges()) */
 .pills{display:inline-flex;gap:4px;margin-left:7px;vertical-align:middle}
@@ -256,6 +259,10 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
 .pill.per-dvar{color:#79b8d6;border-color:rgba(121,184,214,.35)}
 .pill.per-transient{color:var(--dm);border-color:var(--bd)}
 .pill.per-client{color:#b18cff;border-color:rgba(177,140,255,.4)}
+/* Transport axis. Filled (not outline) so a bridge-backed control is scannable at a glance —
+   plain-RCON rows carry NO via pill, so these two are the exceptions the eye should catch. */
+.pill.via-bridge{color:#ff9d4d;border-color:rgba(255,157,77,.45);background:rgba(255,157,77,.09)}
+.pill.via-both{color:#ffbe7a;border-color:rgba(255,157,77,.3);background:rgba(255,157,77,.05)}
 .btitle .pills{margin-left:8px}
 .pill-legend{display:flex;flex-wrap:wrap;gap:4px 5px;align-items:center;font-size:11px;padding:7px 11px;background:var(--sf);border:1px solid var(--bd);border-radius:var(--r)}
 .pill-legend .dm{margin-right:6px}.pill-legend .lg-sep{color:var(--bd);margin:0 2px}
@@ -279,10 +286,19 @@ input.sld{flex:1;min-width:90px;accent-color:var(--ac);background:none;border:no
 .db.sel{border-color:var(--ac);color:var(--ac);background:rgba(0,180,255,.1)}
 .db.fu:hover:not(:disabled),.db.fu.sel{border-color:var(--ng);color:var(--ng);background:rgba(230,57,70,.1)}
 
-/* Sliders */
-.slider-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd)}
+/* Sliders. Two-stage squeeze so the trailing Set / ↺ / 📋 buttons can never hang off the card:
+   1. The TRACK gives up width first. A flex item's automatic minimum size floors a range input
+      at its intrinsic width (~129px), which is what pushed the buttons out of a narrow column —
+      min-width:40px defeats that floor. Label, number box and buttons stay flex:0 0 auto.
+   2. Below ~366px of card (a single narrow column — _wantCols keeps 1 column even when the main
+      area is well under COL_MIN, so this IS reachable) the track is at its floor and nothing else
+      can shrink, so flex-wrap lets the trailing buttons drop to a second line INSIDE the card
+      instead of overflowing it. justify-content keeps them right-aligned when they do. */
+.slider-row{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:6px 8px;padding:5px 0;border-bottom:1px solid var(--bd);min-width:0}
 .slider-row:last-child{border-bottom:none}
-.slider-row input[type=range]{flex:1;accent-color:var(--ac);height:4px}
+.slider-row input[type=range]{flex:1 1 40px;min-width:40px;accent-color:var(--ac);height:4px}
+.slider-row input.num,.slider-row .sv,.slider-row .sldval,.slider-row button,.slider-row label.tog{flex:0 0 auto}
+.slider-row button{white-space:nowrap}
 .sv{min-width:44px;text-align:right;font-size:12px;font-weight:600;color:var(--ac)}
 
 /* Map grid */

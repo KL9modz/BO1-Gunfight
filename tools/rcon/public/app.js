@@ -1427,7 +1427,11 @@ const SRV_SECTIONS = [
     { n:'perk_weapSpreadMultiplier',     lbl:'Hip-fire Spread',      type:'sld', def:'1.0',   min:'0.25', max:'1.5', step:'0.01',  tip:'perk_weapSpreadMultiplier\nHip-fire spread multiplier. LOWER = TIGHTER.\nNeeds Steady Aim enabled in the PERKS section.' },
     { n:'perk_weapMeleeMultiplier',      lbl:'Melee Reach',          type:'sld', def:'1.0',   min:'0.5',  max:'2.0', step:'0.01',  tip:'perk_weapMeleeMultiplier\nMelee charge/reach multiplier. 1.0 = stock. Adjust and test.' },
   ]},
-  { title: 'PERKS — give / remove for all players', vars: [
+  // via 'both': perkTog() writes the gf_perk_on / gf_perk_off dvar lists over plain rcon (so they
+  // stick and 💾 Save can persist them), then fires the perksync bridge call to re-apply the base
+  // set to everyone alive right now. Declared at section level — all 24 rows share it, so the pill
+  // is stated once on the block title rather than repeated on every perk.
+  { title: 'PERKS — give / remove for all players', via: 'both', vars: [
     { n:'specialty_movefaster',        lbl:'Lightweight',              type:'perk', def:'1', tip:'specialty_movefaster\nFaster movement. BASE perk (on by default).' },
     { n:'specialty_fallheight',        lbl:'No Fall Damage',           type:'perk', def:'1', tip:'specialty_fallheight\nRemoves fall damage (Lightweight Pro). BASE perk.' },
     { n:'specialty_longersprint',      lbl:'Marathon',                 type:'perk', def:'1', tip:'specialty_longersprint\nLonger sprint duration. BASE perk.' },
@@ -1644,13 +1648,22 @@ const GT_SECTIONS = {
 // var set can be rendered in two tabs without id collisions (SERVER='srv', MATCH='mt').
 //
 // ── Behavior pills ───────────────────────────────────────────────────────────
-// Two orthogonal axes an operator actually reasons about, surfaced as small tags:
+// Three orthogonal axes an operator actually reasons about, surfaced as small tags:
 //   eff (when it takes hold): live | next (next round) | restart (needs map_restart)
 //   per (how long it sticks): dvar (survives map_restart; 💾 Save persists to cfg)
 //                             transient (runtime/bridge state, wiped on map_restart)
 //                             client (pushed per-client via setClientDvar, not saved)
+//   via (how it reaches the server): rcon (plain `set`/console cmd — the DEFAULT, renders NO
+//                             pill so the common case stays visually quiet)
+//                             bridge (gf_cmd -> GSC; RCON structurally can't do it — a GSC call,
+//                             a setClientDvar push, a per-player target, or a live level.* flag)
+//                             both (plain `set` for the sticky/persistable value AND a bridge
+//                             call for the part rcon can't do — e.g. a cheat-protected dvar
+//                             written through its gf_* mirror + svsync, or a dvar whose live
+//                             effect needs a level.* flag flipped in the running round)
 // A blank axis renders no pill. Data-driven rows get section defaults (srvBlock args),
-// overridable per-var via v.eff / v.per; static blocks use data-eff/data-per + hydrateBadges().
+// overridable per-var via v.eff / v.per / v.via; static blocks use data-eff/data-per/data-via
+// + hydrateBadges(). `via` is DERIVED for data-driven rows (see srvRow) — never hand-annotated.
 const _EFF = {
   live:    ['LIVE',    'Applies immediately to the running match.'],
   next:    ['NEXT',    'Applies on the next round.'],
@@ -1661,10 +1674,16 @@ const _PER = {
   transient: ['TEMP',   'Runtime / GSC-bridge state — resets to the mod default on map_restart.'],
   client:    ['CLIENT', 'Pushed to each client (setClientDvar); not stored server-side.'],
 };
-function badges(eff, per) {
+const _VIA = {
+  // rcon: intentionally absent — a plain `set`/console command is the default and gets no pill.
+  bridge: ['BRIDGE',  'Goes through the GSC bridge (gf_cmd). Plain RCON cannot express this — it needs a GSC call, a per-client setClientDvar push, a single-player target, or a live level.* flag.'],
+  both:   ['BRIDGE+', 'BOTH: a plain RCON `set` for the sticky value (💾 Save can persist it) AND a GSC-bridge call for the part RCON cannot do — a cheat-protected dvar written via its gf_* mirror, or the live in-round flag behind the setting.'],
+};
+function badges(eff, per, via) {
   let h = '';
   if (eff && _EFF[eff]) h += `<span class="pill eff-${eff}" title="${_EFF[eff][1]}">${_EFF[eff][0]}</span>`;
   if (per && _PER[per]) h += `<span class="pill per-${per}" title="${_PER[per][1]}">${_PER[per][0]}</span>`;
+  if (via && _VIA[via]) h += `<span class="pill via-${via}" title="${_VIA[via][1]}">${_VIA[via][0]}</span>`;
   return h ? `<span class="pills">${h}</span>` : '';
 }
 // One-line key for the pills; rendered into the collapsible legend footer of each settings tab.
@@ -1676,12 +1695,16 @@ const LEGEND_HTML =
   + '<span class="lg-sep">|</span><span class="dm">Sticks:</span>'
   + '<span class="pill per-dvar">STICKY</span><span class="dm">survives map_restart · 💾 Save → cfg</span>'
   + '<span class="pill per-transient">TEMP</span><span class="dm">resets on map_restart</span>'
-  + '<span class="pill per-client">CLIENT</span><span class="dm">per-client, not saved</span></div>';
-// Static (hand-written) blocks/rows opt in via data-eff/data-per. A .block badges its
+  + '<span class="pill per-client">CLIENT</span><span class="dm">per-client, not saved</span>'
+  + '<span class="lg-sep">|</span><span class="dm">Via:</span>'
+  + '<span class="pill via-bridge">BRIDGE</span><span class="dm">gf_cmd → GSC (rcon can’t do it)</span>'
+  + '<span class="pill via-both">BRIDGE+</span><span class="dm">rcon `set` <i>and</i> a bridge call</span>'
+  + '<span class="dm" style="margin-left:2px">no pill = plain RCON</span></div>';
+// Static (hand-written) blocks/rows opt in via data-eff/data-per/data-via. A .block badges its
 // title (whole section behaves the same); any other element badges its .slbl (mixed rows).
 function hydrateBadges() {
-  document.querySelectorAll('[data-eff],[data-per]').forEach(el => {
-    const pills = badges(el.dataset.eff, el.dataset.per);
+  document.querySelectorAll('[data-eff],[data-per],[data-via]').forEach(el => {
+    const pills = badges(el.dataset.eff, el.dataset.per, el.dataset.via);
     if (!pills) return;
     const host = el.classList.contains('block') ? el.querySelector('.btitle') : el.querySelector('.slbl');
     if (host) host.insertAdjacentHTML('beforeend', pills);
@@ -1865,7 +1888,7 @@ document.addEventListener('click',e=>{
   b.classList.toggle('collapsed'); saveCollapse();
 });
 
-function srvRow(v, prefix, dEff, dPer) {
+function srvRow(v, prefix, dEff, dPer, dVia) {
   const tip = `data-tip="${v.tip.replace(/"/g,'&quot;').replace(/\n/g,'&#10;')}"`;
   const id  = (prefix || 'srv') + '_' + v.n.replace(/[^a-zA-Z0-9]/g,'_');
   let ctrl;
@@ -1919,24 +1942,40 @@ function srvRow(v, prefix, dEff, dPer) {
   const dd = noDvar ? '' : ` data-dvar="${v.n}"` + (v.also ? ` data-also="${v.also}"` : '')
                                                  + (v.svset ? ` data-mirror="gf_${v.n}"` : '');
   const sp = (v.type === 'tog' || v.type === 'bridgetog' || v.type === 'perk' || v.type === 'btn') ? '<span style="flex:1"></span>' : '';
-  const pills = (v.type === 'perk' || v.type === 'btn') ? '' : badges(v.eff || dEff, v.per || dPer);
+  // Transport (`via`) is DERIVED from the row's own wiring, never hand-annotated — the control
+  // above already decided how this row reaches the server, so the pill can't drift from reality:
+  //   svset    -> bridgeSvSet (writes the gf_* mirror over rcon, then svsync copies it in GSC)
+  //   v.bridge -> togDvarBridge (plain `set` for stickiness + a bridge call for the live flag)
+  //   perk     -> gf_perk_on/off dvars over rcon + a perksync bridge call
+  //   bridgetog-> pure bridge, no dvar behind it
+  //   anything else -> a plain `set` (renders NO pill; bare IS the rcon case)
+  // A row whose transport matches its section default is left bare — the block title says it once
+  // (a uniformly-bridge section would otherwise repeat the same pill on every row).
+  const via = v.via || (v.type === 'bridgetog' ? 'bridge'
+                      : (v.svset || v.bridge || v.type === 'perk') ? 'both'
+                      : 'rcon');
+  const pills = (v.type === 'perk' || v.type === 'btn') ? '' : badges(v.eff || dEff, v.per || dPer, via === dVia ? '' : via);
   return `<div class="srow"${dd} ${tip}><span class="slbl">${v.lbl}${pills}</span>${sp}${ctrl}</div>`;
 }
 // Build a titled .block from a vars array (adds a Set All row when it has number/text fields).
 // dEff/dPer = section-level behavior-pill defaults (per-var v.eff / v.per override them).
-function srvBlock(title, vars, prefix, dEff, dPer) {
+// dVia = a section-level transport pill on the block TITLE, for a section where every row shares
+// the same transport (PERKS). Rows matching it stay bare, so the pill is stated once instead of
+// N times. A MIXED section (BOT TUNING: 9 cheat-protected svset rows + 3 plain toggles) declares
+// no dVia — each row then badges itself, which is exactly the useful signal there.
+function srvBlock(title, vars, prefix, dEff, dPer, dVia) {
   // A var may carry an optional grp:'Label' to open a sub-group header before its row
   // (purely additive — every consumer still sees normal dvar entries with .n intact).
-  const rows = vars.map(v => (v.grp ? `<div class="sgroup">${v.grp}</div>` : '') + srvRow(v, prefix, dEff, dPer)).join('');
+  const rows = vars.map(v => (v.grp ? `<div class="sgroup">${v.grp}</div>` : '') + srvRow(v, prefix, dEff, dPer, dVia)).join('');
   const hasSetAll = vars.some(v => v.type === 'text' || v.type === 'num' || v.type === 'flt');
   const setAllRow = hasSetAll ? '<div class="set-all-row"><button class="b-gh b-sm ctrl" data-tip="Write this block&#39;s values to dedicated.cfg (persists across restarts).&#10;A .bak backup is made; takes effect on next server start or `exec dedicated.cfg`." onclick="saveBlockToCfg(this)">💾 Save</button><button class="b-ac b-sm ctrl" onclick="setAllInBlock(this)">Set All</button></div>' : '';
-  return `<div class="block"><div class="btitle">${title}</div>${rows}${setAllRow}</div>`;
+  return `<div class="block"><div class="btitle">${title}${badges('', '', dVia)}</div>${rows}${setAllRow}</div>`;
 }
 
 function buildServerPanel() {
   // Read-from-server + Kill Server now live in the header (see #hdrRead / #hdrKill).
   // Shared (always-visible) sections → #srv-body (an ADVANCED-tab flow wrapper)
-  g('srv-body').innerHTML = SRV_SECTIONS.map(sec => srvBlock(sec.title, sec.vars, undefined, sec.eff, sec.per)).join('');
+  g('srv-body').innerHTML = SRV_SECTIONS.map(sec => srvBlock(sec.title, sec.vars, undefined, sec.eff, sec.per, sec.via)).join('');
   // Gametype picker (native select, grouped) — swaps the per-mode block below it.
   // Rendered into its own wrapper (#srv-gt-wrap) so picker + block stay together in the
   // two-column layout.

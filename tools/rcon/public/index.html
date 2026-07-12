@@ -167,26 +167,26 @@
   </div>
 
   <div class="block" data-eff="live" data-per="transient">
-    <div class="btitle">PLAYER STATE  <span style="font-weight:400;font-size:10px;color:var(--dm)">all players via GSC bridge</span></div>
-    <div class="srow" data-tip="enableInvulnerability() / disableInvulnerability()&#10;Bridge: god_on / god_off — applies to all currently connected players">
+    <div class="btitle">PLAYER STATE  <span style="font-weight:400;font-size:10px;color:var(--dm)">all players</span></div>
+    <div class="srow" data-via="bridge" data-tip="enableInvulnerability() / disableInvulnerability()&#10;Bridge: god_on / god_off — applies to all currently connected players">
       <span class="slbl">God Mode (all)</span>
       <span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbGod" onchange="bridge(cbGod.checked?'god_on':'god_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
       <span class="shint">immediate</span>
     </div>
-    <div class="srow" data-eff="live" data-per="dvar" data-tip="sv_FullAmmo&#10;Infinite ammo for everyone — native no-depletion flag (all weapons + reserve, persists across rounds) plus a one-shot refill of live players so it applies immediately.&#10;Bridge: infammo_on / infammo_off">
+    <div class="srow" data-eff="live" data-per="dvar" data-via="bridge" data-tip="sv_FullAmmo&#10;Infinite ammo for everyone — native no-depletion flag (all weapons + reserve, persists across rounds) plus a one-shot refill of live players so it applies immediately.&#10;Bridge: infammo_on / infammo_off">
       <span class="slbl">Infinite Ammo (all)</span>
       <span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbAmmo" onchange="bridge(cbAmmo.checked?'infammo_on':'infammo_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
       <span class="shint">native</span>
     </div>
-    <div class="srow" data-tip="Gives: Marathon, Lightweight, Ghost, Sleight of Hand, Steady Aim, Ninja&#10;Bridge: allperks_on / allperks_off">
+    <div class="srow" data-via="bridge" data-tip="Gives: Marathon, Lightweight, Ghost, Sleight of Hand, Steady Aim, Ninja&#10;Bridge: allperks_on / allperks_off">
       <span class="slbl">Perks (all)</span>
       <span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbPerks" onchange="bridge(cbPerks.checked?'allperks_on':'allperks_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
       <span class="shint">Marathon·Ghost·SoH</span>
     </div>
-    <div class="slider-row" data-eff="live" data-per="dvar" data-tip="scr_gf_flinch → bg_viewKickScale&#10;Damage view-kick (flinch) as a MULTIPLIER of stock: 1 = stock, 0 = no flinch, >1 = more. bg_viewKickScale does NOT replicate (each client scales its own view kick from its local copy), so the GSC pushes it per-client — to live players on change, and on every spawn. Persists across rounds (re-applied each onStartGameType). Bridge: flinch_&lt;mult&gt;">
+    <div class="slider-row" data-eff="live" data-per="dvar" data-via="bridge" data-tip="scr_gf_flinch → bg_viewKickScale&#10;Damage view-kick (flinch) as a MULTIPLIER of stock: 1 = stock, 0 = no flinch, >1 = more. bg_viewKickScale does NOT replicate (each client scales its own view kick from its local copy), so the GSC pushes it per-client — to live players on change, and on every spawn. Persists across rounds (re-applied each onStartGameType). Bridge: flinch_&lt;mult&gt;">
       <span class="slbl" style="min-width:120px">Flinch (view kick)</span>
       <input type="range" id="sFlinch" min="0" max="2" step="0.05" value="1" oninput="sv('sFlinch','vFlinch')" onchange="bridge('flinch_'+this.value)" class="ctrl">
       <input type="number" id="vFlinch" class="num ctrl" value="1" min="0" max="3" step="0.05" oninput="su('vFlinch','sFlinch',0,3)">
@@ -201,8 +201,8 @@
   </div>
 
   <div class="block" data-eff="live" data-per="transient">
-    <div class="btitle">FUN &amp; VISION  <span style="font-weight:400;font-size:10px;color:var(--dm)">all players via bridge</span></div>
-    <div class="srow" data-tip="VisionSetNaked, all players (bridge: vision_&lt;set&gt;)&#10;All sets are in common_vision.csv so they apply on every map. PERSISTS across rounds (gf_vis_vision, re-applied each round) until Normal or Reset All Visuals.&#10;There is NO true colour-invert in T5 (the r_film* path can't negate RGB) — 'Enhance' is what the old Invert/Night actually did (a contrast pop).">
+    <div class="btitle">FUN &amp; VISION  <span style="font-weight:400;font-size:10px;color:var(--dm)">all players</span></div>
+    <div class="srow" data-via="bridge" data-tip="VisionSetNaked, all players (bridge: vision_&lt;set&gt;)&#10;All sets are in common_vision.csv so they apply on every map. PERSISTS across rounds (gf_vis_vision, re-applied each round) until Normal or Reset All Visuals.&#10;There is NO true colour-invert in T5 (the r_film* path can't negate RGB) — 'Enhance' is what the old Invert/Night actually did (a contrast pop).">
       <span class="slbl">Vision Set</span><span style="flex:1"></span>
       <select id="visSel" class="ctrl" onchange="bridge('vision_'+this.value)" title="VisionSetNaked, all players. Persists across rounds until Normal / Reset All Visuals.">
         <option value="normal">Normal (map default)</option>
@@ -216,12 +216,12 @@
         <option value="bleak">Bleak (cold desaturated)</option>
       </select>
     </div>
-    <div class="srow" data-tip="cg_thirdPerson&#10;Third-person camera for all players. Non-archived — setClientDvar via bridge works on dedicated: thirdperson_1/0">
+    <div class="srow" data-via="bridge" data-tip="cg_thirdPerson&#10;Third-person camera for all players. Non-archived — setClientDvar via bridge works on dedicated: thirdperson_1/0">
       <span class="slbl">Third Person</span><span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbTP" onchange="bridge('thirdperson_'+(cbTP.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
     </div>
     <div class="sgroup">Silly Combat</div>
-    <div class="srow" data-tip="Every shot traces forward from the eye and detonates on impact&#10;(explosion FX + RadiusDamage). 120ms throttle vs full-auto. Bridge: expbullets_on/off">
+    <div class="srow" data-via="bridge" data-tip="Every shot traces forward from the eye and detonates on impact&#10;(explosion FX + RadiusDamage). 120ms throttle vs full-auto. Bridge: expbullets_on/off">
       <span class="slbl">Explosive Bullets</span><span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbExp" onchange="bridge(cbExp.checked?'expbullets_on':'expbullets_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
       <span class="shint">boom</span>
@@ -232,22 +232,22 @@
       <input type="number" id="vExpR" class="num ctrl" value="200" min="50" max="600" oninput="su('vExpR','sExpR',50,600)">
       <button class="b-ac b-sm ctrl" onclick="sdve('gf_expbullets_radius','vExpR')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('gf_expbullets_radius',200,'vExpR','sExpR')">↺</button>
     </div>
-    <div class="slider-row" data-tip="aim_automelee_range&#10;Knife-lunge distance in units. 64 = stock, higher = longer reach. setClientDvar to all players via bridge: longknife_N">
+    <div class="slider-row" data-via="bridge" data-tip="aim_automelee_range&#10;Knife-lunge distance in units. 64 = stock, higher = longer reach. setClientDvar to all players via bridge: longknife_N">
       <span class="slbl" style="min-width:120px">Melee Lunge Range</span>
       <input type="range" id="sLK" min="64" max="512" step="4" value="64" oninput="sv('sLK','vLK')" onchange="bridge('longknife_'+this.value)" class="ctrl">
       <input type="number" id="vLK" class="num ctrl" value="64" min="64" max="512" oninput="su('vLK','sLK',64,512)">
       <button class="b-ac b-sm ctrl" onclick="bridge('longknife_'+g('vLK').value)">Set</button>      <button class="b-gh b-sm ctrl" onclick="bridge('longknife_64');g('vLK').value=g('sLK').value=64">↺</button>
     </div>
     <div class="sgroup">Silly Extras</div>
-    <div class="srow" data-tip="Continuous mild EarthQuake on every player's camera — wobble without fighting input&#10;Bridge: drunk_on/off">
+    <div class="srow" data-via="bridge" data-tip="Continuous mild EarthQuake on every player's camera — wobble without fighting input&#10;Bridge: drunk_on/off">
       <span class="slbl">Drunk Mode</span><span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbDrunk" onchange="bridge(cbDrunk.checked?'drunk_on':'drunk_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
     </div>
-    <div class="srow" data-tip="hide() / show() on all player models — players invisible to each other (troll)&#10;Bridge: invis_on/off">
+    <div class="srow" data-via="bridge" data-tip="hide() / show() on all player models — players invisible to each other (troll)&#10;Bridge: invis_on/off">
       <span class="slbl">Invisible Players</span><span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbInvis" onchange="bridge(cbInvis.checked?'invis_on':'invis_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
     </div>
-    <div class="srow" data-tip="One strong EarthQuake centered on every player. Bridge: quake">
+    <div class="srow" data-via="bridge" data-tip="One strong EarthQuake centered on every player. Bridge: quake">
       <span class="slbl">Earthquake</span><span style="flex:1"></span>
       <button class="b-wn b-sm ctrl" onclick="bridge('quake')">💥 Shake</button>
     </div>
@@ -255,11 +255,11 @@
 
   <div class="block">
     <div class="btitle">ADMIN  <span style="font-weight:400;font-size:10px;color:var(--dm)">match restart lives in the top bar</span></div>
-    <div class="srow" data-tip="Teleports all players to Player 1 (host/anchor), scattered slightly. Bridge: tpall">
+    <div class="srow" data-via="bridge" data-tip="Teleports all players to Player 1 (host/anchor), scattered slightly. Bridge: tpall">
       <span class="slbl">Gather Players → P1</span><span style="flex:1"></span>
       <button class="b-gh b-sm ctrl" onclick="bridge('tpall')">Teleport All</button>
     </div>
-    <div class="srow" data-tip="iPrintLnBold to everyone&#10;Sends dvar gf_say then triggers bridge: saymsg">
+    <div class="srow" data-via="bridge" data-tip="iPrintLnBold to everyone&#10;Sends dvar gf_say then triggers bridge: saymsg">
       <span class="slbl">Broadcast</span>
       <input id="vSay" class="num ctrl" type="text" style="flex:1;min-width:120px" placeholder="message…" onkeydown="if(event.key==='Enter')broadcastMsg()">
       <button class="b-ac b-sm ctrl" onclick="broadcastMsg()">Send</button>
@@ -333,7 +333,7 @@
       <input type="number" id="vGrav" class="num ctrl" value="800" oninput="su('vGrav','sGrav',10,2000)">
       <button class="b-ac b-sm ctrl" onclick="sdve('bg_gravity','vGrav')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('bg_gravity',800,'vGrav','sGrav')">↺</button>
     </div>
-    <div class="slider-row" data-tip="timescale&#10;Game simulation speed multiplier. 1 = normal, below 1 = slow-mo, above 1 = fast. Default: 1.&#10;&#10;CHEAT-PROTECTED: the engine refuses a raw rcon `set` whenever sv_cheats is 0 — which is the only correct value on a dedicated server. So this is routed through the GSC bridge (svset_timescale), which runs with engine authority and is NOT cheat-gated. Works on the VPS.">
+    <div class="slider-row" data-via="both" data-tip="timescale&#10;Game simulation speed multiplier. 1 = normal, below 1 = slow-mo, above 1 = fast. Default: 1.&#10;&#10;CHEAT-PROTECTED: the engine refuses a raw rcon `set` whenever sv_cheats is 0 — which is the only correct value on a dedicated server. So this is routed through the GSC bridge (svset_timescale), which runs with engine authority and is NOT cheat-gated. Works on the VPS.">
       <span class="slbl" style="min-width:120px">Timescale</span>
       <input type="range" id="sTscale" min="0.1" max="3" step="0.05" value="1" oninput="sv('sTscale','vTscale')" onchange="bridge('svset_timescale='+this.value)" class="ctrl">
       <input type="number" id="vTscale" class="num ctrl" value="1" step="0.05" min="0.1" max="3" oninput="su('vTscale','sTscale',0.1,3)">
@@ -358,16 +358,16 @@
   <div id="srv-body" class="flow"></div>
 
   <div class="block" data-eff="live" data-per="transient">
-    <div class="btitle">HUD ELEMENTS  <span style="font-weight:400;font-size:10px;color:var(--dm)">all players via bridge</span></div>
-    <div class="srow" data-tip="ui_gf_self_show (mod dvar)&#10;Shows/hides the bottom self-health bar. Bridge: selfbar_on / selfbar_off">
+    <div class="btitle">HUD ELEMENTS  <span style="font-weight:400;font-size:10px;color:var(--dm)">all players</span></div>
+    <div class="srow" data-via="bridge" data-tip="ui_gf_self_show (mod dvar)&#10;Shows/hides the bottom self-health bar. Bridge: selfbar_on / selfbar_off">
       <span class="slbl">Self Health Bar</span><span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbSelfBar" checked onchange="bridge(cbSelfBar.checked?'selfbar_on':'selfbar_off')"><span class="tog-t"></span><span class="tog-th"></span></label>
     </div>
-    <div class="srow" data-tip="cg_drawCrosshair&#10;Show/hide the weapon crosshair. setClientDvar all players via bridge">
+    <div class="srow" data-via="bridge" data-tip="cg_drawCrosshair&#10;Show/hide the weapon crosshair. setClientDvar all players via bridge">
       <span class="slbl">Crosshair</span><span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbCH" checked onchange="bridge('viscrosshair_'+(cbCH.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
     </div>
-    <div class="srow" data-tip="cg_drawCrosshairNames&#10;Show/hide player name tags above crosshair. setClientDvar all players via bridge">
+    <div class="srow" data-via="bridge" data-tip="cg_drawCrosshairNames&#10;Show/hide player name tags above crosshair. setClientDvar all players via bridge">
       <span class="slbl">Crosshair Names</span><span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbCHN" checked onchange="bridge('visnames_'+(cbCHN.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
     </div>
@@ -407,14 +407,14 @@
       <input type="number" id="vSens" class="num" value="5" step="0.5" oninput="su('vSens','sSens',0.5,15)">
       <button class="b-gh b-sm" data-tip="Copy 'sensitivity &lt;value&gt;' to paste into your in-game console" onclick="copyClientDvar('sensitivity',g('vSens').value)">📋</button>
     </div>
-    <div class="srow" oncontextmenu="event.preventDefault();copyClientDvar('cg_drawFPS',g('cbFPS').checked?'1':'0')" data-tip="cg_drawFPS&#10;On-screen FPS counter. Saved client dvar -- a server can't force it; each player toggles their own.&#10;Live toggle = host only (listen).&#10;📋 / right-click = copy 'cg_drawFPS 0/1' for your console.">
+    <div class="srow" data-via="bridge" oncontextmenu="event.preventDefault();copyClientDvar('cg_drawFPS',g('cbFPS').checked?'1':'0')" data-tip="cg_drawFPS&#10;On-screen FPS counter. Saved client dvar -- a server can't force it; each player toggles their own.&#10;Live toggle = host only (listen).&#10;📋 / right-click = copy 'cg_drawFPS 0/1' for your console.">
       <span class="slbl">FPS Counter</span><span style="flex:1"></span>
       <button class="b-gh b-sm" data-tip="Copy 'cg_drawFPS 0/1' (current toggle state) to paste into your in-game console" onclick="copyClientDvar('cg_drawFPS',g('cbFPS').checked?'1':'0')">📋</button>
       <label class="tog ctrl"><input type="checkbox" id="cbFPS" onchange="bridge('fps_'+(cbFPS.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
     </div>
   </div>
 
-  <div class="block ded-lockable" data-eff="live" data-per="client">
+  <div class="block ded-lockable" data-eff="live" data-per="client" data-via="bridge">
     <div class="btitle">VISUAL TWEAKS  <span style="font-weight:400;font-size:10px;color:var(--dm)">needs sv_cheats — listen/dev only · on the VPS use Vision FX</span></div>
     <div class="srow" data-tip="These push cheat-protected r_* renderer dvars (r_lightTweakAmbient / r_lightGridIntensity / r_lightGridContrast / r_fog / r_fullHDRrendering) via setClientDvar.&#10;The engine only honours those when sv_cheats is 1, which the mod sets ONLY on a listen server (dedicated==0) — so on the VPS every push here is silently refused. Greyed on a dedicated server.&#10;VPS-safe look control = the Vision FX buttons below (visionSetNaked is not cheat-gated).&#10;The old Gamma slider was removed too: r_gamma is a SAVED client dvar Plutonium blocks servers from writing.">
       <span class="slbl" style="color:var(--dm)">Cheat-protected r_* pushes — need sv_cheats (listen/dev). On the VPS use Vision FX.</span><span style="flex:1"></span>
