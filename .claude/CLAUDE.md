@@ -352,8 +352,8 @@ waits for players, which then hands itself off into the real match. It is fully 
   and `gf_state` goes stale (watch for `GF-Watchdog`'s `roundStuck` → `map_rotate` if a warmup with
   humans on it outlives `RoundStuckSecs` = 300s); and the `ui_gf_*` **client** dvars survive the map
   load, so a client that was last in a gf lobby renders the `gf_lobby_hud` menuDef *over* the warmup
-  (stale "auto-starts in M:SS" and all). That overlay is an accident, not a feature — it only appears
-  for clients that saw a lobby earlier.
+  (stale "Waiting for the host to start" and all). That overlay is an accident, not a feature — it only
+  appears for clients that saw a lobby earlier.
 
 ⚠ **Do NOT ship a mod `maps/mp/gametypes/_pregame.gsc`.** One was written and reverted (2026-07-12): the
 native path already does the job, and overriding the stock script also means keeping its whole public
@@ -731,8 +731,7 @@ tables → `docs/REFERENCE.md`.
 **Bridge telemetry** (dev-only, dedicated-only): `gf_cmd`, `gf_ack`, `gf_state`, `gf_roster`, `gf_say`.
 **HUD** (per-client menu dvars): the `ui_gf_*` family (health panel, self bar, loadout overview,
 lobby) — see `docs/REFERENCE.md`. **Dev/debug** (strip-wrapped): `gf_debug_spawns`, `gf_debug_hud_pool`,
-`gf_debug_elem_probe`, `gf_hitch_pct`, `gf_hitch_debug`, `gf_force_loadout`, `gf_force_camo`,
-`gf_diag_cd_no_lobby_dvars`.
+`gf_debug_elem_probe`, `gf_hitch_pct`, `gf_hitch_debug`, `gf_force_loadout`, `gf_force_camo`.
 
 **Friendly fire** is set via the **stock** tweakables `scr_team_fftype` + `scr_gf_team_fftype` by the
 RCON panel — the mod GSC has **zero** FF references.

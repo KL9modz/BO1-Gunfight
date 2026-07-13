@@ -52,20 +52,6 @@ gf_cfgFloat( dvar, def, lo, hi )
     return clamped;
 }
 
-// #strip-begin - manual-lobby countdown formatter (dev/main only; no lobby in the public build)
-// Whole seconds -> "M:SS" (62 -> "1:02"). Used by the manual-lobby auto-start countdown.
-gf_fmtMMSS( secs )
-{
-    if ( secs < 0 )
-        secs = 0;
-    m = int( secs / 60 );
-    s = secs - ( m * 60 );
-    if ( s < 10 )
-        return m + ":0" + s;
-    return m + ":" + s;
-}
-// #strip-end
-
 // Flinch (damage view-kick) scale. scr_gf_flinch is a MULTIPLIER of the stock
 // bg_viewKickScale (0.2): 1 = stock flinch, 0 = no flinch, >1 = more. Gunfight
 // ships 0.5 — half stock, i.e. bg_viewKickScale 0.1. Called each round from
@@ -446,7 +432,6 @@ gf_waitForLoadingClients()
     lastLoaded   = -1;
     lastTotal    = -1;
     stillLoading = 0;
-    lastShownSec = -1;   // manual-lobby countdown: last second pushed to ui_gf_lobby_status
 
     // Live flag: true only while this hold is actively blocking. Read by the bridge
     // (lobbystart feedback) and mirrored into gf_state telemetry so the panel can
@@ -571,30 +556,12 @@ gf_waitForLoadingClients()
         // stale click from a prior match can't leak in.
         startClicked = ( isDefined( level.gf_lobbyStart ) && level.gf_lobbyStart );
 
-        // Manual lobby: live countdown to the auto-start timer, shown in the lobby HUD status line.
-        // Pushed ONLY when the displayed second changes — at most 1 client dvar/sec/player. Keep it that
-        // way: a per-tick push to every player is exactly what overflowed a joining client's reliable
-        // command buffer ("server command overflow", see gf_lobbyCamPut). Skipped when the timer is 0
-        // (no auto-start), leaving gf_lobbyCamPut's static "Waiting for the host to start" in place.
-        if ( restartMode && manualMode && lobbyTimer > 0
-            && getDvarInt( "gf_diag_cd_no_lobby_dvars" ) != 1 )
-        {
-            remainSec = int( ( lobbyDeadline - now ) / 1000 );
-            if ( remainSec < 0 )
-                remainSec = 0;
-            if ( remainSec != lastShownSec )
-            {
-                lastShownSec = remainSec;
-                statusTxt = "Waiting for the host  -  auto-starts in " + gf_fmtMMSS( remainSec );
-                for ( si = 0; si < level.players.size; si++ )
-                {
-                    pl = level.players[si];
-                    if ( !isDefined( pl ) || pl istestclient() || pl isdemoclient() )
-                        continue;   // bots/demo render no HUD
-                    pl setClientDvar( "ui_gf_lobby_status", statusTxt );
-                }
-            }
-        }
+        // The auto-start timer is deliberately INVISIBLE to players: the lobby keeps
+        // gf_lobbyCamPut's static "Waiting for the host to start" for its whole life, and the
+        // deadline below fires silently. The countdown is an admin backstop, not a promise to
+        // the room — a live "auto-starts in M:SS" reads as a commitment the admin can (and
+        // does) pre-empt with START. It stays an RCON-side setting (scr_gf_lobby_timer).
+        // Bonus: no per-second ui_gf_lobby_status push = one less reliable-command stream.
 
         if ( manualMode )
         {
