@@ -116,6 +116,31 @@ gf_applyFlinchClient()
     self setClientDvar( "bg_viewKickScale", 0.2 * scale );
 }
 
+// "Jump fatigue" is the community name for the engine's post-jump slowdown: jump_slowdownEnable
+// (stock 1) drags a player's movement speed after every jump, so consecutive hops decay. Gunfight
+// ships it OFF (scr_gf_jump_fatigue default 0) — the rounds are 42s on wager-sized maps and the
+// stock drag punishes exactly the short repositioning hops this mode is built on. 1 restores stock.
+//
+// The mod owns the dvar (rather than leaving jump_slowdownEnable to dedicated.cfg) so that OFF is a
+// shipped default: the public build has no cfg of ours and no RCON panel, and a server owner who
+// never touches a dvar still gets the intended movement. Stock does the same write for old-school
+// mode (_globallogic.gsc: setDvar( "jump_slowdownEnable", 0 )).
+//
+// ⚠ jump_slowdownEnable IS flagged cheat-protected, but that does NOT stop a plain rcon/cfg `set` on
+// a dedicated server — cheat protection is a CLIENT-side check (proven live 2026-07-12; see the
+// svset block in _gf_bridge.gsc). So this setDvar is the tidy way to own the default, not a
+// workaround for a gate that does not exist on the server side.
+//
+// No per-client push (unlike gf_applyFlinch): the jump_* family is replicated to clients by the
+// engine — it has to be, movement is client-predicted. See
+// [[flinch-bg-viewkickscale-not-replicated]] for the opposite case.
+gf_applyJumpFatigue()
+{
+    on = int( gf_cfgFloat( "scr_gf_jump_fatigue", 0, 0, 1 ) );  // seeds the dvar if unset
+    setDvar( "jump_slowdownEnable", on );
+    return on;
+}
+
 // The engine's native prematch (matchStartTimer) draws the countdown number but plays NO sound.
 // Mirror a per-second tick so the prematch has the same audible cadence as the overtime tick.
 // Loops while level.inPrematchPeriod, so it self-stops at prematch_over.
@@ -1851,7 +1876,11 @@ gf_roundWatchdog( myGen )
 
                 logPrint( "GF_WATCHDOG: team wipe not ended (allies=" + aliveA + " axis=" + aliveX + ") — forcing round end -> " + winner + "\n" );
                 level.gf_endReasonText = gf_reasonText( "elim", winner );
-                gf_endRound( winner );
+                // THREADED for the same reason as gf_roundClock's gf_onTimeLimit call:
+                // gf_endRound notifies "gf_round_over", which THIS thread endon()s, so an
+                // inline call would kill the recovery mid-flight and strand the very round
+                // it was trying to rescue.
+                level thread gf_endRound( winner );
                 return;
             }
         }
@@ -2075,7 +2104,14 @@ gf_roundClock()
             // enters overtime (which re-pauses + keeps the override) or ends the round
             // (map_restart wipes the state). Only clear our own clock vars here.
             gf_cleanupRoundTimerState();
-            gf_onTimeLimit();
+
+            // THREADED, never called inline. gf_onTimeLimit's HP-decides branch calls
+            // gf_endRound, which fires level notify("gf_round_over") — and THIS thread
+            // endon()s that notify, so an inline call would kill us mid-gf_endRound (the
+            // winner never scores, gf_postRoundWatchdog is never armed, endGame never runs
+            // -> the round hangs forever). Handing off to a fresh thread with no endon is
+            // what makes the clock-expiry path survive its own notify.
+            level thread gf_onTimeLimit();
             return;
         }
 
@@ -2273,10 +2309,9 @@ gf_endRound( winner )
 
     level.gf_roundEnding = true;
     level.gf_roundActive = false;
-    level notify( "gf_round_over" );
 
-    // gf_round_over endons the round clock thread before it can self-clean; tear down
-    // its tick object + state here so an early elimination end doesn't leave them.
+    // The gf_round_over notify below retires the round clock before it can self-clean, so
+    // tear its tick object + state down here.
     gf_cleanupRoundTimerState();
 
     gf_forceHealthHUDUpdate();
@@ -2293,9 +2328,24 @@ gf_endRound( winner )
 
     // Arm the round-END net BEFORE handing off to stock. From here the whole restart hangs
     // off _globallogic's synchronous end sequence, which an orphaned .killcam / .doingNotify
-    // can pin open forever — and gf_roundWatchdog just retired on gf_round_over. Must be
-    // threaded before endGame: endGame fires "game_ended" within a frame.
+    // can pin open forever. Must be threaded before endGame: endGame fires "game_ended"
+    // within a frame.
     level thread gf_postRoundWatchdog( level.gf_roundGen );
+
+    // ⚠ ORDER IS LOAD-BEARING: everything above this line must STAY above it.
+    // A GSC notify kills every thread that endon()s it — including the thread that FIRES
+    // it. Two threads carry level endon("gf_round_over") and both call this function:
+    // gf_roundClock (via gf_onTimeLimit — the clock-expiry / HP-decides path) and
+    // gf_roundWatchdog (the team-wipe force-end). Both now `level thread` into here so
+    // neither is ever the thread executing this line; keeping the score, the timer teardown
+    // and the post-round watchdog ABOVE it means even a future inline caller still gets a
+    // scored, watchdog-armed round end.
+    // (2026-07-12, mp_kowloon: called inline from gf_roundClock, this notify killed
+    // gf_endRound right here. The winner never scored, gf_postRoundWatchdog was never armed
+    // and endGame never ran — so map_restart never happened and the round hung FOREVER with
+    // every watchdog dead. Stock endGame has the same shape and is careful for the same
+    // reason: it writes all its state BEFORE notify("game_ended").)
+    level notify( "gf_round_over" );
 
     level thread maps\mp\gametypes\_killcam::startLastKillcam();
     level thread maps\mp\gametypes\_globallogic::endGame( winner, reasonText );

@@ -1131,28 +1131,15 @@
 			decoration
 		}
 
-		// -- BOTTOM info block: rules line + every-map line, dropped just ABOVE the stock
-		//    "SPECTATING <name>" overlay (~y399) that can't be suppressed on a listen host --
+		// -- BOTTOM rules line: sits BELOW the stock "SPECTATING <name>" overlay (~y399, not
+		//    suppressible on a listen host), near the bottom edge of the 480-tall menu space --
 		itemDef
 		{
 			type			ITEM_TYPE_TEXT
-			rect			-300 344 600 12 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_TOP
+			rect			-300 436 600 12 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_TOP
 			text			"^3No respawns   ^0|^3   No health regen   ^0|^3   Shared loadouts rotate every 2 rounds   ^0|^3   First to 6 rounds wins"
 			textfont		UI_FONT_NORMAL
 			textscale		0.23
-			textalign		ITEM_ALIGN_TOP_CENTER
-			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
-			forecolor		1 0.42 0.1 1
-			visible			when( dvarInt( "ui_gf_lobby_show" ) )
-			decoration
-		}
-		itemDef
-		{
-			type			ITEM_TYPE_TEXT
-			rect			-300 359 600 10 HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_TOP
-			text			"^3All 24 maps supported with smaller wager map sizes   ^0|^3   Damage dealt = player 'score'"
-			textfont		UI_FONT_NORMAL
-			textscale		0.2
 			textalign		ITEM_ALIGN_TOP_CENTER
 			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
 			forecolor		1 0.42 0.1 1
@@ -1163,7 +1150,7 @@
 		// -- RIGHT rail: homepage + Discord (grey titles / orange links), each with a square emblem to
 		//    the right of its two lines. Emblem materials are dvar-driven (linker-safe) and seeded in
 		//    gf_lobbyCamPut: the Black Ops faction crest (faction_128_specops) for the homepage, the
-		//    15th-prestige badge for Discord. "Every map supported" now lives in the bottom info block. --
+		//    15th-prestige badge for Discord. --
 		itemDef
 		{
 			type			ITEM_TYPE_TEXT

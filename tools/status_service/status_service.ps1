@@ -616,9 +616,18 @@ while ($true) {
     # admin folder so the whole ops surface stays behind Basic auth.
     if ((Test-AdminEnabled $AdminOutFile) -and -not [string]::IsNullOrEmpty($HealthOutFile)) {
         # Track round advancement. The stuck detector trips only while the server is up,
-        # humans are on, it is NOT a legitimate pregame lobby hold, and the round number
+        # SOMEONE is on, it is NOT a legitimate pregame lobby hold, and the round number
         # has not moved for $RoundStuckSecs. Down/lobby resets the clock so a fresh start
         # or an intentional hold never reads as stuck.
+        #
+        # The population gate counts BOTS TOO, deliberately. Round activation is
+        # spawn-driven, so a server with nobody on it (0 humans AND 0 bots) legitimately
+        # never advances a round and must not trip the detector — that is the only thing
+        # this gate is defending against. Gating on humans alone made a bots-only server
+        # invisible: it could sit frozen for hours, and the flag only tripped when a human
+        # finally joined, so the first player to arrive WAS the trigger — they walked into
+        # the frozen round and then watched the map_rotate. (2026-07-12: a round froze at
+        # 13:31 with 0 humans and was not rescued until a human joined 85 min later.)
         if ($online -and -not $lobbyHold) {
             if ($round -ne $lastRound) { $lastRound = $round; $lastRoundChangeAt = Get-Date }
         } else {
@@ -626,7 +635,8 @@ while ($true) {
             $lastRoundChangeAt = Get-Date
         }
         $secsSinceRoundChange = [int]((Get-Date) - $lastRoundChangeAt).TotalSeconds
-        $roundStuck = ($online -and $humansOnline -gt 0 -and -not $lobbyHold -and $secsSinceRoundChange -ge $RoundStuckSecs)
+        $playersOnline = $humansOnline + $botCount
+        $roundStuck = ($online -and $playersOnline -gt 0 -and -not $lobbyHold -and $secsSinceRoundChange -ge $RoundStuckSecs)
 
         # games_mp.log mtime = engine-liveness proxy (advances on game events).
         $gamesLogAge = -1

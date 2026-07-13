@@ -327,10 +327,10 @@ onStartGameType()
     // no bots — so seeding their dvars would only publish knobs that nothing reads.
     //
     // The prematch LENGTH is the one exception worth keeping tunable here: the public build
-    // pins it to the fixed 15s/7s assigned below (see level.prematchPeriod), while dev/VPS gets
+    // pins it to the fixed 20s/7s assigned below (see level.prematchPeriod), while dev/VPS gets
     // these two dvars so the RCON panel can retune it live.
     if ( getDvar( "scr_gf_match_prematch_seconds" ) == "" )
-        setDvar( "scr_gf_match_prematch_seconds", "15" );   // first round of the match (longer intro)
+        setDvar( "scr_gf_match_prematch_seconds", "20" );   // first round of the match (longer intro)
     if ( getDvar( "scr_gf_prematch_seconds" ) == "" )
         setDvar( "scr_gf_prematch_seconds", "7" );          // every later round
 
@@ -427,6 +427,11 @@ onStartGameType()
     // holds on the dedicated VPS. RCON bridge: flinch_<mult> for a live change.
     gf_applyFlinch();
 
+    // Jump fatigue (the engine's post-jump slowdown) — Gunfight ships it OFF.
+    // Seeds scr_gf_jump_fatigue (default 0) and applies jump_slowdownEnable each round.
+    // RCON bridge: jumpfatigue_<0|1> for a live change.
+    gf_applyJumpFatigue();
+
     // Gunfight's default LOOK: the "enhance" vision set (contrast pop). Core to the mod, so every
     // build gets it — the RCON vision_<key> override is layered on top inside gf_roundVisionKey.
     // Re-run every round (vision is level state, wiped by map_restart) and must be BEFORE the bridge
@@ -440,7 +445,7 @@ onStartGameType()
     // they are just not retunable. Dev/VPS overrides both from scr_gf_*_prematch_seconds below.
     if ( game["roundsplayed"] == 0 )
     {
-        level.prematchPeriod = 15;
+        level.prematchPeriod = 20;
     }
     else
     {
@@ -449,7 +454,7 @@ onStartGameType()
         // "MATCH STARTING IN", rounds 2+ say "ROUND BEGINS IN" (raw string is fine — no rebuild).
         game["strings"]["match_starting_in"] = "ROUND BEGINS IN";
     }
-    // #strip-begin - RCON-tunable prematch length (dev/main only; the public build keeps the fixed 15/7 above)
+    // #strip-begin - RCON-tunable prematch length (dev/main only; the public build keeps the fixed 20/7 above)
     if ( game["roundsplayed"] == 0 )
         level.prematchPeriod = maps\mp\gametypes\_globallogic_utils::getValueInRange( getDvarInt( "scr_gf_match_prematch_seconds" ), 2, 30 );
     else

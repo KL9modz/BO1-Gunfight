@@ -329,11 +329,17 @@
       <input type="number" id="vSpeed" class="num ctrl" value="190" oninput="su('vSpeed','sSpeed',50,500)">
       <button class="b-ac b-sm ctrl" onclick="sdve('g_speed','vSpeed')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('g_speed',190,'vSpeed','sSpeed')">↺</button>
     </div>
-    <div class="slider-row" data-tip="jump_height&#10;Jump impulse height in units. Default: 39">
+    <div class="slider-row" data-tip="jump_height&#10;Jump impulse height in units. Default: 39&#10;&#10;Flagged cheat-protected, but a plain rcon set DOES write it on a dedicated server — cheat protection is a client-side check (verified live 2026-07-12). No bridge detour needed.">
       <span class="slbl" style="min-width:120px">Jump Height</span>
       <input type="range" id="sJump" min="1" max="1000" value="39" oninput="sv('sJump','vJump')" onchange="sdvv('jump_height',this.value)" class="ctrl">
       <input type="number" id="vJump" class="num ctrl" value="39" oninput="su('vJump','sJump',1,1000)">
       <button class="b-ac b-sm ctrl" onclick="sdve('jump_height','vJump')">Set</button>      <button class="b-gh b-sm ctrl" onclick="resetDv('jump_height',39,'vJump','sJump')">↺</button>
+    </div>
+    <div class="srow" data-dvar="scr_gf_jump_fatigue" data-tip="scr_gf_jump_fatigue&#10;Jump fatigue = the engine's post-jump slowdown (jump_slowdownEnable). Stock BO1 has it ON: every jump drags your movement speed, so consecutive hops decay.&#10;&#10;Gunfight ships it OFF — 42s rounds on wager-sized maps live on short repositioning hops, and the stock drag punishes exactly those. ON = stock BO1 feel.&#10;&#10;The mod owns this dvar and re-applies jump_slowdownEnable every round, so OFF is the shipped default even with no cfg and no panel. Bridge: jumpfatigue_0 / jumpfatigue_1 (applies immediately).">
+      <span class="slbl">Jump Fatigue</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbJumpFat" onchange="bridge('jumpfatigue_'+(this.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">immediate</span>
     </div>
     <div class="slider-row" data-tip="bg_gravity&#10;Downward acceleration (units/s²). Default: 800. Lower = floatier">
       <span class="slbl" style="min-width:120px">Gravity</span>

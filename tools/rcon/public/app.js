@@ -1135,7 +1135,15 @@ async function ackTick(){
     try{
       const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
       const r=await (await fetch(API+'/ack?'+p)).json();
-      if(r.ok) cqResolve(r.ack);
+      if(r.ok){
+        cqResolve(r.ack);
+        // Keep our counter above the game's mark (which now persists across a map_restart, and is
+        // shared by every panel pointed at this server). A counter that drifts BELOW it would send a
+        // seq the GSC bridge reads as an already-handled resend: re-acked, never run — the command
+        // would show ✓ received and silently do nothing. seedCmdSeq() does this on connect; this
+        // keeps it true for a panel left open while another one drives the same server.
+        if(r.ack>_cmdSeq){ _cmdSeq=r.ack; localStorage.setItem('gf_cmdseq',String(_cmdSeq)); }
+      }
     }catch(_){}
     finally{ _ackBusy=false; }
   }
@@ -1457,9 +1465,13 @@ async function visResetAll(){
   g('cbFog').checked=true;g('cbHDR').checked=true;
   if(ok){actLog('Visuals reset to stock','ok');toast('Visuals reset to stock','ok');}
 }
+// Both bg_fallDamage* dvars carry the engine's cheat-protected flag, which is why they show up in
+// the "is cheat protected" spam a game CLIENT prints at boot. That flag does NOT gate a dedicated
+// server's own console, though — a plain rcon `set` writes them (verified live 2026-07-12), so this
+// stays a raw batch. ON restores the engine defaults (128 / 512); OFF pushes both out of reach.
 async function toggleFallDmg(){
   const on=g('cbFall').checked;
-  await batchCmds([`set bg_fallDamageMinHeight ${on?256:9999}`,`set bg_fallDamageMaxHeight ${on?512:9999}`],50);
+  await batchCmds([`set bg_fallDamageMinHeight ${on?128:9999}`,`set bg_fallDamageMaxHeight ${on?512:9999}`],50);
   actLog('Fall damage '+(on?'ON':'OFF'),on?'ok':'wn');
 }
 // ─── Dev ─────────────────────────────────────────────────────────────────────
@@ -1659,13 +1671,15 @@ const SRV_SECTIONS = [
     { n:'sv_allowFriendlyThrowback',   lbl:'Friendly Grenade Throwback',type:'tog',def:'1',  tip:'sv_allowFriendlyThrowback\nAllow players to throw back friendly grenades.' },
     { n:'g_patchRocketJumps',          lbl:'Rocket Jump Knockback',    type:'tog', def:'1',   tip:'g_patchRocketJumps\nEnable upward knockback from rocket self-damage.' },
     { n:'bullet_penetration_affected_by_team', lbl:'Team Counts for Penetration', type:'tog', def:'1', tip:'bullet_penetration_affected_by_team\nTeammates reduce bullet penetration damage output.' },
-    { n:'g_fix_viewkick_dupe',         lbl:'Fix Viewkick Duplicate',   type:'tog', def:'1',   tip:'g_fix_viewkick_dupe\nFix a Plutonium-era bug where the damage view kick (flinch) is applied TWICE. ENGINE default: 0 (fix off) -- confirmed from the registered-defaults dvar dump in console_mp.log, and the stock T5ServerConfig template ships 0 as well. GF default: 1 (fix ON).\nWith the fix OFF, felt flinch is roughly DOUBLE what scr_gf_flinch says -- the two stack, so scr_gf_flinch 0.5 with the fix off lands near stock rather than half of it. Turn this on and scr_gf_flinch means what it claims.\nEngine-registered in MP (it sits beside g_fix_damageKickReductionPerk, which no cfg sets yet reads 1). Takes effect live -- no restart.' },
+    { n:'g_fix_viewkick_dupe',         lbl:'Fix Viewkick Dupe (INERT)',type:'tog', def:'1',   tip:'g_fix_viewkick_dupe\nAPPEARS TO BE INERT ON T5 MP -- setting it almost certainly does NOTHING. Kept only so that a future Plutonium build which DOES register it is easy to spot (its default would stop mirroring our set value).\nEvidence, from a LIVE rcon read: the three real engine fixes each report a typed domain and a FIXED registered default. g_fixBulletDamageDupe reads is:"1" default:"0" Domain is 0 or 1 -- the default stays 0 even though we set 1, which is what a registered dvar looks like. g_fix_viewkick_dupe reads is:"1" default:"1" Domain is any text -- its "default" merely mirrors the value OUR OWN cfg set, the signature of a dvar the engine never registered. Plutonium filed this fix under SP.\nConsequence: there is NO hidden 2x flinch multiplier. scr_gf_flinch is the only flinch knob that matters, and 0.5 -> bg_viewKickScale 0.1 means exactly half stock.' },
     { n:'g_fixBulletDamageDupe',       lbl:'Fix Bullet Damage Dupe',   type:'tog', def:'1',   tip:'g_fixBulletDamageDupe\nA bullet passing through two INTERSECTING players registers its damage TWICE. ENGINE default: 0 (fix off, for vanilla parity). GF default: 1 (fix ON).\nDoubled damage corrupts three things Gunfight is built on: score IS cumulative damage dealt, a timed-out round is decided by most remaining team HP, and every round is ONE LIFE (a doubled bullet = an unearned instant kill). Bodies overlap routinely in the tight 2v2 spawns and doorways -- exactly the trigger condition.' },
     { n:'g_fix_entity_leaks',          lbl:'Fix Entity Leaks',         type:'tog', def:'1',   tip:'g_fix_entity_leaks\nFix various engine entity leaks. ENGINE default: 1 (fix ON). The stock T5ServerConfig template sets 0, which DISABLES a fix the engine ships enabled -- GF restores the engine default.\nNotably it fixes the "Hunk_AllocAlign failed on 8 bytes" leak caused by WEAPON SWITCHING, which is this mod\'s hot path: every player gets a fresh shared loadout (GiveWeapon + switchToWeapon) every round, forever, on a 24/7 server.\nDiagnostic: g_print_entity_leaks 1 logs leaks as they happen.' },
+    { n:'demo_enabled',                lbl:'Match Recording (Theater)',type:'tog', def:'1', eff:'next', tip:'demo_enabled\nMaster gate for BO1 match recording (Theater). ENGINE dvar, engine default 1 (ON). This is what spawns the "[3arc]democlient" that takes a client slot whenever at least one HUMAN is on: stock maps/mp/_demo.gsc threads demoThink(), which calls StartDemoRecording() as soon as humans >= scr_demorecord_minplayers, and StopDemoRecording() when they leave.\nTHE KILLCAM DOES NOT DEPEND ON IT -- maps/mp/gametypes/_killcam.gsc contains zero demo references; the killcam is gated by scr_game_allowkillcam / scr_game_allowfinalkillcam instead. Nothing in Gunfight reads the recording.\nWhat it costs: a continuous demo write, an addDemoBookmark() on every kill, one client slot, and the "MatchRecord: Writing final stats" flush that sits directly beside "Hitch warning: 2466 msec frame time" in console_mp.log -- the prime suspect for the 2.5-3s stalls (incl. the handful that land mid-gameplay).\nNOTE: scr_demorecord_minplayers 0 does NOT disable recording -- stock _demo.gsc forces that value back to 1. THIS dvar is the real gate. Read at level load, so a change lands on the next round.' },
   ]},
   { title: 'GAME RULES', eff: 'restart', per: 'dvar', vars: [
     // Killstreaks / Headshots Only / Force UAV moved to DASHBOARD → GAMEPLAY as single
     // combined controls (sticky dvar + live bridge in one switch) — no duplicate rows here.
+    { n:'scr_allowbattlechatter',   lbl:'Battle Chatter',         type:'tog',  def:'1', eff:'next', tip:'scr_allowbattlechatter\nStock soldier voice callouts (reloading, grenade, enemy spotted). Engine default: 1 (ON). Nothing in Gunfight reads it -- it is pure flavor.\nIt is not free on a bot-filled 24/7 server: _battlechatter_mp::CheckDistanceToEvent scans level.alivePlayers on EVERY kill, and a full bot fill wipes every ~40s round, forever. The GSC VM has killed that exact thread with "potential infinite loop in script - killing thread" 3 times, and every one of them landed on a 2.4-2.5s frame hitch.\nTurn OFF to test whether GF_HITCH drops (gf_hitch_pct / gf_hitch_debug already instrument it). Stock GSC only ever READS this dvar (never writes it), so a change here sticks; _battlechatter_mp::init re-reads it at level init, so it lands on the next round.' },
     { n:'scr_game_bulletdamage',    lbl:'Bullet Damage Scale',    type:'flt',  def:'1.0', tip:'scr_game_bulletdamage\nGlobal bullet damage multiplier. 1.0 = normal, 0.5 = half, 2.0 = double.' },
     { n:'scr_game_hardpoints',      lbl:'Scorestreaks',           type:'tog',  def:'1',   tip:'scr_game_hardpoints\nEnable scorestreak (hardpoint) system.' },
     { n:'scr_game_perks',           lbl:'Perks',                  type:'tog',  def:'1',   tip:'scr_game_perks\nAllow players to use perks.' },
@@ -1836,7 +1850,7 @@ const GF_START_VARS = [
     { n:'scr_pregame_timelimit',      lbl:'Warmup Time Limit (0=off)', type:'num', def:'0', eff:'nextmap', tip:'scr_pregame_timelimit\nMinutes the PRE-MATCH WARMUP may run before it times out. ⚠ KEEP THIS AT 0. BO1 defaults it to 5, and the warmup’s time-out path calls endGame — which ROTATES THE MAP instead of starting the match, so an under-populated server just cycles maps every 5 minutes. 0 = no limit: the warmup waits until party_minplayers players are in, then starts the match.' },
     { n:'scr_gf_minplayers_timer',    lbl:'Min Players Timer (s, 0=off)', type:'num', def:'0', tip:'scr_gf_minplayers_timer\nMin-players "start anyway" ceiling. Seconds the FIRST-round hold waits for enough humans (Min Players) before it STARTS THE MATCH ANYWAY with too few players.\n0 = never auto-start (DEFAULT) — the lobby holds until Min Players humans arrive or an admin clicks START MATCH. Replaces the old hardcoded 90s ceiling that started too-thin matches on its own.\nA pure-bot lobby (0 humans) always releases regardless. Clamped 0-3600. Has no effect if Min Players is 1 (gate off).' },
     { n:'scr_gf_load_wait',           lbl:'Load Wait (s, 0=off)',      type:'num', def:'0', tip:'scr_gf_load_wait\nMax seconds the match FIRST round holds BEFORE the prematch countdown until every map-loading client is in, so everyone sees the intro/countdown together (and slow loaders are not grace-locked into spectating round 1). Bots + demo clients excluded. Shows a "Waiting for teams N/M" readout. First-time FastDL downloaders are not fully absorbed. Default 0 = off (no wait; a slow loader may miss the intro / spectate round 1, and Load Grace goes inert). Clamped 0-120.\nSame hold also enforces Min Players above.' },
-    { n:'scr_gf_match_prematch_seconds', lbl:'Prematch (s)',          type:'num', def:'15', tip:'scr_gf_match_prematch_seconds\nIntro countdown before the first round of the match (MATCH STARTING IN). Runs AFTER the Match Start hold. Clamped 2-30. (Stock scr_game_prematchperiod is overridden by this and has no effect.)' },
+    { n:'scr_gf_match_prematch_seconds', lbl:'Prematch (s)',          type:'num', def:'20', tip:'scr_gf_match_prematch_seconds\nIntro countdown before the first round of the match (MATCH STARTING IN). Runs AFTER the Match Start hold. Clamped 2-30. (Stock scr_game_prematchperiod is overridden by this and has no effect.)' },
     { n:'scr_gf_prematch_seconds',    lbl:'Preround (s)',             type:'num', def:'7',  tip:'scr_gf_prematch_seconds\nCountdown before each later round (ROUND BEGINS IN). Clamped 2-20.' },
     { n:'scr_gf_load_grace',          lbl:'Load Grace (s, adv)',       type:'num', def:'20', tip:'scr_gf_load_grace\nADVANCED / edge case. When Load Wait gives up with a client still loading (e.g. a FastDL first-timer), keep the grace period open this many seconds past the countdown so they can still spawn INTO round 1 instead of spectating. Cost: a round-1 team wipe cannot end the round until grace closes. 0 = off (they spectate). Clamped 0-60.' },
 ];

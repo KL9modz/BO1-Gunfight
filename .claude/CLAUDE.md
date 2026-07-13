@@ -27,10 +27,20 @@ wins** takes the match.
   ([[infinite-round-orphaned-killcam-flag]])
 - **Pregame lobby can end on its own** (should end only via the load/min gate or an admin START) — only
   reachable when `scr_gf_lobby` is Auto/Manual (default Normal has no hold, so masked by default).
-- **Prematch/intro countdown runs in slow-motion (~1 fps) during a fast-restart burst** — a transient
-  server-frame hitch dilating the one stock `wait(1.0)`-driven timer (the mod's own clocks are
-  gettime-anchored and immune). NOT sv_fps (VPS runs default 20). Instrumented via `gf_hitchMonitor`
-  (`gf_hitch_pct`/`gf_hitch_debug`); real fix = gettime-own the prematch countdown
+- **Prematch/intro countdown runs in slow-motion** — NOT transient and NOT a rendering artifact.
+  `GF_HITCH` measures **game-time dilation** (`wait` counts game time, `gettime()` counts real time), so
+  `750ms vs 500ms` means the whole simulation ran at ~65% speed for that window. The countdown is simply
+  the last clock still driven by a game-time `wait(1.0)`; the mod's own clocks are gettime-anchored and
+  immune. **Measured on the VPS (10 days, 2,803 hitches):** 99.3% land in `phase=prematch` — roughly one
+  per round, ~700-750ms, and **flat across bot count** (694ms at 0 bots vs 746ms at 6), so it is the
+  engine's `map_restart` itself, *not* our bots / HUD pushes / loadout giving. It is not ours to delete →
+  **the fix is to make the countdown immune** (gettime-own it; see Ideas). Separately, 226 hitches exceed
+  **2s** (map load + the `MatchRecord` stat flush), and **15 landed mid-gameplay** at ~2.8s — those are the
+  ones that actually hurt, and the two suspects now have panel toggles: **`demo_enabled`** (match
+  recording / the `democlient`; the killcam does **not** depend on it) and **`scr_allowbattlechatter`**
+  (whose `CheckDistanceToEvent` the GSC VM has killed 3× with "potential infinite loop", each landing on a
+  2.4-2.5s frame hitch). Ceiling: the box is 4 **shared** Contabo vCPUs — steal time produces multi-second
+  stalls no config fixes. Instrumented via `gf_hitchMonitor` (`gf_hitch_pct`/`gf_hitch_debug`)
   ([[vps-prematch-slowmo-framehitch]]).
 - **Mod may still change some client settings** — the r_* vis-tweak force-push was removed; confirm
   nothing else writes a saved client dvar.
@@ -48,7 +58,12 @@ wins** takes the match.
 
 ### Ideas & future
 - **Own the prematch/intro countdown with `gettime()`** so a hitch degrades to a 1-frame stutter (the
-  planned fully-custom-timers branch; composes with an sv_fps-30 experiment — VPS currently runs 20).
+  planned fully-custom-timers branch). **This is the real fix for the slow-mo countdown** — see the
+  frame-hitch bug above: the hitch itself is the engine's `map_restart` and is not ours to delete, but the
+  countdown is the last clock still driven by game-time `wait(1.0)`, so owning it makes the symptom vanish.
+  ⚠ Do **not** pair this with the once-floated **sv_fps 30** experiment: `GF_HITCH` is *game-time dilation*
+  (wall time to advance 0.5s of game time), and the stall is a fixed lump of wall-clock work — more frames
+  per second on a CPU-starved box buys more overhead and *more* dilation, not less. VPS runs 20; leave it.
 - **Hybrid custom round-timer HUD:** keep the native engine-driven `MM:SS` for the normal phase, own only
   the final ≤10s (orange `S.T` tenths) via the menu layer, route OT through the same element.
 - **Mid-round late spawn / bot backfill** (designed ~25 lines, not built): let a client added mid-round
@@ -444,14 +459,46 @@ rebuild; dvar values/positions are GSC-tunable. Intro slide/fade animations are 
   client dvar. ⚠ The two `gf_cfgFloat` defaults (`gf_applyFlinch` + `gf_applyFlinchClient`) must stay in
   lockstep — the seed is seed-if-empty, so a drift is masked by whichever ran first.
   ([[flinch-bg-viewkickscale-not-replicated]])
-- **Flinch has a SECOND multiplier: `g_fix_viewkick_dupe`** (Plutonium **engine** dvar, not ours; `1` in
-  our `dedicated.cfg`, **engine default `0`**). At `0` the damage view kick is applied **twice**, so felt
-  flinch is ~double what `scr_gf_flinch` says and the two silently stack — `scr_gf_flinch 0.5` with the
-  fix off lands near *stock*, not half of it. Turning it on is what makes `scr_gf_flinch` mean what it
-  claims. ⚠ It is **engine-registered in MP**, despite the Plutonium changelog filing it under SP: it is
-  present in the dvar dump in `console_mp.log`, alongside `g_fix_damageKickReductionPerk` (reads `1`, and
-  **no cfg sets it** — proof the `g_fix_*` family is MP-registered). ⚠ The stock T5ServerConfig template
-  ships this at `0`, so a server built from the template has doubled flinch and does not know it.
+- **There is NO second flinch multiplier — `g_fix_viewkick_dupe` is INERT on T5 MP.** `scr_gf_flinch` is
+  the only flinch knob; `0.5` → `bg_viewKickScale 0.1` is exactly half stock. This file previously claimed
+  the dvar doubled felt flinch, on the strength of it *appearing* in the `console_mp.log` dump — which
+  proves nothing, because a cfg-created dvar appears there too. A **live RCON read** settles it: the real
+  fixes carry a typed domain and a fixed registered default (`g_fixBulletDamageDupe` → `is:"1"
+  default:"0" Domain is 0 or 1` — the default stays `0` even though we set `1`), whereas
+  `g_fix_viewkick_dupe` → `is:"1" default:"1" **Domain is any text**`, i.e. its "default" merely mirrors
+  the value **our own cfg** set. The engine never registered it (Plutonium filed that fix under **SP**).
+  Setting it is harmless but does nothing. The panel row is kept, labelled `(INERT)`, so a future
+  Plutonium build that *does* register it is easy to spot. ([[engine-dvar-defaults-from-log-dump]])
+- **Jump fatigue is OFF** (`scr_gf_jump_fatigue`, default 0 — shipped, public build included). "Jump
+  fatigue" is the community name for the engine's **`jump_slowdownEnable`** (stock `1`): every jump drags
+  your movement speed, so consecutive hops decay. 42s rounds on wager-sized maps live on short
+  repositioning hops, so the stock drag punishes exactly the movement this mode is built on. There is no
+  dvar *named* fatigue — the whole engine family is `jump_height` / `jump_slowdownEnable` / `jump_spreadAdd`
+  / `jump_stepSize` / `jump_ladderPushVel`. `gf_applyJumpFatigue` (`_gf_rounds.gsc`) re-applies it every
+  round; RCON bridge `jumpfatigue_<0|1>`. No per-client push (the `jump_*` family replicates — it must,
+  movement is client-predicted), which is what makes it *unlike* flinch.
+- ⚠ **CHEAT PROTECTION IS A *CLIENT-SIDE* CHECK — an rcon / `dedicated.cfg` `set` on a dedicated server
+  is NOT gated by it.** This is the opposite of what this file and `_gf_bridge.gsc` used to say, and the
+  mistake cost a whole wrong "fix": the familiar `Error: jump_height is cheat protected` spam comes from a
+  game **CLIENT** exec'ing the stock `default_xboxlive.cfg` at boot — *not* from a server refusing you.
+  The `DVAR_CHEAT` flag bites wherever the console belongs to a client: a player's own console, a client
+  exec'ing a cfg, and a `setClientDvar` **arriving** at a client. The **dedicated server's own console
+  (rcon + `dedicated.cfg`) is not gated**, so `jump_height`, `bg_fallDamage*`, `bg_gravity`, `g_speed`,
+  `timescale` etc. are all settable there with a plain `set`, `sv_cheats 0` and all.
+  **Proven live on the VPS 2026-07-12** (`sv_cheats 0`, `dedicated` = "dedicated internet server"):
+  rcon `set ragdoll_explode_force 18001` — a dvar on the engine's *own* cheat-protected list — read back
+  as `18001` (then restored to 18000). Control in the same session: `set bg_gravity 0` (domain starts at
+  1) **did** echo its rejection back and kept 800 — so error echoes genuinely reach the panel, and the
+  silence on the accepted writes was a real accept, not a swallowed reply.
+  ⚠ **What IS unreachable on a dedicated server** (and the only thing the panel is right to grey out) is
+  a **cheat-protected CLIENT dvar** — the `r_*` Visual Tweaks — because those ride `setClientDvar` and the
+  *client* re-checks on arrival; plus **archived/saved** client dvars (`cg_fov`, `bg_viewBobAmplitudeBase`),
+  which Plutonium refuses to let a server write at all.
+  ⚠ So **do not route a server dvar through the bridge's `svset_` on the theory that rcon cannot reach
+  it** — rcon can. `svset_` survives for two narrower reasons: the **listen/dev host**, where the panel's
+  rcon lands on a console that *is* a client's (that is the setup where `set bg_viewKickScale 0.9` was
+  once seen refused, which is what seeded the whole misconception), and its `gf_<dvar>` mirror, which
+  buys cfg-persistence for free.
 - **Reading engine-dvar defaults:** the dvar dump in `console_mp.log` prints **registered defaults, never
   live values** (`g_inactivity` 190 vs our cfg's 300; `sv_maxclients` 4 vs 14). It is the cheapest way to
   read an engine dvar's true default and to prove a dvar is engine-registered at all — a `set` on a name
@@ -515,7 +562,10 @@ before the map loads.
 Both are stripped from public builds; a public build has no RCON control. **`_gf_bridge.gsc`** is the
 GSC side: the panel writes `set gf_cmd <seq>:<cmd>`, `gf_bridgePoll` reads+clears at 20 Hz and writes
 `gf_ack`, with high-water seq dedup (`level.gf_ackSeq`) so a dropped-packet retry can't double-fire a
-non-idempotent command. Telemetry (dedicated-only single-token reads): **`gf_state`** (11 colon fields:
+non-idempotent command. ⚠ The mark is **seeded from the `gf_ack` dvar every round, never reset** — a
+command that restarts the match itself (`matchrestart`, `lobbystart`) wipes the round that owed it an
+ack, so a reset would leave the panel un-acked → it resends the same seq → the wiped mark lets it
+**re-run** (one click, N restarts, each re-arming the next). Telemetry (dedicated-only single-token reads): **`gf_state`** (11 colon fields:
 `wA:wX:round:aliveA:aliveX:gametype:hold:fillN:pAllies:pAxis:parked`) and **`gf_roster`**
 (`<num>,<team>,<alive>,<pending>,<bot>;…`). Command feedback is private to `gf_admin_guids`
 (`gf_bridgeNotify`); only `saymsg` broadcasts. Team moves: `pteam_<num>_<team>` defers to next-round
@@ -584,13 +634,14 @@ tables → `docs/REFERENCE.md`.
 | `gf_capture_time` / `_large` | 3.5 / 5 | OT zone hold-to-capture seconds, small / large. |
 | `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (auto goes large when a team hits 5+). |
 | `scr_gf_flinch` | 0.5 | Flinch scale (× stock `bg_viewKickScale` 0.2 → 0.1); pushed **per-client** — the server dvar alone doesn't replicate, and the push beats a player's own autoexec (clamp 0-3). |
-| `g_fix_viewkick_dupe` | 1 | **ENGINE** (Plutonium), **engine default 0**, set in `dedicated.cfg`. `0` applies the damage view kick **TWICE** → doubles felt flinch and makes `scr_gf_flinch` mean half what it says. Live-settable, no restart. The stock T5ServerConfig template ships `0`. |
+| `scr_gf_jump_fatigue` | 0 | **0 = OFF (the GF default)** / 1 = stock. Drives the engine's `jump_slowdownEnable` (post-jump movement drag — "jump fatigue"). The mod owns it so OFF ships as a default even with no cfg and no panel (`gf_applyJumpFatigue`, re-applied every round). RCON bridge: `jumpfatigue_<0\|1>`. |
+| `g_fix_viewkick_dupe` | 1 | **INERT on T5 MP** — the engine never registered it (live read: `Domain is any text`, `default:` mirrors our own `set`). Harmless, does nothing. Flinch is `scr_gf_flinch` alone. |
 | `scr_team_maxsize` | 0 (cfg ships 6) | `>0` caps players/team; overflow → spectator on spawn. |
 
 **Match start / pregame lobby** (match's first round only)
 | dvar | default | meaning |
 |---|---|---|
-| `scr_gf_match_prematch_seconds` / `scr_gf_prematch_seconds` | 15 / 7 | Native prematch countdown length: first round / later rounds. |
+| `scr_gf_match_prematch_seconds` / `scr_gf_prematch_seconds` | 20 / 7 | Native prematch countdown length: first round / later rounds. |
 | `scr_gf_min_players` | 1 | Min **humans** to start (1 = off); a release condition on the pre-prematch hold. |
 | `scr_gf_minplayers_timer` | 0 | Min-players "start anyway" ceiling (s); **0 = never auto-start**. |
 | `scr_gf_load_wait` | 0 | Max s to hold the prematch for still-loading clients (0 = off; 3s floor). |
@@ -659,19 +710,22 @@ changes them live).
 bug fixes Plutonium added, and their **engine defaults split on one line**: a fix with **no gameplay
 semantics ships ON**, a fix that **changes felt gameplay ships OFF**, so a stock server stays
 vanilla-faithful — bugs and all. Gunfight opts into all of them, because a competitive gametype wants
-*correct* damage and flinch, not bug-for-bug BO1 parity. (Engine defaults read from the `console_mp.log`
-dvar dump; see the "Reading engine-dvar defaults" note above.)
+*correct* damage and flinch, not bug-for-bug BO1 parity. ⚠ **Only 3 of the 4 names below are real dvars** —
+`g_fix_viewkick_dupe` is a placebo. Registration and engine defaults come from a **live RCON read** (the
+`Domain is …` + `default:` fields), NOT the `console_mp.log` dump: the dump cannot tell a registered dvar
+from one our own cfg created ([[engine-dvar-defaults-from-log-dump]]).
 
 | dvar | engine default | GF | what the bug is |
 |---|---|---|---|
-| `g_fix_damageKickReductionPerk` | **1** (on) | 1 (untouched) | Pure fix, already on. No cfg sets it — it's the proof the family is MP-registered. |
+| `g_fix_damageKickReductionPerk` | **1** (on) | 1 (untouched) | Pure fix, already on. No cfg sets it and it still reports `Domain is 0 or 1`, so the family *exists* in MP. ⚠ That vouches for the family, **not for any individual name** — check each one's own domain. |
 | `g_fix_entity_leaks` | **1** (on) | **1** | Engine entity leaks, incl. the `Hunk_AllocAlign failed on 8 bytes` leak from **weapon switching** — this mod's hot path (a fresh shared loadout every round, 24/7). ⚠ The **T5ServerConfig template sets this to 0**, actively *disabling* a fix the engine ships enabled. Restoring it is the one change here that is not a deviation. |
-| `g_fix_viewkick_dupe` | **0** (off) | **1** | Damage view kick applied **twice** → doubles felt flinch and makes `scr_gf_flinch` mean half what it says. |
+| `g_fix_viewkick_dupe` | **— (unregistered)** | 1 (**inert**) | ⚠ **NOT a real MP dvar.** Live read: `Domain is any text`, and `default:` merely mirrors the value our own cfg `set`. Setting it does nothing — there is no doubled flinch. Kept in cfg/panel only as a tripwire. |
 | `g_fixBulletDamageDupe` | **0** (off) | **1** | A bullet through two **intersecting** players deals its damage **twice**. Corrupts three things GF is built on: score **is** cumulative damage dealt, a timed-out round is decided by **most remaining HP**, and rounds are **one life** (a doubled bullet = an unearned instant kill). Bodies overlap constantly in the tight 2v2 spawns. |
 
 ⚠ Note the **inconsistent naming** — three are `g_fix_snake_case`, one is `g_fixBulletDamageDupe`
-(camelCase, no underscore). A `g_fix_` grep silently misses it. ⚠ All four are **engine** dvars set in
-`dedicated.cfg`, not seeded by GSC; the panel exposes them under ADVANCED → ENGINE GAMEPLAY. The VPS's
+(camelCase, no underscore). A `g_fix_` grep silently misses it. ⚠ All four are set in
+`dedicated.cfg`, not seeded by GSC (three are real **engine** dvars; the fourth is inert); the panel
+exposes them under ADVANCED → ENGINE GAMEPLAY. The VPS's
 `dedicated.cfg` lives on the box and is **not** shipped by `deploy.ps1`, so a change here reaches the VPS
 only via the panel (toggle live, then 💾 Save to persist) or a hand edit. ⚠ `g_print_entity_leaks 1` logs
 leaks as they happen — the way to actually verify the entity-leak fix rather than assume it.
@@ -753,7 +807,7 @@ content), so `git checkout main` after cloning and push `main` with `tools/push_
   `_pregame` gametype can never come up, so there is **no `_pregame.gsc` to exclude**), bots, the RCON
   bridge, debug tooling, admin pause, the `gf_vis_*` r_* push, the RCON perk overrides, and the
   `level.maySpawn` hook (stock guards it with `isDefined`, so the public build installs none and falls
-  through to stock grace/lives). The prematch **countdown stays** — pinned at a fixed 15s/7s, with the
+  through to stock grace/lives). The prematch **countdown stays** — pinned at a fixed 20s/7s, with the
   dvar-tunable version strip-marked behind it. A public server owner still gets the core knobs:
   `scr_gf_scorelimit` / `_timelimit(_large)` / `_overtimelimit(_large)` / `_roundswitch` /
   `_roundsperloadout` / `_teamspawnmode` / `gf_capture_time(_large)` / `scr_gf_flinch` /

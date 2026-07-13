@@ -30,8 +30,10 @@
 //   (NO pnoclip_: this was documented here for a long time but never implemented, and it can't be —
 //    T5 has no scriptable noclip. The engine's `noclip` is a cheat-protected console command acting
 //    on the LOCAL player, so it needs sv_cheats 1 AND a listen server. The panel greys it off there.)
-//   svset_<dvar>=<val> - set a CHEAT-PROTECTED server dvar (bot tuning, timescale) from GSC, which
-//                        is not cheat-gated — so it works on the dedicated VPS with sv_cheats 0.
+//   flinch_<mult>      - damage view-kick scale (scr_gf_flinch -> per-client bg_viewKickScale)
+//   jumpfatigue_<0|1>  - post-jump slowdown: scr_gf_jump_fatigue -> jump_slowdownEnable (GF default 0)
+//   svset_<dvar>=<val> - set a CHEAT-PROTECTED server dvar (bot tuning, timescale, jump/fall) from GSC,
+//                        which is not cheat-gated — so it works on the dedicated VPS with sv_cheats 0.
 //                        Also mirrors the value into gf_<dvar> so it can persist via dedicated.cfg.
 //   svsync             - re-apply every gf_<dvar> mirror onto its real dvar (Set All / after restart)
 //   pteam_<num>_<allies|axis|spec>  - move one player to a team. Applies LIVE only during the
@@ -96,14 +98,26 @@ gf_bridgeInit()
         setDvar( "gf_expbullets_radius", "200" );   // RCON Blast Radius slider default
 
     // Ack channel: the poll loop writes the sequence id of each processed command here so the
-    // RCON panel can flip a queued command from "sent" to "received" (closed loop). Starts at 0.
-    setDvar( "gf_ack", "0" );
+    // RCON panel can flip a queued command from "sent" to "received" (closed loop), and it doubles as
+    // the persistent home of the dedup high-water mark below.
+    //
+    // ⚠ SEED-IF-EMPTY, never a reset. A command that restarts the match ITSELF (matchrestart, and the
+    // lobbystart release — both end in map_restart(false)) tears down the very round that owed it an
+    // ack: the poll writes gf_ack = <seq>, the wipe lands, and this callback runs again. Blanking
+    // gf_ack to 0 here meant the panel never saw the ack for the command it had just sent, so its
+    // dropped-packet auto-retry resent the SAME seq — and with the mark (level state) also back at 0,
+    // that resend no longer looked like a duplicate and RE-RAN. One RESTART MATCH click therefore
+    // restarted the match once per retry, each restart re-arming the next. The dvar is the only thing
+    // map_restart(false) keeps, so carrying the mark in it is what makes the resend dedup and lets the
+    // panel confirm a command across the restart it caused.
+    if ( getDvar( "gf_ack" ) == "" )
+        setDvar( "gf_ack", "0" );
     // Highest command seq processed so far (a "high-water mark"). The panel resends an unacked
     // command with the SAME seq to self-heal a dropped packet; anything with seq <= this was already
     // handled, so we re-ACK it but DON'T re-run it — that makes even non-idempotent commands
-    // (endround, quake, tpall) safe to retry. Resets per map_restart (level state); harmless because
-    // the panel's seq only climbs and the first command of the new round re-establishes the mark.
-    level.gf_ackSeq = 0;
+    // (endround, quake, tpall, both restarts) safe to retry. Re-seeded from the dvar every round, so
+    // it survives map_restart the same way the ack does.
+    level.gf_ackSeq = int( getDvar( "gf_ack" ) );
     // Admin GUID allowlist (comma-separated) for PRIVATE feedback: gf_bridgeNotify prints only to
     // players whose getGuid() is in this list, instead of the old bare iPrintLnBold that showed
     // everyone. Managed by the panel (Set as admin); a cfg-set value survives here (only seeded blank).
@@ -405,6 +419,7 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "headshots_on"    ) { gf_bridgeHeadshots( true );    return; }
     if ( cmd == "headshots_off"   ) { gf_bridgeHeadshots( false );   return; }
     if ( isSubStr( cmd, "flinch_" ) ) { gf_bridgeFlinch( getSubStr( cmd, 7, cmd.size ) ); return; }
+    if ( isSubStr( cmd, "jumpfatigue_" ) ) { gf_bridgeJumpFatigue( getSubStr( cmd, 12, cmd.size ) ); return; }
 
     // Cheat-protected SERVER dvars, written from GSC so they work with sv_cheats 0 (the only
     // correct value on a dedicated server). Format: svset_<dvar>=<value>. See gf_bridgeServerDvarSet.
@@ -762,21 +777,46 @@ gf_bridgeFlinch( value )
         gf_bridgeNotify( "^3Flinch: " + scale + "x stock" );
 }
 
+// --- Jump fatigue ------------------------------------------------------------
+// value = 1 (stock post-jump slowdown) or 0 (none — the Gunfight default).
+// Stores it in scr_gf_jump_fatigue (the source of truth, so onStartGameType re-applies it every
+// round) and applies jump_slowdownEnable live. No mirror needed — scr_gf_jump_fatigue is a plain
+// mod dvar the panel can `set` and dedicated.cfg can persist.
+
+gf_bridgeJumpFatigue( value )
+{
+    setDvar( "scr_gf_jump_fatigue", value );
+    on = maps\mp\gametypes\_gf_rounds::gf_applyJumpFatigue();
+    if ( on )
+        gf_bridgeNotify( "^3Jump fatigue: ON (stock post-jump slowdown)" );
+    else
+        gf_bridgeNotify( "^2Jump fatigue: OFF" );
+}
+
 // --- Cheat-protected SERVER dvars (svset_<dvar>=<value>) ---------------------
-// The engine REFUSES a console/rcon `set` of a CHEAT-protected dvar unless sv_cheats is 1: it
-// answers "Error: <dvar> is cheat protected" and keeps the old value. A GSC setDvar runs with
-// engine authority and is NOT cheat-gated. Verified live 2026-07-11 on a dedicated-equivalent
-// round with sv_cheats 0: rcon `set bg_viewKickScale 0.9` was refused while the bridge's own
-// flinch_2 verb wrote that same dvar to 0.4 in the same round.
+// ⚠ CORRECTED 2026-07-12 — this block used to claim that an rcon `set` of a cheat-protected dvar is
+// refused on a dedicated server. IT IS NOT. Proven live against the VPS (sv_cheats 0, `dedicated` =
+// "dedicated internet server"): rcon `set ragdoll_explode_force 18001` — a dvar on the engine's own
+// cheat-protected list — CHANGED the value (read back 18001, restored to 18000). A guaranteed-invalid
+// write in the same session (`set bg_gravity 0`, domain starts at 1) DID echo its error back, so the
+// silence on the accepted writes was a real accept, not a swallowed reply.
 //
-// So the RCON panel routes its cheat-protected SERVER dvars (bot tuning, timescale) through here
-// instead of a raw rcon `set`, and they keep working on the dedicated VPS with sv_cheats 0 — which
-// is the only correct value there (gf.gsc's dev-cheat block used to force it to 1 on EVERY server
-// because its `getDvarInt( "dedicated" ) == 0` guard was always true; see gf.gsc).
+// The true model: **cheat protection is a CLIENT-side check.** It bites wherever the console belongs
+// to a client — a player's own console, a client exec'ing a cfg (that is where the familiar
+// "Error: jump_height is cheat protected" boot spam comes from: the CLIENT exec'ing the stock
+// default_xboxlive.cfg), and a setClientDvar arriving at a client. The DEDICATED server's own console
+// is not gated, so rcon AND dedicated.cfg can both write cheat-protected SERVER dvars there.
+//
+// So svset is NOT needed to reach a cheat-protected server dvar on the VPS — a plain rcon `set`
+// already does. What it is still good for is the LISTEN/dev host, where the panel's rcon lands on a
+// console that IS a client's (that is the setup where `set bg_viewKickScale 0.9` was seen refused),
+// plus the gf_<dvar> mirror below, which gives a value cfg-persistence for free. Kept for those two
+// reasons — do not add rows to it on the theory that rcon cannot reach them, because it can.
 //
 // ⚠ SERVER dvars ONLY. This does NOT rescue a cheat-protected CLIENT dvar (the r_* Visual Tweaks,
 // and bg_viewKickScale's per-client push): those go out via setClientDvar and the CLIENT applies
-// its own cheat check on arrival, which no amount of server-side authority can bypass.
+// its own cheat check on arrival, which no amount of server-side authority can bypass. THAT is the
+// limit that is real on a dedicated server, and it is the one the panel greys out (.ded-lockable).
 //
 // Allowlisted rather than arbitrary. An rcon holder can already `set sv_cheats 1` directly (that
 // dvar is not itself cheat-protected), so this grants no new privilege — the list keeps the surface
