@@ -102,12 +102,12 @@ function Parse-RconResponse($s) {
   return $s.Substring($nl + 1).TrimEnd()
 }
 
-# Parse map/gametype + human players from `status`. Bot = the ADDRESS column is not a
-# real ip:port (and not a listen-server loopback). Player names CAN contain spaces (e.g.
-# the bot "MCG Gordon"), so name is not a single token: index the fixed trailing columns
-# from the END and take everything between guid and lastmsg as the name. The old fixed
-# p[4]/p[6] split misread a spaced name AND shifted the address column, leaking spaced-
-# name bots in as humans (that was the "MCG joined" false phone alert).
+# Parse map/gametype + human players from `status`. Bot = a POSITIVE match on the ADDRESS
+# column (guid 0 at a non-routable address); a row we cannot read is $null, NOT a bot — see
+# below. Player names CAN contain spaces (e.g. the bot "MCG Gordon"), so name is not a single
+# token: index the fixed trailing columns from the END and take everything between guid and
+# lastmsg as the name. The old fixed p[4]/p[6] split misread a spaced name AND shifted the
+# address column, leaking spaced-name bots in as humans (the "MCG joined" false phone alert).
 function Parse-Status($text) {
   $lines   = $text -split "`n"
   $map = ''; $gt = ''; $sepIdx = -1
@@ -130,11 +130,20 @@ function Parse-Status($text) {
       if ($nameEnd -ge 4) { $name = ($p[4..$nameEnd] -join ' ') }   # name = between guid and lastmsg
       $name = (Strip-Colors $name)
       if ($name -eq '') { continue }
-      # Human = a real ip:port (or a listen-server loopback); anything else is a bot/non-human.
-      $isBot = -not ($addr -eq 'loopback' -or $addr -eq 'local' -or $addr -match '^\d{1,3}(\.\d{1,3}){3}:\d+$')
+      # Bot = a POSITIVE identification (guid 0 at a non-routable address), never a fallback.
+      # This was `-not (isLocal -or isIpPort)` — "not provably human ⇒ bot" — so every row we could
+      # not read (above all a STILL-CONNECTING client: guid 0, with the address column holding a
+      # lastmsg value) came back bot=true. Announcing is unaffected either way — the filter below
+      # wants positively-identified humans, and a mid-connect player should not be pushed to a
+      # phone until they are actually in — but the same flag on the RCON panel drove "Kick All
+      # Bots", and there it kicked REAL PLAYERS. The flag is now three-state so no consumer can
+      # inherit that footgun: $null means "could not tell", and it is never actionable.
+      $isHuman = ($addr -eq 'loopback' -or $addr -eq 'local' -or $addr -match '^\d{1,3}(\.\d{1,3}){3}:\d+$')
+      $isBot   = (-not $isHuman) -and ($p[3] -eq '0') -and ($addr -match '^(unknown|bot|0\.0\.0\.0(:\d+)?)$')
+      $bot     = $null; if ($isHuman) { $bot = $false } elseif ($isBot) { $bot = $true }
       $pg = $null; if ($p[2] -match '^\d+$') { $pg = [int]$p[2] }   # "CNCT"/"ZMBI" -> null
       [void]$players.Add([pscustomobject]@{
-        num = [int]$p[0]; guid = $p[3]; name = $name; addr = $addr; ping = $pg; bot = $isBot
+        num = [int]$p[0]; guid = $p[3]; name = $name; addr = $addr; ping = $pg; bot = $bot
       })
     }
   }
@@ -238,7 +247,10 @@ function Do-Tick($cfg) {
   # join/leave diff, the "N online" count, wasEmpty, the EMPTY transition, the heartbeat)
   # simply never sees them - no per-alert special cases.
   $ign  = Get-GfIgnoreList $script:IgnoreFile
-  $real = @($st.players | Where-Object { -not $_.bot -and -not (Test-GfIgnored $ign $_.guid $_.name) })
+  # -eq $false, NOT -not: demand a POSITIVE human ID. A row we could not classify ($null — in
+  # practice a client still connecting, guid 0) must not fire a push yet; it would key by name,
+  # then re-key by GUID once it lands, and push twice. Same set as before, said explicitly.
+  $real = @($st.players | Where-Object { $_.bot -eq $false -and -not (Test-GfIgnored $ign $_.guid $_.name) })
   $cur  = @{}
   foreach ($p in $real) {
     $k = P-Key $p

@@ -8,6 +8,10 @@
 //   pause              - freeze match clock + all player controls; B&W vision + MATCH PAUSED banner
 //   resume             - resume clock + unfreeze players; restore vision + drop the banner
 //   botdiff_easy/normal/hard/fu  - set bot difficulty
+//   botadd / botadd_<team> / botkick_<team> / botkickall  - bot roster control. EVERY one of these
+//                        resolves "is a bot" server-side via istestclient(), so no path here can
+//                        kick a human. Never re-implement a kick from parsed `status` text in the
+//                        panel: that guessed at identity and kicked real players (gf_bridgeKickAllBots).
 //   endround_allies    - force allies to win this round
 //   endround_axis      - force axis to win this round
 //   roundrestart       - replay the current round: nobody scores, the loadout does not
@@ -384,6 +388,7 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "botadd_axis"    ) { gf_bridgeAddBotToTeam( "axis"   ); return; }
     if ( cmd == "botkick_allies" ) { gf_bridgeKickBotFromTeam( "allies" ); return; }
     if ( cmd == "botkick_axis"   ) { gf_bridgeKickBotFromTeam( "axis"   ); return; }
+    if ( cmd == "botkickall"     ) { gf_bridgeKickAllBots(); return; }
 
     if ( cmd == "balanceteams"   ) { gf_bridgeBalanceTeams(); return; }
 
@@ -1315,6 +1320,58 @@ gf_bridgeKickBotFromTeam( team )
         return;
     }
     gf_bridgeNotify( "^1No bot on " + gf_bridgeTeamLabel( team ) );
+}
+
+// Kick EVERY bot ("Kick All Bots" in the panel). Server-side and istestclient()-gated, so it
+// CANNOT touch a human — the panel used to do this itself and kicked real players.
+//
+// The old client-side path read the `status` reply text, inferred "bot" from an address column it
+// could not always parse, and then clientkick'd BY CLIENT NUM from that snapshot. Two ways for a
+// human to eat a kick, and it only takes one:
+//   1. The classifier's default was "bot" — anything not provably an ip:port (a still-connecting
+//      client, a reply split across UDP packets, any column shape we don't know) came back bot=true.
+//   2. It kicked serially through the panel's ~850ms-paced rcon queue, so a 6-bot sweep spans ~5s.
+//      Client NUMs are SLOTS and a kick frees one instantly — a human connecting mid-sweep can land
+//      in a freed slot and take a clientkick aimed at a bot that is already gone.
+// Both vanish here: identity never leaves the server (istestclient, the same ground truth the
+// per-team kick and the gf_roster bot flag use), and the sweep is ONE yield-free pass, so no slot
+// can be freed and refilled inside it. Collect first, then kick, so we never index level.players
+// across a mutation. The democlient is neither human nor bot (istestclient is FALSE on it) and is
+// excluded explicitly rather than by implication.
+gf_bridgeKickAllBots()
+{
+    players = level.players;
+    bots    = [];
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( !isDefined( p ) || !( p istestclient() ) || p isdemoclient() )
+            continue;
+        bots[ bots.size ] = p;
+    }
+
+    n = 0;
+    for ( i = 0; i < bots.size; i++ )
+    {
+        if ( !isDefined( bots[i] ) )   // an earlier kick in this pass may already have freed it
+            continue;
+        kick( bots[i] getEntityNumber(), "EXE_PLAYERKICKED" );
+        n++;
+    }
+
+    if ( n == 0 )
+    {
+        gf_bridgeNotify( "^1No bots to kick" );
+        return;
+    }
+
+    msg = "^3Kicked " + n + " bot";
+    if ( n != 1 )
+        msg += "s";
+    // Fill owns bot counts at every round boundary, so with it on this lasts at most one round.
+    if ( getDvarInt( "gf_fill_n" ) > 0 )
+        msg += " ^7(fill is ON - they come back next round; set Fill to 0 to keep them out)";
+    gf_bridgeNotify( msg );
 }
 
 // --- Balance teams now (RCON panel) ------------------------------------------

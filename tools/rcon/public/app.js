@@ -432,14 +432,22 @@ function renderPlayers(){
   tb.innerHTML=html;
   paintTeams();
 }
+// The BOT tag shows GROUND TRUTH where we have it: gf_roster carries a per-client bot flag the
+// server derived from istestclient(). p.bot is only the status-text heuristic — a guess, and one
+// that is deliberately null when the row couldn't be classified. Take either source's positive
+// claim (never a negative one: an older server omits the roster's bot field, and a listen server
+// has no roster at all — in both, absence means "no data", not "human"). An unclassifiable row
+// therefore renders as a PLAYER, which is the safe way to be wrong.
 function rowHtml(p){
-  const adminStar=(!p.bot && _adminGuid && p.guid===_adminGuid)?'<span class="adm-star" title="Private bridge feedback goes to this player">★</span>':'';
-  const tag=p.bot?'<span class="bot-t">BOT</span>':p.local?'<span class="you-t">YOU</span>':'';
-  const pg=p.bot?'<span class="bot-t">BOT</span>':`<span class="${p.ping<80?'p-ok':p.ping<150?'p-mid':'p-bad'}">${p.ping}ms</span>`;
+  const r=_roster[p.num];
+  const bot=(r&&r.bot===true)||p.bot===true;
+  const adminStar=(!bot && _adminGuid && p.guid===_adminGuid)?'<span class="adm-star" title="Private bridge feedback goes to this player">★</span>':'';
+  const tag=bot?'<span class="bot-t">BOT</span>':p.local?'<span class="you-t">YOU</span>':'';
+  const pg=bot?'<span class="bot-t">BOT</span>':`<span class="${p.ping<80?'p-ok':p.ping<150?'p-mid':'p-bad'}">${p.ping}ms</span>`;
   const ipCell=p.ip?`<span class="dm" style="font-size:10px">${x(p.ip)}</span>`:`<span class="dm">-</span>`;
-  const guidCell=p.bot?'<span class="dm">-</span>':`<span class="dm" style="font-size:10px;user-select:all">${p.guid||'-'}</span>`;
-  return`<tr data-num="${p.num}" data-name="${x(p.name)}" data-bot="${p.bot}" oncontextmenu="showCtx(event,${p.num},'${x(p.name)}',${p.bot})">
-    <td>${p.num}</td><td>${adminStar}${tag}${p.bot?x(p.name):`<span class="real-n">${x(p.name)}</span>`}<span class="tm-slot" data-tm="${p.num}"></span></td><td>${p.score}</td><td>${pg}</td><td>${ipCell}</td><td>${guidCell}</td></tr>`;
+  const guidCell=bot?'<span class="dm">-</span>':`<span class="dm" style="font-size:10px;user-select:all">${p.guid||'-'}</span>`;
+  return`<tr data-num="${p.num}" data-name="${x(p.name)}" data-bot="${bot}" oncontextmenu="showCtx(event,${p.num},'${x(p.name)}',${bot})">
+    <td>${p.num}</td><td>${adminStar}${tag}${bot?x(p.name):`<span class="real-n">${x(p.name)}</span>`}<span class="tm-slot" data-tm="${p.num}"></span></td><td>${p.score}</td><td>${pg}</td><td>${ipCell}</td><td>${guidCell}</td></tr>`;
 }
 // Per-row indicator from the last gf_roster read. When the list is grouped, the team is already
 // shown by the section header, so the row only carries a pending-move hint (→ Axis). When flat
@@ -1204,13 +1212,19 @@ function perkReset(){
 
 // ─── Bots ────────────────────────────────────────────────────────────────────
 async function addBot(){const ok=await bridge('botadd','Bot added');if(ok){actLog('Bot added','ok');toast('Bot added','ok');}}
+// Kick every bot — through the GSC bridge (botkickall), NOT a client-side status parse.
+// This used to read `status`, filter on the parser's bot flag, and clientkick each one BY NUM.
+// It kicked REAL PLAYERS, two independent ways:
+//   1. That flag defaulted to "bot" for any row the parser couldn't read (see parseStatusText) —
+//      so a still-connecting client, or a reply split across UDP packets, WAS a kick target.
+//   2. Even with a perfect flag: client nums are SLOTS, the snapshot is stale the moment the first
+//      kick lands, and the loop crawls through the ~850ms-paced rcon queue (~5s for 6 bots). A
+//      human connecting mid-loop drops into a freed slot and eats a kick meant for a dead bot.
+// The bridge resolves identity server-side with istestclient() and kicks in one yield-free pass,
+// so neither failure exists. Never route a kick off parsed text again.
 async function kickBots(){
-  const sr=await fetchStatus();
-  if(!sr||!sr.ok){toast('Could not read status','err');return;}
-  const bots=sr.players.filter(p=>p.bot);
-  if(!bots.length){toast('No bots to kick','info');return;}
-  for(const b of bots) await rcon(`clientkick ${b.num}`);
-  actLog(`Kicked ${bots.length} bot(s)`,'wn');toast(`Kicked ${bots.length} bot(s)`,'ok');
+  const ok=await bridge('botkickall','Kick all bots');
+  if(ok){actLog('Kick all bots','wn');toast('Kicking all bots…','info');}
 }
 async function applyFillN(){
   // Clamp to the same 0-6 the server clamps to (HTML max= only limits the spinner, not a typed value),
@@ -1579,7 +1593,10 @@ function renderAct(){
 let _knownPlayers=null;   // Map(key -> name); null until seeded, reset on disconnect
 function _pKey(p){ return (p.guid && p.guid!=='0') ? 'g:'+p.guid : 'n:'+p.name; }
 function notifyJoins(players){
-  const real=(players||[]).filter(p=>!p.bot);
+  // bot===false, NOT !p.bot: demand a POSITIVE human ID. A row we couldn't classify (bot===null —
+  // in practice a client still connecting, guid 0) shouldn't announce yet: _pKey would key it by
+  // name, then re-key by GUID once it lands, and announce the same person twice.
+  const real=(players||[]).filter(p=>p.bot===false);
   const cur=new Map(real.map(p=>[_pKey(p),p.name]));
   if(_knownPlayers===null){ _knownPlayers=cur; return; }   // seed silently
   for(const [k,nm] of cur){
@@ -1671,10 +1688,32 @@ const SRV_SECTIONS = [
     { n:'sv_allowFriendlyThrowback',   lbl:'Friendly Grenade Throwback',type:'tog',def:'1',  tip:'sv_allowFriendlyThrowback\nAllow players to throw back friendly grenades.' },
     { n:'g_patchRocketJumps',          lbl:'Rocket Jump Knockback',    type:'tog', def:'1',   tip:'g_patchRocketJumps\nEnable upward knockback from rocket self-damage.' },
     { n:'bullet_penetration_affected_by_team', lbl:'Team Counts for Penetration', type:'tog', def:'1', tip:'bullet_penetration_affected_by_team\nTeammates reduce bullet penetration damage output.' },
-    { n:'g_fix_viewkick_dupe',         lbl:'Fix Viewkick Dupe (INERT)',type:'tog', def:'1',   tip:'g_fix_viewkick_dupe\nAPPEARS TO BE INERT ON T5 MP -- setting it almost certainly does NOTHING. Kept only so that a future Plutonium build which DOES register it is easy to spot (its default would stop mirroring our set value).\nEvidence, from a LIVE rcon read: the three real engine fixes each report a typed domain and a FIXED registered default. g_fixBulletDamageDupe reads is:"1" default:"0" Domain is 0 or 1 -- the default stays 0 even though we set 1, which is what a registered dvar looks like. g_fix_viewkick_dupe reads is:"1" default:"1" Domain is any text -- its "default" merely mirrors the value OUR OWN cfg set, the signature of a dvar the engine never registered. Plutonium filed this fix under SP.\nConsequence: there is NO hidden 2x flinch multiplier from THIS dvar. But flinch is NOT governed by scr_gf_flinch alone: the base perk set grants specialty_bulletflinch (Hardened Pro, "reduced reaction and recoil when shot"), which activates the engine\'s perk_damageKickReduction for every player. So there are two real flinch levers -- the perk (always on) and scr_gf_flinch (now 1.0 = stock kick, so we do not double-reduce).' },
+    { n:'g_fix_viewkick_dupe',         lbl:'Fix Viewkick Dupe (INERT)',type:'tog', def:'1',   tip:'g_fix_viewkick_dupe\nAPPEARS TO BE INERT ON T5 MP -- setting it almost certainly does NOTHING. Kept only so that a future Plutonium build which DOES register it is easy to spot (its default would stop mirroring our set value).\nEvidence, from a LIVE rcon read: the three real engine fixes each report a typed domain and a FIXED registered default. g_fixBulletDamageDupe reads is:"1" default:"0" Domain is 0 or 1 -- the default stays 0 even though we set 1, which is what a registered dvar looks like. g_fix_viewkick_dupe reads is:"1" default:"1" Domain is any text -- its "default" merely mirrors the value OUR OWN cfg set, the signature of a dvar the engine never registered. Plutonium filed this fix under SP.\nConsequence: there is NO hidden 2x flinch multiplier from THIS dvar. The real hidden multiplier was a PERK: specialty_bulletflinch (Hardened Pro) gates perk_damageKickReduction, whose default 0.2 is the kick REMAINING (an 80% cut). It used to be in the base perk set and multiplied with scr_gf_flinch -- the live server ran 0.2 x 0.5 x 0.2 = 10% of stock flinch. It is now in the sniper/heavy package only, so scr_gf_flinch is the single global flinch lever.' },
     { n:'g_fixBulletDamageDupe',       lbl:'Fix Bullet Damage Dupe',   type:'tog', def:'1',   tip:'g_fixBulletDamageDupe\nA bullet passing through two INTERSECTING players registers its damage TWICE. ENGINE default: 0 (fix off, for vanilla parity). GF default: 1 (fix ON).\nDoubled damage corrupts three things Gunfight is built on: score IS cumulative damage dealt, a timed-out round is decided by most remaining team HP, and every round is ONE LIFE (a doubled bullet = an unearned instant kill). Bodies overlap routinely in the tight 2v2 spawns and doorways -- exactly the trigger condition.' },
     { n:'g_fix_entity_leaks',          lbl:'Fix Entity Leaks',         type:'tog', def:'1',   tip:'g_fix_entity_leaks\nFix various engine entity leaks. ENGINE default: 1 (fix ON). The stock T5ServerConfig template sets 0, which DISABLES a fix the engine ships enabled -- GF restores the engine default.\nNotably it fixes the "Hunk_AllocAlign failed on 8 bytes" leak caused by WEAPON SWITCHING, which is this mod\'s hot path: every player gets a fresh shared loadout (GiveWeapon + switchToWeapon) every round, forever, on a 24/7 server.\nDiagnostic: g_print_entity_leaks 1 logs leaks as they happen.' },
     { n:'demo_enabled',                lbl:'Match Recording (Theater)',type:'tog', def:'1', eff:'next', tip:'demo_enabled\nMaster gate for BO1 match recording (Theater). ENGINE dvar, engine default 1 (ON). This is what spawns the "[3arc]democlient" that takes a client slot whenever at least one HUMAN is on: stock maps/mp/_demo.gsc threads demoThink(), which calls StartDemoRecording() as soon as humans >= scr_demorecord_minplayers, and StopDemoRecording() when they leave.\nTHE KILLCAM DOES NOT DEPEND ON IT -- maps/mp/gametypes/_killcam.gsc contains zero demo references; the killcam is gated by scr_game_allowkillcam / scr_game_allowfinalkillcam instead. Nothing in Gunfight reads the recording.\nWhat it costs: a continuous demo write, an addDemoBookmark() on every kill, one client slot, and the "MatchRecord: Writing final stats" flush that sits directly beside "Hitch warning: 2466 msec frame time" in console_mp.log -- the prime suspect for the 2.5-3s stalls (incl. the handful that land mid-gameplay).\nNOTE: scr_demorecord_minplayers 0 does NOT disable recording -- stock _demo.gsc forces that value back to 1. THIS dvar is the real gate. Read at level load, so a change lands on the next round.' },
+  ]},
+  // ─── KILLCAM ────────────────────────────────────────────────────────────────────────────────
+  // Why this section exists: BO1's FINAL (round-end) killcam drops the WHOLE SERVER to quarter
+  // speed for the money shot — raw _killcam.gsc:253 does SetTimeScale( 0.25 ) two seconds before
+  // the killing blow and restores 1.0 three seconds later. While the server is dilated it retires
+  // each client's usercmds 4x slower than the client produces them, and the engine's "Connection
+  // Interrupted" plug (CG_DrawDisconnect) fires when the server stops ACKING your commands — which
+  // it has, deliberately. So the plug flashes MID-REPLAY on a perfectly healthy connection.
+  // Confirmed live 2026-07-13: the flash coincides exactly with the visible slow-motion.
+  // Not unique to us (stock sd.gsc starts the same final killcam every round) — but Gunfight rounds
+  // are 42s, so a once-a-match curiosity in TDM lands every ~45s here.
+  { title: 'KILLCAM', eff: 'restart', per: 'dvar', vars: [
+    { n:'scr_gf_killcam_slowmo',    lbl:'Final Killcam Slow-Mo',  type:'tog',  def:'1', eff:'live',
+      tip:'scr_gf_killcam_slowmo\n1 = stock BO1 cinematic (DEFAULT — the world drops to 0.25x speed just before the killing blow).\n0 = Gunfight holds real time across the whole round-end window, so the replay plays at full speed.\n\nTHIS IS THE FIX FOR THE MID-KILLCAM "Connection Interrupted" FLASH. The plug is a FALSE POSITIVE: nothing is wrong with the connection — the server is deliberately running at a quarter speed and therefore not acking the client\'s usercmds, and the engine draws its disconnect warning in response.\n\nCost of turning it OFF: you lose BO1\'s signature slow-motion final kill. Bonus: stock waits 3 GAME-seconds at up to 0.25x, which is up to 12 REAL seconds of round-end dead time on a 42s round.\n\nImplementation: stock threads its slowdown per player and we cannot unthread it, but SetTimeScale is a plain builtin and the LAST caller wins — the mod re-asserts 1.0 across the window (gf_holdRealTime, _gf_rounds.gsc). Takes effect at the next round end.' },
+    { n:'scr_game_allowfinalkillcam',lbl:'Final Killcam (round end)',type:'tog',def:'1', also:'scr_gf_game_allowfinalkillcam',
+      tip:'scr_game_allowfinalkillcam\nThe ROUND-END killcam (the one with the slow-motion). 0 = no round-end replay at all.\n\nA stock TWEAKABLE (registerTweakable "game"/"allowfinalkillcam", _tweakables.gsc:312), so the per-gametype override scr_gf_game_allowfinalkillcam is written in lockstep — a stale override would otherwise silently beat the base dvar.\n\n⚠ RESTART: level.finalkillcam is assigned ONCE at _killcam::init (level init), so a change needs a map_restart to land.\n⚠ This is the BLUNT lever. To keep the replay and only kill the flash, use Final Killcam Slow-Mo above.' },
+    { n:'scr_game_allowkillcam',    lbl:'Death Killcam',          type:'tog',  def:'1', also:'scr_gf_game_allowkillcam',
+      tip:'scr_game_allowkillcam\nThe ordinary per-death killcam. Unrelated to the plug flash: stock only threads waitFinalKillcamSlowdown() from the ROUND-END killcam (_killcam.gsc:503), never from this one — which is exactly why nobody ever sees the flash on a normal death.\n\nStock tweakable; the scr_gf_game_allowkillcam override is written in lockstep. Read at level init → needs a map_restart.' },
+    { n:'scr_killcam_time',         lbl:'Killcam Length (s)',     type:'text', def:'',
+      tip:'scr_killcam_time\nHow many seconds of replay the killcam shows. LEAVE EMPTY for stock behaviour — stock derives the length from the WEAPON (_killcam.gsc:554 only reads this dvar when it is non-empty; 5.0s for an ordinary bullet kill).\n\nDIAGNOSTIC USE: this also positions the slow-motion, because stock parks until 2s before the killing blow — wait( max(0, secondsUntilDeath - 2) ). Set 2 and the slow-mo (and the plug flash) jumps to the START of the replay; set 8 and it moves LATER. A symptom you can slide back and forth with a dvar is a confirmed cause.\n\n⚠ Empty = stock. Setting a number overrides the length for EVERY killcam.' },
+    { n:'gf_killcam_ts',            lbl:'Last Round-End Timescale',type:'text',def:'1', eff:'live',
+      tip:'gf_killcam_ts\nREADOUT, not a setting — the mod overwrites it every round end. The LOWEST timescale the server reached during the last round-end window, published by gf_roundEndProbe (_gf_debug.gsc).\n\n0.25 = stock\'s slow-mo ran (expect the plug flash).\n1    = real time held (slow-mo off, or nothing dilated).\n0    = the engine does not mirror SetTimeScale into a readable `timescale` dvar at all, so this readout is not available — no stock GSC reads one, so this is genuinely unknown until the first round end lands in the log.\n\nGround truth is the GF_TS lines in logs\\games_mp.log, which log the drop and the restore with their offsets from round end.' },
   ]},
   { title: 'GAME RULES', eff: 'restart', per: 'dvar', vars: [
     // Killstreaks / Headshots Only / Force UAV moved to DASHBOARD → GAMEPLAY as single
@@ -1685,7 +1724,9 @@ const SRV_SECTIONS = [
     { n:'scr_game_perks',           lbl:'Perks',                  type:'tog',  def:'1',   tip:'scr_game_perks\nAllow players to use perks.' },
     { n:'scr_game_graceperiod',     lbl:'Grace Period (s)',       type:'num',  def:'15',  tip:'scr_game_graceperiod\nInvincibility window at the start of each round.' },
     { n:'scr_game_prematchperiod',  lbl:'Prematch Period (s)',    type:'num',  def:'15',  tip:'scr_game_prematchperiod\nFreeze time before the round goes live.\n(Gunfight overrides this with scr_gf_match_prematch_seconds — see MATCH START.)' },
-    { n:'scr_game_allowkillcam',    lbl:'Killcam',                type:'tog',  def:'1',   tip:'scr_game_allowkillcam\nShow killcam replay after death.' },
+    // Killcam rows live in their own KILLCAM section (single home — never render a second copy of a
+    // control: reads and writes are keyed by element id / data-dvar, so a duplicate row silently
+    // drifts out of sync with the server).
     { n:'scr_game_spectatetype',    lbl:'Spectate Mode',          type:'sel',  def:'1',   opts:[['0','Disabled'],['1','Own team'],['2','All players'],['3','All + freecam']], tip:'scr_game_spectatetype\nWho dead players can spectate.' },
     { n:'scr_game_deathpointloss',  lbl:'Points Lost on Death',  type:'num',  def:'0',   tip:'scr_game_deathpointloss\nScore penalty applied on each death.' },
     { n:'scr_game_suicidepointloss',lbl:'Points Lost on Suicide', type:'num', def:'0',   tip:'scr_game_suicidepointloss\nScore penalty applied on suicide.' },
@@ -1822,7 +1863,7 @@ const SRV_SECTIONS = [
 ];
 // ADVANCED tab section order — declared here (was a mutate-at-load IIFE matching titles
 // by prefix). Titles are matched by prefix so the em-dash PERKS title still resolves.
-const SRV_ORDER = ['GAME RULES','PLAYER','TEAMS','PERK MULTIPLIERS','PERKS','GENERAL','ENGINE GAMEPLAY','BOT TUNING','DEBUG'];
+const SRV_ORDER = ['GAME RULES','PLAYER','TEAMS','KILLCAM','PERK MULTIPLIERS','PERKS','GENERAL','ENGINE GAMEPLAY','BOT TUNING','DEBUG'];
 SRV_SECTIONS.sort((a,b)=>{
   const k=t=>{const i=SRV_ORDER.findIndex(o=>t.indexOf(o)===0);return i<0?99:i;};
   return k(a.title)-k(b.title);

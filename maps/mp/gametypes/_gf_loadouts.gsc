@@ -74,7 +74,7 @@ gf_initLoadouts()
 
     // ── SMG ×6 ──
     pool[n] = gf_load( "mp5k_silencer_mp",          "pythondw_mp",             "claymore_mp",         "hatchet_mp",        "tabun_gas_mp",           -1,  -1 ); n++;
-    pool[n] = gf_load( "dragunov_acog_mp",          "cz75dw_mp",               "satchel_charge_mp",   "hatchet_mp",        "nightingale_mp",         -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
+    pool[n] = gf_load( "dragunov_acog_mp",          "cz75dw_mp",               "satchel_charge_mp",   "hatchet_mp",        "nightingale_mp",         -1,  -1, "specialty_bulletpenetration,specialty_bulletflinch,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
     pool[n] = gf_load( "mp5k_mp",                   "aspdw_mp",                "camera_spike_mp",     "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1 ); n++;
     pool[n] = gf_load( "spectre_acog_grip_mp",      "hs10dw_mp",               "scrambler_mp",        "frag_grenade_mp",   "concussion_grenade_mp",  -1,  -1 ); n++;
     pool[n] = gf_load( "uzi_acog_grip_mp",          "ithaca_grip_mp",          "satchel_charge_mp",   "frag_grenade_mp",   "willy_pete_mp",          -1,  -1 ); n++;
@@ -87,8 +87,8 @@ gf_initLoadouts()
     pool[n] = gf_load( "stoner63_extclip_mp",       "asp_mp",                  "acoustic_sensor_mp",  "hatchet_mp",        "willy_pete_mp",          -1,  -1 ); n++;
 
     // ── Sniper ×2 ──
-    pool[n] = gf_load( "l96a1_mp",                  "crossbow_explosive_mp",   "camera_spike_mp",     "hatchet_mp",        "concussion_grenade_mp",  -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
-    pool[n] = gf_load( "wa2000_vzoom_mp",           "m72_law_mp",              "satchel_charge_mp",   "frag_grenade_mp",   "tabun_gas_mp",           -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
+    pool[n] = gf_load( "l96a1_mp",                  "crossbow_explosive_mp",   "camera_spike_mp",     "hatchet_mp",        "concussion_grenade_mp",  -1,  -1, "specialty_bulletpenetration,specialty_bulletflinch,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
+    pool[n] = gf_load( "wa2000_vzoom_mp",           "m72_law_mp",              "satchel_charge_mp",   "frag_grenade_mp",   "tabun_gas_mp",           -1,  -1, "specialty_bulletpenetration,specialty_bulletflinch,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
 
     // ── Shotgun ×2 ──
     pool[n] = gf_load( "spas_silencer_mp",          "china_lake_mp",           "claymore_mp",         "hatchet_mp",        "flash_grenade_mp",       -1,  -1 ); n++;
@@ -109,8 +109,8 @@ gf_initLoadouts()
     pool[n] = gf_load( "ak74u_acog_mp",             "knife_ballistic_mp",      "scrambler_mp",        "sticky_grenade_mp", "concussion_grenade_mp",  -1,  -1 ); n++;
 
     // ── Sniper ×2 (expanded) ──
-    pool[n] = gf_load( "psg1_ir_mp",                "rpg_mp",                  "acoustic_sensor_mp",  "frag_grenade_mp",   "willy_pete_mp",          -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
-    pool[n] = gf_load( "dragunov_extclip_mp",       "china_lake_mp",           "claymore_mp",         "frag_grenade_mp",   "tabun_gas_mp",           -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
+    pool[n] = gf_load( "psg1_ir_mp",                "rpg_mp",                  "acoustic_sensor_mp",  "frag_grenade_mp",   "willy_pete_mp",          -1,  -1, "specialty_bulletpenetration,specialty_bulletflinch,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
+    pool[n] = gf_load( "dragunov_extclip_mp",       "china_lake_mp",           "claymore_mp",         "frag_grenade_mp",   "tabun_gas_mp",           -1,  -1, "specialty_bulletpenetration,specialty_bulletflinch,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
 
     // ── Shotgun ×1 (expanded) ──
     pool[n] = gf_load( "rottweil72_mp",             "m72_law_mp",              "satchel_charge_mp",   "sticky_grenade_mp", "nightingale_mp",         -1,  -1 ); n++;
@@ -118,14 +118,14 @@ gf_initLoadouts()
     // ── Dual-wield SMG ×4 ──
     pool[n] = gf_load( "mac11_silencer_mp",         "m1911dw_mp",              "satchel_charge_mp",   "hatchet_mp",        "flash_grenade_mp",       -1,  -1 ); n++;
     pool[n] = gf_load( "ithaca_grip_mp",            "pm63dw_mp",               "acoustic_sensor_mp",  "sticky_grenade_mp", "willy_pete_mp",          -1,  -1 ); n++;
-    pool[n] = gf_load( "l96a1_mp",                  "rpg_mp",                  "camera_spike_mp",     "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
+    pool[n] = gf_load( "l96a1_mp",                  "rpg_mp",                  "camera_spike_mp",     "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1, "specialty_bulletpenetration,specialty_bulletflinch,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
     pool[n] = gf_load( "aug_elbit_mp",              "python_acog_mp",          "scrambler_mp",        "frag_grenade_mp",   "nightingale_mp",         -1,  -1 ); n++;
 
     // ── SMG/AR/Sniper (expanded ×5) ──
     pool[n] = gf_load( "mpl_acog_grip_mp",          "makarov_silencer_mp",     "satchel_charge_mp",   "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1 ); n++;
     pool[n] = gf_load( "commando_mk_mp",            "m1911_silencer_mp",       "camera_spike_mp",     "hatchet_mp",        "concussion_grenade_mp",  -1,  -1 ); n++;
-    pool[n] = gf_load( "wa2000_acog_mp",            "asp_mp",                  "scrambler_mp",        "frag_grenade_mp",   "willy_pete_mp",          -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
-    pool[n] = gf_load( "psg1_silencer_mp",          "crossbow_explosive_mp",   "acoustic_sensor_mp",  "sticky_grenade_mp", "tabun_gas_mp",           -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
+    pool[n] = gf_load( "wa2000_acog_mp",            "asp_mp",                  "scrambler_mp",        "frag_grenade_mp",   "willy_pete_mp",          -1,  -1, "specialty_bulletpenetration,specialty_bulletflinch,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
+    pool[n] = gf_load( "psg1_silencer_mp",          "crossbow_explosive_mp",   "acoustic_sensor_mp",  "sticky_grenade_mp", "tabun_gas_mp",           -1,  -1, "specialty_bulletpenetration,specialty_bulletflinch,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
     pool[n] = gf_load( "kiparis_acog_grip_mp",      "rpg_mp",                  "claymore_mp",         "frag_grenade_mp",   "nightingale_mp",         -1,  -1 ); n++;
 
     // ── Heavy & mixed ×9 — Minigun/M202 stay primary; launchers are secondaries ──
@@ -134,8 +134,8 @@ gf_initLoadouts()
     pool[n] = gf_load( "ak74u_grip_dualclip_mp",    "makarov_extclip_mp",      "camera_spike_mp",     "hatchet_mp",        "willy_pete_mp",          -1,  -1 ); n++;
     pool[n] = gf_load( "galil_mp",                  "m1911_extclip_mp",        "scrambler_mp",        "frag_grenade_mp",   "concussion_grenade_mp",  -1,  -1 ); n++;
     pool[n] = gf_load( "stoner63_reflex_mp",        "cz75_auto_mp",            "acoustic_sensor_mp",  "sticky_grenade_mp", "nightingale_mp",         -1,  -1 ); n++;
-    pool[n] = gf_load( "m202_flash_wager_mp",       "ithaca_grip_mp",          "camera_spike_mp",     "hatchet_mp",        "flash_grenade_mp",       -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads" ); n++;
-    pool[n] = gf_load( "minigun_wager_mp",          "defaultweapon",           "claymore_mp",         "hatchet_mp",        "concussion_grenade_mp",  -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads" ); n++;
+    pool[n] = gf_load( "m202_flash_wager_mp",       "ithaca_grip_mp",          "camera_spike_mp",     "hatchet_mp",        "flash_grenade_mp",       -1,  -1, "specialty_bulletpenetration,specialty_bulletflinch,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads" ); n++;
+    pool[n] = gf_load( "minigun_wager_mp",          "defaultweapon",           "claymore_mp",         "hatchet_mp",        "concussion_grenade_mp",  -1,  -1, "specialty_bulletpenetration,specialty_bulletflinch,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads" ); n++;
     pool[n] = gf_load( "fnfal_mk_mp",               "skorpiondw_mp",           "acoustic_sensor_mp",  "frag_grenade_mp",   "willy_pete_mp",          -1,  -1 ); n++;
     pool[n] = gf_load( "hk21_acog_mp",              "cz75_auto_mp",            "satchel_charge_mp",   "hatchet_mp",        "tabun_gas_mp",           -1,  -1 ); n++;
     // #gf-loadout-editor-end
@@ -254,15 +254,26 @@ gf_giveCustomLoadout()
     self SetPerk( "specialty_flakjacket"        );   // Flak Jacket (base) — reduced explosive damage. Its Pro is specialty_fireproof (fire immunity), not given.
     self SetPerk( "specialty_shades"            );   // Tactical Mask Pro (half) — flash resist; _flashgrenades cuts flash duration to 10%
     self SetPerk( "specialty_stunprotection"    );   // Tactical Mask Pro (half) — stun resist; _weapons cuts concussion time to 10%
-    self SetPerk( "specialty_bulletflinch"      );   // Hardened Pro — reduced reaction/recoil when shot (WITHOUT Hardened itself; see below)
+    // ⚠ specialty_bulletflinch (Hardened Pro — "reduced reaction and recoil when shot") is NOT in
+    // the base set, and must not be put back. It is a SECOND flinch multiplier stacked under
+    // scr_gf_flinch: the perk gates the engine's perk_damageKickReduction, whose registered default
+    // is 0.2 — and that dvar is the fraction of kick REMAINING, not the fraction removed (stock's
+    // own custom-games perk editor maps its "80%" label to the value 0.2 — ui_mp/
+    // custom_specialty_editor.menu). So the perk is an 80% cut on top of whatever bg_viewKickScale
+    // already is, and Plutonium ships g_fix_damageKickReductionPerk 1, so it genuinely applies.
+    // With it in the base set the live VPS ran 0.2 (stock kick) x 0.5 (scr_gf_flinch) x 0.2 (perk)
+    // = 10% of stock flinch — "flinch feels like zero" — and scr_gf_flinch could not have restored
+    // stock even at its clamp ceiling of 3. ONE reducer, not two: scr_gf_flinch owns flinch for
+    // everyone, and the perk survives only in the sniper/heavy package, where flinch resistance is
+    // a deliberate class trait ([[hardened-pro-flinch-perk-multiplier]]).
     // Ninja Pro's "enemy movement is louder" HALF, granted WITHOUT specialty_quieter (Ninja): nobody
     // is made quieter, but everyone hears everyone else louder. That asymmetry is the whole point —
     // it's a listener-side perk, so giving it to all makes footsteps globally louder and stays
     // symmetric. Engine-consumed (no stock GSC references it), so it is UNVERIFIED like
     // specialty_unlimitedsprint; if it turns out inert, nothing else changes.
     self SetPerk( "specialty_loudenemies"       );   // Ninja Pro (half) — everyone's footsteps are louder
-    // ⚠ Three Pros above are granted WITHOUT their base perk (fallheight/shades+stunprotection/
-    // bulletflinch/loudenemies). That is the à-la-carte model, not an oversight: a perk is just a
+    // ⚠ Four Pro tokens above are granted WITHOUT their base perk (fallheight, shades,
+    // stunprotection, loudenemies). That is the à-la-carte model, not an oversight: a perk is just a
     // group of specialty tokens and a Pro is extra tokens in that group, so any half is grantable
     // alone ([[reference_t5_perks_and_pro_specialties]]).
     // specialty_fastweaponswitch (gates perk_weapSwitchMultiplier) is NOT in the base set — stock

@@ -100,9 +100,11 @@ const BASE_PERKS = [
     "specialty_flakjacket",                               // Flak Jacket
     "specialty_armorvest",                                // Body Armor (-20% bullet, non-BO1 token)
     "specialty_shades", "specialty_stunprotection",       // Tactical Mask Pro (both halves)
-    "specialty_bulletflinch",                             // Hardened Pro (reduced flinch when shot)
     "specialty_loudenemies",                              // Ninja Pro half (everyone's footsteps louder)
 ];
+// ⚠ specialty_bulletflinch (Hardened Pro) is NOT a base perk and must not be added back here: it
+// gates perk_damageKickReduction (default 0.2 = an 80% flinch cut), a SECOND multiplier under
+// scr_gf_flinch. It belongs to the sniper/heavy package alone.
 
 // One-click presets for the editor. The sniper/heavy package hands the weakest archetypes
 // (scoped rifles, and the Minigun/M202 that can't ADS at all) full weapon handling: penetration,
@@ -113,6 +115,10 @@ const PACKAGES = {
         label: "Sniper / Heavy package",
         perks: [
             "specialty_bulletpenetration",   // Hardened
+            "specialty_bulletflinch",        // Hardened Pro — reduced flinch when shot. The ONLY
+                                             // loadouts that get it: it gates perk_damageKickReduction
+                                             // (0.2 = an 80% cut) ON TOP of scr_gf_flinch, so it is a
+                                             // class trait here, never a base perk.
             "specialty_bulletaccuracy",      // Steady Aim
             "specialty_sprintrecovery",      // Steady Aim Pro — faster ADS after sprint
             "specialty_fastmeleerecovery",   // Steady Aim Pro — faster melee recovery

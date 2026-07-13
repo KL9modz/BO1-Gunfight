@@ -311,6 +311,20 @@ onStartGameType()
     // so the "everyone dead but round can't end" window never outlives the spawn wave.
     level.gracePeriod = 15;
 
+    // FINAL-KILLCAM SLOW MOTION — see gf_killcamSlowmoOn() in _gf_rounds.gsc for the full story.
+    // Stock's round-end killcam drops the whole server to SetTimeScale(0.25) two seconds before the
+    // killing blow, which stops the server acking clients' usercmds and makes the engine's own
+    // "Connection Interrupted" plug flash mid-replay on a healthy connection. Seeded here so the
+    // RCON panel can read/toggle it from boot; gf_endRound acts on it.
+    if ( getDvar( "scr_gf_killcam_slowmo" ) == "" )
+        setDvar( "scr_gf_killcam_slowmo", "1" );   // 1 = stock cinematic (default), 0 = hold real time
+    // Stock reads scr_killcam_time as a STRING and only uses it when non-empty (_killcam.gsc:554),
+    // deriving camtime from the weapon otherwise. So seed it EMPTY: the panel gets a dvar it can
+    // read without an "Unknown cmd", and stock keeps its own per-weapon default until someone sets
+    // a value. Seeding a number here would silently override every killcam length in the game.
+    if ( getDvar( "scr_killcam_time" ) == "" )
+        setDvar( "scr_killcam_time", "" );
+
     // Per-round prematch via the engine's native countdown. The engine zeroes level.prematchPeriod
     // every round (Callback_StartGameType) and only refills it once per match, so we set it HERE
     // each round: onStartGameType runs after the engine's prematch randomization and before
@@ -422,10 +436,12 @@ onStartGameType()
     // #strip-end
 
     // Flinch (damage view-kick) scale — mult of stock bg_viewKickScale (0.2).
-    // Seeds scr_gf_flinch (default 1.0 = stock kick; flinch is already reduced once by the
-    // base perk specialty_bulletflinch / perk_damageKickReduction) and applies bg_viewKickScale each
+    // Seeds scr_gf_flinch (default 0.5 = half stock kick) and applies bg_viewKickScale each
     // round so an RCON change persists across map_restart. Server-side, so it
     // holds on the dedicated VPS. RCON bridge: flinch_<mult> for a live change.
+    // ⚠ This is the ONLY flinch reducer. specialty_bulletflinch (Hardened Pro) gates a SECOND
+    // multiplier (perk_damageKickReduction, default 0.2 = an 80% cut) and is deliberately out of
+    // the base perk set for that reason — see gf_applyFlinch in _gf_rounds.gsc.
     gf_applyFlinch();
 
     // Jump fatigue (the engine's post-jump slowdown) — Gunfight ships it OFF.
@@ -629,6 +645,12 @@ onStartGameType()
     level notify( "gf_hitch_reinit" );
     level thread gf_hitchMonitor();
 
+    // Killcam timescale readout for the RCON panel (gf_roundEndProbe overwrites it every round end
+    // with the lowest timescale that window reached). Seeded so the panel's connect-sweep never
+    // reads it by bare name and gets "Unknown cmd" before the first round has ended.
+    if ( getDvar( "gf_killcam_ts" ) == "" )
+        setDvar( "gf_killcam_ts", "1" );
+
     // Report the round-end dark window from the FAR side of map_restart. gf_roundEndProbe runs
     // on the near side and dies inside the restart (a thread parked in a timed wait does not
     // come back), so it stamps a heartbeat into a dvar and we read it here — the first mod code
@@ -636,6 +658,15 @@ onStartGameType()
     // always assumed and never measured: how long the server ran no script at all.
     gf_reportRoundEndGap();
     // #strip-end
+
+    // Undo any timescale stock's final-killcam slowdown left behind. Its SetTimeScale(1.0) restore
+    // sits AFTER a wait and behind endon("end_killcam"), so if every viewer skips (or drops out of)
+    // the killcam in that window the restore never runs and the server is stranded at 0.25x — and
+    // nothing in stock ever puts it back. One unconditional call per round closes that hole.
+    // ⚠ ORDER: this MUST stay below gf_reportRoundEndGap() above, which logs GF_TS: LEAKED if the
+    // round STARTED dilated. Reset first and the detector would only ever see the value it just
+    // wrote — erasing the evidence for the bug it exists to catch.
+    gf_resetTimeScale();
 
     // #strip-begin - pre-prematch hold (dev/main only; stripped from public release)
     // Pre-prematch load gate — MUST be the last statement: the engine threads

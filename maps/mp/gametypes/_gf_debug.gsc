@@ -545,6 +545,23 @@ gf_roundEndProbe( myGen )
     if ( thresh <= 0 )
         thresh = 150;
 
+    // TIMESCALE TRACKING — the actual cause of the mid-killcam "Connection Interrupted" plug.
+    // Stock's final killcam calls SetTimeScale( 0.25 ) two seconds before the killing blow
+    // (_killcam.gsc:253) and restores 1.0 three seconds later. That is invisible to every other
+    // instrument we own: a timescale change COMPRESSES game time against wall time without ever
+    // creating a game-clock gap, and gettime()/wait()/the log timestamps are all game-clock. A
+    // `wait 0.05` still advances gettime() by a healthy 50ms while burning 200ms of wall clock —
+    // which is exactly why 32 round-ends produced ZERO GF_ENDGAP lines. The zero was never
+    // evidence the killcam was clean; it is what a dilation looks like to a game-clock probe.
+    //
+    // ⚠ UNPROVEN: whether the SetTimeScale builtin mirrors into a readable `timescale` dvar at all
+    // — NO stock GSC ever reads one. getDvarFloat on an unregistered dvar returns 0, so a steady
+    // ts=0 in the log means "the dvar does not exist", NOT "time stopped". That is itself the
+    // answer to whether the panel can display a live timescale.
+    tsPrev = getDvarFloat( "timescale" );
+    tsMin  = tsPrev;
+    verbose = ( getDvarInt( "gf_endprobe_verbose" ) == 1 );
+
     // HEARTBEAT INTO A DVAR — this is what actually measures the map_restart hole.
     // Proven live on the VPS 2026-07-13: this thread logs its in-window lines fine, but its
     // RETIREMENT line never appears — neither from the gen check nor from the 60s ceiling.
@@ -576,6 +593,29 @@ gf_roundEndProbe( myGen )
 
         setDvar( "gf_endprobe_last", "" + now );
 
+        // Edge-trigger on the timescale so one round end produces two lines (the drop and the
+        // restore) instead of 200. t+ is measured from gf_endRound, so the offsets tell us where
+        // in the round-end window stock's slowdown actually lands — and whether it is a hard step
+        // to 0.25 or a ramp (its second arg is a TIME, so it may blend).
+        ts = getDvarFloat( "timescale" );
+        if ( ts < tsMin )
+        {
+            tsMin = ts;
+            // Publish the lowest timescale this round end reached, for the RCON panel's readout.
+            // Written HERE (on each new minimum) and not in the retirement branch below, because
+            // this thread usually never REACHES that branch — it dies inside map_restart. The dvar
+            // is what survives, so the last write before the VM went dark is the value that holds.
+            setDvar( "gf_killcam_ts", "" + tsMin );
+        }
+
+        if ( ts != tsPrev || verbose )
+        {
+            logPrint( "GF_TS: " + tsPrev + " -> " + ts + "  t+" + ( now - t0 ) + "ms"
+                      + "  phase=" + gf_hitchPhase() + "  gap=" + gap + "ms"
+                      + " humans=" + gf_hitchHumans() + " bots=" + gf_hitchBots() + "\n" );
+            tsPrev = ts;
+        }
+
         // Log BEFORE the gen check: map_restart is exactly what changes the generation, so
         // checking first would discard the restart-spanning gap — the most interesting one.
         if ( gap >= thresh )
@@ -597,7 +637,7 @@ gf_roundEndProbe( myGen )
         if ( !isDefined( level.gf_roundGen ) || level.gf_roundGen != myGen )
         {
             logPrint( "GF_ENDTL: thread SURVIVED the restart - round end took " + ( now - t0 ) + "ms  gaps=" + gaps
-                      + " worst=" + worst + "ms"
+                      + " worst=" + worst + "ms  tsMin=" + tsMin
                       + " humans=" + gf_hitchHumans() + " bots=" + gf_hitchBots() + "\n" );
             return;
         }
@@ -637,8 +677,20 @@ gf_reportRoundEndGap()
     dark = now - getDvarInt( "gf_endprobe_last" );
     tot  = now - getDvarInt( "gf_endprobe_t0" );
 
+    // tsNow is read BEFORE gf.gsc's gf_resetTimeScale() has any chance to matter for the log line:
+    // if stock's killcam left the server dilated (its SetTimeScale(1.0) restore sits after a wait,
+    // behind endon("end_killcam"), so a skipped killcam strands it), this is where it shows up.
+    // A leaked value here would mean the NEXT round ran in slow motion — see the open
+    // "prematch countdown runs in slow-motion" TODO.
+    tsNow = getDvarFloat( "timescale" );
+
     logPrint( "GF_ENDTL: dark=" + dark + "ms (no script ran)  roundEndTotal=" + tot
-              + "ms  gt=" + now + "\n" );
+              + "ms  tsMin=" + getDvar( "gf_killcam_ts" ) + " tsNow=" + tsNow
+              + "  gt=" + now + "\n" );
+
+    if ( tsNow != 1 && tsNow != 0 )   // 0 = the dvar does not exist (SetTimeScale does not mirror)
+        logPrint( "GF_TS: LEAKED - the server entered this round at timescale " + tsNow
+                  + " (stock's killcam restore never ran)\n" );
 
     setDvar( "gf_endprobe_last", "" );
     setDvar( "gf_endprobe_t0",   "" );

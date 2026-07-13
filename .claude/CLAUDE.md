@@ -16,6 +16,8 @@ wins** takes the match.
 
 ## TODO
 
+- Settup remote claude code (ssh vps+repo?) for travel from ipad
+
 ### Open bugs
 - **Which client orphans `.killcam` in the round-end deadlock is still unproven.** The deadlock itself is
   now broken by `gf_postRoundWatchdog` (the infinite round can't recur), but the *leaker* was never pinned:
@@ -511,21 +513,28 @@ rebuild; dvar values/positions are GSC-tunable. Intro slide/fade animations are 
 - **Friendly fire is 100% stock** — the mod GSC sets no FF dvar. It's owned by the RCON panel writing the
   stock tweakables `scr_team_fftype` (base) + `scr_gf_team_fftype` (per-gametype override the engine
   re-polls ~5s). FF damage is applied by the engine but never scored. ([[t5-tweakable-override-dvars-live]])
-- **Flinch — TWO levers, one of them a perk.** ⚠ `scr_gf_flinch` is **not** the only flinch knob. The base
-  perk set grants **`specialty_bulletflinch`** (Hardened Pro, *"reduced reaction and recoil when shot"*),
-  which activates the engine's **`perk_damageKickReduction`** for every player, every round. So flinch is
-  **already reduced once, by the perk**. `scr_gf_flinch` therefore ships at **1.0 = stock kick**
-  (`bg_viewKickScale` 0.2), *not* to leave flinch unreduced but to avoid reducing it **twice**: it shipped
-  at 0.5 before the perk existed, and stacking the two produced near-zero flinch by accident. One reducer,
-  not two — move `scr_gf_flinch` to tune, but remember the perk floor underneath it.
-  `gf_applyFlinch` re-applies it every round. ⚠ **`bg_viewKickScale` does NOT replicate** — each client
+- **Flinch — ONE lever now: `scr_gf_flinch`, shipped at 0.5 = half stock kick.** It is a straight
+  multiplier on `bg_viewKickScale` (stock 0.2), so 1.0 really is stock and 0 really is none.
+  ⚠ **The second lever was a PERK, and it was 5× stronger than the dvar.** `specialty_bulletflinch`
+  (Hardened Pro) gates the engine's **`perk_damageKickReduction`**, whose registered default `0.2` is the
+  fraction of kick **REMAINING** — an **80% cut** — not the fraction removed (stock's own custom-games perk
+  editor maps its `"80%"` label to the value `0.2`: `ui_mp/custom_specialty_editor.menu`). Plutonium ships
+  `g_fix_damageKickReductionPerk 1`, so it genuinely applies. It was in the **base set**, so the live VPS
+  ran `0.2 × 0.5 × 0.2` = **10% of stock flinch** ("flinch feels like zero"), and `scr_gf_flinch` could not
+  have restored stock even at its clamp ceiling of 3 (that only reaches 60%). The perk now rides in the
+  **sniper/heavy package only** (those 10 loadouts take a further 0.2×), where flinch resistance is a
+  deliberate class trait. ⚠ **Never put `specialty_bulletflinch` back in the base set** — it silently
+  turns `scr_gf_flinch` into a lie. ⚠ Hardened Pro is **two** tokens (`specialty_armorpiercing` +
+  `specialty_bulletflinch`); the package used to carry only the base `specialty_bulletpenetration`, so
+  granting "Hardened Pro" means adding the flinch token explicitly
+  ([[hardened-pro-flinch-perk-multiplier]]). `gf_applyFlinch` re-applies it every round. ⚠ **`bg_viewKickScale` does NOT replicate** — each client
   scales its own damage view kick from its LOCAL copy, so the server-side `setDvar` alone changes nothing
   for anyone on a dedicated server (it only ever appeared to work on a listen host, where the host *is* a
   client). So the value is **pushed per-client**: to live humans in `gf_applyFlinch`, and per-spawn via
   `gf_applyFlinchClient`, which pushes **unconditionally**. ⚠ **There is deliberately no skip-at-stock
-  shortcut**: the old code returned early at `scale == 1`, which was only safe while the default was 0.5
-  (so it always pushed anyway). At a 1.0 default that skip would mean the server never pushes at all — and
-  `bg_viewKickScale` is a plain client dvar a player can set in their own autoexec, so anyone running
+  shortcut**: the old code returned early at `scale == 1`, which only *looks* harmless at a 0.5 default (we
+  push anyway) — that is how it survived — and at a 1.0 default it would mean the server never pushes at
+  all. `bg_viewKickScale` is a plain client dvar a player can set in their own autoexec, so anyone running
   `bg_viewKickScale 0` would take **zero flinch while everyone else takes the full kick**. The
   unconditional push is what makes the server's value authoritative. Session-only; `bg_viewKickScale` is
   not a saved client dvar. ⚠ The two `gf_cfgFloat` defaults (`gf_applyFlinch` + `gf_applyFlinchClient`)
@@ -539,8 +548,10 @@ rebuild; dvar values/positions are GSC-tunable. Intro slide/fade animations are 
   `_sprintRecoveryMultiplier` / `_weapSpreadMultiplier` are **SNIPER/HEAVY only** (their gates ride in that
   package — so they affect **10 of 53 rounds**); and **`perk_weapRateMultiplier` is DEAD** — its gate is
   `specialty_rof` (Double Tap), which no loadout grants. Each slider's tooltip now states its gate + scope.
-- **There is NO second flinch multiplier — `g_fix_viewkick_dupe` is INERT on T5 MP.** `scr_gf_flinch` is
-  the only flinch knob; `0.5` → `bg_viewKickScale 0.1` is exactly half stock. This file previously claimed
+- **`g_fix_viewkick_dupe` is INERT on T5 MP — it was never the second flinch multiplier.** (The real one
+  was a **perk**: `specialty_bulletflinch` → `perk_damageKickReduction` 0.2×, now out of the base set —
+  see Flinch above.) With that perk gone, `scr_gf_flinch` is the only *global* flinch knob and `0.5` →
+  `bg_viewKickScale 0.1` is exactly half stock. This file previously claimed
   the dvar doubled felt flinch, on the strength of it *appearing* in the `console_mp.log` dump — which
   proves nothing, because a cfg-created dvar appears there too. A **live RCON read** settles it: the real
   fixes carry a typed domain and a fixed registered default (`g_fixBulletDamageDupe` → `is:"1"
@@ -727,7 +738,7 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_overtimelimit` / `_large` | 15 / 30 | Overtime seconds, small / large; `0` = OT off (HP decides now). |
 | `gf_capture_time` / `_large` | 3.5 / 5 | OT zone hold-to-capture seconds, small / large. |
 | `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (auto goes large when a team hits 5+). |
-| `scr_gf_flinch` | 1.0 | Flinch scale (× stock `bg_viewKickScale` 0.2). **1.0 = stock kick — flinch is already reduced once by the base perk `specialty_bulletflinch` (Hardened Pro), so this sits at stock to avoid double-reducing.** Pushed **per-client every spawn, unconditionally** — the server dvar alone doesn't replicate, and the push beats a player's own autoexec (clamp 0-3). |
+| `scr_gf_flinch` | 0.5 | Flinch scale (× stock `bg_viewKickScale` 0.2) → **half stock kick**. The **only global flinch reducer**: 1.0 = stock, 0 = none. (The sniper/heavy package's `specialty_bulletflinch` adds a further **0.2×** for those 10 loadouts only — never put it back in the base set.) Pushed **per-client every spawn, unconditionally** — the server dvar alone doesn't replicate, and the push beats a player's own autoexec (clamp 0-3). |
 | `scr_gf_jump_fatigue` | 0 | **0 = OFF (the GF default)** / 1 = stock. Drives the engine's `jump_slowdownEnable` (post-jump movement drag — "jump fatigue"). The mod owns it so OFF ships as a default even with no cfg and no panel (`gf_applyJumpFatigue`, re-applied every round). RCON bridge: `jumpfatigue_<0\|1>`. |
 | `scr_gf_sprint_unlimited` | 0 | **0 = stock** / 1 = the sprint meter never empties. Drives the client dvar `player_sprintUnlimited`, **pushed per-client every spawn** — stock's only push is at connect and is ON-only, so a bare `set` on it reaches nobody already in the server and can never turn it back off (`gf_applySprintUnlimited` + `_Client`). RCON bridge: `sprintunlimited_<0\|1>`. |
 | `g_fix_viewkick_dupe` | 1 | **INERT on T5 MP** — the engine never registered it (live read: `Domain is any text`, `default:` mirrors our own `set`). Harmless, does nothing. Flinch is `scr_gf_flinch` alone. |
@@ -1123,11 +1134,12 @@ We call it **"Body Armor"**, named for its effect — do **not** give it a BO1-s
 suits a 42s round) — accept that headshots bypass it, so they are worth proportionally more and both
 score (= damage dealt) and the most-HP-wins decision tilt toward them. Real Flak Jacket is
 `specialty_flakjacket` (explosives; also granted); its Pro is `specialty_fireproof` (not granted).
-**GF's base set (10, every spawn, `gf_giveCustomLoadout`):** `movefaster` + `fallheight` (Lightweight +
+**GF's base set (9, every spawn, `gf_giveCustomLoadout`):** `movefaster` + `fallheight` (Lightweight +
 Pro), `longersprint` + `unlimitedsprint` (Marathon + Pro), `armorvest` (Body Armor, above), `flakjacket`
-(Flak Jacket), `shades` + `stunprotection` (Tactical Mask Pro's two halves), `bulletflinch` (Hardened Pro
-— less flinch when shot), `loudenemies` (Ninja Pro's "enemies are louder" half). **Five Pros are granted
-without their base perk** — that's the à-la-carte model, not an oversight. `loudenemies` is the trick for
+(Flak Jacket), `shades` + `stunprotection` (Tactical Mask Pro's two halves), `loudenemies` (Ninja Pro's
+"enemies are louder" half). **Four Pros are granted without their base perk** — that's the à-la-carte
+model, not an oversight. ⚠ **`bulletflinch` (Hardened Pro) is deliberately NOT here** — it is a second
+flinch multiplier (0.2×) under `scr_gf_flinch` and belongs to the sniper/heavy package alone (see Flinch). `loudenemies` is the trick for
 *globally louder footsteps*: it is **listener-side**, so granting it to everyone (and `quieter` to nobody)
 makes everyone hear everyone else louder, symmetrically — there is no footstep-volume dvar in the engine
 (`cg_footsteps` is a **client** dvar; `perk_footstepVolume*` does not exist).
@@ -1140,9 +1152,11 @@ base set, `-token` to remove one. Parsed once at pool build, applied after the b
 RCON override layer (so admin toggles still win). **Only 3 reach the HUD** (the overview has 3 perk
 icons): base perks are preferred over Pros and **the same icon is never used twice** — a Pro has no art of
 its own and borrows its parent's, so a perk beside its own Pro would render one icon twice. Today: 43
-loadouts run the base set alone; the 8 snipers + M202 + Minigun carry the **sniper/heavy package** (8
-perks: Hardened, Steady Aim + both Pros, Scout + Pro, Sleight of Hand + Pro), which displays as
-Hardened / Steady Aim / Scout. The **8 snipers additionally drop Body Armor** (`-specialty_armorvest`), so
+loadouts run the base set alone; the 8 snipers + M202 + Minigun carry the **sniper/heavy package** (9
+perks: Hardened + **Hardened Pro's flinch half**, Steady Aim + both Pros, Scout + Pro, Sleight of Hand +
+Pro), which displays as Hardened / Steady Aim / Scout. `specialty_bulletflinch` rides **here and nowhere
+else** — it is the 0.2× `perk_damageKickReduction` gate, so these 10 loadouts take ~½ the flinch everyone
+else does (and it costs no HUD slot: its icon parent, Hardened, is already shown). The **8 snipers additionally drop Body Armor** (`-specialty_armorvest`), so
 they take **full** non-headshot bullet damage — they out-range you, so they don't also out-tank you. The
 **M202 and Minigun keep it** and stay heavy tanks; that asymmetry is deliberate. Edit it all in
 `tools/loadout_editor` (checkbox grid + one-click package); its save-time validator rejects any token the

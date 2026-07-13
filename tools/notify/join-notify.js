@@ -136,12 +136,12 @@ function parseRconResponse(buf) {
 
 function stripColors(s) { return String(s).replace(/\^[0-9a-zA-Z]/g, '').trim(); }
 
-// Parse map/gametype + the human players out of `status`. Bot = the ADDRESS column is not
-// a real ip:port (and not a listen-server loopback). Player names CAN contain spaces (e.g.
-// the bot "MCG Gordon"), so name is not a single token: index the fixed trailing columns
-// from the END and take everything between guid and lastmsg as the name. The old fixed
-// p[4]/p[6] split misread a spaced name AND shifted the address column, leaking spaced-name
-// bots in as humans (the "MCG joined" false alert).
+// Parse map/gametype + the human players out of `status`. Bot = a POSITIVE match on the ADDRESS
+// column (guid 0 at a non-routable address); a row we can't read is null, NOT a bot — see below.
+// Player names CAN contain spaces (e.g. the bot "MCG Gordon"), so name is not a single token:
+// index the fixed trailing columns from the END and take everything between guid and lastmsg as
+// the name. The old fixed p[4]/p[6] split misread a spaced name AND shifted the address column,
+// leaking spaced-name bots in as humans (the "MCG joined" false alert).
 function parseStatus(text) {
   const lines = text.split('\n');
   const out = { map: '', gametype: '', players: [] };
@@ -160,10 +160,19 @@ function parseStatus(text) {
       const addr = p[p.length - 3];                          // address = 3rd-from-last
       const name = stripColors(p.slice(4, p.length - 4).join(' '));   // between guid and lastmsg
       if (!name) continue;
-      // Human = a real ip:port (or a listen-server loopback); anything else is a bot/non-human.
-      const isBot = !(addr === 'loopback' || addr === 'local' || /^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(addr));
+      // Bot = a POSITIVE identification (guid 0 at a non-routable address), never a fallback.
+      // This was `!(isLocal || isIpPort(addr))` — "not provably human ⇒ bot" — so every row we
+      // couldn't read (above all a STILL-CONNECTING client: guid 0, with the address column
+      // holding a lastmsg value) came back bot=true. Announcing is unaffected either way — the
+      // filter below wants positively-identified humans and a mid-connect player should not be
+      // pushed to a phone until they're actually in — but the same flag on the RCON panel drove
+      // "Kick All Bots", and there it kicked REAL PLAYERS. The flag is now three-state so no
+      // consumer can inherit that footgun: null means "couldn't tell", and it is never actionable.
+      const isHuman = addr === 'loopback' || addr === 'local' || /^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(addr);
+      const isBot   = !isHuman && p[3] === '0' && /^(unknown|bot|0\.0\.0\.0(:\d+)?)$/i.test(addr);
+      const bot     = isHuman ? false : (isBot ? true : null);
       const ping  = /^\d+$/.test(p[2]) ? parseInt(p[2], 10) : null;   // "CNCT"/"ZMBI" → null
-      out.players.push({ num: parseInt(p[0], 10), guid: p[3], name, addr, ping, bot: isBot });
+      out.players.push({ num: parseInt(p[0], 10), guid: p[3], name, addr, ping, bot });
     }
   }
   return out;
@@ -273,7 +282,10 @@ async function tick(cfg) {
   // Bots AND ignored players drop out in one place, so the join/leave diff, the counts,
   // wasEmpty, the EMPTY transition and the heartbeat never see them.
   const ign  = getIgnore();
-  const real = st.players.filter(p => !p.bot && !isIgnored(ign, p.guid, p.name));
+  // bot===false, NOT !p.bot: demand a POSITIVE human ID. A row we couldn't classify (bot===null —
+  // in practice a client still connecting, guid 0) must not fire a push yet; it would key by name,
+  // then re-key by GUID once it lands, and push twice. Same set as before, said explicitly.
+  const real = st.players.filter(p => p.bot === false && !isIgnored(ign, p.guid, p.name));
   // Carry each staying player's joinedAt forward; stamp newly-seen players with `now`.
   const cur = new Map();
   for (const p of real) {

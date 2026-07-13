@@ -57,13 +57,17 @@ gf_cfgFloat( dvar, def, lo, hi )
 // round from onStartGameType (so an RCON change persists across map_restart) and
 // live from the RCON bridge (flinch_<mult>). Returns the clamped multiplier.
 //
-// ⚠ Gunfight ships 1.0 (stock kick) — NOT because flinch is unreduced, but because
-// it is already reduced ONCE by a perk: specialty_bulletflinch (Hardened Pro,
-// "reduced reaction and recoil when shot") is in the base perk set, which activates
-// the engine's perk_damageKickReduction for every player. This dvar used to ship 0.5
-// and stacking the two produced near-zero flinch by accident. ONE reducer, not two:
-// the perk is the mechanism, this dvar is back at stock. If you want more or less
-// flinch, move THIS dvar — but remember the perk floor underneath it.
+// Gunfight ships 0.5 = HALF stock flinch, and this dvar is the ONLY flinch reducer:
+// it is a straight multiplier on bg_viewKickScale, so 1.0 really is stock kick and
+// 0 really is none. Nothing else touches flinch — do not add a second reducer.
+//
+// ⚠ specialty_bulletflinch (Hardened Pro) IS a second reducer, which is why it is no
+// longer in the base perk set. It gates the engine's perk_damageKickReduction, whose
+// registered default 0.2 is the fraction of kick REMAINING (an 80% cut), so the two
+// MULTIPLY: the live VPS ran 0.2 x 0.5 x 0.2 = 10% of stock and flinch felt like zero,
+// and at this dvar's clamp ceiling of 3 stock flinch was not even reachable. The perk
+// now rides only in the sniper/heavy package, where the extra 0.2x is a deliberate
+// class trait ([[hardened-pro-flinch-perk-multiplier]]).
 //
 // ⚠ bg_viewKickScale does NOT replicate. Each client scales its OWN damage view
 // kick from its LOCAL copy, so the server-side setDvar alone changes nothing for
@@ -79,7 +83,7 @@ gf_cfgFloat( dvar, def, lo, hi )
 // whatever we last gave it, so it needs an explicit 0.2 to be put back.
 gf_applyFlinch()
 {
-    scale = gf_cfgFloat( "scr_gf_flinch", 1.0, 0, 3 ); // seeds the dvar if unset
+    scale = gf_cfgFloat( "scr_gf_flinch", 0.5, 0, 3 ); // seeds the dvar if unset
     setDvar( "bg_viewKickScale", 0.2 * scale );        // 0.2 = stock bg_viewKickScale
 
     // level.players is EMPTY during onStartGameType, so this loop is a no-op on the
@@ -96,20 +100,21 @@ gf_applyFlinch()
 
 // Per-spawn half of the flinch push (see gf_applyFlinch). ALWAYS pushes — there is
 // deliberately no skip-at-stock shortcut.
-// ⚠ The old code returned early when scale == 1, on the logic that a fresh client is
-// already at the engine default 0.2 so pushing is redundant. That was only safe while
-// the default was 0.5 (i.e. we always pushed anyway). Now that 1.0 IS the default, that
-// skip would mean the server never pushes at all — and bg_viewKickScale is a plain
-// client dvar a player can set in their own autoexec, so anyone running
-// `bg_viewKickScale 0` would have zero flinch while everyone else took the full kick.
-// Pushing unconditionally is what makes the server's value authoritative, which is the
-// property this dvar is documented to have ([[flinch-bg-viewkickscale-not-replicated]]).
+// ⚠ Never re-add a skip-at-stock shortcut. The old code returned early when scale == 1,
+// on the logic that a fresh client already sits at the engine default 0.2 so the push is
+// redundant. It is not: bg_viewKickScale is a plain client dvar a player can set in their
+// own autoexec, so anyone running `bg_viewKickScale 0` would take ZERO flinch while
+// everyone else took the full kick. A shipped default of 0.5 makes such a skip look
+// harmless (we would push anyway) — which is exactly how it survived last time — and a
+// future default of 1.0 would silently turn the push off entirely. Pushing unconditionally
+// is what makes the server's value authoritative, which is the property this dvar is
+// documented to have ([[flinch-bg-viewkickscale-not-replicated]]).
 // ⚠ This default must stay in lockstep with the one in gf_applyFlinch above —
 // gf_cfgFloat seeds only if the dvar is empty, so a drift here would be silently
 // masked by whichever function ran first.
 gf_applyFlinchClient()
 {
-    scale = gf_cfgFloat( "scr_gf_flinch", 1.0, 0, 3 );
+    scale = gf_cfgFloat( "scr_gf_flinch", 0.5, 0, 3 );
     self setClientDvar( "bg_viewKickScale", 0.2 * scale );
 }
 
@@ -181,6 +186,67 @@ gf_applySprintUnlimited()
 gf_applySprintUnlimitedClient()
 {
     self setClientDvar( "player_sprintUnlimited", int( gf_cfgFloat( "scr_gf_sprint_unlimited", 0, 0, 1 ) ) );
+}
+
+// ─── Final-killcam slow motion — the mid-killcam "Connection Interrupted" flash ──────────────
+// Stock BO1's FINAL killcam drops the WHOLE SERVER to quarter speed for the money shot.
+// raw/maps/mp/gametypes/_killcam.gsc:244-258 (waitFinalKillcamSlowdown), threaded per player from
+// finalKillcam() at :503 — the ROUND-END killcam only; the ordinary per-death killcam never
+// threads it, which is why nobody ever sees this on a normal death:
+//     wait( max( 0, secondsUntilDeath - 2 ) );      // park until 2s BEFORE the killing blow
+//     SetTimeScale( 0.25, int( deathTime - 500 ) ); // <- server-wide 4x dilation, MID-replay
+//     wait( waitBeforeDeath + 1 );
+//     SetTimeScale( 1.0, getTime() + 500 );         // <- restore
+//
+// WHY THIS IS OURS TO OWN: while the server runs at 0.25x it retires each client's usercmds four
+// times slower than the client produces them. The engine's "Connection Interrupted" indicator
+// (CG_DrawDisconnect, material net_disconnect) is NOT an "am I receiving data" test — in this
+// engine lineage it fires when the server has stopped ACKING YOUR COMMANDS. It has, deliberately.
+// So the plug flashes mid-replay on a perfectly healthy connection: a FALSE POSITIVE of the
+// engine's own check, caused by a time dilation stock asked for. Confirmed live 2026-07-13 — the
+// flash coincides exactly with the visible slow-motion.
+//
+// It is not unique to us (sd.gsc:382 starts the same final killcam every round) — but our rounds
+// are 42s, so what is a once-a-match curiosity in TDM lands every ~45s here. That is the whole
+// difference between "a quirk nobody mentions" and "our server has a netcode bug".
+//
+// scr_gf_killcam_slowmo: 1 = stock cinematic (DEFAULT — no behaviour change), 0 = neutralized.
+// ⚠ There is no dvar for this and no way to unthread stock's per-player slowdown. But SetTimeScale
+// is a plain builtin and the LAST caller wins, so we simply re-assert real time across the window
+// and stock's 0.25 survives at most one frame. Do not "fix" this by shipping a mod _killcam.gsc:
+// overriding a stock script means keeping its ENTIRE public surface or the server won't compile.
+gf_killcamSlowmoOn()
+{
+    return ( int( gf_cfgFloat( "scr_gf_killcam_slowmo", 1, 0, 1 ) ) != 0 );   // seeds the dvar if unset
+}
+
+// Hold real time across the whole round-end window. Threaded from gf_endRound when the toggle is
+// off. It cannot gate on level.inFinalKillcam: the killcam does not START until ~5s in (stock's
+// roundEndDelay shows the WIN/LOSS banner first), so at thread start the flag is still false.
+// Retires on the generation change; a thread parked in a timed wait does not survive map_restart
+// anyway, so this can never leak into the next round.
+gf_holdRealTime( myGen )
+{
+    for ( i = 0; i < 400; i++ )        // 20s ceiling — the gen check retires us on the happy path
+    {
+        if ( gf_roundGenChanged( myGen ) )
+            return;
+
+        SetTimeScale( 1.0, gettime() );
+        wait 0.05;
+    }
+}
+
+// Belt-and-braces, EVERY round, regardless of the toggle: stock's restore to 1.0 sits AFTER its
+// wait, and the thread carries endon("end_killcam") + endon("disconnect"). If every viewer skips
+// the killcam (or drops) inside that window, the restore never runs and the server is left at
+// 0.25x — which would drag the next round into slow motion. Nothing in stock puts it back. One
+// unconditional call at round start costs nothing and closes that hole.
+// (Suspected relevance to the open "prematch countdown runs in slow-motion" TODO — unproven, but
+// this is the cheap guard either way.)
+gf_resetTimeScale()
+{
+    SetTimeScale( 1.0, gettime() );
 }
 
 // The engine's native prematch (matchStartTimer) draws the countdown number but plays NO sound.
@@ -2366,6 +2432,12 @@ gf_endRound( winner )
     // can pin open forever. Must be threaded before endGame: endGame fires "game_ended"
     // within a frame.
     level thread gf_postRoundWatchdog( level.gf_roundGen );
+
+    // Kill stock's final-killcam slow motion (and with it the mid-killcam "Connection Interrupted"
+    // plug) when the admin has turned it off. Must be threaded BEFORE endGame: stock's per-player
+    // slowdown thread is armed from the killcam that endGame's post-round events start.
+    if ( !gf_killcamSlowmoOn() )
+        level thread gf_holdRealTime( level.gf_roundGen );
 
     // #strip-begin - round-end timeline probe (dev/main only; stripped from public release)
     // Samples the killcam -> map_restart window at 20 Hz and logs every window the server went
