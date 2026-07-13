@@ -64,6 +64,17 @@ wins** takes the match.
   ⚠ Do **not** pair this with the once-floated **sv_fps 30** experiment: `GF_HITCH` is *game-time dilation*
   (wall time to advance 0.5s of game time), and the stall is a fixed lump of wall-clock work — more frames
   per second on a CPU-starved box buys more overhead and *more* dilation, not less. VPS runs 20; leave it.
+- **Move the loadout slide-out into the menu layer** (kill the last GSC dvar-animation stream). `gf_slideLoadout`
+  pushes 2 dvars at 20 Hz for 0.5s = **~25 reliable commands/human/round, forever** — the last unbatched push
+  stream after the `setClientDvars` pass ([[server-command-overflow-reliable-command-budget]]). The menu can
+  animate for free: `milliseconds()` works in an `exp` (stock `after_action_report.menu` / `game_summary.menu`
+  interpolate off `ui_time_marker` + `exec "setdvartotime"`). ⚠ **BLOCKED on one unverified fact:** the menu's
+  only clock is **client-local**, so the start marker must be stamped **by the client** from a menu event
+  (`onOpen` on a menuDef / `onEnter` on an itemDef) — the server **cannot** push a marker in its `gettime()`
+  base. Our overview lives in an always-loaded `loadMenu`'d HUD menu with no obvious per-round event. **Settle
+  it with one `mod.ff` rebuild:** render `milliseconds()` in a debug itemDef and compare against `gettime()`.
+  If it tracks, it's server-synced `cg.time` and the server can stamp the marker directly (trivial). If it's
+  client realtime, either find a per-round menu event or just snap the outro out (the intro is already a snap).
 - **Hybrid custom round-timer HUD:** keep the native engine-driven `MM:SS` for the normal phase, own only
   the final ≤10s (orange `S.T` tenths) via the menu layer, route OT through the same element.
 - **Mid-round late spawn / bot backfill** (designed ~25 lines, not built): let a client added mid-round
@@ -446,9 +457,31 @@ try to bundle the `.iwi` → build error.
   a separate pool from the ~17 cap), styled to match the stock yellow popup; the engine's own
   `hud_rankscroreupdate` is parked offscreen each spawn so stock "+N" XP pushes can't race ours.
 
-⚠ Round-start respawn bursts stagger their `setClientDvar` pushes (`gf_hudRevealStagger`) so ~40
-pushes/human don't pile on one 20 Hz frame and widen the between-rounds snapshot gap (the "Connection
-Interrupted" flash — [[connection-interrupted-mitigations]]). Menu **structure** changes need a `mod.ff`
+⚠ **Every `setClientDvar` is ONE reliable server command, and the client's ring buffer for them is
+FIXED (`MAX_RELIABLE_COMMANDS`).** A client hard-errors **`Server command overflow`** — a `Com_Error`
+*disconnect*, not a warning — the moment the server's command sequence outruns what that client has
+executed by more than the ring. So overflow needs a **burst** *and* a client that has **stopped
+acking**, which is why the one place it bites is the Auto/Manual **lobby START**: `map_restart(false)`
+stalls every client while it re-inits, and the spawn wave's push burst lands inside that stall. **The
+fix is `setClientDvarS` (plural)** — the stock variadic builtin that carries every name/value pair in a
+**single** command (stock: `_globallogic_player.gsc:91`; 9 pairs in one call at
+`_zombiemode_challenges.gsc:217`). The spawn burst is batched into groups of ≤8 pairs, taking it from
+**~45 commands/human to ~12**; `gf_pushHealthRow` pushes its whole row as one command whenever *any* of
+its 5 values changes (fewer commands than the old per-dvar path on **both** the spawn burst and the
+0.1 s in-firefight loop — re-sending an unchanged pair inside a batch is free; it's the command **count**
+that is scarce). ⚠ **Never expand a batch back into individual pushes**, and never add an unbatched
+per-player push loop. `gf_hudRevealStagger` spreads what's left across frames — it is a complement to
+the batching, **not** a substitute ([[server-command-overflow-reliable-command-budget]],
+[[connection-interrupted-mitigations]]).
+⚠ **A GSC dvar animation is a reliable-command STREAM** — `gf_slideLoadout` / `gf_fadeDvar` push at
+20 Hz for the whole duration (the 0.5 s loadout outro = ~25 commands/human/round). The menu layer can
+own a time-based animation for free (`milliseconds()` in an `exp`, e.g. `ui_time_marker` +
+`exec "setdvartotime"` in stock `after_action_report.menu` / `game_summary.menu`) — **but** the menu's
+only clock is **client-local**, so a marker must be stamped *by the client* from a menu event; the
+server cannot push one in its own `gettime()` base. Unverified whether an always-loaded `loadMenu` HUD
+menu can fire such an event per round — see the open TODO.
+
+Menu **structure** changes need a `mod.ff`
 rebuild; dvar values/positions are GSC-tunable. Intro slide/fade animations are currently disabled
 (snap-in); only the loadout outro animates. Related: [[menu-rendered-loadout-overview]],
 [[script-hudelem-number-oversized]]. Full ui_gf_* map → `docs/REFERENCE.md`.

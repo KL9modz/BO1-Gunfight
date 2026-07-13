@@ -109,13 +109,15 @@ gf_updateHealthHUD()
 // rawfile — map_restart, no mod.ff rebuild).
 gf_REVEAL_TIME() { return 0.6; }
 
-// Round-start push-wave stagger. At round start the whole lobby respawns in ~1-2 server frames,
-// and each human threads ~40 setClientDvar (loadout overview + health panel). Piling them all onto
-// the same frame is a reliable-command burst that widens the between-rounds snapshot gap -> the
+// Round-start push-wave stagger. At round start the whole lobby respawns in ~1-2 server frames, and
+// each human threads its loadout-overview + health-panel pushes at once. Piling them all onto the
+// same frame is a reliable-command burst that widens the between-rounds snapshot gap -> the
 // "Connection Interrupted" flash the second a round starts. Offset each player by their client slot
 // (getEntityNumber) so ~2 players' pushes land per 20Hz frame instead of the whole lobby at once.
 // <=0.25s, invisible during the frozen prematch (the HUD snaps in anyway). Humans only reach here
 // (bot-guarded callers). Complements the sv_maxRate bump, which drains the burst faster once on the wire.
+// The burst itself is now ~12 reliable commands per human (was ~45) — see the batching note in
+// gf_showWeaponHUD. This stagger spreads what's left; it does NOT replace the batching.
 gf_hudRevealStagger()
 {
     return ( self getEntityNumber() % 6 ) * 0.05;
@@ -135,9 +137,9 @@ gf_pushPauseBanner()
         return;
     }
 
-    self setClientDvar( "ui_gf_pause_text", "MATCH PAUSED" );
-    self setClientDvar( "ui_gf_pause_sub",  "WAITING FOR THE ADMIN TO RESUME" );
-    self setClientDvar( "ui_gf_paused",     "1" );
+    self setClientDvars( "ui_gf_pause_text", "MATCH PAUSED",
+                         "ui_gf_pause_sub",  "WAITING FOR THE ADMIN TO RESUME",
+                         "ui_gf_paused",     "1" );
 }
 
 // The loadout overview is now fully menu-rendered (0 client hudelems), so it no longer competes with
@@ -152,16 +154,18 @@ gf_runHealthHUD()
     self endon( "gf_kill_health_hud" );
     self endon( "disconnect" );
 
-    // Spread this player's ~18 panel setClientDvar off the shared spawn-wave frame (see
-    // gf_hudRevealStagger). The stale panel was already torn down above (pre-endon); only the
-    // rebuild is deferred, invisibly, during the frozen prematch.
+    // Spread this player's panel pushes off the shared spawn-wave frame (see gf_hudRevealStagger).
+    // The stale panel was already torn down above (pre-endon); only the rebuild is deferred,
+    // invisibly, during the frozen prematch.
     staggerDelay = self gf_hudRevealStagger();
     if ( staggerDelay > 0 )
         wait staggerDelay;
 
-    self setClientDvar( "ui_gf_hp_alpha", 0 );   // menu chrome (border + self bar) starts invisible; reveal fades it in
-    self gf_pushPauseBanner();                   // mid-pause joiner gets the banner; everyone else gets it cleared
+    self gf_pushPauseBanner();         // mid-pause joiner gets the banner; everyone else gets it cleared
 
+    // (The ui_gf_hp_alpha=0 pre-hide that used to sit here was a duplicate of
+    // gf_hideHealthPanelForIntro's, six lines below with no yield between them — one wasted
+    // reliable command per spawn. See the batching note in gf_showWeaponHUD.)
     gf_updateHealthHUD();              // seed the published totals
     self gf_createHealthPanel();       // build now — loadout HUD is menu-rendered, no client-elem conflict
     self gf_updateHealthPanel();       // fill values + target alphas in before revealing
@@ -191,11 +195,10 @@ gf_createHealthPanel()
     self.gf_panelActive = true;
     self.gf_dvarCache = [];               // force the first per-row push to send
 
-    self setClientDvar( "ui_gf_self_name", self.name );
     self.gf_sbHp = undefined;
     self.gf_sbShow = undefined;
 
-    self gf_pushPanelChrome();            // ui_gf_panel_x/y — the border-box anchor the menu lays out from
+    self gf_pushPanelChrome();            // name + anchor + materials, one batched command
 }
 
 // Seeds the menu-rendered panel chrome position (hud_gf_health.menu reads these). bg fade + border
@@ -203,16 +206,20 @@ gf_createHealthPanel()
 // menu/screen space; the menu lays the bg fade and the 4 lines out relative to that point. Tunable
 // here with a map_restart only (no mod.ff rebuild — only the menu STRUCTURE needs the linker).
 // ui_gf_panel_show (set in reveal/destroy) gates visibility.
+// Material names are pushed as dvars so the menu uses exp material(dvarString(...)) — a DYNAMIC
+// (runtime-resolved) material reference. A static background "hud_..." makes the linker try to
+// bundle the image (.iwi missing → build error); dynamic resolves from base fastfiles at runtime.
+// Batched into ONE reliable command (see the note in gf_showWeaponHUD) — the self-bar name rides
+// along, since it's per-panel-build chrome like the rest.
 gf_pushPanelChrome()
 {
-    self setClientDvar( "ui_gf_panel_x", -22 );   // border-box left
-    self setClientDvar( "ui_gf_panel_y", 142 );   // border-box top
-
-    // Material names pushed as dvars so the menu uses exp material(dvarString(...)) — a DYNAMIC
-    // (runtime-resolved) material reference. A static background "hud_..." makes the linker try to
-    // bundle the image (.iwi missing → build error); dynamic resolves from base fastfiles at runtime.
-    self setClientDvar( "ui_gf_skull_mat", "hud_death_suicide" );        // alive/dead skull icon
-    self setClientDvar( "ui_gf_fade_mat",  "hud_frame_faction_fade" );   // soft panel bg fade
+    // panel_x/panel_y = border-box left/top (the anchor the menu lays out from);
+    // skull_mat = the alive/dead skull icon; fade_mat = the soft panel bg fade.
+    self setClientDvars( "ui_gf_self_name", self.name,
+                         "ui_gf_panel_x",   -22,
+                         "ui_gf_panel_y",   142,
+                         "ui_gf_skull_mat", "hud_death_suicide",
+                         "ui_gf_fade_mat",  "hud_frame_faction_fade" );
 }
 
 // The per-client row dvars are wiped by map_restart at round end, but the menu-rendered
@@ -277,8 +284,8 @@ gf_slideSelfBarIn()
     self endon( "disconnect" );
 
     // INTRO ANIM DISABLED (snap in): was a slide of ui_gf_self_off 40->0 over gf_REVEAL_TIME().
-    self setClientDvar( "ui_gf_self_off", 0 );
-    self setClientDvar( "ui_gf_self_show", 1 );
+    self setClientDvars( "ui_gf_self_off",  0,
+                         "ui_gf_self_show", 1 );
 }
 
 // #strip-begin - dev HUD allocation probe (only threaded under gf_debug_elem_probe; stripped from public)
@@ -334,10 +341,10 @@ gf_hideHealthPanelForIntro()
 // — both over gf_REVEAL_TIME(), so the health HUD and loadout overview reveal in sync.
 gf_revealHealthPanel()
 {
-    self setClientDvar( "ui_gf_panel_show", 1 );
     // INTRO ANIM DISABLED (snap in) — testing whether the HUD just being there on spawn looks cleaner.
     // Was: self thread gf_fadeDvar( "ui_gf_hp_alpha", 0, 1, gf_REVEAL_TIME() );
-    self setClientDvar( "ui_gf_hp_alpha", 1 );
+    self setClientDvars( "ui_gf_panel_show", 1,
+                         "ui_gf_hp_alpha",   1 );
 }
 
 // Linear fade of a client dvar from->to over dur (0.05s frames) — cross-fades the menu-
@@ -410,20 +417,48 @@ gf_pushHealthRow( r, team )
     else if ( fw < 1 )
         fw = 1;
 
+    hp = int( hp );
+
     // Real (unclamped) counts. The menu draws the 4-skull cluster only in skull mode
     // (ui_gf_hp_mode == 0, both teams <= 4 — small mode / 4v4 unchanged); when either team is
     // > 4 the shared mode flips to 1 and both rows show the "Alive: N" readout (6v6 support).
     // cnt still drives how many skull slots this row fills. Colour isn't pushed (the menu fixes
     // row 0 green, row 1 red).
-    self gf_setRowDvar( "ui_gf_r" + r + "_hp",         int( hp ) );
-    self gf_setRowDvar( "ui_gf_r" + r + "_fw",         fw );
-    self gf_setRowDvar( "ui_gf_r" + r + "_cnt",        count );
-    self gf_setRowDvar( "ui_gf_r" + r + "_alive",      alive );
-    self gf_setRowDvar( "ui_gf_r" + r + "_alivecount", "Alive: " + alive );
+    //
+    // The row is pushed as ONE batched reliable command whenever ANY of its 5 values changes (see
+    // the note in gf_showWeaponHUD). Batching WINS on both paths: the spawn burst goes 5 -> 1, and
+    // in a firefight — where hp and fw change together every 0.1s tick — the old per-dvar path cost
+    // one command per changed value, so this is fewer commands there too. Re-sending an unchanged
+    // pair inside the batch is free (same single command); it's the command COUNT that is scarce.
+    if ( !self gf_rowChanged( r, hp, fw, count, alive ) )
+        return;
+
+    self setClientDvars( "ui_gf_r" + r + "_hp",         hp,
+                         "ui_gf_r" + r + "_fw",         fw,
+                         "ui_gf_r" + r + "_cnt",        count,
+                         "ui_gf_r" + r + "_alive",      alive,
+                         "ui_gf_r" + r + "_alivecount", "Alive: " + alive );
 }
 
-// setClientDvar only on change (cached on self) — the 0.1s update loop would otherwise spam 8
-// pushes/tick. gf_createHealthPanel resets gf_dvarCache so the first push each spawn always sends.
+// True if any value in row r changed since its last push (and latches the new ones). Collapses the
+// row to a single cache entry so the 0.1s update loop pushes nothing at all while a row is static.
+// gf_createHealthPanel resets gf_dvarCache, so the first push each spawn always sends.
+gf_rowChanged( r, hp, fw, count, alive )
+{
+    if ( !isDefined( self.gf_dvarCache ) )
+        self.gf_dvarCache = [];
+
+    key = "row" + r;
+    sig = hp + "|" + fw + "|" + count + "|" + alive;
+    if ( isDefined( self.gf_dvarCache[key] ) && self.gf_dvarCache[key] == sig )
+        return false;
+
+    self.gf_dvarCache[key] = sig;
+    return true;
+}
+
+// setClientDvar only on change (cached on self). Still used for the shared ui_gf_hp_mode gate —
+// a single dvar that rarely changes, so it has nothing to batch with.
 gf_setRowDvar( name, val )
 {
     if ( !isDefined( self.gf_dvarCache ) )
@@ -548,7 +583,7 @@ gf_showWeaponHUD( load )
     self endon( "disconnect" );
     level endon( "game_ended" );
 
-    // Spread this player's ~21 loadout-overview setClientDvar off the shared spawn-wave frame
+    // Spread this player's loadout-overview pushes off the shared spawn-wave frame
     // (see gf_hudRevealStagger) so the round-start push burst doesn't widen the snapshot gap.
     staggerDelay = self gf_hudRevealStagger();
     if ( staggerDelay > 0 )
@@ -562,55 +597,67 @@ gf_showWeaponHUD( load )
     // client-elem version risked. We push the 8 icon materials + 8 names + the anchor,
     // then animate the unified slide via ui_gf_lo_off (added to every item's X).
 
+    // ⚠ BATCHED ON PURPOSE — setClientDvarS (plural), not N x setClientDvar. Every setClientDvar is
+    // ONE reliable server command; setClientDvars carries every pair in a SINGLE one. That volume is
+    // load-bearing: the client's reliable-command ring is fixed (MAX_RELIABLE_COMMANDS) and the client
+    // HARD-ERRORS "Server command overflow" (a Com_Error disconnect, not a warning) the moment the
+    // server's command sequence outruns what the client has executed by more than that ring. Overflow
+    // therefore needs a burst AND a client that has stopped acking — which is exactly the Auto/Manual
+    // lobby START: map_restart(false) stalls every client while it re-inits, and the spawn wave's push
+    // burst lands inside that stall. Unbatched, this block (~21) + the health panel (~24) put ~45
+    // commands per human into that window and overflowed a real client. Stock batches for this same
+    // reason (_globallogic_player.gsc:91). Keep groups <= 8 pairs (well inside the arg + 1024-char
+    // command limits) and NEVER expand a batch back into individual pushes.
     // Icons (materials). All precached — weapons/equipment in gf.gsc, perks in stock
     // _class.gsc:421 — so the menu's material(dvarString) resolves every one.
-    self setClientDvar( "ui_gf_lo_icon0", load["primaryShader"] );
-    self setClientDvar( "ui_gf_lo_icon1", load["secondaryShader"] );
-    self setClientDvar( "ui_gf_lo_icon2", load["lethalShader"] );
-    self setClientDvar( "ui_gf_lo_icon3", load["tacticalShader"] );
-    self setClientDvar( "ui_gf_lo_icon4", load["equipShader"] );
-    self setClientDvar( "ui_gf_lo_icon5", gf_getPerkShader( "specialty_flakjacket" ) );    // Flak Jacket
-    self setClientDvar( "ui_gf_lo_icon6", gf_getPerkShader( "specialty_longersprint" ) );   // Marathon
-    self setClientDvar( "ui_gf_lo_icon7", gf_getPerkShader( "specialty_movefaster" ) );     // Lightweight
+    // icon5/6/7 are the 3 hardcoded base perks: Flak Jacket, Marathon, Lightweight.
+    self setClientDvars( "ui_gf_lo_icon0", load["primaryShader"],
+                         "ui_gf_lo_icon1", load["secondaryShader"],
+                         "ui_gf_lo_icon2", load["lethalShader"],
+                         "ui_gf_lo_icon3", load["tacticalShader"],
+                         "ui_gf_lo_icon4", load["equipShader"],
+                         "ui_gf_lo_icon5", gf_getPerkShader( "specialty_flakjacket" ),
+                         "ui_gf_lo_icon6", gf_getPerkShader( "specialty_longersprint" ),
+                         "ui_gf_lo_icon7", gf_getPerkShader( "specialty_movefaster" ) );
+
+    // Names (plain client dvars — NOT setText, so no configstring exhaustion).
+    self setClientDvars( "ui_gf_lo_name0", load["primaryName"],
+                         "ui_gf_lo_name1", load["secondaryName"],
+                         "ui_gf_lo_name2", load["lethalName"],
+                         "ui_gf_lo_name3", load["tacticalName"],
+                         "ui_gf_lo_name4", load["equipName"],
+                         "ui_gf_lo_name5", "Flak Jacket",
+                         "ui_gf_lo_name6", "Marathon",
+                         "ui_gf_lo_name7", "Lightweight" );
 
     // Secondary icon slot width. The menu's slot is 2:1 like every weapon icon, but the
     // Finger Gun borrows the square skull material (hud_death_suicide, same one the health
     // panel uses) and a 2:1 slot stretches it flat. Push a square width for it; the menu
     // recenters the slot on the column from this value.
+    w1 = 72;
     if ( load["secondaryShader"] == "hud_death_suicide" )
-        self setClientDvar( "ui_gf_lo_w1", 36 );
-    else
-        self setClientDvar( "ui_gf_lo_w1", 72 );
+        w1 = 36;
 
     // Equipment slot gate. A "none" equipment loadout gives no equipment at all, so its
     // icon + name itemDefs are hidden (the equipment row's bracket stays — the slot is
-    // simply empty). Pushed BEFORE ui_gf_lo_show so the block never flashes a filled slot.
+    // simply empty). Ordered BEFORE ui_gf_lo_show so the block never flashes a filled slot —
+    // and since the whole group lands as one command, that ordering now holds within a frame.
+    show4 = 1;
     if ( isDefined( load["equipNone"] ) && load["equipNone"] )
-        self setClientDvar( "ui_gf_lo_show4", 0 );
-    else
-        self setClientDvar( "ui_gf_lo_show4", 1 );
-
-    // Names (plain client dvars — NOT setText, so no configstring exhaustion).
-    self setClientDvar( "ui_gf_lo_name0", load["primaryName"] );
-    self setClientDvar( "ui_gf_lo_name1", load["secondaryName"] );
-    self setClientDvar( "ui_gf_lo_name2", load["lethalName"] );
-    self setClientDvar( "ui_gf_lo_name3", load["tacticalName"] );
-    self setClientDvar( "ui_gf_lo_name4", load["equipName"] );
-    self setClientDvar( "ui_gf_lo_name5", "Flak Jacket" );
-    self setClientDvar( "ui_gf_lo_name6", "Marathon" );
-    self setClientDvar( "ui_gf_lo_name7", "Lightweight" );
+        show4 = 0;
 
     // Anchor: center-right column. cx = column center (px left of the right safe
     // edge), cy = block vertical center (px from the reticle). Both retune live with
     // a map_restart — no mod.ff rebuild (only the item sizes/spacing are baked in).
-    self setClientDvar( "ui_gf_lo_cx", -104 );
-    self setClientDvar( "ui_gf_lo_cy", -6 );
-
     // INTRO ANIM DISABLED (snap in) — testing whether the HUD just being there on spawn looks cleaner.
     // Was: self gf_slideLoadout( 70, 0, 0, 1, gf_REVEAL_TIME() );  // slide+fade in. Outro below is kept.
-    self setClientDvar( "ui_gf_lo_off", 0 );
-    self setClientDvar( "ui_gf_lo_alpha", 1 );
-    self setClientDvar( "ui_gf_lo_show", 1 );
+    self setClientDvars( "ui_gf_lo_w1",    w1,
+                         "ui_gf_lo_show4", show4,
+                         "ui_gf_lo_cx",    -104,
+                         "ui_gf_lo_cy",    -6,
+                         "ui_gf_lo_off",   0,
+                         "ui_gf_lo_alpha", 1,
+                         "ui_gf_lo_show",  1 );
 
     wait 8;
 

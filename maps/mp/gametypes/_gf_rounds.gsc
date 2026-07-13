@@ -604,8 +604,12 @@ gf_waitForLoadingClients()
         setmatchflag( "cg_drawSpectatorMessages", 1 );
         for ( ri = 0; ri < level.players.size; ri++ )
         {
-            level.players[ri] setClientDvar( "compass", "1" );
-            level.players[ri] setClientDvar( "ui_gf_lobby_show", "0" );   // hide the lobby HUD for the match
+            // ONE batched reliable command, not two. These land immediately before the
+            // map_restart(false) below — i.e. right at the edge of the stall window that a
+            // "Server command overflow" disconnect is counted in. See the batching note in
+            // _gf_hud.gsc::gf_showWeaponHUD.
+            level.players[ri] setClientDvars( "compass",          "1",
+                                              "ui_gf_lobby_show", "0" );   // hide the lobby HUD for the match
         }
     }
 
@@ -1086,16 +1090,23 @@ gf_lobbyCamPut()
     if ( int( gf_cfgFloat( "scr_gf_lobby", 0, 0, 2 ) ) == 2 )
         statusText = "Waiting for the host to start";
 
-    self setClientDvar( "ui_gf_lobby_eyebrow", "PREGAME LOBBY" );
-    self setClientDvar( "ui_gf_lobby_title",   "GUNFIGHT" );
-    self setClientDvar( "ui_gf_lobby_map",     gf_mapDisplayName( getDvar( "mapname" ) ) );
-    self setClientDvar( "ui_gf_lobby_welcome", "Welcome, " + self.name );
-    self setClientDvar( "ui_gf_lobby_status",  statusText );
-    self setClientDvar( "ui_gf_lobby_icon",    "menu_mp_weapons_famas" );   // seed a valid material before the icon items show
-    self setClientDvar( "ui_gf_lobby_icon_on", "1" );                        // header is instant now — reveal the flanking icons immediately
-    self setClientDvar( "ui_gf_lobby_ic_home", "rank_prestige14" );          // ad-rail emblem: 14th-prestige badge (homepage) — faction crests aren't loaded on every map
-    self setClientDvar( "ui_gf_lobby_ic_disc", "rank_prestige15" );          // ad-rail emblem: 15th-prestige badge (Discord)
-    self setClientDvar( "ui_gf_lobby_show",    "1" );   // reveal the fully-populated menuDef
+    // Batched: two reliable commands, not ten (see _gf_hud.gsc::gf_showWeaponHUD). ui_gf_lobby_show
+    // stays LAST so the menuDef is only revealed once every field behind it is populated.
+    // lobby_icon seeds a valid material before the icon items show.
+    self setClientDvars( "ui_gf_lobby_eyebrow", "PREGAME LOBBY",
+                         "ui_gf_lobby_title",   "GUNFIGHT",
+                         "ui_gf_lobby_map",     gf_mapDisplayName( getDvar( "mapname" ) ),
+                         "ui_gf_lobby_welcome", "Welcome, " + self.name,
+                         "ui_gf_lobby_status",  statusText,
+                         "ui_gf_lobby_icon",    "menu_mp_weapons_famas" );
+
+    // icon_on: the header is instant now, so reveal the flanking icons immediately.
+    // ic_home / ic_disc: ad-rail emblems (14th/15th-prestige badges — faction crests aren't
+    // loaded on every map). lobby_show: reveal the fully-populated menuDef.
+    self setClientDvars( "ui_gf_lobby_icon_on", "1",
+                         "ui_gf_lobby_ic_home", "rank_prestige14",
+                         "ui_gf_lobby_ic_disc", "rank_prestige15",
+                         "ui_gf_lobby_show",    "1" );
 }
 
 // ─── Lobby roster ("IN THE LOBBY" name list) ───────────────────────────────
@@ -1254,10 +1265,10 @@ gf_mapDisplayName( code )
 // map_restart(false). Loadout overview / team health panel / self bar / kill popup.
 gf_hideLobbyHUD()
 {
-    self setClientDvar( "ui_gf_lo_show",    "0" );
-    self setClientDvar( "ui_gf_panel_show", "0" );
-    self setClientDvar( "ui_gf_self_show",  "0" );
-    self setClientDvar( "ui_gf_popup_show", "0" );
+    self setClientDvars( "ui_gf_lo_show",    "0",
+                         "ui_gf_panel_show", "0",
+                         "ui_gf_self_show",  "0",
+                         "ui_gf_popup_show", "0" );
 }
 // #strip-end
 
