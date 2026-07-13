@@ -572,11 +572,18 @@ onStartGameType()
     thread gf_bridgeInit();   // per-round: re-seeds dvars/flags + re-arms the vision blend (level.* wiped by map_restart); its telemetry/poll/pending-team loops self-guard to once-per-match inside
     // The bot manager is once-per-MATCH, NOT once-per-round. onStartGameType re-runs on every
     // map_restart (SD round cycling), but _bot::init() threads PERSISTENT managers (diffBots +
-    // the round-boundary fill reconciler) that carry only "game_ended"/"bot_reinit" endons
-    // (match end / lobby re-init — never a between-rounds map_restart), so they SURVIVE round
-    // cycling; re-threading them every round would stack copies. Gate on game[] — the only
-    // state that survives map_restart, and it resets on a genuine new map load — so exactly ONE
-    // manager set runs per match and it still re-inits for the next match. Same idiom as
+    // the round-boundary fill reconciler) that must survive round cycling; re-threading them
+    // every round would stack copies. Gate on game[] — the only state that survives map_restart,
+    // and it resets on a genuine new map load — so exactly ONE manager set runs per match and it
+    // still re-inits for the next match.
+    // ⚠ This gate is only safe because those managers do NOT endon("game_ended"). That notify is
+    // NOT match-end: _globallogic::endGame fires it on EVERY round end (gf_endRound threads
+    // endGame in the same frame it notifies gf_round_over). This comment used to claim the
+    // opposite, and gf_boundaryListener carried the endon on that basis — so it died at the first
+    // round end, was never re-threaded by this once-per-match gate, and the bot fill silently
+    // stopped reconciling for the rest of the match ("fill ignores humans"). Re-init is collapsed
+    // by "bot_reinit" (fired at the top of _bot::init), which is the only notify that may tear
+    // these down. Same idiom as
     // gf_rocketOncePerMatch / game["gf_init"]. bots_manage_add is legacy-cleared: nothing
     // consumes it anymore (the addBots loop is deleted), but a stale nonzero value from an
     // older build should not linger in the panel-visible dvar table.

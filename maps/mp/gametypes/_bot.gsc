@@ -205,7 +205,18 @@ gf_reconcilerInit()
 // every bot anyway, so adds there would just churn during the podium.
 gf_boundaryListener()
 {
-	level endon("game_ended");           // match end tears it down; gf.gsc's game[] gate re-inits next match
+	// NO endon("game_ended") — that notify fires on EVERY ROUND END, not at match end:
+	// gf_endRound notifies gf_round_over and then threads _globallogic::endGame in the SAME
+	// frame, and endGame runs yield-free to its own level notify("game_ended"). This thread
+	// used to carry it (on the "match end" misreading) and was therefore killed DURING the
+	// wait 0.5 below, at the very first round end — before it ever reached gf_boundaryPass().
+	// _bot::init is once-per-MATCH (gf.gsc's game["gf_botInit"] gate), so nothing re-threaded
+	// it: NO boundary pass ever ran at a boundary. The fill froze at whatever gf_matchStartPass
+	// left at match start, and humans joining later were never counted against the target — the
+	// "bot fill ignores humans" bug (team = N bots + humans, forever).
+	// Nothing here needs game_ended: the final round is skipped by gf_matchIsOver() below, and
+	// re-init (new match / lobby fast-restart) is collapsed by bot_reinit. Same trap that
+	// gf_postRoundWatchdog documents in _gf_rounds.gsc — do not "restore" this endon.
 	level endon("bot_reinit");
 
 	for(;;)
@@ -234,6 +245,11 @@ gf_boundaryListener()
 //      pass runs synchronously (it never yields), so the spawn wave reads the finished plan.
 gf_gateListener()
 {
+	// KEEP endon("game_ended") here — unlike gf_boundaryListener (see the note there), this one
+	// WANTS to die at the first round end. game_ended fires every round end, and so does
+	// gf_load_gate_reset (gf_armLoadGate runs from every onStartGameType); dying at round 1's end
+	// is exactly what confines this listener to the MATCH-START gate it exists for. Drop the endon
+	// and rounds 2+ get a second boundary pass each, racing the round-end one. Deliberate.
 	level endon("game_ended");
 	level endon("bot_reinit");
 

@@ -412,6 +412,18 @@ loop carries `endon("bot_reinit")`; `init()` fires `bot_reinit` before re-thread
 restart-surviving manager set collapses to one. Full detail →
 [[gf-fill-reconciler-and-team-transfer]], `docs/DEV.md`.
 
+⚠ **`gf_boundaryListener` must NOT carry `endon("game_ended")`** — that notify fires at the end of
+**every round**, not at match end (`endGame` runs yield-free to it, and `gf_endRound` threads `endGame`
+in the same frame it notifies `gf_round_over`). Paired with the **once-per-match** `_bot::init` gate
+(`game["gf_botInit"]`, `gf.gsc`), the endon killed the listener at the first round end and nothing ever
+re-threaded it: **the boundary pass never ran at a boundary**, the fill froze at whatever
+`gf_matchStartPass` left, and humans joining later were never counted → a side sat at N bots + humans
+forever ("bot fill ignores humans"). `bot_reinit` is the only notify allowed to tear these down; the
+final round is skipped by `gf_matchIsOver()`. `gf_gateListener` keeps the endon **deliberately** (dying
+at round 1's end is what confines it to the match-start gate, since `gf_load_gate_reset` also fires every
+round) — read a thread's intended lifetime before touching its endons.
+([[game-ended-fires-every-round-end]])
+
 ### HUD (menu-layer)
 All mod HUD is rendered in the **menu layer** (`ui_mp/hud_gf_health.menu`, in `mod.ff`), NOT client
 hudelems, because T5 has an invisible per-client **DRAWN render cap (~17-20 elements)** shared across
