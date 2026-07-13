@@ -20,7 +20,7 @@ Black Ops Gunfight runs on **[Plutonium](https://plutonium.pw/)**, a free commun
 2. **Run it.** If Windows SmartScreen shows *"Windows protected your PC"*, click **More info -> Run anyway**.
 3. **Open the Library tab** and find **Black Ops**, then click **SETUP**:
    - **Don't own the game?** Choose **Download game** and let it finish (it's a large download).
-   - **Already have Black Ops installed?** Point it at your existing copy, then click **VERIFY**.
+   - Already have Black Ops installed? Point it at your existing copy, then click **VERIFY**.
 4. **Log in** with your Plutonium account (create one free at [forum.plutonium.pw/register](https://forum.plutonium.pw/register)).
 5. **Click PLAY -> Multiplayer.** Done - CB Servers installed the game and the Plutonium client for you.
 
@@ -50,7 +50,7 @@ Black Ops is old, but with Plutonium it can be optimized for modern systems. Her
 | Shader warming | **Yes** |
 | Shadows | **Yes** |
 | Bullet impacts | **Yes** |
-| Field of view | **(see below)** |
+| Field of view | **65** (see below for higher **FOV scale**) |
 | Brightness | **Not too high** |
 
 ![Recommended in-game Graphics settings](images/getting-started/graphics.png)
@@ -68,10 +68,6 @@ The in-game **Field of view** slider maxes out at **80**, but Plutonium lets you
 
 To work out your total FOV, multiply `cg_fov` by `cg_fovScale` - for a standard **80 FOV**, use `cg_fov 65` and `cg_fovScale 1.32`. Expect to experiment with values to find what feels comfortable.
 
-### How to open the console
-
-Press the **`~`** key (tilde / grave, top-left under **Esc**) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press `~` again. Type a command and hit **Enter** - you'll need it for the [Sprint/ADS improvement](#mouse--keyboard-sprintads-improvement) below.
-
 ### Game
 
 | Setting | Recommended |
@@ -84,18 +80,14 @@ Press the **`~`** key (tilde / grave, top-left under **Esc**) to open the Pluton
 ![Recommended in-game Game settings](images/getting-started/game-settings.png)
 *Game settings - Settings -> Game.*
 
-### Multiplayer
-
-| Setting | Recommended |
-|---|---|
-| Allow downloading | **Yes** *(needed to auto-download the mod)* |
-
-> **Allow downloading must be on.** It lets Plutonium fetch the Gunfight mod from the server automatically when you join (FastDL) - no manual install.
-
 ### Controller
 
 - **Controls -> Gamepad -> Yes** to enable controller support.
 - If you are using a PlayStation controller, use **[DS4Windows](https://ds4-windows.com/)** to present it as an Xbox controller.
+
+### How to open the console
+
+Press the **`~`** key (tilde / grave, top-left under **Esc**) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press `~` again. Type a command and hit **Enter** - you'll need it for the [Sprint/ADS improvement](#mouse--keyboard-sprintads-improvement) below.
 
 ### Mouse & Keyboard: Sprint/ADS improvement
 
@@ -124,10 +116,10 @@ Black Ops Gunfight is a ranked server. Join through the in-game **Server Browser
 
 > **First join only:** after the download finishes, the game rebuilds itself around the mod and your screen may go **black for a few minutes**. This is normal - let it finish and it will drop you into the match. Still black after ~5 minutes? Close the game and rejoin: the mod is already downloaded, so the second join is quick. Every join after that is instant.
 
-> Keep your **Plutonium launcher updated** so its build matches the server's - FastDL ships the *mod*, not the engine build. More at **[gunfight.us](https://gunfight.us)** and our **[Discord](https://discord.gg/blackops)**.
-
 ![The Server Browser - Gunfight | gunfight.us in the Ranked tab](images/getting-started/server-browser.png)
 *The Server Browser - look for `Gunfight | gunfight.us` (mode GF) on the Ranked tab.*
+
+> Keep your **Plutonium launcher updated** so its build matches the server's - FastDL ships the *mod*, not the engine build. More at **[gunfight.us](https://gunfight.us)** and our **[Discord](https://discord.gg/blackops)**.
 
 ---
 

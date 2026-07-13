@@ -610,15 +610,31 @@ gf_showWeaponHUD( load )
     // command limits) and NEVER expand a batch back into individual pushes.
     // Icons (materials). All precached — weapons/equipment in gf.gsc, perks in stock
     // _class.gsc:421 — so the menu's material(dvarString) resolves every one.
-    // icon5/6/7 are the 3 hardcoded base perks: Flak Jacket, Marathon, Lightweight.
+    // icon5/6/7 are the 3 perk slots, resolved per-loadout at pool build (gf_load): this
+    // loadout's added perks first, then padded from the base set minus anything it removed.
+    // A pre-perks pool (an in-flight map_restart across a GSC edit) has no perkShader keys —
+    // fall back to the old fixed trio rather than pushing an undefined dvar value.
+    if ( isDefined( load["perkShader0"] ) )
+    {
+        pIcon0 = load["perkShader0"];  pName0 = load["perkName0"];
+        pIcon1 = load["perkShader1"];  pName1 = load["perkName1"];
+        pIcon2 = load["perkShader2"];  pName2 = load["perkName2"];
+    }
+    else
+    {
+        pIcon0 = gf_getPerkShader( "specialty_flakjacket"   );  pName0 = "Flak Jacket";
+        pIcon1 = gf_getPerkShader( "specialty_longersprint" );  pName1 = "Marathon";
+        pIcon2 = gf_getPerkShader( "specialty_movefaster"   );  pName2 = "Lightweight";
+    }
+
     self setClientDvars( "ui_gf_lo_icon0", load["primaryShader"],
                          "ui_gf_lo_icon1", load["secondaryShader"],
                          "ui_gf_lo_icon2", load["lethalShader"],
                          "ui_gf_lo_icon3", load["tacticalShader"],
                          "ui_gf_lo_icon4", load["equipShader"],
-                         "ui_gf_lo_icon5", gf_getPerkShader( "specialty_flakjacket" ),
-                         "ui_gf_lo_icon6", gf_getPerkShader( "specialty_longersprint" ),
-                         "ui_gf_lo_icon7", gf_getPerkShader( "specialty_movefaster" ) );
+                         "ui_gf_lo_icon5", pIcon0,
+                         "ui_gf_lo_icon6", pIcon1,
+                         "ui_gf_lo_icon7", pIcon2 );
 
     // Names (plain client dvars — NOT setText, so no configstring exhaustion).
     self setClientDvars( "ui_gf_lo_name0", load["primaryName"],
@@ -626,9 +642,9 @@ gf_showWeaponHUD( load )
                          "ui_gf_lo_name2", load["lethalName"],
                          "ui_gf_lo_name3", load["tacticalName"],
                          "ui_gf_lo_name4", load["equipName"],
-                         "ui_gf_lo_name5", "Flak Jacket",
-                         "ui_gf_lo_name6", "Marathon",
-                         "ui_gf_lo_name7", "Lightweight" );
+                         "ui_gf_lo_name5", pName0,
+                         "ui_gf_lo_name6", pName1,
+                         "ui_gf_lo_name7", pName2 );
 
     // Secondary icon slot width. The menu's slot is 2:1 like every weapon icon, but the
     // Finger Gun borrows the square skull material (hud_death_suicide, same one the health
@@ -833,7 +849,7 @@ gf_welcomeMessage()
     self endon( "disconnect" );
 
     // Let the spawn moment settle (loadout overview slide-in, gametype hint).
-    wait 2;
+    wait 10;
 
     self maps\mp\gametypes\_hud_message::oldNotifyMessage(
         "Welcome " + self.name + "!",          // title line (big, decode FX)

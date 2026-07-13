@@ -53,10 +53,17 @@ gf_cfgFloat( dvar, def, lo, hi )
 }
 
 // Flinch (damage view-kick) scale. scr_gf_flinch is a MULTIPLIER of the stock
-// bg_viewKickScale (0.2): 1 = stock flinch, 0 = no flinch, >1 = more. Gunfight
-// ships 0.5 — half stock, i.e. bg_viewKickScale 0.1. Called each round from
-// onStartGameType (so an RCON change persists across map_restart) and live from
-// the RCON bridge (flinch_<mult>). Returns the clamped multiplier.
+// bg_viewKickScale (0.2): 1 = stock flinch, 0 = no flinch, >1 = more. Called each
+// round from onStartGameType (so an RCON change persists across map_restart) and
+// live from the RCON bridge (flinch_<mult>). Returns the clamped multiplier.
+//
+// ⚠ Gunfight ships 1.0 (stock kick) — NOT because flinch is unreduced, but because
+// it is already reduced ONCE by a perk: specialty_bulletflinch (Hardened Pro,
+// "reduced reaction and recoil when shot") is in the base perk set, which activates
+// the engine's perk_damageKickReduction for every player. This dvar used to ship 0.5
+// and stacking the two produced near-zero flinch by accident. ONE reducer, not two:
+// the perk is the mechanism, this dvar is back at stock. If you want more or less
+// flinch, move THIS dvar — but remember the perk floor underneath it.
 //
 // ⚠ bg_viewKickScale does NOT replicate. Each client scales its OWN damage view
 // kick from its LOCAL copy, so the server-side setDvar alone changes nothing for
@@ -72,7 +79,7 @@ gf_cfgFloat( dvar, def, lo, hi )
 // whatever we last gave it, so it needs an explicit 0.2 to be put back.
 gf_applyFlinch()
 {
-    scale = gf_cfgFloat( "scr_gf_flinch", 0.5, 0, 3 ); // seeds the dvar if unset
+    scale = gf_cfgFloat( "scr_gf_flinch", 1.0, 0, 3 ); // seeds the dvar if unset
     setDvar( "bg_viewKickScale", 0.2 * scale );        // 0.2 = stock bg_viewKickScale
 
     // level.players is EMPTY during onStartGameType, so this loop is a no-op on the
@@ -87,18 +94,22 @@ gf_applyFlinch()
     return scale;
 }
 
-// Per-spawn half of the flinch push (see gf_applyFlinch). The 0.5 default is not
-// stock, so this normally DOES push. The skip is for an admin who has explicitly
-// asked for stock (1): a fresh client already sits at the engine default 0.2, and
-// the mod's rule is to leave client settings alone when we want what they have.
+// Per-spawn half of the flinch push (see gf_applyFlinch). ALWAYS pushes — there is
+// deliberately no skip-at-stock shortcut.
+// ⚠ The old code returned early when scale == 1, on the logic that a fresh client is
+// already at the engine default 0.2 so pushing is redundant. That was only safe while
+// the default was 0.5 (i.e. we always pushed anyway). Now that 1.0 IS the default, that
+// skip would mean the server never pushes at all — and bg_viewKickScale is a plain
+// client dvar a player can set in their own autoexec, so anyone running
+// `bg_viewKickScale 0` would have zero flinch while everyone else took the full kick.
+// Pushing unconditionally is what makes the server's value authoritative, which is the
+// property this dvar is documented to have ([[flinch-bg-viewkickscale-not-replicated]]).
 // ⚠ This default must stay in lockstep with the one in gf_applyFlinch above —
 // gf_cfgFloat seeds only if the dvar is empty, so a drift here would be silently
 // masked by whichever function ran first.
 gf_applyFlinchClient()
 {
-    scale = gf_cfgFloat( "scr_gf_flinch", 0.5, 0, 3 );
-    if ( scale == 1 )
-        return;
+    scale = gf_cfgFloat( "scr_gf_flinch", 1.0, 0, 3 );
     self setClientDvar( "bg_viewKickScale", 0.2 * scale );
 }
 
@@ -1406,11 +1417,10 @@ gf_playerSpawnedCB()
     // element our Elimination/Assist popup reuses (self.hud_rankscroreupdate), gated
     // only by self.enableText — the stock per-player "XP text" preference, re-set true
     // by _persistence on every connect (so every map_restart), hence per-spawn here.
-    // Our zeroed kill/assist score info already silences those types, but medals
-    // (First Blood etc.), challenges, and stat milestones pass EXPLICIT XP values that
-    // bypass the zeroing — on a ranked server they raced our popup and sometimes
-    // replaced it. XP itself still accrues (incRankXP runs before the gate); only the
-    // engine's popup text is suppressed.
+    // This is the ONLY thing suppressing them: kill/headshot/assist XP is 5x stock
+    // (gf.gsc registerScoreInfo), and medals, challenges and stat milestones pass
+    // EXPLICIT XP values anyway. XP itself still accrues (incRankXP runs before the
+    // gate); only the engine's popup text is suppressed.
     self.enableText = false;
 
     // NOTE: the CLIENT half of this toggle used to be pushed here every spawn
@@ -2357,6 +2367,14 @@ gf_endRound( winner )
     // within a frame.
     level thread gf_postRoundWatchdog( level.gf_roundGen );
 
+    // #strip-begin - round-end timeline probe (dev/main only; stripped from public release)
+    // Samples the killcam -> map_restart window at 20 Hz and logs every window the server went
+    // dark for. Nothing else covers it: gf_hitchMonitor is re-threaded (and collapsed) only on
+    // the far side of the restart, and this is exactly the window where clients report the
+    // "Connection Interrupted" plug. Retires itself on the generation change. See _gf_debug.gsc.
+    level thread gf_roundEndProbe( level.gf_roundGen );
+    // #strip-end
+
     // ⚠ ORDER IS LOAD-BEARING: everything above this line must STAY above it.
     // A GSC notify kills every thread that endon()s it — including the thread that FIRES
     // it. Two threads carry level endon("gf_round_over") and both call this function:
@@ -3189,8 +3207,16 @@ gf_onPlayerKilled( eInflictor, attacker, iDamage, sMeansOfDeath, sWeapon, vDir, 
 
             damager gf_syncDamageScore();
 
+            // Assist XP. This MUST go straight to _rank::giveRankXP — the stock
+            // _globallogic_score::givePlayerScore( "assist", … ) we used to call here returns on
+            // its first line because gf.gsc sets level.overridePlayerScore, so it awarded nothing
+            // (the killer's own XP is unaffected: giveKillStats fires from Callback_PlayerKilled,
+            // which does not go through givePlayerScore). Flat "assist" tier for every damager —
+            // the assist_25/50/75 tiers are stock's damage-fraction split, which only giveAssist()
+            // can reach, and that is on the dead path too. Bots earn nothing worth spending a
+            // reliable command on, but the XP call is server-side and free, so no bot filter.
             if ( !isDefined( attacker ) || damager != attacker )
-                maps\mp\gametypes\_globallogic_score::givePlayerScore( "assist", damager );
+                damager thread maps\mp\gametypes\_rank::giveRankXP( "assist" );
         }
         self.gf_assisters = [];
     }

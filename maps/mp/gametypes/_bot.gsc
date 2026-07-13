@@ -225,6 +225,12 @@ gf_boundaryListener()
 		wait 0.5;
 		if(gf_matchIsOver())
 			continue;
+		// Time-align this pass against the GF_ENDGAP lines: it runs INSIDE the final-killcam
+		// window, and its add_bot() calls are a client CONNECT in there (new configstrings +
+		// reliable commands to every client). That makes it the prime mod-owned suspect for
+		// BOTH the orphaned .killcam deadlock and the killcam "Connection Interrupted" plug.
+		// A/B it with gf_fill_n 0, which makes this pass add nothing.
+		maps\mp\gametypes\_gf_debug::gf_endProbeMark("bot boundary pass");
 		gf_boundaryPass();
 	}
 }
@@ -523,6 +529,9 @@ gf_addFillBots(team, count, gen)
 	{
 		if(!isDefined(level.gf_fillGen) || level.gf_fillGen != gen)
 			return;                      // superseded (newer pass, or a map_restart wiped the gen)
+		// Each add is staggered 0.5s apart, so mark the ADDS, not just the pass: a GF_ENDGAP
+		// that lands on one of these timestamps is a stall caused by the connect itself.
+		maps\mp\gametypes\_gf_debug::gf_endProbeMark("add_bot team=" + team + " " + (k + 1) + "/" + count);
 		bot = add_bot();
 		if(isDefined(bot))
 		{

@@ -43,7 +43,7 @@
       <ol class="steps">
         <li><span class="n">1</span><p><strong>Get the launcher.</strong> Download <code>cb-launcher.exe</code> from <a href="https://docs.cbservers.xyz/games/t5" target="_blank" rel="noopener">docs.cbservers.xyz/games/t5</a> &mdash; their T5 guide has the download and the full walkthrough. Save it anywhere.</p></li>
         <li><span class="n">2</span><p><strong>Run it.</strong> If Windows SmartScreen shows <em>&ldquo;Windows protected your PC&rdquo;</em>, click <strong>More info &rarr; Run anyway</strong>.</p></li>
-        <li><span class="n">3</span><p><strong>Open the Library tab</strong> and find <strong>Black Ops</strong>, then click <strong>SETUP</strong>. Choose <strong>Download game</strong> and let it finish. <strong>Already have Black Ops installed?</strong> Point it at your existing copy, then click <strong>VERIFY</strong>.</p></li>
+        <li><span class="n">3</span><p><strong>Open the Library tab</strong> and find <strong>Black Ops</strong>, then click <strong>SETUP</strong>. Choose <strong>Download game</strong> and let it finish. Already have Black Ops installed? Point it at your existing copy, then click <strong>VERIFY</strong>.</p></li>
         <li><span class="n">4</span><p><strong>Log in</strong> with your Plutonium account (create one free at <a href="https://forum.plutonium.pw/register" target="_blank" rel="noopener">forum.plutonium.pw/register</a>).</p></li>
         <li><span class="n">5</span><p><strong>Click PLAY &rarr; Multiplayer.</strong> Done &mdash; continue to the next step.</p></li>
       </ol>
@@ -75,7 +75,7 @@
             <tr><td>Shader warming</td><td><strong>Yes</strong></td></tr>
             <tr><td>Shadows</td><td><strong>Yes</strong></td></tr>
             <tr><td>Bullet impacts</td><td><strong>Yes</strong></td></tr>
-            <tr><td>Field of view</td><td><strong>(see below)</strong></td></tr>
+            <tr><td>Field of view</td><td><strong>65</strong> (see below for higher <strong>FOV scale</strong>)</td></tr>
             <tr><td>Brightness</td><td><strong>Not too high</strong></td></tr>
           </tbody>
         </table>
@@ -92,9 +92,6 @@
       </ul>
       <p>To work out your total FOV, multiply <code>cg_fov</code> by <code>cg_fovScale</code> &mdash; for a standard <strong>80 FOV</strong>, use <code>cg_fov 65</code> and <code>cg_fovScale 1.32</code>. Expect to experiment with values to find what feels comfortable.</p>
 
-      <h3 id="console">How to open the console</h3>
-      <p>Press the <code>~</code> key (tilde / grave, top-left under <strong>Esc</strong>) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press <code>~</code> again. Type a command and hit <strong>Enter</strong> &mdash; you&rsquo;ll need it for the <a href="#ads">Sprint/ADS improvement</a> below.</p>
-
       <h3>Game</h3>
       <div class="table-wrap">
         <table class="settings">
@@ -110,24 +107,14 @@
 
       <figure class="shot"><img src="assets/getting-started/game-settings.png" alt="Recommended in-game Game settings" loading="lazy" /><figcaption>Game settings &mdash; Settings &rarr; Game.</figcaption></figure>
 
-      <h3>Multiplayer</h3>
-      <div class="table-wrap">
-        <table class="settings">
-          <thead><tr><th>Setting</th><th>Recommended</th></tr></thead>
-          <tbody>
-            <tr><td>Allow downloading</td><td><strong>Yes</strong> <em>(needed to auto-download the mod)</em></td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="note">
-        <p><strong>Allow downloading must be on.</strong> It lets Plutonium fetch the Gunfight mod from the server automatically when you join (FastDL) &mdash; no manual install.</p>
-      </div>
-
       <h3>Controller</h3>
       <ul>
         <li><strong>Controls &rarr; Gamepad &rarr; Yes</strong> to enable controller support.</li>
         <li>If you are using a PlayStation controller, use <a href="https://ds4-windows.com/" target="_blank" rel="noopener">DS4Windows</a> to present it as an Xbox controller.</li>
       </ul>
+
+      <h3 id="console">How to open the console</h3>
+      <p>Press the <code>~</code> key (tilde / grave, top-left under <strong>Esc</strong>) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press <code>~</code> again. Type a command and hit <strong>Enter</strong> &mdash; you&rsquo;ll need it for the <a href="#ads">Sprint/ADS improvement</a> below.</p>
 
       <h3 id="ads">Mouse &amp; Keyboard: Sprint/ADS improvement</h3>
       <p>Black Ops 1 has a long-standing quirk: <strong>you can&rsquo;t aim down sights while the Sprint key (Shift) is held.</strong> Normally you have to fully release Shift before you can aim &mdash; which loses gunfights. One console command fixes it.</p>
@@ -150,11 +137,11 @@
       <div class="note">
         <p>The game rebuilds itself around the mod and your screen may go black for a moment. This is normal &mdash; let it finish and it will drop you into the match. Still not loading? Close the game and rejoin.</p>
       </div>
+      <figure class="shot"><img src="assets/getting-started/server-browser.png" alt="The Server Browser with Gunfight | gunfight.us in the Ranked tab" loading="lazy" /><figcaption>The Server Browser &mdash; look for <strong>Gunfight | gunfight.us</strong> (mode GF) on the <strong>Ranked</strong> tab.</figcaption></figure>
+
       <div class="note">
         <p>Keep your <strong>Plutonium launcher updated</strong> so its build matches the server&rsquo;s &mdash; FastDL ships the <em>mod</em>, not the engine build. Questions? Join our <a href="https://discord.gg/blackops" target="_blank" rel="noopener">Discord</a>.</p>
       </div>
-
-      <figure class="shot"><img src="assets/getting-started/server-browser.png" alt="The Server Browser with Gunfight | gunfight.us in the Ranked tab" loading="lazy" /><figcaption>The Server Browser &mdash; look for <strong>Gunfight | gunfight.us</strong> (mode GF) on the <strong>Ranked</strong> tab.</figcaption></figure>
     </section>
 
     <!-- 4. TROUBLESHOOTING -->

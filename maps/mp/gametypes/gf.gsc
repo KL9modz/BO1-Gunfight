@@ -422,7 +422,8 @@ onStartGameType()
     // #strip-end
 
     // Flinch (damage view-kick) scale — mult of stock bg_viewKickScale (0.2).
-    // Seeds scr_gf_flinch (default 0.5 = half stock) and applies bg_viewKickScale each
+    // Seeds scr_gf_flinch (default 1.0 = stock kick; flinch is already reduced once by the
+    // base perk specialty_bulletflinch / perk_damageKickReduction) and applies bg_viewKickScale each
     // round so an RCON change persists across map_restart. Server-side, so it
     // holds on the dedicated VPS. RCON bridge: flinch_<mult> for a live change.
     gf_applyFlinch();
@@ -507,15 +508,24 @@ onStartGameType()
     maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "allies", &"GF_GAMETYPE_HINT" );  // single-line: decode FX (setCOD7DecodeFX) collapses \n during scramble, so a multi-line hint overflows
     maps\mp\gametypes\_globallogic_ui::setObjectiveHintText( "axis",   &"GF_GAMETYPE_HINT" );
 
-    maps\mp\gametypes\_rank::registerScoreInfo( "win",      5   ); 
-    maps\mp\gametypes\_rank::registerScoreInfo( "loss",     1   );
-    maps\mp\gametypes\_rank::registerScoreInfo( "tie",      2.5 ); 
-    maps\mp\gametypes\_rank::registerScoreInfo( "kill",      0 ); 
-    maps\mp\gametypes\_rank::registerScoreInfo( "headshot",  0 );
-    maps\mp\gametypes\_rank::registerScoreInfo( "assist_75", 0 );
-    maps\mp\gametypes\_rank::registerScoreInfo( "assist_50", 0 );
-    maps\mp\gametypes\_rank::registerScoreInfo( "assist_25", 0 );
-    maps\mp\gametypes\_rank::registerScoreInfo( "assist",    0 );
+    // XP economy — 5x stock across the board. These values feed RANK XP ONLY, never the
+    // scoreboard: level.overridePlayerScore (above) makes _globallogic_score::givePlayerScore
+    // return on its first line, so the scoreboard stays our damage total. The "+N" XP popup
+    // that would otherwise race our Elimination/Assist popup is killed by self.enableText =
+    // false (gf_playerSpawnedCB), NOT by these values — so they are free to be non-zero.
+    //
+    // win/loss/tie are SCALARS on the end-of-match bonus, not flat XP: stock computes
+    // scalar * (level.timeLimit * spm) * timePlayedFrac. Everything else is flat XP per event.
+    // A headshot kill pays kill + headshot (both fire), i.e. 1000.
+    maps\mp\gametypes\_rank::registerScoreInfo( "win",      5    );   // stock 1
+    maps\mp\gametypes\_rank::registerScoreInfo( "loss",     2.5  );   // stock 0.5
+    maps\mp\gametypes\_rank::registerScoreInfo( "tie",      3.75 );   // stock 0.75
+    maps\mp\gametypes\_rank::registerScoreInfo( "kill",     500 );    // stock 100 — fires from _globallogic_player::Callback_PlayerKilled -> giveKillStats (NOT via our onPlayerKilled hook)
+    maps\mp\gametypes\_rank::registerScoreInfo( "headshot", 500 );    // stock 100 — stacks on top of "kill"
+    maps\mp\gametypes\_rank::registerScoreInfo( "assist",    100 );   // stock 20 — the only assist tier we award (gf_onPlayerKilled pays every damager the flat tier)
+    maps\mp\gametypes\_rank::registerScoreInfo( "assist_25", 200 );   // stock 40 — tiers below are registered for completeness only; stock's
+    maps\mp\gametypes\_rank::registerScoreInfo( "assist_50", 300 );   // stock 60   giveAssist() routes through givePlayerScore, which overridePlayerScore
+    maps\mp\gametypes\_rank::registerScoreInfo( "assist_75", 400 );   // stock 80   kills, so nothing in this mode can actually fire them.
 
     gf_initLoadouts();   // guarded by game["gf_init"] — shuffles once per match and picks loadout 0 for round 1 
     gf_pickLoadout();    // deterministic: index derived from game["roundsplayed"] 

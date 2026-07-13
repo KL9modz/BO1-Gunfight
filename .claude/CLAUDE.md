@@ -48,7 +48,6 @@ wins** takes the match.
 - **Start music is killed by the ambient map music.**
 - **Minimap compass doesn't show wager (zoomed) size on some DLC maps** — inherent to the resident-art
   whitelist excluding First Strike/Escalation maps.
-- **Berlin Wall:** OT flag / spawn area sits too close to the building.
 - **SECURITY:** rotate the leaked RCON password (VPS `dedicated.cfg`) + the exposed Plutonium server key.
 - **Prevent a duplicate launcher from squatting port 28960 after a reboot** (root cause of the reported
   "FF/settings revert on restart").
@@ -129,8 +128,9 @@ external references we use are the official engine sources (see **Resources**).
 
 - **GSC is loaded as loose rawfiles** — edit a `.gsc` and `map_restart`; **no rebuild**. Only compiled
   assets need `mod.ff` (see *Building mod.ff*).
-- **Local-test cfg quirks:** `party_minplayers 1` for solo testing (`2` for public); `set scr_xpscale`
-  is read-only on a dedicated server (harmless error). If ADS feels wrong locally, `exec autoexec`.
+- **Local-test cfg quirks:** `party_minplayers 1` for solo testing (`2` for public). If ADS feels wrong
+  locally, `exec autoexec`. (The `scr_xpscale is read only` error at boot is our own cfg line being
+  rejected — see *XP* below; it is harmless but it is **not** a local-only quirk.)
 - **Test panel/bridge/telemetry changes against a DEDICATED server, not a listen host** — a listen
   server masks RCON queue saturation and the "Unknown cmd" dvar-probe spam that only bite on the VPS.
 
@@ -489,21 +489,56 @@ rebuild; dvar values/positions are GSC-tunable. Intro slide/fade animations are 
 ### Damage scoring, friendly fire, flinch, vision
 - **Score = total damage dealt** (`gf_onPlayerDamage`), capped per hit at the victim's current HP (no
   overkill inflation), pushed silently (bypasses the stock rank-popup so score doesn't flash each hit).
+- **Rank XP is 5× stock and lives ONLY in `registerScoreInfo`** (`gf.gsc onStartGameType`): **kill 500**,
+  **headshot +500** (both fire on a headshot kill → 1000), **assist 100**, and the win/loss/tie **match-bonus
+  scalars 5 / 2.5 / 3.75** (stock 1 / 0.5 / 0.75 — these are multipliers on stock's
+  `scalar × (timeLimit × SPM) × timePlayedFrac`, not flat XP). XP and score are **fully decoupled**:
+  `level.overridePlayerScore = true` makes `_globallogic_score::givePlayerScore` return on its first line, so
+  no XP value can ever reach the damage scoreboard, and the stock "+N" popup is killed by `self.enableText =
+  false` (per spawn) — **not** by the values, which is why they're safe to be non-zero.
+  ⚠ **`scr_xpscale` is READ-ONLY on Plutonium T5 — it is not an XP lever.** rcon *and* `dedicated.cfg` both
+  get `Error: scr_xpscale is read only` (proven live; that boot error in `console_mp.log` is our own cfg line
+  being rejected), so it is pinned at **1** forever. The only script-side equivalent is assigning
+  `level.xpScale` after `_rank::init` — we don't; the `registerScoreInfo` values *are* the knob.
+  ⚠ **Kill XP flows from `Callback_PlayerKilled` → `giveKillStats`, NOT from our `level.onPlayerKilled` hook**,
+  so it needs no wiring. **Assists do** — `gf_onPlayerKilled` must call `_rank::giveRankXP("assist")`
+  **directly**, because stock's assist/capture/defend XP all routes through the dead `givePlayerScore` path.
+  Same reason the OT flag capture pays **no** XP (stock `capture` 300 is unreachable) — wire it directly if
+  we ever want it. ⚠ The end-of-match bonus is gated on `game["timepassed"]`, which only accrues while
+  `!level.timerStopped` — and our round clock holds `pauseTimer()` all round ([[paused-timer-freezes-gettimepassed]]),
+  so it may never fire. **Unverified** (`logString` output does not reach `games_mp.log` on this server, so the
+  log can't answer it) — combat XP above is deliberately the load-bearing path.
 - **Friendly fire is 100% stock** — the mod GSC sets no FF dvar. It's owned by the RCON panel writing the
   stock tweakables `scr_team_fftype` (base) + `scr_gf_team_fftype` (per-gametype override the engine
   re-polls ~5s). FF damage is applied by the engine but never scored. ([[t5-tweakable-override-dvars-live]])
-- **Flinch:** `scr_gf_flinch` (mult of stock `bg_viewKickScale` 0.2; **default 0.5** = half stock →
-  `bg_viewKickScale` 0.1), re-applied every round by `gf_applyFlinch`. ⚠ **`bg_viewKickScale` does NOT
-  replicate** — each client scales its own damage view kick from its LOCAL copy, so the server-side
-  `setDvar` alone changes nothing for anyone on a dedicated server (it only ever appeared to work on a
-  listen host, where the host *is* a client). So the value is **pushed per-client**: to live humans in
-  `gf_applyFlinch`, and per-spawn via `gf_applyFlinchClient` (which skips only at an explicit stock 1 —
-  a fresh client already sits at 0.2; at the 0.5 default it always pushes). ⚠ That per-spawn push
-  **overrides a player's own `bg_viewKickScale`** from their autoexec — the server's value always wins,
-  so the dvar is the one flinch number that matters. Session-only; `bg_viewKickScale` is not a saved
-  client dvar. ⚠ The two `gf_cfgFloat` defaults (`gf_applyFlinch` + `gf_applyFlinchClient`) must stay in
-  lockstep — the seed is seed-if-empty, so a drift is masked by whichever ran first.
+- **Flinch — TWO levers, one of them a perk.** ⚠ `scr_gf_flinch` is **not** the only flinch knob. The base
+  perk set grants **`specialty_bulletflinch`** (Hardened Pro, *"reduced reaction and recoil when shot"*),
+  which activates the engine's **`perk_damageKickReduction`** for every player, every round. So flinch is
+  **already reduced once, by the perk**. `scr_gf_flinch` therefore ships at **1.0 = stock kick**
+  (`bg_viewKickScale` 0.2), *not* to leave flinch unreduced but to avoid reducing it **twice**: it shipped
+  at 0.5 before the perk existed, and stacking the two produced near-zero flinch by accident. One reducer,
+  not two — move `scr_gf_flinch` to tune, but remember the perk floor underneath it.
+  `gf_applyFlinch` re-applies it every round. ⚠ **`bg_viewKickScale` does NOT replicate** — each client
+  scales its own damage view kick from its LOCAL copy, so the server-side `setDvar` alone changes nothing
+  for anyone on a dedicated server (it only ever appeared to work on a listen host, where the host *is* a
+  client). So the value is **pushed per-client**: to live humans in `gf_applyFlinch`, and per-spawn via
+  `gf_applyFlinchClient`, which pushes **unconditionally**. ⚠ **There is deliberately no skip-at-stock
+  shortcut**: the old code returned early at `scale == 1`, which was only safe while the default was 0.5
+  (so it always pushed anyway). At a 1.0 default that skip would mean the server never pushes at all — and
+  `bg_viewKickScale` is a plain client dvar a player can set in their own autoexec, so anyone running
+  `bg_viewKickScale 0` would take **zero flinch while everyone else takes the full kick**. The
+  unconditional push is what makes the server's value authoritative. Session-only; `bg_viewKickScale` is
+  not a saved client dvar. ⚠ The two `gf_cfgFloat` defaults (`gf_applyFlinch` + `gf_applyFlinchClient`)
+  must stay in lockstep — the seed is seed-if-empty, so a drift is masked by whichever ran first.
   ([[flinch-bg-viewkickscale-not-replicated]])
+- ⚠ **Every `perk_*` dvar is a MAGNITUDE; the matching `specialty_*` perk is its GATE.** The engine (or
+  `_class.gsc`) only consults the dvar for a player who **has** the perk — they never "fight", but a
+  slider whose gate nobody holds is a **dead control that silently does nothing**. So the panel's PERK
+  MULTIPLIERS sliders are scoped by what the loadouts actually grant: `perk_sprintMultiplier` is **BASE**
+  (Lightweight, everyone); `perk_weapSwitchMultiplier` / `_weapReloadMultiplier` / `_weapAdsMultiplier` /
+  `_sprintRecoveryMultiplier` / `_weapSpreadMultiplier` are **SNIPER/HEAVY only** (their gates ride in that
+  package — so they affect **10 of 53 rounds**); and **`perk_weapRateMultiplier` is DEAD** — its gate is
+  `specialty_rof` (Double Tap), which no loadout grants. Each slider's tooltip now states its gate + scope.
 - **There is NO second flinch multiplier — `g_fix_viewkick_dupe` is INERT on T5 MP.** `scr_gf_flinch` is
   the only flinch knob; `0.5` → `bg_viewKickScale 0.1` is exactly half stock. This file previously claimed
   the dvar doubled felt flinch, on the strength of it *appearing* in the `console_mp.log` dump — which
@@ -692,7 +727,7 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_overtimelimit` / `_large` | 15 / 30 | Overtime seconds, small / large; `0` = OT off (HP decides now). |
 | `gf_capture_time` / `_large` | 3.5 / 5 | OT zone hold-to-capture seconds, small / large. |
 | `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (auto goes large when a team hits 5+). |
-| `scr_gf_flinch` | 0.5 | Flinch scale (× stock `bg_viewKickScale` 0.2 → 0.1); pushed **per-client** — the server dvar alone doesn't replicate, and the push beats a player's own autoexec (clamp 0-3). |
+| `scr_gf_flinch` | 1.0 | Flinch scale (× stock `bg_viewKickScale` 0.2). **1.0 = stock kick — flinch is already reduced once by the base perk `specialty_bulletflinch` (Hardened Pro), so this sits at stock to avoid double-reducing.** Pushed **per-client every spawn, unconditionally** — the server dvar alone doesn't replicate, and the push beats a player's own autoexec (clamp 0-3). |
 | `scr_gf_jump_fatigue` | 0 | **0 = OFF (the GF default)** / 1 = stock. Drives the engine's `jump_slowdownEnable` (post-jump movement drag — "jump fatigue"). The mod owns it so OFF ships as a default even with no cfg and no panel (`gf_applyJumpFatigue`, re-applied every round). RCON bridge: `jumpfatigue_<0\|1>`. |
 | `scr_gf_sprint_unlimited` | 0 | **0 = stock** / 1 = the sprint meter never empties. Drives the client dvar `player_sprintUnlimited`, **pushed per-client every spawn** — stock's only push is at connect and is ON-only, so a bare `set` on it reaches nobody already in the server and can never turn it back off (`gf_applySprintUnlimited` + `_Client`). RCON bridge: `sprintunlimited_<0\|1>`. |
 | `g_fix_viewkick_dupe` | 1 | **INERT on T5 MP** — the engine never registered it (live read: `Domain is any text`, `default:` mirrors our own `set`). Harmless, does nothing. Flinch is `scr_gf_flinch` alone. |
@@ -1072,12 +1107,53 @@ show on neutral-base weapons (python/knife/pistols/launchers). `crossbow_explosi
 (patterns + gold show). `custom_class["camo_num"]` is a dead end here (only affects the on-back model +
 requires a CUSTOM class). Special primaries (minigun/m202/defaultweapon) reject camo — force index 0.
 
-**Perks** (`SetPerk`/`hasPerk`/`UnSetPerk`): `specialty_movefaster` (Lightweight), `specialty_fallheight`
-(Lightweight Pro), `specialty_longersprint` (Marathon), `specialty_armorvest`/`specialty_flakjacket`
-(Flak Jacket), `specialty_fastreload`, `specialty_gpsjammer` (Ghost), `specialty_bulletpenetration`,
-`specialty_quieter` (Ninja), `specialty_gas_mask`, `specialty_stunprotection`, `specialty_shades` (flash
-resist), `specialty_fastweaponswitch`, `specialty_twoprimaries`, `specialty_scavenger`, `specialty_rof`,
-`specialty_holdbreath`, `specialty_bulletaccuracy`.
+**Perks** (`SetPerk`/`hasPerk`/`UnSetPerk`). **A CAC perk is a `|`-delimited GROUP of `specialty_*`
+tokens, and a Pro ability is just EXTRA tokens in that group** (`_class::validatePerkGroup` splits it,
+`register_perks()` SetPerks each) — so GSC can grant any perk, any Pro, or a Pro *without* its base, à la
+carte. The engine's 52 valid tokens + every base→Pro pairing (verified 3 ways: the token table in
+`BlackOpsMP.exe`, `_properks.gsc` stat keys, and `shrp.gsc`'s shared `PERKS_<NAME>_PRO` groups) →
+[[reference_t5_perks_and_pro_specialties]]. ⚠ `mp/statsTable.csv` (the real group table) is **not** in
+`raw/` and is **not extractable** — its stringtable cells are stored as hashes; don't retry.
+⚠ **`specialty_armorvest` is NOT Flak Jacket — and it is NOT any Black Ops perk** (it is none of the 15;
+it's an engine **leftover** token with no create-a-class row and no icon, but with **live damage code**).
+We call it **"Body Armor"**, named for its effect — do **not** give it a BO1-sounding name, that is how
+`specialty_blindeye` survived. It applies a flat **−20% on every non-headshot BULLET hit**
+(`_class::cac_modified_damage` → `damage * perk_armorVest * .01`, default 80), live via stock
+`Callback_PlayerDamage`. Gunfight grants it to everyone **knowingly** (symmetric; a softer bullet TTK
+suits a 42s round) — accept that headshots bypass it, so they are worth proportionally more and both
+score (= damage dealt) and the most-HP-wins decision tilt toward them. Real Flak Jacket is
+`specialty_flakjacket` (explosives; also granted); its Pro is `specialty_fireproof` (not granted).
+**GF's base set (10, every spawn, `gf_giveCustomLoadout`):** `movefaster` + `fallheight` (Lightweight +
+Pro), `longersprint` + `unlimitedsprint` (Marathon + Pro), `armorvest` (Body Armor, above), `flakjacket`
+(Flak Jacket), `shades` + `stunprotection` (Tactical Mask Pro's two halves), `bulletflinch` (Hardened Pro
+— less flinch when shot), `loudenemies` (Ninja Pro's "enemies are louder" half). **Five Pros are granted
+without their base perk** — that's the à-la-carte model, not an oversight. `loudenemies` is the trick for
+*globally louder footsteps*: it is **listener-side**, so granting it to everyone (and `quieter` to nobody)
+makes everyone hear everyone else louder, symmetrically — there is no footstep-volume dvar in the engine
+(`cg_footsteps` is a **client** dvar; `perk_footstepVolume*` does not exist).
+⚠ `unlimitedsprint` and `loudenemies` are both **engine-consumed with zero GSC references** — they are the
+two base perks whose effect is *unverified in-game*. If `unlimitedsprint` proves live, retire
+`scr_gf_sprint_unlimited` / `player_sprintUnlimited` entirely.
+
+**Per-loadout perks** — `gf_load()`'s optional 8th field: a comma-separated specialty list layered on the
+base set, `-token` to remove one. Parsed once at pool build, applied after the base set and before the
+RCON override layer (so admin toggles still win). **Only 3 reach the HUD** (the overview has 3 perk
+icons): base perks are preferred over Pros and **the same icon is never used twice** — a Pro has no art of
+its own and borrows its parent's, so a perk beside its own Pro would render one icon twice. Today: 43
+loadouts run the base set alone; the 8 snipers + M202 + Minigun carry the **sniper/heavy package** (8
+perks: Hardened, Steady Aim + both Pros, Scout + Pro, Sleight of Hand + Pro), which displays as
+Hardened / Steady Aim / Scout. The **8 snipers additionally drop Body Armor** (`-specialty_armorvest`), so
+they take **full** non-headshot bullet damage — they out-range you, so they don't also out-tank you. The
+**M202 and Minigun keep it** and stay heavy tanks; that asymmetry is deliberate. Edit it all in
+`tools/loadout_editor` (checkbox grid + one-click package); its save-time validator rejects any token the
+engine doesn't know.
+Common: `specialty_movefaster` (Lightweight) + `specialty_fallheight` (its Pro), `specialty_longersprint`
+(Marathon) + `specialty_unlimitedsprint` (its Pro), `specialty_fastreload` (SoH) + `specialty_fastads` (its Pro),
+`specialty_gpsjammer` (Ghost), `specialty_bulletpenetration` (Hardened) + `specialty_bulletflinch` (its
+Pro — reduced flinch when shot), `specialty_quieter` (Ninja), `specialty_gas_mask` (Tactical Mask) +
+`specialty_shades`/`specialty_stunprotection` (its Pro — flash/stun resist), `specialty_holdbreath`
+(Scout) + `specialty_fastweaponswitch` (its Pro), `specialty_bulletaccuracy` (Steady Aim),
+`specialty_scavenger`, `specialty_twoattach` (Warlord) + `specialty_twogrenades` (its Pro).
 
 **HUD shaders** — weapons default to `"menu_mp_weapons_" + base` (base = no `_mp`, no variant suffix).
 Special cases: `ithaca_grip→…ithaca`, `stoner63→…stoner63a`, `crossbow_explosive→…crossbow`,

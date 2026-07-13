@@ -6,7 +6,7 @@
 // ─── How to custom-build a loadout ──────────────────────────────────────────
 // Each pool entry is ONE line:
 //
-//   pool[n] = gf_load( PRIMARY, SECONDARY, EQUIPMENT, LETHAL, TACTICAL, CAMO ); n++;
+//   pool[n] = gf_load( PRIMARY, SECONDARY, EQUIPMENT, LETHAL, TACTICAL, CAMO, CAMO2, PERKS ); n++;
 //
 // You type only the weapon TOKENS (e.g. "famas_reflex_mp"); the display name and
 // HUD icon are resolved automatically by gf_wdb() from the tables in
@@ -17,6 +17,19 @@
 //   CAMO: 0-15 pins a camo index (see the camo table in .claude/CLAUDE.md), or
 //         -1 = roll a fresh random camo each match (the old behavior). Minigun &
 //         M202 are auto-forced to stock camo (they reject a real camo).
+//
+//   PERKS: OPTIONAL. Comma-separated specialty tokens layered on top of the base perk
+//         set for this loadout only; a leading '-' REMOVES a base perk. Omit it (or
+//         pass "") for the base set alone, which is what most loadouts run.
+//           "specialty_holdbreath,specialty_sprintrecovery"  -> Scout + Steady Aim Pro
+//           "specialty_quieter,-specialty_movefaster"        -> Ninja, no Lightweight
+//         Only THREE reach the overview (it has 3 perk icons): base perks are preferred
+//         over Pro abilities, and the same icon is never used twice — a Pro has no art of
+//         its own and borrows its parent's, so a perk shown next to its own Pro would
+//         render the same icon twice. Extra perks past 3 are silent buffs, by design: the
+//         sniper/heavy package is 8 perks and shows Hardened / Steady Aim / Scout.
+//         ⚠ An unknown token is a SILENT no-op (SetPerk ignores it) — pick from the
+//         table in gf_buildPerkDB(), or use the loadout editor's checkboxes.
 //
 // Valid tokens are catalogued at the bottom of this file. Slots:
 //   Lethal    : frag_grenade_mp | sticky_grenade_mp (Semtex) | hatchet_mp (Tomahawk)
@@ -40,6 +53,7 @@ gf_initLoadouts()
         return;
 
     gf_buildWeaponDB();   // token -> name/icon resolver tables (level.gf_wpnDB / _wpnFam)
+    gf_buildPerkDB();     // specialty token -> display name + icon-parent (level.gf_perkDB)
 
     pool = [];
     n    = 0;
@@ -47,7 +61,7 @@ gf_initLoadouts()
     // #gf-loadout-editor-begin  tools/loadout_editor rewrites every pool[n]=gf_load line
     //   between these markers. Keep the markers; hand-editing between them is fine too.
 
-    //                        PRIMARY                     SECONDARY                  EQUIPMENT              LETHAL               TACTICAL                  CAMO
+    //                        PRIMARY                     SECONDARY                  EQUIPMENT              LETHAL               TACTICAL                  CAMO CAMO2  PERKS (adds, then -removes)
     // ── AR ×8 ──
     pool[n] = gf_load( "famas_dualclip_mp",         "spas_silencer_mp",        "claymore_mp",         "hatchet_mp",        "tabun_gas_mp",           -1,  -1 ); n++;
     pool[n] = gf_load( "m16_acog_mp",               "spas_mp",                 "scrambler_mp",        "sticky_grenade_mp", "concussion_grenade_mp",  -1,  -1 ); n++;
@@ -60,7 +74,7 @@ gf_initLoadouts()
 
     // ── SMG ×6 ──
     pool[n] = gf_load( "mp5k_silencer_mp",          "pythondw_mp",             "claymore_mp",         "hatchet_mp",        "tabun_gas_mp",           -1,  -1 ); n++;
-    pool[n] = gf_load( "dragunov_acog_mp",          "cz75dw_mp",               "satchel_charge_mp",   "hatchet_mp",        "nightingale_mp",         -1,  -1 ); n++;
+    pool[n] = gf_load( "dragunov_acog_mp",          "cz75dw_mp",               "satchel_charge_mp",   "hatchet_mp",        "nightingale_mp",         -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
     pool[n] = gf_load( "mp5k_mp",                   "aspdw_mp",                "camera_spike_mp",     "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1 ); n++;
     pool[n] = gf_load( "spectre_acog_grip_mp",      "hs10dw_mp",               "scrambler_mp",        "frag_grenade_mp",   "concussion_grenade_mp",  -1,  -1 ); n++;
     pool[n] = gf_load( "uzi_acog_grip_mp",          "ithaca_grip_mp",          "satchel_charge_mp",   "frag_grenade_mp",   "willy_pete_mp",          -1,  -1 ); n++;
@@ -73,8 +87,8 @@ gf_initLoadouts()
     pool[n] = gf_load( "stoner63_extclip_mp",       "asp_mp",                  "acoustic_sensor_mp",  "hatchet_mp",        "willy_pete_mp",          -1,  -1 ); n++;
 
     // ── Sniper ×2 ──
-    pool[n] = gf_load( "l96a1_mp",                  "crossbow_explosive_mp",   "camera_spike_mp",     "hatchet_mp",        "concussion_grenade_mp",  -1,  -1 ); n++;
-    pool[n] = gf_load( "wa2000_vzoom_mp",           "m72_law_mp",              "satchel_charge_mp",   "frag_grenade_mp",   "tabun_gas_mp",           -1,  -1 ); n++;
+    pool[n] = gf_load( "l96a1_mp",                  "crossbow_explosive_mp",   "camera_spike_mp",     "hatchet_mp",        "concussion_grenade_mp",  -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
+    pool[n] = gf_load( "wa2000_vzoom_mp",           "m72_law_mp",              "satchel_charge_mp",   "frag_grenade_mp",   "tabun_gas_mp",           -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
 
     // ── Shotgun ×2 ──
     pool[n] = gf_load( "spas_silencer_mp",          "china_lake_mp",           "claymore_mp",         "hatchet_mp",        "flash_grenade_mp",       -1,  -1 ); n++;
@@ -95,8 +109,8 @@ gf_initLoadouts()
     pool[n] = gf_load( "ak74u_acog_mp",             "knife_ballistic_mp",      "scrambler_mp",        "sticky_grenade_mp", "concussion_grenade_mp",  -1,  -1 ); n++;
 
     // ── Sniper ×2 (expanded) ──
-    pool[n] = gf_load( "psg1_ir_mp",                "rpg_mp",                  "acoustic_sensor_mp",  "frag_grenade_mp",   "willy_pete_mp",          -1,  -1 ); n++;
-    pool[n] = gf_load( "dragunov_extclip_mp",       "china_lake_mp",           "claymore_mp",         "frag_grenade_mp",   "tabun_gas_mp",           -1,  -1 ); n++;
+    pool[n] = gf_load( "psg1_ir_mp",                "rpg_mp",                  "acoustic_sensor_mp",  "frag_grenade_mp",   "willy_pete_mp",          -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
+    pool[n] = gf_load( "dragunov_extclip_mp",       "china_lake_mp",           "claymore_mp",         "frag_grenade_mp",   "tabun_gas_mp",           -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
 
     // ── Shotgun ×1 (expanded) ──
     pool[n] = gf_load( "rottweil72_mp",             "m72_law_mp",              "satchel_charge_mp",   "sticky_grenade_mp", "nightingale_mp",         -1,  -1 ); n++;
@@ -104,14 +118,14 @@ gf_initLoadouts()
     // ── Dual-wield SMG ×4 ──
     pool[n] = gf_load( "mac11_silencer_mp",         "m1911dw_mp",              "satchel_charge_mp",   "hatchet_mp",        "flash_grenade_mp",       -1,  -1 ); n++;
     pool[n] = gf_load( "ithaca_grip_mp",            "pm63dw_mp",               "acoustic_sensor_mp",  "sticky_grenade_mp", "willy_pete_mp",          -1,  -1 ); n++;
-    pool[n] = gf_load( "l96a1_mp",                  "rpg_mp",                  "camera_spike_mp",     "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1 ); n++;
+    pool[n] = gf_load( "l96a1_mp",                  "rpg_mp",                  "camera_spike_mp",     "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
     pool[n] = gf_load( "aug_elbit_mp",              "python_acog_mp",          "scrambler_mp",        "frag_grenade_mp",   "nightingale_mp",         -1,  -1 ); n++;
 
     // ── SMG/AR/Sniper (expanded ×5) ──
     pool[n] = gf_load( "mpl_acog_grip_mp",          "makarov_silencer_mp",     "satchel_charge_mp",   "sticky_grenade_mp", "flash_grenade_mp",       -1,  -1 ); n++;
     pool[n] = gf_load( "commando_mk_mp",            "m1911_silencer_mp",       "camera_spike_mp",     "hatchet_mp",        "concussion_grenade_mp",  -1,  -1 ); n++;
-    pool[n] = gf_load( "wa2000_acog_mp",            "asp_mp",                  "scrambler_mp",        "frag_grenade_mp",   "willy_pete_mp",          -1,  -1 ); n++;
-    pool[n] = gf_load( "psg1_silencer_mp",          "crossbow_explosive_mp",   "acoustic_sensor_mp",  "sticky_grenade_mp", "tabun_gas_mp",           -1,  -1 ); n++;
+    pool[n] = gf_load( "wa2000_acog_mp",            "asp_mp",                  "scrambler_mp",        "frag_grenade_mp",   "willy_pete_mp",          -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
+    pool[n] = gf_load( "psg1_silencer_mp",          "crossbow_explosive_mp",   "acoustic_sensor_mp",  "sticky_grenade_mp", "tabun_gas_mp",           -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads,-specialty_armorvest" ); n++;
     pool[n] = gf_load( "kiparis_acog_grip_mp",      "rpg_mp",                  "claymore_mp",         "frag_grenade_mp",   "nightingale_mp",         -1,  -1 ); n++;
 
     // ── Heavy & mixed ×9 — Minigun/M202 stay primary; launchers are secondaries ──
@@ -120,8 +134,8 @@ gf_initLoadouts()
     pool[n] = gf_load( "ak74u_grip_dualclip_mp",    "makarov_extclip_mp",      "camera_spike_mp",     "hatchet_mp",        "willy_pete_mp",          -1,  -1 ); n++;
     pool[n] = gf_load( "galil_mp",                  "m1911_extclip_mp",        "scrambler_mp",        "frag_grenade_mp",   "concussion_grenade_mp",  -1,  -1 ); n++;
     pool[n] = gf_load( "stoner63_reflex_mp",        "cz75_auto_mp",            "acoustic_sensor_mp",  "sticky_grenade_mp", "nightingale_mp",         -1,  -1 ); n++;
-    pool[n] = gf_load( "m202_flash_wager_mp",       "ithaca_grip_mp",          "camera_spike_mp",     "hatchet_mp",        "flash_grenade_mp",       -1,  -1 ); n++;
-    pool[n] = gf_load( "minigun_wager_mp",          "defaultweapon",           "claymore_mp",         "hatchet_mp",        "concussion_grenade_mp",  -1,  -1 ); n++;
+    pool[n] = gf_load( "m202_flash_wager_mp",       "ithaca_grip_mp",          "camera_spike_mp",     "hatchet_mp",        "flash_grenade_mp",       -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads" ); n++;
+    pool[n] = gf_load( "minigun_wager_mp",          "defaultweapon",           "claymore_mp",         "hatchet_mp",        "concussion_grenade_mp",  -1,  -1, "specialty_bulletpenetration,specialty_bulletaccuracy,specialty_sprintrecovery,specialty_fastmeleerecovery,specialty_holdbreath,specialty_fastweaponswitch,specialty_fastreload,specialty_fastads" ); n++;
     pool[n] = gf_load( "fnfal_mk_mp",               "skorpiondw_mp",           "acoustic_sensor_mp",  "frag_grenade_mp",   "willy_pete_mp",          -1,  -1 ); n++;
     pool[n] = gf_load( "hk21_acog_mp",              "cz75_auto_mp",            "satchel_charge_mp",   "hatchet_mp",        "tabun_gas_mp",           -1,  -1 ); n++;
     // #gf-loadout-editor-end
@@ -142,6 +156,7 @@ gf_initLoadouts()
     // resolved names/icons). Drop them so they don't linger on level.
     level.gf_wpnDB  = undefined;
     level.gf_wpnFam = undefined;
+    level.gf_perkDB = undefined;
 }
 
 // Deterministic loadout selection: index is derived from the persisted round
@@ -219,14 +234,57 @@ gf_giveCustomLoadout()
 
     self SetPerk( "specialty_movefaster"        );   // Lightweight
     self SetPerk( "specialty_fallheight"        );   // Lightweight Pro — no fall damage
-    self SetPerk( "specialty_longersprint"      );   // Marathon (no pro specialty exists in T5 source)
-    self SetPerk( "specialty_armorvest"         );   // Flak Jacket
-    self SetPerk( "specialty_flakjacket"        );   // Flak Jacket Pro — throwback grenades
-    self SetPerk( "specialty_shades"            );   // flashbang resist — _flashgrenades cuts flash duration to 10%
-    self SetPerk( "specialty_stunprotection"    );   // concussion/stun resist — _weapons cuts concussion time to 10%
-    // specialty_fastweaponswitch (gates perk_weapSwitchMultiplier) is OFF by default now — stock
-    // weapon-swap speed. Admins opt in via the RCON Perks tab (adds it to gf_perk_on below), which
-    // both grants the perk and makes the "Weapon Switch Speed" slider take effect.
+    self SetPerk( "specialty_longersprint"      );   // Marathon
+    // Marathon Pro — the sprint meter never empties. This is the ENGINE's own perk bit (it is in
+    // BlackOpsMP.exe's specialty table) and it is consumed by engine movement code: no stock GSC
+    // anywhere references it. That makes it strictly better than the scr_gf_sprint_unlimited /
+    // player_sprintUnlimited client-dvar push, which exists only because stock's lone push is at
+    // connect and is ON-only ([[player-sprintunlimited-one-way-connect-push]]). The two don't fight —
+    // they're independent inputs to the same sim — so the dvar path stays until this is proven live;
+    // once it is, retire scr_gf_sprint_unlimited and its per-spawn push.
+    self SetPerk( "specialty_unlimitedsprint"   );   // Marathon Pro — unlimited sprint
+    // ⚠ armorvest is NOT Flak Jacket, and it is NOT any Black Ops perk — it is none of the 15. It's
+    // an engine LEFTOVER token (no create-a-class row, no icon) that still carries live damage code:
+    // _class::cac_modified_damage does damage * (perk_armorVest * .01), a flat -20% on every
+    // NON-HEADSHOT BULLET hit (the dvar defaults to 80). Kept knowingly: it is symmetric, and the
+    // softer bullet TTK suits a 42s round. Costs to accept: headshots bypass it entirely, so they are
+    // worth proportionally more, and both score (= damage dealt) and the most-remaining-HP round
+    // decision tilt toward them.
+    self SetPerk( "specialty_armorvest"         );   // Body Armor — -20% bullet damage (NOT Flak Jacket, NOT a BO1 perk)
+    self SetPerk( "specialty_flakjacket"        );   // Flak Jacket (base) — reduced explosive damage. Its Pro is specialty_fireproof (fire immunity), not given.
+    self SetPerk( "specialty_shades"            );   // Tactical Mask Pro (half) — flash resist; _flashgrenades cuts flash duration to 10%
+    self SetPerk( "specialty_stunprotection"    );   // Tactical Mask Pro (half) — stun resist; _weapons cuts concussion time to 10%
+    self SetPerk( "specialty_bulletflinch"      );   // Hardened Pro — reduced reaction/recoil when shot (WITHOUT Hardened itself; see below)
+    // Ninja Pro's "enemy movement is louder" HALF, granted WITHOUT specialty_quieter (Ninja): nobody
+    // is made quieter, but everyone hears everyone else louder. That asymmetry is the whole point —
+    // it's a listener-side perk, so giving it to all makes footsteps globally louder and stays
+    // symmetric. Engine-consumed (no stock GSC references it), so it is UNVERIFIED like
+    // specialty_unlimitedsprint; if it turns out inert, nothing else changes.
+    self SetPerk( "specialty_loudenemies"       );   // Ninja Pro (half) — everyone's footsteps are louder
+    // ⚠ Three Pros above are granted WITHOUT their base perk (fallheight/shades+stunprotection/
+    // bulletflinch/loudenemies). That is the à-la-carte model, not an oversight: a perk is just a
+    // group of specialty tokens and a Pro is extra tokens in that group, so any half is grantable
+    // alone ([[reference_t5_perks_and_pro_specialties]]).
+    // specialty_fastweaponswitch (gates perk_weapSwitchMultiplier) is NOT in the base set — stock
+    // weapon-swap speed. It rides in the sniper/heavy package, and admins can opt in globally via
+    // the RCON Perks tab (adds it to gf_perk_on below), which both grants the perk and makes the
+    // "Weapon Switch Speed" slider take effect.
+
+    // Per-loadout perks (the optional 8th gf_load field; parsed once at pool build). Layered on
+    // top of the base set so a loadout can DROP a base perk, and applied before the RCON override
+    // layer so an admin toggle still beats the loadout. Adds run before removes, so a token listed
+    // both ways ends up removed. Both arrays are empty for an unmigrated line -> zero cost, and
+    // behavior identical to before the feature existed.
+    if ( isDefined( load["perkAdds"] ) )
+    {
+        for ( i = 0; i < load["perkAdds"].size; i++ )
+            self SetPerk( load["perkAdds"][i] );
+    }
+    if ( isDefined( load["perkRems"] ) )
+    {
+        for ( i = 0; i < load["perkRems"].size; i++ )
+            self UnSetPerk( load["perkRems"][i] );
+    }
 
     // #strip-begin - RCON perk overrides (dev/main only; the public build ships the base perk set only)
     // RCON perk overrides — admin-managed extra/removed perks (rcon Perks tab).
@@ -292,7 +350,20 @@ gf_bumpReserveAmmo( weapon )
 // camo index; -1 = fresh random roll each match (Minigun/M202 forced to stock).
 // camoSec: the SECONDARY gun's camo, same rules, independent of camo. Optional 7th
 // arg -- if omitted (old 6-arg line) the secondary follows the primary's camo.
-gf_load( pri, sec, equip, lethal, tactical, camo, camoSec )
+//
+// perks: OPTIONAL 8th arg — a comma-separated specialty list layered on top of the
+// base perk set for THIS loadout only. A leading '-' REMOVES a base perk:
+//
+//   "specialty_holdbreath,specialty_sprintrecovery"     add Scout + Steady Aim Pro
+//   "specialty_quieter,-specialty_movefaster"           add Ninja, drop Lightweight
+//
+// Omitted / "" == today's behavior exactly (base set only) — that is deliberate: an
+// unmigrated pool line must keep granting precisely what it granted before.
+// Adds are applied before removes, so "-x" wins if a token appears both ways.
+// ⚠ Only real engine tokens work. SetPerk on an unknown name is a SILENT NO-OP (that
+// is how a bogus "specialty_blindeye" survived in the RCON panel for months) — the
+// valid list is the 52 names in [[reference_t5_perks_and_pro_specialties]].
+gf_load( pri, sec, equip, lethal, tactical, camo, camoSec, perks )
 {
     load = [];
 
@@ -335,7 +406,193 @@ gf_load( pri, sec, equip, lethal, tactical, camo, camoSec )
     if ( sec == "defaultweapon" )
         load["camoSecondary"] = 0;
 
+    // Per-loadout perks. Parsed ONCE here at pool build (not per spawn) and cached on the
+    // loadout, exactly like the weapon names/shaders — the pool lives in game[] and survives
+    // map_restart(true), so every round of the match reuses this work.
+    load["perkAdds"] = [];
+    load["perkRems"] = [];
+    if ( isDefined( perks ) && perks != "" )
+    {
+        toks = strTok( perks, "," );
+        for ( i = 0; i < toks.size; i++ )
+        {
+            tk = toks[i];
+            if ( tk == "" )
+                continue;
+            if ( getSubStr( tk, 0, 1 ) == "-" )
+            {
+                tk = getSubStr( tk, 1, tk.size );
+                if ( tk != "" )
+                    load["perkRems"][ load["perkRems"].size ] = tk;
+            }
+            else
+            {
+                load["perkAdds"][ load["perkAdds"].size ] = tk;
+            }
+        }
+    }
+
+    // Resolve the 3 HUD perk slots now, for the same reason. The overview has exactly three
+    // (ui_gf_lo_icon5/6/7) and they share ONE `visible` flag in the menu, so a slot cannot be
+    // hidden individually without a mod.ff rebuild — all three are ALWAYS filled: this
+    // loadout's added perks first, then padded from the base set, skipping anything this
+    // loadout removed (never advertise a perk we just took away).
+    show  = [];
+    icons = [];   // icon-parent of each perk already shown — the same icon is never used twice
+
+    // Two passes over this loadout's added perks: BASE perks first, then Pro abilities. Base-first
+    // matters because a Pro borrows its PARENT's art (Pros have no create-a-class icon of their
+    // own), so showing a perk next to its own Pro would render the SAME icon in two slots and waste
+    // one. With the sniper package's 8 tokens this yields Hardened / Steady Aim / Scout — the three
+    // parent perks — instead of Hardened / Steady Aim / Steady Aim Pro.
+    for ( pass = 0; pass < 2 && show.size < 3; pass++ )
+    {
+        for ( i = 0; i < load["perkAdds"].size && show.size < 3; i++ )
+        {
+            tk   = load["perkAdds"][i];
+            info = gf_perkInfo( tk );
+            isBasePerk = ( info["p"] == tk );        // a Pro points at a different parent
+            if ( pass == 0 && !isBasePerk ) continue;
+            if ( pass == 1 &&  isBasePerk ) continue;
+            if ( gf_listHas( icons, info["p"] ) ) continue;
+
+            show[ show.size ]   = tk;
+            icons[ icons.size ] = info["p"];
+        }
+    }
+
+    pad = [];                                  // base-set pad order == what the HUD showed before this feature
+    pad[0] = "specialty_flakjacket";
+    pad[1] = "specialty_longersprint";
+    pad[2] = "specialty_movefaster";
+    for ( i = 0; i < pad.size && show.size < 3; i++ )
+    {
+        if ( gf_listHas( load["perkRems"], pad[i] ) )
+            continue;
+        info = gf_perkInfo( pad[i] );
+        if ( gf_listHas( icons, info["p"] ) )
+            continue;
+        show[ show.size ]   = pad[i];
+        icons[ icons.size ] = info["p"];
+    }
+
+    for ( i = 0; i < 3; i++ )
+    {
+        if ( i < show.size )
+        {
+            info = gf_perkInfo( show[i] );
+            // Icon comes from gf_getPerkShader on the PARENT perk: a Pro ability is not a
+            // create-a-class item and so has no art of its own, but the engine precached every
+            // real perk's material (_class.gsc:421). Borrowing the parent's icon is both what
+            // BO1 itself does and the only way to stay inside the precached set — inventing a
+            // material name here would ship a missing-texture checkerboard.
+            load["perkShader" + i] = gf_getPerkShader( info["p"] );
+            load["perkName"   + i] = info["n"];
+        }
+        else
+        {
+            // Only reachable if a loadout removes every base perk in the pad list and adds none.
+            load["perkShader" + i] = "white";
+            load["perkName"   + i] = "";
+        }
+    }
+
     return load;
+}
+
+// Is token in this list? (GSC has no array search builtin.)
+gf_listHas( list, token )
+{
+    for ( i = 0; i < list.size; i++ )
+    {
+        if ( list[i] == token )
+            return true;
+    }
+    return false;
+}
+
+// Resolve a specialty token -> { n:displayName, p:iconParent }. An unknown token degrades to
+// its own name + itself (gf_getPerkShader then falls back to "white"), so a typo shows up as a
+// blank icon rather than crashing — but it is still a no-op perk, so prefer the editor's picker.
+gf_perkInfo( token )
+{
+    if ( isDefined( level.gf_perkDB ) && isDefined( level.gf_perkDB[ token ] ) )
+        return level.gf_perkDB[ token ];
+
+    info = [];
+    info["n"] = token;
+    info["p"] = token;
+    return info;
+}
+
+// One perk row: token -> display name + the perk whose ICON to use. For a base perk the icon
+// parent is itself; for a Pro ability it is the parent perk (Pros are not create-a-class items
+// and have no art of their own — see gf_load).
+gf_pReg( token, name, iconParent )
+{
+    info = [];
+    info["n"] = name;
+    info["p"] = iconParent;
+    level.gf_perkDB[ token ] = info;
+}
+
+// The perk display table. Names match what BO1 shows in create-a-class, so the overview reads
+// the way a player expects. Token list + every base->Pro pairing is verified three ways (the
+// specialty table in BlackOpsMP.exe, _properks.gsc's stat keys, and shrp.gsc's PERKS_*_PRO
+// groups) -> [[reference_t5_perks_and_pro_specialties]].
+gf_buildPerkDB()
+{
+    level.gf_perkDB = [];
+
+    // ── Perk 1 ──
+    gf_pReg( "specialty_movefaster",       "Lightweight",       "specialty_movefaster" );
+    gf_pReg( "specialty_fallheight",       "Lightweight Pro",   "specialty_movefaster" );
+    gf_pReg( "specialty_scavenger",        "Scavenger",         "specialty_scavenger" );
+    gf_pReg( "specialty_extraammo",        "Scavenger Pro",     "specialty_scavenger" );
+    gf_pReg( "specialty_gpsjammer",        "Ghost",             "specialty_gpsjammer" );
+    gf_pReg( "specialty_nottargetedbyai",  "Ghost Pro",         "specialty_gpsjammer" );
+    gf_pReg( "specialty_noname",           "Ghost Pro",         "specialty_gpsjammer" );
+    gf_pReg( "specialty_killstreak",       "Hardline",          "specialty_killstreak" );
+    gf_pReg( "specialty_flakjacket",       "Flak Jacket",       "specialty_flakjacket" );
+    gf_pReg( "specialty_fireproof",        "Flak Jacket Pro",   "specialty_flakjacket" );
+    gf_pReg( "specialty_pin_back",         "Flak Jacket Pro",   "specialty_flakjacket" );
+
+    // ── Perk 2 ──
+    gf_pReg( "specialty_bulletpenetration","Hardened",          "specialty_bulletpenetration" );
+    gf_pReg( "specialty_armorpiercing",    "Hardened Pro",      "specialty_bulletpenetration" );
+    gf_pReg( "specialty_bulletflinch",     "Hardened Pro",      "specialty_bulletpenetration" );
+    gf_pReg( "specialty_holdbreath",       "Scout",             "specialty_holdbreath" );
+    gf_pReg( "specialty_fastweaponswitch", "Scout Pro",         "specialty_holdbreath" );
+    gf_pReg( "specialty_bulletaccuracy",   "Steady Aim",        "specialty_bulletaccuracy" );
+    gf_pReg( "specialty_sprintrecovery",   "Steady Aim Pro",    "specialty_bulletaccuracy" );
+    gf_pReg( "specialty_fastmeleerecovery","Steady Aim Pro",    "specialty_bulletaccuracy" );
+    gf_pReg( "specialty_fastreload",       "Sleight of Hand",   "specialty_fastreload" );
+    gf_pReg( "specialty_fastads",          "Sleight of Hand Pro","specialty_fastreload" );
+    gf_pReg( "specialty_twoattach",        "Warlord",           "specialty_twoattach" );
+    gf_pReg( "specialty_twogrenades",      "Warlord Pro",       "specialty_twoattach" );
+
+    // ── Perk 3 ──
+    gf_pReg( "specialty_gas_mask",         "Tactical Mask",     "specialty_gas_mask" );
+    gf_pReg( "specialty_shades",           "Tactical Mask Pro", "specialty_gas_mask" );
+    gf_pReg( "specialty_stunprotection",   "Tactical Mask Pro", "specialty_gas_mask" );
+    gf_pReg( "specialty_longersprint",     "Marathon",          "specialty_longersprint" );
+    gf_pReg( "specialty_unlimitedsprint",  "Marathon Pro",      "specialty_longersprint" );
+    gf_pReg( "specialty_quieter",          "Ninja",             "specialty_quieter" );
+    gf_pReg( "specialty_loudenemies",      "Ninja Pro",         "specialty_quieter" );
+    gf_pReg( "specialty_pistoldeath",      "Second Chance",     "specialty_pistoldeath" );
+    gf_pReg( "specialty_finalstand",       "Second Chance Pro", "specialty_pistoldeath" );
+    gf_pReg( "specialty_detectexplosive",  "Hacker",            "specialty_detectexplosive" );
+    gf_pReg( "specialty_disarmexplosive",  "Hacker Pro",        "specialty_detectexplosive" );
+    gf_pReg( "specialty_nomotionsensor",   "Hacker Pro",        "specialty_detectexplosive" );
+
+    // ── Engine leftovers: real, working tokens that are NOT any of Black Ops' 15 perks. No
+    //    create-a-class row means no icon of their own, so they borrow a parent's art. Usable.
+    gf_pReg( "specialty_armorvest",        "Body Armor",        "specialty_flakjacket" );   // -20% bullet dmg (a GF base perk)
+    gf_pReg( "specialty_bulletdamage",     "Stopping Power",    "specialty_bulletdamage" );
+    gf_pReg( "specialty_rof",              "Double Tap",        "specialty_rof" );
+    gf_pReg( "specialty_twoprimaries",     "Overkill",          "specialty_twoprimaries" );
+    gf_pReg( "specialty_grenadepulldeath", "Martyrdom",         "specialty_grenadepulldeath" );
+    gf_pReg( "specialty_explosivedamage",  "Explosive Damage",  "specialty_explosivedamage" );
 }
 
 // An empty slot — "none" (what the loadout editor writes) or a blank token. Only the

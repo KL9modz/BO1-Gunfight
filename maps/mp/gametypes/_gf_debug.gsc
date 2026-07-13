@@ -421,7 +421,17 @@ gf_debugPrintPerks()
 // level scope, never touches a player.
 gf_hitchMonitor()
 {
-    level endon( "game_ended" );
+    // ⚠ NO endon("game_ended") — that notify fires at EVERY ROUND END, not at match end
+    // (gf_endRound threads _globallogic::endGame, which runs yield-free to it). Carrying it
+    // meant this sampler DIED the instant a round ended and did not come back until the next
+    // onStartGameType — so every GF_HITCH statistic we have has a hole across exactly the
+    // killcam -> roundEndWait -> map_restart window, which is where clients report the
+    // "Connection Interrupted" plug. The ~700ms "phase=prematch" hitches are what the sampler
+    // saw AFTER it woke back up; they are not a measurement of the restart itself.
+    // gf_hitch_reinit (fired from onStartGameType) is what collapses this to one live copy.
+    // The one sample in flight when that notify lands is lost; gf_roundEndProbe covers the
+    // same window at 20 Hz, so nothing is left unmeasured. Same trap as gf_boundaryListener
+    // (_bot.gsc) and gf_postRoundWatchdog (_gf_rounds.gsc) — do not "restore" this endon.
     level endon( "gf_hitch_reinit" );
 
     W        = 0.5;              // sample window (game-seconds, nominal)
@@ -452,10 +462,16 @@ gf_hitchMonitor()
 // Coarse round-phase label so we can see WHAT a stall coincides with. Overtime is a
 // sub-state of a live round, so it is checked first; "restart" catches the
 // pre-prematch gate hold and the map_restart transition gap (neither of the flags set).
+// "killcam" splits the round-end window in two, which is the whole point of the probe
+// below: a stall BEFORE the final killcam (phase=roundend) is our own endRound work, a
+// stall INSIDE it (phase=killcam) is the bot-fill connect / demo / VM, and the hole after
+// it (phase=restart) is the engine's map_restart. level.inFinalKillcam is stock
+// (_killcam.gsc: set true in play_final_killcam, false when the last viewer exits).
 gf_hitchPhase()
 {
     if ( isDefined( level.inOvertime ) && level.inOvertime )              return "overtime";
     if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )  return "prematch";
+    if ( isDefined( level.inFinalKillcam ) && level.inFinalKillcam )      return "killcam";
     if ( isDefined( level.gf_roundActive ) && level.gf_roundActive )      return "live";
     if ( isDefined( level.gf_roundEnding ) && level.gf_roundEnding )      return "roundend";
     return "restart";
@@ -487,4 +503,99 @@ gf_hitchBots()
             n++;
     }
     return n;
+}
+
+// ─── Round-end timeline probe (the "Connection Interrupted" investigation) ───
+// Clients report the engine's CG_DrawDisconnect plug on the round-ending killcam, and
+// until now NOTHING measured that window (see the endon note in gf_hitchMonitor above).
+// Threaded from gf_endRound, this samples at 20 Hz through the entire stock end sequence
+//   endGame -> displayRoundEnd -> executePostRoundEvents -> finalKillcamWaiter -> map_restart
+// and logs every window where the server went dark for >= gf_endgap_ms. Threads survive
+// map_restart, so the sample that SPANS the restart is measured too: the gap is logged
+// BEFORE the generation check retires the thread, which is the one measurement the current
+// tooling structurally cannot take.
+//
+// Reading the output (logs\games_mp.log), by phase:
+//   GF_ENDGAP ... phase=roundend  -> stall before the killcam = our own endRound work
+//   GF_ENDGAP ... phase=killcam   -> stall inside it          = bot-fill connect / demo / VM
+//   GF_ENDGAP ... phase=restart   -> the engine's map_restart(true) hole itself
+//   GF_ENDMARK ...                -> a named suspect event, to time-align against the gaps
+//   GF_ENDTL ...                  -> one summary line per round end
+//
+// ⚠ The DECISIVE read is a NEGATIVE one. If a client draws the plug during a window where
+// no GF_ENDGAP was logged, the server never stalled — so the cause is NOT a server hole,
+// and the remaining candidates are bandwidth (sv_maxRate) or the engine's own client-side
+// check misfiring on killcam playback (where the replayed snapshots carry a rewound
+// serverTime and the local player stops being simulated). That fork is what this exists to
+// settle; do not conclude "map_restart" from a plug alone, which is what we did before.
+//
+// Tunable (dvar, no rebuild): set gf_endgap_ms N  -> gap threshold in ms (default 150,
+// i.e. ~3 dark server frames at sv_fps 20, where a healthy tick is ~50ms).
+gf_roundEndProbe( myGen )
+{
+    // NO endon("game_ended") — it fires within a frame of us being threaded (gf_endRound
+    // threads endGame right after us). NO endon("gf_round_over") either: that is the notify
+    // that OPENS this window. The generation check below is the only correct retirement.
+    t0    = gettime();
+    prev  = t0;
+    worst = 0;
+    gaps  = 0;
+
+    thresh = getDvarInt( "gf_endgap_ms" );
+    if ( thresh <= 0 )
+        thresh = 150;
+
+    for ( ;; )
+    {
+        wait 0.05;
+
+        now  = gettime();
+        gap  = now - prev;
+        prev = now;
+
+        // Log BEFORE the gen check: map_restart is exactly what changes the generation, so
+        // checking first would discard the restart-spanning gap — the most interesting one.
+        if ( gap >= thresh )
+        {
+            gaps++;
+            if ( gap > worst )
+                worst = gap;
+
+            logPrint( "GF_ENDGAP: " + gap + "ms dark  phase=" + gf_hitchPhase()
+                      + " t+" + ( now - t0 ) + "ms"
+                      + " humans=" + gf_hitchHumans() + " bots=" + gf_hitchBots()
+                      + " gt=" + now + "\n" );
+        }
+
+        // Gen check inlined rather than calling _gf_rounds::gf_roundGenChanged — this file
+        // carries NO #include (and _gf_rounds already includes IT, so an include here would
+        // be a cycle). Same predicate: onStartGameType re-stamps gf_roundGen after the
+        // restart, and level.* is wiped, so an undefined gen also means "the restart landed".
+        if ( !isDefined( level.gf_roundGen ) || level.gf_roundGen != myGen )
+        {
+            logPrint( "GF_ENDTL: round end took " + ( now - t0 ) + "ms  gaps=" + gaps
+                      + " worst=" + worst + "ms"
+                      + " humans=" + gf_hitchHumans() + " bots=" + gf_hitchBots() + "\n" );
+            return;
+        }
+
+        // gf_postRoundWatchdog owns the deadlock case (orphaned .killcam / .doingNotify) and
+        // breaks it at 20s. Don't keep sampling behind it forever.
+        if ( now - t0 > 60000 )
+        {
+            logPrint( "GF_ENDTL: probe gave up after " + ( now - t0 )
+                      + "ms - the round end never reached map_restart  gaps=" + gaps
+                      + " worst=" + worst + "ms\n" );
+            return;
+        }
+    }
+}
+
+// Time-align a suspect event against the GF_ENDGAP lines: same log, same clock. Cheap enough
+// to call from anything that fires inside the round-end window.
+gf_endProbeMark( label )
+{
+    logPrint( "GF_ENDMARK: " + label + "  phase=" + gf_hitchPhase()
+              + " humans=" + gf_hitchHumans() + " bots=" + gf_hitchBots()
+              + " gt=" + gettime() + "\n" );
 }
