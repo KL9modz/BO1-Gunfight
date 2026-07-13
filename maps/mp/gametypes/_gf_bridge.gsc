@@ -56,6 +56,12 @@
 //                        gf_bridgeInit); vision_normal or visreset clears it
 //   thirdperson_1/0    - cg_thirdPerson all players (setClientDvar)
 //   fps_1/0            - cg_drawFPS all players (setClientDvar)
+//   killfeed_<sec>     - killfeed on-screen time (con_gameMsgWindow0MsgTime, stock 5s). The killfeed
+//                        is engine game-message window 0 (its Filter dvar carries "obituary"); the
+//                        duration is a CLIENT dvar, so it can only be a setClientDvar push. It is
+//                        also ARCHIVED (seta in config_mp.cfg) -- the dvar class Plutonium normally
+//                        refuses server writes to -- so this is EXPECTED TO NO-OP; it exists to prove
+//                        that either way. Control: fps_1 (plain client dvar, known to land).
 //   vis<key>_<value>   - video tweak all players (ambient/gridint/gridcon/hdr/fog);
 //                        persists via gf_vis_* (re-applied every spawn); value
 //                        "stock" clears one tweak back to engine default
@@ -435,6 +441,7 @@ gf_bridgeDispatch( cmd )
     if ( isSubStr( cmd, "vision_"      ) ) { gf_bridgeVision( getSubStr( cmd, 7,  cmd.size ) ); return; }
     if ( isSubStr( cmd, "thirdperson_" ) ) { gf_bridgeVisSet( "cg_thirdPerson",    getSubStr( cmd, 12, cmd.size ) ); return; }
     if ( isSubStr( cmd, "fps_"         ) ) { gf_bridgeVisSet( "cg_drawFPS",        getSubStr( cmd, 4,  cmd.size ) ); return; }
+    if ( isSubStr( cmd, "killfeed_"    ) ) { gf_bridgeVisSet( "con_gameMsgWindow0MsgTime", getSubStr( cmd, 9, cmd.size ) ); return; }
     if ( isSubStr( cmd, "longknife_"   ) ) { gf_bridgeVisSet( "aim_automelee_range", getSubStr( cmd, 10, cmd.size ) ); return; }
 
     if ( cmd == "expbullets_on"  ) { gf_bridgeExpBullets( true );  return; }
