@@ -545,6 +545,27 @@ gf_roundEndProbe( myGen )
     if ( thresh <= 0 )
         thresh = 150;
 
+    // HEARTBEAT INTO A DVAR — this is what actually measures the map_restart hole.
+    // Proven live on the VPS 2026-07-13: this thread logs its in-window lines fine, but its
+    // RETIREMENT line never appears — neither from the gen check nor from the 60s ceiling.
+    // A thread parked in a timed wait() does NOT come back from map_restart(true) (a thread
+    // parked in a waittill does — gf_boundaryListener survives every round, which is why the
+    // codebase believed "threads survive both restarts" without qualification). So the thread
+    // simply dies somewhere inside the restart, and it cannot report the very gap it exists to
+    // measure. Dvars are the ONLY thing that survives, so stamp the heartbeat into one: the
+    // last beat before the VM went dark, compared against gettime() on the far side by
+    // gf_reportRoundEndGap() (called from onStartGameType), IS the dark window.
+    // ⚠ gf_postRoundWatchdog leans on the same assumption (wait 1 + gen check). That is
+    // harmless there — dying at the restart is exactly when it SHOULD retire, and the hang it
+    // guards is the case where no restart happens at all — but do not "fix" it by copying this.
+    setDvar( "gf_endprobe_t0",   "" + t0 );
+    setDvar( "gf_endprobe_last", "" + t0 );
+
+    // Unconditional, so the log distinguishes "armed and then died" from "never armed at all".
+    // Both of this thread's other outputs are conditional, which is why the first VPS run could
+    // not tell those two apart.
+    logPrint( "GF_ENDARM: round-end probe armed  gen=" + myGen + " gt=" + t0 + "\n" );
+
     for ( ;; )
     {
         wait 0.05;
@@ -552,6 +573,8 @@ gf_roundEndProbe( myGen )
         now  = gettime();
         gap  = now - prev;
         prev = now;
+
+        setDvar( "gf_endprobe_last", "" + now );
 
         // Log BEFORE the gen check: map_restart is exactly what changes the generation, so
         // checking first would discard the restart-spanning gap — the most interesting one.
@@ -573,7 +596,7 @@ gf_roundEndProbe( myGen )
         // restart, and level.* is wiped, so an undefined gen also means "the restart landed".
         if ( !isDefined( level.gf_roundGen ) || level.gf_roundGen != myGen )
         {
-            logPrint( "GF_ENDTL: round end took " + ( now - t0 ) + "ms  gaps=" + gaps
+            logPrint( "GF_ENDTL: thread SURVIVED the restart - round end took " + ( now - t0 ) + "ms  gaps=" + gaps
                       + " worst=" + worst + "ms"
                       + " humans=" + gf_hitchHumans() + " bots=" + gf_hitchBots() + "\n" );
             return;
@@ -589,6 +612,36 @@ gf_roundEndProbe( myGen )
             return;
         }
     }
+}
+
+// The far side of the hole. Called from onStartGameType — i.e. the first mod code to run AFTER
+// map_restart — it reads the heartbeat gf_roundEndProbe stamped into a dvar on the near side.
+//
+//   dark = now - last heartbeat  ->  the wall-clock window in which the server ran NO script at
+//                                    all: the tail of the round end + the whole map_restart.
+//                                    THIS is the number the "Connection Interrupted" theory has
+//                                    always assumed and never measured.
+//   roundEndTotal                ->  gf_endRound -> next round init, end to end.
+//
+// If dark is small (a few frames) yet clients still draw the plug on the killcam, the server
+// never went silent and the cause is NOT snapshot starvation from map_restart — which is the
+// assumption the whole current memory rests on.
+// (humans/bots read 0 here: level.players is still empty this early in onStartGameType. That is
+// expected — the counts on the GF_ENDGAP lines are the populated ones.)
+gf_reportRoundEndGap()
+{
+    if ( getDvar( "gf_endprobe_last" ) == "" )
+        return;
+
+    now  = gettime();
+    dark = now - getDvarInt( "gf_endprobe_last" );
+    tot  = now - getDvarInt( "gf_endprobe_t0" );
+
+    logPrint( "GF_ENDTL: dark=" + dark + "ms (no script ran)  roundEndTotal=" + tot
+              + "ms  gt=" + now + "\n" );
+
+    setDvar( "gf_endprobe_last", "" );
+    setDvar( "gf_endprobe_t0",   "" );
 }
 
 // Time-align a suspect event against the GF_ENDGAP lines: same log, same clock. Cheap enough

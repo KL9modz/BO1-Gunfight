@@ -628,6 +628,13 @@ onStartGameType()
     // survive map_restart, so a bare re-thread would stack). See _gf_debug.gsc.
     level notify( "gf_hitch_reinit" );
     level thread gf_hitchMonitor();
+
+    // Report the round-end dark window from the FAR side of map_restart. gf_roundEndProbe runs
+    // on the near side and dies inside the restart (a thread parked in a timed wait does not
+    // come back), so it stamps a heartbeat into a dvar and we read it here — the first mod code
+    // to run after the restart. Yields the one number the "Connection Interrupted" theory has
+    // always assumed and never measured: how long the server ran no script at all.
+    gf_reportRoundEndGap();
     // #strip-end
 
     // #strip-begin - pre-prematch hold (dev/main only; stripped from public release)
