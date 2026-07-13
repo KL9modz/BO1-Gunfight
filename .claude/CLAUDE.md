@@ -522,6 +522,20 @@ rebuild; dvar values/positions are GSC-tunable. Intro slide/fade animations are 
   / `jump_stepSize` / `jump_ladderPushVel`. `gf_applyJumpFatigue` (`_gf_rounds.gsc`) re-applies it every
   round; RCON bridge `jumpfatigue_<0|1>`. No per-client push (the `jump_*` family replicates — it must,
   movement is client-predicted), which is what makes it *unlike* flinch.
+- **Unlimited sprint is OFF** (`scr_gf_sprint_unlimited`, default 0 — Marathon is already in the base perk
+  set). ⚠ **`player_sprintUnlimited` is a CLIENT dvar** — `player_*` is client-predicted movement, the same
+  ownership class as `bg_*`, **not** the replicated `jump_*` family. It is owned exactly like flinch:
+  `gf_applySprintUnlimited` (every round, from `onStartGameType`) sets the server copy — the server's own
+  movement sim reads it, and a client predicting unlimited sprint against a server that limits it
+  rubber-bands — and `gf_applySprintUnlimitedClient` pushes it per human **every spawn**. RCON bridge
+  `sprintunlimited_<0|1>`. ⚠ **Never `set player_sprintUnlimited` directly** (cfg or rcon): stock's *only*
+  client push is `_globallogic_player::Callback_PlayerConnect`'s
+  `if (GetDvarInt(#"player_sprintUnlimited")) self setClientDvar(..., 1)` — it fires **at connect only**
+  (it does re-run on `map_restart`, so per-round in practice) and it is **one-way**: stock can turn
+  unlimited sprint **on** and can *never* turn it back **off**, so a client handed a 1 keeps it for its
+  whole session. That one-way connect push is why the old panel toggle looked like it randomly stopped
+  working. ⚠ Unlike `gf_applyFlinchClient`, the per-spawn push has **no skip-at-stock shortcut** — skipping
+  at 0 would strand a client that was given a 1 earlier in the session.
 - ⚠ **CHEAT PROTECTION IS A *CLIENT-SIDE* CHECK — an rcon / `dedicated.cfg` `set` on a dedicated server
   is NOT gated by it.** This is the opposite of what this file and `_gf_bridge.gsc` used to say, and the
   mistake cost a whole wrong "fix": the familiar `Error: jump_height is cheat protected` spam comes from a
@@ -680,6 +694,7 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (auto goes large when a team hits 5+). |
 | `scr_gf_flinch` | 0.5 | Flinch scale (× stock `bg_viewKickScale` 0.2 → 0.1); pushed **per-client** — the server dvar alone doesn't replicate, and the push beats a player's own autoexec (clamp 0-3). |
 | `scr_gf_jump_fatigue` | 0 | **0 = OFF (the GF default)** / 1 = stock. Drives the engine's `jump_slowdownEnable` (post-jump movement drag — "jump fatigue"). The mod owns it so OFF ships as a default even with no cfg and no panel (`gf_applyJumpFatigue`, re-applied every round). RCON bridge: `jumpfatigue_<0\|1>`. |
+| `scr_gf_sprint_unlimited` | 0 | **0 = stock** / 1 = the sprint meter never empties. Drives the client dvar `player_sprintUnlimited`, **pushed per-client every spawn** — stock's only push is at connect and is ON-only, so a bare `set` on it reaches nobody already in the server and can never turn it back off (`gf_applySprintUnlimited` + `_Client`). RCON bridge: `sprintunlimited_<0\|1>`. |
 | `g_fix_viewkick_dupe` | 1 | **INERT on T5 MP** — the engine never registered it (live read: `Domain is any text`, `default:` mirrors our own `set`). Harmless, does nothing. Flinch is `scr_gf_flinch` alone. |
 | `scr_team_maxsize` | 0 (cfg ships 6) | `>0` caps players/team; overflow → spectator on spawn. |
 
@@ -856,7 +871,7 @@ content), so `git checkout main` after cloning and push `main` with `tools/push_
   dvar-tunable version strip-marked behind it. A public server owner still gets the core knobs:
   `scr_gf_scorelimit` / `_timelimit(_large)` / `_overtimelimit(_large)` / `_roundswitch` /
   `_roundsperloadout` / `_teamspawnmode` / `gf_capture_time(_large)` / `scr_gf_flinch` /
-  `scr_team_maxsize`.
+  `scr_gf_jump_fatigue` / `scr_gf_sprint_unlimited` / `scr_team_maxsize`.
   ⚠ Two functions are deliberately kept OUTSIDE the strip regions because **live-round code still
   calls them**: `gf_anyTrackedClientLoading()` (called by `gf_roundWatchdog` + `gf_closeGraceEarly`;
   already returns false when the tracker never armed, so it degrades to "nobody is loading") and

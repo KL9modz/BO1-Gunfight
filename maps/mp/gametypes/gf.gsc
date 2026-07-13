@@ -432,6 +432,13 @@ onStartGameType()
     // RCON bridge: jumpfatigue_<0|1> for a live change.
     gf_applyJumpFatigue();
 
+    // Unlimited sprint — seeds scr_gf_sprint_unlimited (default 0 = stock) and sets the server
+    // copy of player_sprintUnlimited each round. player_sprintUnlimited is a CLIENT dvar that
+    // stock only ever pushes at connect and only in the ON direction, so the mod owns the push
+    // (per-client, both directions, every spawn) rather than trusting the engine to deliver it.
+    // RCON bridge: sprintunlimited_<0|1> for a live change.
+    gf_applySprintUnlimited();
+
     // Gunfight's default LOOK: the "enhance" vision set (contrast pop). Core to the mod, so every
     // build gets it — the RCON vision_<key> override is layered on top inside gf_roundVisionKey.
     // Re-run every round (vision is level state, wiped by map_restart) and must be BEFORE the bridge

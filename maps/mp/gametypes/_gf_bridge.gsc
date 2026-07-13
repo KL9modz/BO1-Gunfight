@@ -32,6 +32,8 @@
 //    on the LOCAL player, so it needs sv_cheats 1 AND a listen server. The panel greys it off there.)
 //   flinch_<mult>      - damage view-kick scale (scr_gf_flinch -> per-client bg_viewKickScale)
 //   jumpfatigue_<0|1>  - post-jump slowdown: scr_gf_jump_fatigue -> jump_slowdownEnable (GF default 0)
+//   sprintunlimited_<0|1> - sprint meter never empties: scr_gf_sprint_unlimited -> per-client
+//                        player_sprintUnlimited (GF default 0 = stock)
 //   svset_<dvar>=<val> - set a CHEAT-PROTECTED server dvar (bot tuning, timescale, jump/fall) from GSC,
 //                        which is not cheat-gated — so it works on the dedicated VPS with sv_cheats 0.
 //                        Also mirrors the value into gf_<dvar> so it can persist via dedicated.cfg.
@@ -420,6 +422,7 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "headshots_off"   ) { gf_bridgeHeadshots( false );   return; }
     if ( isSubStr( cmd, "flinch_" ) ) { gf_bridgeFlinch( getSubStr( cmd, 7, cmd.size ) ); return; }
     if ( isSubStr( cmd, "jumpfatigue_" ) ) { gf_bridgeJumpFatigue( getSubStr( cmd, 12, cmd.size ) ); return; }
+    if ( isSubStr( cmd, "sprintunlimited_" ) ) { gf_bridgeSprintUnlimited( getSubStr( cmd, 16, cmd.size ) ); return; }
 
     // Cheat-protected SERVER dvars, written from GSC so they work with sv_cheats 0 (the only
     // correct value on a dedicated server). Format: svset_<dvar>=<value>. See gf_bridgeServerDvarSet.
@@ -791,6 +794,27 @@ gf_bridgeJumpFatigue( value )
         gf_bridgeNotify( "^3Jump fatigue: ON (stock post-jump slowdown)" );
     else
         gf_bridgeNotify( "^2Jump fatigue: OFF" );
+}
+
+// --- Unlimited sprint --------------------------------------------------------
+// value = 1 (sprint meter never empties) or 0 (stock — the Gunfight default).
+// Stores it in scr_gf_sprint_unlimited (the source of truth, so onStartGameType re-applies it
+// every round) and applies it live via gf_applySprintUnlimited, which sets the server copy of
+// player_sprintUnlimited AND pushes it to each human.
+//
+// ⚠ Do NOT go back to a bare `set player_sprintUnlimited 1` from the panel. It is a CLIENT dvar:
+// stock's only push is at connect and only in the ON direction, so a raw set reaches nobody who
+// is already in the server until the next round's connect callback, and 0 never reaches anyone
+// at all. That is what made the old panel toggle look like it randomly stopped working.
+
+gf_bridgeSprintUnlimited( value )
+{
+    setDvar( "scr_gf_sprint_unlimited", value );
+    on = maps\mp\gametypes\_gf_rounds::gf_applySprintUnlimited();
+    if ( on )
+        gf_bridgeNotify( "^3Unlimited sprint: ON" );
+    else
+        gf_bridgeNotify( "^2Unlimited sprint: OFF (stock sprint meter)" );
 }
 
 // --- Cheat-protected SERVER dvars (svset_<dvar>=<value>) ---------------------

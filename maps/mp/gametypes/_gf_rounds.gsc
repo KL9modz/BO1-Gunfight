@@ -141,6 +141,51 @@ gf_applyJumpFatigue()
     return on;
 }
 
+// Unlimited sprint (the sprint meter never runs out). scr_gf_sprint_unlimited: 0 = stock
+// (the GF default — Marathon is already in the base perk set), 1 = sprint never times out.
+//
+// ⚠ player_sprintUnlimited is a CLIENT dvar — the player_* family is client-predicted movement,
+// the same ownership class as bg_viewKickScale (see gf_applyFlinch above), NOT the replicated
+// jump_* family. The server copy is still set, for two reasons: the server's own movement sim
+// reads it (a client predicting unlimited sprint against a server that limits it rubber-bands),
+// and stock _globallogic_player::Callback_PlayerConnect reads it to decide its own push.
+//
+// ⚠ Which is exactly why this has to be owned. That stock connect push is the ONLY place in the
+// whole game a client ever receives this dvar, and it is one-way:
+//     if ( GetDvarInt( #"player_sprintUnlimited" ) ) self setClientDvar( "player_sprintUnlimited", 1 );
+// It fires only at connect (it re-runs on map_restart, so it is per-round in practice) and it
+// NEVER pushes 0. So stock can turn unlimited sprint on and can never turn it back off: a client
+// that was handed a 1 keeps it for the rest of its session no matter what the server dvar says.
+// Off is only reachable if WE push it.
+gf_applySprintUnlimited()
+{
+    on = int( gf_cfgFloat( "scr_gf_sprint_unlimited", 0, 0, 1 ) );  // seeds the dvar if unset
+    setDvar( "player_sprintUnlimited", on );
+
+    // level.players is EMPTY during onStartGameType, so this loop is a no-op on the per-round
+    // call — the per-spawn push below is what covers the round-start case. It matters for the
+    // live RCON change (gf_bridgeSprintUnlimited), where the humans are already spawned in.
+    for ( i = 0; i < level.players.size; i++ )
+    {
+        p = level.players[i];
+        if ( isDefined( p.pers["isBot"] ) && p.pers["isBot"] )
+            continue;                                   // bots have no client to push to
+        p setClientDvar( "player_sprintUnlimited", on );
+    }
+    return on;
+}
+
+// Per-spawn half of the sprint push (see gf_applySprintUnlimited). Unlike gf_applyFlinchClient
+// this has NO skip-at-stock shortcut, and the difference is load-bearing: a client only reaches
+// a non-stock 1 because we (or stock's connect push) put it there, and nothing else in the game
+// ever pushes it back down. Skipping the push at 0 would strand any client that had been given a
+// 1 earlier in the session at unlimited sprint forever. So push both directions, every spawn —
+// the value is what makes it deterministic, not the fact that it changed.
+gf_applySprintUnlimitedClient()
+{
+    self setClientDvar( "player_sprintUnlimited", int( gf_cfgFloat( "scr_gf_sprint_unlimited", 0, 0, 1 ) ) );
+}
+
 // The engine's native prematch (matchStartTimer) draws the countdown number but plays NO sound.
 // Mirror a per-second tick so the prematch has the same audible cadence as the overtime tick.
 // Loops while level.inPrematchPeriod, so it self-stops at prematch_over.
@@ -1481,13 +1526,15 @@ gf_playerSpawnedCB()
     // r_gamma is a SAVED client dvar Plutonium blocks servers from writing.
     // Humans only — bots have no renderer.
     // Flinch rides along here for the same reason the vis tweaks do: bg_viewKickScale
-    // is client-scaled and unreplicated, so a joiner needs it pushed on spawn.
+    // is client-scaled and unreplicated, so a joiner needs it pushed on spawn. Unlimited
+    // sprint (player_sprintUnlimited) is the same story — see gf_applySprintUnlimited.
     if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
     {
         // #strip-begin - RCON gf_vis_* r_* push (dev/main only; the public build never touches client video dvars)
         self gf_applyVisTweaks();
         // #strip-end
         self gf_applyFlinchClient();
+        self gf_applySprintUnlimitedClient();
     }
     self thread gf_onSpawned();
 

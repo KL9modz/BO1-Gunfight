@@ -120,6 +120,10 @@ set g_fix_viewkick_dupe "1"                         // (inert -- see above)
 // a direct cfg line on it would just be overwritten. (A direct line would otherwise work -- a dedicated
 // server's console is NOT gated by the cheat flag, whatever the client-side boot spam suggests.)
 set scr_gf_jump_fatigue "0"                         // 0 = no jump fatigue (default), 1 = stock post-jump slowdown
+// Unlimited sprint. Set it HERE, not via player_sprintUnlimited: that one is a CLIENT dvar, and stock only
+// ever pushes it to a client at connect and only in the ON direction -- so a direct cfg/rcon line on it
+// reaches nobody already in the server, and can never turn it back OFF. The mod owns the per-client push.
+set scr_gf_sprint_unlimited "0"                     // 0 = stock sprint meter (default), 1 = sprint never runs out
 set g_playerEjection "0"                            // From whom are players ejected? (0 = everybody, 1 = enemies, 2 = nobody)
 set g_playerCollisionEjectSpeed "25"                // How fast are players ejected from eachother? (0-32000)
 set sv_allowFriendlyThrowback "1"                   // Prevent throwing friendly grenades?
