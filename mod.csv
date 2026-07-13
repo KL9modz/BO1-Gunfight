@@ -8,6 +8,16 @@ menufile,ui_mp/mod_ingame.txt
 rawfile,maps/mp/gametypes/_gametypes.txt
 rawfile,maps/mp/gametypes/gf.txt
 fx,misc/fx_ui_flagbase_gf_white
+# NOTE: the "Connection Interrupted" PLUG ICON is NOT hidden, and cannot be from here.
+# Blanking CGAME_CONNECTIONINTERUPTED (localizedstrings/cgame.str) kills only the TEXT. The
+# icon is material `net_disconnect` -> colorMap image `net` (Q3's inherited gfx/2d/net
+# phone-jack); it has no dvar and its screen position is hardcoded in CG_DrawDisconnect.
+# TRIED AND REVERTED: shipping `material,net_disconnect` + `image,<name>` does NOT work --
+# this linker writes an image REFERENCE by name and does NOT embed the pixel data (verified:
+# a sentinel .iwi payload never appears in the zone, which grows by ~16 bytes, not ~4KB).
+# The material then points at an image present in NO zone, which draws the missing-texture
+# checkerboard -- strictly worse than the plug. Hiding the icon needs a real image asset in
+# mod.ff (Asset Manager / .gdt pipeline), which is unproven here. Do not retry casually.
 stringtable,mp/gametypesTable.csv
 localize,gf
 # Overrides two STOCK engine strings (a mod.ff localizedstring wins over the game's

@@ -820,7 +820,13 @@ The banner blank is the **only** lever that exists: `CG_DrawDisconnect` is clien
 client has **no `cg_drawDisconnect` dvar** (verified against `BlackOpsMP.exe`), so GSC and the menu layer
 can't reach it. It **hides** the banner; it does not close the snapshot gap (the irreducible floor of stock
 `map_restart(true)` round cycling — see [[connection-interrupted-mitigations]]). ⚠ It also suppresses the
-warning for **genuine** lag/packet loss. ⚠ Keep overrides to single-purpose keys: the scoreboard's other
+warning for **genuine** lag/packet loss.
+⚠ **Only the TEXT is gone — the PLUG ICON still renders, and cannot be removed.** It is material
+`net_disconnect` → colorMap image `net` (Q3's inherited phone-jack); no dvar, and its position is hardcoded.
+Overriding it would need a new image in `mod.ff`, and **this linker cannot embed one** — it writes an image
+*reference* by name and silently drops the pixel data. Both attempts *built clean*: one was a no-op, the
+other would have shipped a **missing-texture checkerboard** to every client. Tried and reverted
+2026-07-12 → [[modff-cannot-embed-new-images]]. Do not retry without the Asset Manager/`.gdt` pipeline. ⚠ Keep overrides to single-purpose keys: the scoreboard's other
 columns are `MPUI_*`, which the combat record / leaderboards / after-action report also use — renaming one
 changes it **everywhere**. ⚠ Overrides only reach clients that downloaded `mod.ff`, i.e. players **already
 on the server** — a messaging surface, never an ads/acquisition one. Full detail →

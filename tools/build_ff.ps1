@@ -126,6 +126,15 @@ foreach ($line in $manifestLines) {
         "menufile" { $assetsToStage.Add($name) }
         "stringtable" { $assetsToStage.Add($name) }
         "localize" { $assetsToStage.Add("localizedstrings\$name.str") }
+        # An `image,<name>` entry sources OUR <workspace>\images\<name>.iwi. Staged (and
+        # cleaned) like any other asset -- a leftover raw\images\*.iwi would override the
+        # stock game's image even with no mod loaded.
+        "image" { $assetsToStage.Add("images\$name.iwi") }
+        # A `material,<name>` entry sources OUR <workspace>\materials\<name> if we ship one,
+        # else the linker just reads the stock definition already in the game's raw\materials.
+        # NOTE: staging a material OVERWRITES a stock modtools source file -- see the
+        # backup/restore below, which puts the original back instead of deleting it.
+        "material" { $assetsToStage.Add("materials\$name") }
     }
 }
 
@@ -137,6 +146,14 @@ foreach ($line in $manifestLines) {
 # raw/ copy. Add it to the stage/clean list explicitly.
 $assetsToStage.Add("ui_mp/hud_gf_health.menu")
 
+# Staging can OVERWRITE a stock file that already lives in the game's raw/ (a material is the
+# case that matters: we ship a patched copy of the stock net_disconnect). The cleanup pass below
+# deletes staged files, which for those would silently REMOVE a stock modtools source from the
+# game install. So back up anything that already existed and restore it instead of deleting.
+$stockBackups = @{}
+$backupRoot = Join-Path ([IO.Path]::GetTempPath()) "gf_build_stock_backup"
+if (Test-Path -LiteralPath $backupRoot) { Remove-Item -Recurse -Force -LiteralPath $backupRoot }
+
 $stagedCount = 0
 foreach ($asset in ($assetsToStage | Select-Object -Unique)) {
     $source = Find-SourceFile $asset
@@ -147,6 +164,15 @@ foreach ($asset in ($assetsToStage | Select-Object -Unique)) {
 
     $assetPath = Convert-AssetPath $asset
     $destination = Join-Path $RawRoot $assetPath
+
+    if (Test-Path -LiteralPath $destination) {
+        $backupPath = Join-Path $backupRoot $assetPath
+        Ensure-Directory (Split-Path -Parent $backupPath)
+        Copy-Item -Force -LiteralPath $destination -Destination $backupPath
+        $stockBackups[$assetPath] = $backupPath
+        Write-Host "backed up stock $asset"
+    }
+
     Copy-StagedFile $source $destination
     $stagedCount++
     Write-Host "staged $asset"
@@ -175,15 +201,23 @@ finally {
 # Remove staged files from raw/ so they don't override the stock game between builds.
 # Plutonium reads raw/ as a fallback over IWD files, even without a mod loaded.
 $cleanedCount = 0
+$restoredCount = 0
 foreach ($asset in ($assetsToStage | Select-Object -Unique)) {
     $assetPath = Convert-AssetPath $asset
     $stagedPath = Join-Path $RawRoot $assetPath
-    if (Test-Path -LiteralPath $stagedPath) {
+    if (!(Test-Path -LiteralPath $stagedPath)) { continue }
+
+    if ($stockBackups.ContainsKey($assetPath)) {
+        # We overwrote a stock file -- put the original back rather than deleting it.
+        Copy-Item -Force -LiteralPath $stockBackups[$assetPath] -Destination $stagedPath
+        $restoredCount++
+    } else {
         Remove-Item -Force -LiteralPath $stagedPath
         $cleanedCount++
     }
 }
-Write-Host "Cleaned $cleanedCount staged file(s) from raw/."
+if (Test-Path -LiteralPath $backupRoot) { Remove-Item -Recurse -Force -LiteralPath $backupRoot }
+Write-Host "Cleaned $cleanedCount staged file(s) from raw/; restored $restoredCount stock file(s)."
 
 $builtModFf = Resolve-RequiredPath (Join-Path $ZoneEnglishRoot "mod.ff") "Built mod.ff"
 Copy-StagedFile $builtModFf (Join-Path $ModRoot "mod.ff")
