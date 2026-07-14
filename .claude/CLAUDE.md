@@ -20,6 +20,22 @@ wins** takes the match.
 - Website screenshots
 
 ### Open bugs
+- **Clients still print `MAX_PACKET_USERCMDS` during the round-end killcam.** Cosmetic only — **the server
+  is healthy and the game plays great; this is NOT a regression and NOT urgent.** 🛑 **The one hard
+  constraint: do NOT chase it by lowering `scr_gf_killcam_slowmo` below 0.6 or raising `sv_fps`.** Both
+  "fix" the spam by breaking something real (the plug comes back / the killcam archive truncates), and the
+  live server is currently *correct*. The 0.6 floor already cut the server's game-frame gap from ~185ms to
+  ~80ms and **killed the "Connection Interrupted" plug**, which was the symptom that mattered. The spam is
+  a *different, tighter* client limit: `MAX_PACKET_USERCMDS` (32) is the **per-packet** cap, and exceeding
+  it merely truncates the oldest queued commands (the server still gets the newest and keeps acking) —
+  whereas the plug is `CG_DrawDisconnect`'s much looser backlog threshold. **Unknown:** why 32 is still
+  exceeded at an ~80ms gap. Our model says a client would need >~400 fps; either the count is not
+  "commands since the last ack" (more likely it is commands since the last *sent packet*, i.e. driven by
+  `cl_maxpackets`, which would make it largely a client-side matter), or `com_maxfps` is higher than
+  assumed. **Cheap next probe, zero server risk: have one client set `cl_maxpackets 100` (and/or
+  `com_maxfps 125`) and see if the spam stops.** That single read tells us which limit we are actually
+  hitting, and it costs nothing to try. ⚠ Do not touch the server to test this.
+  ([[killcam-slowmo-timescale-usercmd-backlog]])
 - **Which client orphans `.killcam` in the round-end deadlock is still unproven.** The deadlock itself is
   now broken by `gf_postRoundWatchdog` (the infinite round can't recur), but the *leaker* was never pinned:
   `finalKillcam`'s only live endon is `self endon("disconnect")`, and a disconnected player leaves
@@ -304,8 +320,11 @@ is **one bug with the `MAX_PACKET_USERCMDS` console spam**, not two:
 > to **~185ms**). A client makes one usercmd per client frame, so the queue is `com_maxfps × gap`;
 > past `MAX_PACKET_USERCMDS` (**32**) it truncates its move packet, and the same backlog makes
 > `CG_DrawDisconnect` draw the plug — **it fires when the server stops ACKING your commands, not when
-> data stops arriving.** Stock 0.25 → 200ms gap → overruns above ~160 client fps (everyone). 0.6 →
-> 83ms → overruns above ~385 (nobody).
+> data stops arriving.** Stock 0.25 → 200ms gap. 0.6 → **~80ms gap, measured live**.
+
+**SHIPPED AND CONFIRMED LIVE (2026-07-13): the plug is GONE and the game feels great in a full lobby.**
+Sampler across 4 round-ends: the timescale floors at **0.62** (never below), frame gap **~80ms** — down
+from 0.27 / ~185ms.
 
 `gf_killcamSlowmoClamp` (threaded from `gf_endRound`) therefore clamps the slow-mo's **DEPTH, not its
 length** — shortening it does nothing, the backlog builds within ~300ms of the drop. It anchors on
@@ -322,8 +341,21 @@ history. Tried live at 80 — the replay ended early and the slow-mo never ran a
 `timescale` dvar, and `gettime()`/`wait()`/the log timestamps all share the *scaled* clock, so
 `GF_HITCH`/`GF_ENDGAP` are blind to it (**their zeros were never an all-clear**). Measure it from
 outside the sim with **`tools/ts_sample.ps1`** (RCON is the only wall clock we have).
-Acceptance test is binary and client-side: **zero `MAX_PACKET_USERCMDS` lines during a round-end
-killcam.** ([[killcam-slowmo-timescale-usercmd-backlog]])
+🛑 **`MAX_PACKET_USERCMDS` STILL PRINTS, AND THAT IS NOT A REGRESSION — DO NOT "FIX" IT BY TOUCHING THE
+FLOOR OR `sv_fps`.** An earlier version of this file called "zero `MAX_PACKET_USERCMDS`" the acceptance
+test for the fix. **That was wrong** — it conflated two different client limits, and it is a trap: the
+spam persists at floor 0.6 while the plug is gone, so a future session that treats the spam as failure
+will "fix" a server that is working perfectly and reintroduce the plug. The two limits:
+- **`MAX_PACKET_USERCMDS` (32)** — the *per-packet* cap. Exceeding it truncates the move packet, dropping
+  the **oldest** queued commands. The server still gets your newest ones and keeps acking, so you lose a
+  few ms of stale input nobody can feel. **Cosmetic. Console noise.**
+- **`CG_DrawDisconnect`** — a *separate, much looser* backlog threshold. **This** is the plug, and this is
+  what the 0.6 floor cleared.
+
+The real acceptance test is the one that shipped: **the plug is gone and the game feels right.**
+It remains an open item to make the spam stop too (see TODO) — but it is a **cosmetic-polish** task, and
+the constraint is absolute: **do not regress the floor or raise `sv_fps` chasing it.**
+([[killcam-slowmo-timescale-usercmd-backlog]])
 
 ### Overtime & the two-layer zone color system
 `gf_onTimeLimit`: if both teams are alive at expiry → overtime (unless `scr_gf_overtimelimit <= 0`, then
@@ -735,6 +767,23 @@ their full compass). ⚠ `xblive_wagermatch` is **not** set in `gf.gsc` (the map
 before the gametype `main()` runs) — it's set to `0` (or `1` for gun/oic/shrp/hlnd) by the RCON map page
 before the map loads.
 
+**Hotel's elevators are OFF, and the switch is 100% stock.** `mp_hotel` does **not** use the generic
+`maps/mp/_elevator.gsc` (the `elevator_trigger` system) — it ships its **own** `maps/mp/mp_hotel_elevators.gsc`,
+which is **not in the `raw/` dump** and had to be pulled out of `zone/Common/mp_hotel.ff`
+([[extract-dlc-map-gsc-from-fastfile]]). That script reads **`scr_elevator_failsafe`** (and forces it on
+itself when `xblive_wagermatch == 1`, which is why the wager gametypes already ran Hotel with dead lifts —
+only `gf` still had them live). Set, it parks both cars at the lower floor, slams the car + floor doors
+shut, `DisconnectPaths()` on both levels, retitles the use triggers to "ELEVATOR UNAVAILABLE", and
+`return`s **before the trigger loop ever arms** — so the shaft is *sealed*, not left as an open hole — and
+short-circuits `elevator_prox_think` so bots stop pathing over to ride. We want it off because a 42s
+one-life round has no room for a 3s ride + 3s cooldown lift that can strand a player, and the elevator's
+own obstruction handler `DoDamage`s anyone the doors close on (a free kill the map hands out).
+⚠ **Read at LEVEL LOAD** — `mp_hotel::main()` → `mp_hotel_elevators::init()` runs *before* the gametype
+`main()`, exactly like `xblive_wagermatch`. So the `gf.gsc` seed only lands from the **next** map onward;
+`dedicated.cfg` carries it too for the boot-straight-onto-Hotel case, and the panel badges the row
+`NEXT MAP`. Same script also exposes `scr_elevator_max_riders` (3), `_cooldown_time` (3), `_move_time` (3)
+if a softer nerf is ever wanted.
+
 ### RCON bridge + admin panel (dev-only)
 Both are stripped from public builds; a public build has no RCON control. **`_gf_bridge.gsc`** is the
 GSC side: the panel writes `set gf_cmd <seq>:<cmd>`, `gf_bridgePoll` reads+clears at 20 Hz and writes
@@ -772,13 +821,25 @@ single self-scheduling `pollTick` → `/api/tick` (chains `status;gf_state;gf_ro
 ([[rcon-panel-queue-saturation]]). Panel UI: FAVORITES (landing tab) / DASHBOARD / MAPS (live
 `sv_maprotation` editor — [[rcon-map-rotation-editor]]) / ADVANCED / CONSOLE tabs; explicit-flex
 `layoutColumns` (not CSS multicolumn); a dead-dvar cache silences "Unknown cmd" probing
-([[rcon-connect-sweep-unknown-cmd-spam]]). **FAVORITES** is a pinboard: a ☆ on every DASHBOARD/
-ADVANCED settings row pins it, and the pinned row is the **same DOM node, borrowed** — moved out of
-its home block while the tab is open and put straight back on leaving. Never render a second copy of
-a control: reads (`srvApplyValues`) and writes (`sdve`/`sdvv`, Set All, 💾 Save) are keyed by element
-id / `data-dvar`, so a duplicate id silently drifts out of sync with the server. Per-gametype rows
+([[rcon-connect-sweep-unknown-cmd-spam]]). **FAVORITES** is a pinboard: a ☆ pins either a single
+**row** (on any DASHBOARD/ADVANCED settings row) or a **whole block** (on its section title — the only
+way the non-row controls reach the pinboard, e.g. BOTS' Add Bot / Kick All / per-team ± / difficulty
+buttons, which are not settings rows and have no star of their own). Either way the pin is the **same
+DOM node, borrowed** — moved out of its home while the tab is open and put straight back on leaving.
+Never render a second copy of a control: reads (`srvApplyValues`) and writes (`sdve`/`sdvv`, Set All,
+💾 Save) are keyed by element id / `data-dvar`, so a duplicate id silently drifts out of sync with the
+server. ⚠ For the same reason a row inside a **pinned block** is skipped by `favBuild` rather than
+borrowed twice. Pins land in one of the five **`FAV_CATS`** categories (MATCH START / GAMEPLAY / BOTS &
+PLAYERS / FUN & VISUALS / SERVER), not under their home block — pinning six rows from six blocks used
+to make six one-row groups; the home block survives as an `.sgroup` sub-header, an unmapped block falls
+through to SERVER, and an empty category doesn't render. A borrowed block renders flush inside its
+category (chrome stripped by `#p-fav .block .block` CSS, its own Set All row hidden so the category's
+single one governs) and is **excluded from `layoutColumns`' items** — it is content of the category
+block, not a column item, and hoisting it would tear it out of its category. Per-gametype rows
 (`#srv-gt-body`) are deliberately not pinnable — that block is re-rendered on every dropdown change,
-which would destroy a borrowed row's home. ⚠ **The pinboard is stored SERVER-side** — the panel's
+which would destroy a borrowed row's home. ⚠ `_gsClean` / `_blockKey` strip `.fav-star`: a block's
+star lives *inside* its `.btitle` and its glyph flips ☆↔★, so an unstripped key would change the
+moment you pinned it (breaking both the pin key and the saved fold state). ⚠ **The pinboard is stored SERVER-side** — the panel's
 gitignored `tools/rcon/prefs.local.json` via `GET`/`POST /api/prefs`, `localStorage.gf_favs` is only a
 first-paint cache — so it follows the **panel process**, not the browser: the VPS panel is one pinboard
 whether you reach it by RDP or over the SSH tunnel from the laptop, and a laptop's own local panel keeps
@@ -814,6 +875,7 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_killcam_slowmo` | 0.6 | The round-end killcam's **timescale FLOOR** (clamp 0.25-1.0) — **not a toggle** (it used to be one; 0/1 no longer mean what they did). `0.25` = stock BO1 cinematic **and the bug**; `1.0` = no slow motion. Stock's 0.25 spaces the server's game frames ~200ms apart, overrunning `MAX_PACKET_USERCMDS` (32) on any client above ~160 fps → the "Connection Interrupted" plug. `0.6` → ~83ms, safe to ~385 fps, still a clear slow-mo. Clamp the **depth, not the length**. ⚠ `sv_fps` is not the lever — it truncates the killcam's frame-sized archive ring. |
 | `scr_gf_jump_fatigue` | 0 | **0 = OFF (the GF default)** / 1 = stock. Drives the engine's `jump_slowdownEnable` (post-jump movement drag — "jump fatigue"). The mod owns it so OFF ships as a default even with no cfg and no panel (`gf_applyJumpFatigue`, re-applied every round). RCON bridge: `jumpfatigue_<0\|1>`. |
 | `scr_gf_sprint_unlimited` | 0 | **0 = stock** / 1 = the sprint meter never empties. Drives the client dvar `player_sprintUnlimited`, **pushed per-client every spawn** — stock's only push is at connect and is ON-only, so a bare `set` on it reaches nobody already in the server and can never turn it back off (`gf_applySprintUnlimited` + `_Client`). RCON bridge: `sprintunlimited_<0\|1>`. |
+| `scr_elevator_failsafe` | 1 | **ENGINE/map dvar, read at LEVEL LOAD → next map only.** `1` = **Hotel's elevators are disabled** (the GF default): cars parked at the lower floor, car + floor doors shut, `DisconnectPaths()` both levels, use triggers retitled "ELEVATOR UNAVAILABLE", bot prox-think short-circuited. 100% stock — `mp_hotel` ships its **own** elevator script (`maps/mp/mp_hotel_elevators.gsc`, **not** the generic `maps/mp/_elevator.gsc`) and Treyarch built this switch into it; stock forces it on for `xblive_wagermatch 1`, so the wager gametypes already ran Hotel dead. Seeded if-empty in `gf.gsc onStartGameType` (**outside** the strip regions — it ships in the public build) + set in `dedicated.cfg`, for the boot-straight-onto-Hotel case. No effect on any other map. |
 | `g_fix_viewkick_dupe` | 1 | **INERT on T5 MP** — the engine never registered it (live read: `Domain is any text`, `default:` mirrors our own `set`). Harmless, does nothing. Flinch is `scr_gf_flinch` alone. |
 | `scr_team_maxsize` | 0 (cfg ships 6) | `>0` caps players/team; overflow → spectator on spawn. |
 

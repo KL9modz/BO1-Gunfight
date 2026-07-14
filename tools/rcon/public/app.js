@@ -631,10 +631,35 @@ function tab(n){
 // whether you reach it by RDP on the box or over the SSH tunnel from the laptop; a laptop's own
 // local panel keeps its own. localStorage is only a same-origin CACHE, so the landing tab paints
 // its pins before the fetch lands (and still works if the prefs file can't be read/written).
+//
+// TWO things are pinnable, and both are borrowed the same way:
+//   • a ROW      (key `dv:<dvar>` / `lb:<tab>|<block>|<label>`) — one setting.
+//   • a BLOCK    (key `bk:<tab>|<block>`, ☆ on its title) — the WHOLE panel, buttons and all.
+//     This is the only way to get the non-row controls (Add Bot / Kick All / per-team ± /
+//     difficulty) onto the pinboard: they aren't settings rows, so they have no star of their own.
+// A pinned block brings its rows with it, so favBuild() SKIPS any row pin inside one — else the
+// same node would be claimed by two borrowers.
+//
+// Pins land in one of FAV_CATS (below), not under their home block: pinning six rows from six
+// blocks used to produce six one-row groups. The home block survives as an .sgroup sub-header, so
+// you can still see where a row came from.
 const FAV_KEY='gf_favs';
 // First-run pinboard, so the landing tab is never empty on a fresh panel.
 const FAV_DEFAULT=['dv:scr_gf_scorelimit','dv:scr_gf_timelimit','dv:scr_gf_overtimelimit',
-                   'dv:scr_gf_teamspawnmode','dv:scr_team_fftype','lb:DASHBOARD|BOTS|Fill (per team)'];
+                   'dv:scr_gf_teamspawnmode','dv:scr_team_fftype','bk:DASHBOARD|BOTS'];
+// The pinboard's categories. Every DASHBOARD/ADVANCED block maps into exactly one; an unlisted
+// block falls through to SERVER, so a new block is never silently dropped from the pinboard.
+// Titles are matched on their leading name only (`_favCatKey` cuts a trailing "— descriptor"),
+// and an empty category doesn't render.
+const FAV_CATS=[
+  { name:'MATCH START',    blocks:['MATCH START'] },
+  { name:'GAMEPLAY',       blocks:['GUNFIGHT','GAMEPLAY','GAME RULES','MOVEMENT','PERKS','PERK MULTIPLIERS','ENGINE GAMEPLAY'] },
+  { name:'BOTS & PLAYERS', blocks:['BOTS','BOT TUNING','TEAMS','PLAYER','PLAYER STATE','ADMIN'] },
+  { name:'FUN & VISUALS',  blocks:['FUN & VISION','GAME MODIFIERS','VISUAL TWEAKS','HUD ELEMENTS','CLIENT BINDS'] },
+  { name:'SERVER',         blocks:['GENERAL','KILLCAM','CLIENT-LOCAL','CUSTOM DVAR','DEBUG','COMMAND REFERENCE'] },
+];
+const FAV_CAT_FALLBACK='SERVER';
+const _favCatOf={}; FAV_CATS.forEach(c=>c.blocks.forEach(b=>_favCatOf[b]=c.name));
 let _favs=[];     // pinned row keys, in pin order
 let _favLent=[];  // rows currently on loan to #p-fav: {row, parent, next} = where each came from
 try{ const _fs=localStorage.getItem(FAV_KEY); _favs=_fs?JSON.parse(_fs):FAV_DEFAULT.slice(); }catch(_){ _favs=FAV_DEFAULT.slice(); }
@@ -657,12 +682,31 @@ async function favSyncFromServer(){
   try{ localStorage.setItem(FAV_KEY,JSON.stringify(_favs)); }catch(_){}
   if(_tab==='fav') favBuild(); else favSyncStars();
 }
-function _favSrc(row){ return row.closest('#p-srv')?'ADVANCED':'DASHBOARD'; }
+function _favSrc(el){ return el.closest('#p-srv')?'ADVANCED':'DASHBOARD'; }
 function _favBlock(row){ const b=row.closest('.block'); return b?_gsClean(b.querySelector('.btitle')):'PINNED'; }
-// Stamp every pinnable row with a stable key + its ☆ button. The key is the row's dvar where it has
+// A block's NAME, without the grey descriptor span some titles carry ("PLAYER STATE  all players")
+// or its behavior pills: the descriptor is a child ELEMENT, the name is the title's own text nodes.
+// This feeds the category map ONLY — pin keys still go through _gsClean, so an existing pinboard's
+// keys don't move under it.
+function _favBlockTitle(blk){
+  const t=blk.querySelector('.btitle'); if(!t) return '';
+  return Array.from(t.childNodes).filter(n=>n.nodeType===3).map(n=>n.textContent).join(' ').replace(/\s+/g,' ').trim();
+}
+// "PERKS — give / remove for all players" → "PERKS". Only a SPACED dash cuts: an unspaced hyphen is
+// part of the name (CLIENT-LOCAL).
+function _favCatKey(title){ return (title||'').split(/\s+[—–-]\s+/)[0].trim().toUpperCase(); }
+function _favCat(blk){ return _favCatOf[_favCatKey(_favBlockTitle(blk))] || FAV_CAT_FALLBACK; }
+// The ☆ button. Wired via the onclick PROPERTY, not an attribute, so it stays invisible to the
+// innerHTML scrapes in _gsDvar() / collectBlockDvars(). stopPropagation because a block's star sits
+// inside its .btitle, which the delegated collapse handler owns — a pin must not also fold the block.
+function _favStar(el){
+  const b=document.createElement('button');
+  b.className='fav-star'; b.type='button';
+  b.onclick=e=>{ e.stopPropagation(); favToggle(el); };
+  return b;
+}
+// Stamp every pinnable row AND block with a stable key + its ☆. A row's key is its dvar where it has
 // one (survives a label/section edit); a static or bridge-only row falls back to tab|block|label.
-// The button is wired via the onclick PROPERTY, not an attribute, so it stays invisible to the
-// innerHTML scrapes in _gsDvar() / collectBlockDvars().
 function hydrateStars(){
   const seen={};
   document.querySelectorAll('#p-match .srow, #p-match .slider-row, #p-srv .srow, #p-srv .slider-row').forEach(row=>{
@@ -673,69 +717,97 @@ function hydrateStars(){
     if(!key||seen[key]) key='lb:'+_favSrc(row)+'|'+_favBlock(row)+'|'+_gsClean(lbl);
     if(seen[key]) return;          // an exact duplicate row stays unpinnable rather than aliasing
     seen[key]=1; row.dataset.favkey=key;
-    const b=document.createElement('button');
-    b.className='fav-star'; b.type='button';
-    b.onclick=()=>favToggle(row);
-    row.insertBefore(b,row.firstChild);
+    row.insertBefore(_favStar(row),row.firstChild);
+  });
+  // Whole-block pins. This is the only way the non-row controls (Add Bot / Kick All / per-team ± /
+  // bot difficulty) reach the pinboard — they aren't settings rows, so they have no star of their own.
+  document.querySelectorAll('#p-match .block, #p-srv .block').forEach(blk=>{
+    if(blk.closest('#srv-gt-wrap')) return;   // re-rendered on every gametype-dropdown change → no stable home
+    const t=blk.querySelector('.btitle'); if(!t) return;
+    const key='bk:'+_favSrc(blk)+'|'+_gsClean(t);
+    if(seen[key]) return;
+    seen[key]=1; blk.dataset.favkey=key;
+    const s=_favStar(blk); s.classList.add('fav-star-blk');
+    t.insertBefore(s,t.firstChild);
   });
   favSyncStars();
 }
 function favSyncStars(){
-  document.querySelectorAll('[data-favkey]').forEach(row=>{
-    const s=row.querySelector(':scope > .fav-star'); if(!s) return;
-    const on=_favs.indexOf(row.dataset.favkey)>=0;
+  document.querySelectorAll('[data-favkey]').forEach(el=>{
+    const s=el.querySelector(':scope > .fav-star, :scope > .btitle > .fav-star'); if(!s) return;
+    const blk=el.classList.contains('block');
+    const on=_favs.indexOf(el.dataset.favkey)>=0;
     s.classList.toggle('on',on);
     s.textContent=on?'★':'☆';
-    s.title=on?'Unpin from FAVORITES':'Pin this setting to the FAVORITES tab';
+    s.title=on ? (blk?'Unpin this panel from FAVORITES':'Unpin from FAVORITES')
+               : (blk?'Pin this whole panel (buttons and all) to the FAVORITES tab':'Pin this setting to the FAVORITES tab');
   });
 }
-function favToggle(row){
-  const k=row.dataset.favkey; if(!k) return;
+function favToggle(el){
+  const k=el.dataset.favkey; if(!k) return;
   const i=_favs.indexOf(k);
   if(i>=0) _favs.splice(i,1); else _favs.push(k);
   favSave();
   if(_tab==='fav') favBuild(); else favSyncStars();   // favBuild re-syncs the stars itself
-  toast(i>=0?'Unpinned':'Pinned to FAVORITES','info');
+  const what=el.classList.contains('block')?' panel':'';
+  toast(i>=0?('Unpinned'+what):('Pinned'+what+' to FAVORITES'),'info');
 }
-// Put every borrowed row back exactly where it came from. Reverse order: a row's recorded anchor
+// Put every borrowed node back exactly where it came from. Reverse order: a node's recorded anchor
 // can be a later sibling that was itself borrowed, and reverse restores that anchor first.
 function favReturn(){
   for(let i=_favLent.length-1;i>=0;i--){
     const e=_favLent[i];
     const anchor=(e.next&&e.next.parentNode===e.parent)?e.next:null;
-    try{ e.parent.insertBefore(e.row,anchor); }catch(_){ e.parent.appendChild(e.row); }
+    try{ e.parent.insertBefore(e.node,anchor); }catch(_){ e.parent.appendChild(e.node); }
   }
   _favLent=[];
 }
+function _favBorrow(node,into){
+  _favLent.push({node,parent:node.parentNode,next:node.nextSibling});
+  into.appendChild(node);
+}
+const FAV_SET_ALL_ROW='<div class="set-all-row"><button class="b-gh b-sm ctrl" data-tip="Write this block&#39;s values to dedicated.cfg (persists across restarts).&#10;A .bak backup is made; takes effect on next server start or `exec dedicated.cfg`." onclick="saveBlockToCfg(this)">💾 Save</button><button class="b-ac b-sm ctrl" onclick="setAllInBlock(this)">Set All</button></div>';
+// One .block per non-empty CATEGORY, filled in page order (DASHBOARD blocks, then ADVANCED). Inside
+// a category: a pinned whole block comes in as itself (its own title becomes a sub-header via CSS),
+// and loose pinned rows sit under an .sgroup naming their home block.
 function favBuild(){
   const p=g('p-fav'); if(!p) return;
   favReturn();                                          // never wipe the panel with rows still on loan
   p.querySelectorAll(':scope > .cols, :scope > .block').forEach(e=>e.remove());
   p._items=null; p._cols=null;                          // layoutColumns caches the block list per panel
-  // Group the pinned rows under their home block, in page order (DASHBOARD blocks, then ADVANCED).
-  const groups=[], by={};
-  document.querySelectorAll('#p-match [data-favkey], #p-srv [data-favkey]').forEach(row=>{
-    if(_favs.indexOf(row.dataset.favkey)<0) return;
-    const t=_favSrc(row)+' › '+_favBlock(row);
-    if(!by[t]){ by[t]={title:t,rows:[]}; groups.push(by[t]); }
-    by[t].rows.push(row);
+  const buckets={}; FAV_CATS.forEach(c=>buckets[c.name]=[]);
+  document.querySelectorAll('#p-match .block, #p-srv .block').forEach(blk=>{
+    if(blk.closest('#srv-gt-wrap')) return;
+    const bucket=buckets[_favCat(blk)];
+    // A pinned block brings its rows with it — so a row pinned INSIDE one is skipped, not borrowed
+    // twice. Unpinning the block surfaces that row on its own again.
+    if(_favs.indexOf(blk.dataset.favkey)>=0){ bucket.push({block:blk}); return; }
+    const rows=Array.from(blk.querySelectorAll('[data-favkey]')).filter(r=>_favs.indexOf(r.dataset.favkey)>=0);
+    if(rows.length) bucket.push({label:_favSrc(blk)+' › '+_favBlockTitle(blk), rows});
   });
-  if(!groups.length){
+  const cats=FAV_CATS.filter(c=>buckets[c.name].length);
+  if(!cats.length){
     const b=document.createElement('div'); b.className='block';
     b.innerHTML='<div class="btitle">FAVORITES</div>'
       +'<div class="dm" style="font-style:italic;line-height:1.7">Nothing pinned yet. Click the '
       +'<span class="fav-star on">★</span> on any setting in the <b style="color:var(--ac)">DASHBOARD</b> '
-      +'or <b style="color:var(--ac)">ADVANCED</b> tab to pin it here.</div>';
+      +'or <b style="color:var(--ac)">ADVANCED</b> tab to pin it here — or the ★ on a <b>section title</b> '
+      +'to pin that whole panel, buttons and all.</div>';
     p.appendChild(b);
-  } else groups.forEach(gr=>{
-    const b=document.createElement('div'); b.className='block';
-    const t=document.createElement('div'); t.className='btitle'; t.textContent=gr.title;
+  } else cats.forEach(c=>{
+    const b=document.createElement('div'); b.className='block fav-cat';
+    const t=document.createElement('div'); t.className='btitle'; t.textContent=c.name;
     b.appendChild(t);
-    gr.rows.forEach(row=>{ _favLent.push({row,parent:row.parentNode,next:row.nextSibling}); b.appendChild(row); });
-    // Set All / 💾 Save walk the [data-dvar] rows of whatever .block they're clicked in, so they
-    // work on a borrowed set unchanged — and each group is one home block, so Save stays coherent.
-    if(gr.rows.some(r=>r.hasAttribute('data-dvar')||r.querySelector('[onclick^="sdve("]')))
-      b.insertAdjacentHTML('beforeend','<div class="set-all-row"><button class="b-gh b-sm ctrl" data-tip="Write this block&#39;s values to dedicated.cfg (persists across restarts).&#10;A .bak backup is made; takes effect on next server start or `exec dedicated.cfg`." onclick="saveBlockToCfg(this)">💾 Save</button><button class="b-ac b-sm ctrl" onclick="setAllInBlock(this)">Set All</button></div>');
+    buckets[c.name].forEach(it=>{
+      if(it.block){ _favBorrow(it.block,b); return; }
+      const h=document.createElement('div'); h.className='sgroup'; h.textContent=it.label;
+      b.appendChild(h);
+      it.rows.forEach(row=>_favBorrow(row,b));
+    });
+    // Set All / 💾 Save walk the [data-dvar] + sdve() rows of whatever .block they're clicked in, so
+    // they work on a borrowed set unchanged. One row per CATEGORY, covering everything in it — a
+    // borrowed block's own Set All row is hidden by CSS rather than removed (it goes home intact).
+    if(b.querySelector('[data-dvar], [onclick^="sdve("]')) b.insertAdjacentHTML('beforeend',FAV_SET_ALL_ROW);
     p.appendChild(b);
   });
   favSyncStars();
@@ -781,12 +853,17 @@ function showRowCtx(e,row){
   const lbl=_gsClean(row.querySelector('.slbl'))||'Setting';
   const dv=_rowDvar(row), key=row.dataset.favkey;
   const pinned=key&&_favs.indexOf(key)>=0;
+  // A row whose whole BLOCK is pinned is already on the pinboard, inside it — pinning it again would
+  // be a second claim on the same node, which favBuild() ignores. Say so instead of offering a no-op.
+  const home=row.closest('.block');
+  const inPinnedBlock=home&&home.dataset.favkey&&_favs.indexOf(home.dataset.favkey)>=0;
   const ctls=_rowCtls(row), def=ctls.length?_ctlDef(ctls[0]):'';
   const m=g('ctx-menu');
   m.innerHTML=`<div class="ctx-header">${x(lbl)}${dv?`<span class="ctx-dv">${x(dv)}</span>`:''}</div>`
     + (dv ? `<div class="ctx-item" onclick="rowCtxAction('copy')">Copy dvar name</div>`
           : `<div class="ctx-item cur" title="No dvar behind this row — it is a pure GSC-bridge command.">Copy dvar name <span style="opacity:.6">— none</span></div>`)
-    + (key ? `<div class="ctx-item" onclick="rowCtxAction('pin')">${pinned?'★ Remove from FAVORITES':'☆ Add to FAVORITES'}</div>`
+    + (inPinnedBlock ? `<div class="ctx-item cur" title="Its whole section is pinned, so this row is already on the FAVORITES tab. Unpin the section (★ on its title) to pin rows from it one by one.">★ On FAVORITES <span style="opacity:.6">— with its section</span></div>`
+       : key ? `<div class="ctx-item" onclick="rowCtxAction('pin')">${pinned?'★ Remove from FAVORITES':'☆ Add to FAVORITES'}</div>`
            : `<div class="ctx-item cur" title="Per-gametype rows are re-rendered whenever the gametype dropdown changes, so a pinned one would lose its home.">☆ Add to FAVORITES <span style="opacity:.6">— n/a</span></div>`)
     + '<div class="ctx-sep"></div>'
     + (ctls.length ? `<div class="ctx-item yellow" onclick="rowCtxAction('reset')">↺ Reset to default${def!==''?' ('+x(def)+')':''}</div>`
@@ -848,8 +925,10 @@ document.addEventListener('contextmenu',e=>{
 // model). Typing filters by label / dvar / section / tooltip; picking a result jumps
 // to its tab (switching the ADVANCED gametype dropdown if needed) and flashes the row.
 let _gsIndex=[], _gsResults=[], _gsSel=-1;
-// Text of an element minus any injected behavior pills.
-function _gsClean(el){ if(!el) return ''; const c=el.cloneNode(true); c.querySelectorAll('.pills').forEach(p=>p.remove()); return c.textContent.replace(/\s+/g,' ').trim(); }
+// Text of an element minus any injected behavior pills / pin stars. The ☆ lives INSIDE a block's
+// .btitle, and its glyph flips ☆↔★ on pin — strip it or a block's own pin key (and its collapse
+// key) would change the moment you pinned it.
+function _gsClean(el){ if(!el) return ''; const c=el.cloneNode(true); c.querySelectorAll('.pills, .fav-star').forEach(p=>p.remove()); return c.textContent.replace(/\s+/g,' ').trim(); }
 // Best-effort dvar name for a row: the declarative data-dvar attribute (data-driven rows),
 // else the set* call it drives, else the tooltip's first line.
 function _gsDvar(row){
@@ -1730,7 +1809,7 @@ const SRV_SECTIONS = [
   // The only lever is the timescale, hence the floor below.
   { title: 'KILLCAM', eff: 'restart', per: 'dvar', vars: [
     { n:'scr_gf_killcam_slowmo',    lbl:'Killcam Slow-Mo Floor',  type:'num',  def:'0.6', eff:'live',
-      tip:'scr_gf_killcam_slowmo\nThe killcam TIMESCALE FLOOR — how far the server is allowed to slow down for the round-end money shot. NOT a toggle (it used to be one; 0/1 no longer mean what they did).\n\n  0.25 = stock BO1 cinematic — AND THE BUG. 200ms between server game-frames, which overruns the usercmd queue of any client above ~160 fps.\n  0.6  = DEFAULT. ~83ms between frames — still a clear slow-motion, no backlog on any real client (safe up to ~385 fps).\n  1.0  = no slow motion at all (the old "off").\n\nClamped to 0.25–1.0. Takes effect at the next round end.\n\nWHY SHALLOWER AND NOT SHORTER: the command backlog builds within ~300ms of the drop, so trimming the slow-mo\'s LENGTH does nothing — only its DEPTH matters.\n\nACCEPTANCE TEST (binary, client-side): watch a round-end killcam with the console open. ZERO "MAX_PACKET_USERCMDS" lines = the pipeline is keeping up = the plug cannot fire. That is a much better signal than squinting at the flash.\n\nImplementation: stock threads its slowdown per viewer and we cannot unthread it, but SetTimeScale is a plain builtin and the LAST caller wins — gf_killcamSlowmoClamp (_gf_rounds.gsc) mirrors stock\'s schedule and re-asserts the floor using stock\'s OWN ramp target, so the cinematic keeps its shape and only its depth changes.' },
+      tip:'scr_gf_killcam_slowmo\nThe killcam TIMESCALE FLOOR — how far the server is allowed to slow down for the round-end money shot. NOT a toggle (it used to be one; 0/1 no longer mean what they did).\n\n  0.25 = stock BO1 cinematic — AND THE BUG. 200ms between server game-frames, which starves the usercmd ack rate.\n  0.6  = DEFAULT, SHIPPED AND CONFIRMED LIVE. ~80ms between frames (measured). The plug is GONE and a full lobby plays great.\n  1.0  = no slow motion at all (the old "off").\n\nClamped to 0.25–1.0. Takes effect at the next round end.\n\nWHY SHALLOWER AND NOT SHORTER: the command backlog builds within ~300ms of the drop, so trimming the slow-mo\'s LENGTH does nothing — only its DEPTH matters.\n\n🛑 DO NOT LOWER THIS BELOW 0.6 TO CHASE THE "MAX_PACKET_USERCMDS" CONSOLE SPAM. Clients still print it and that is NOT a regression — it is a cosmetic, per-packet limit (32) whose overflow just drops the OLDEST queued commands; the server keeps acking. The PLUG is a separate, looser threshold (CG_DrawDisconnect) and 0.6 already cleared it. Lowering the floor trades a harmless console line for the real bug coming back. Same for raising sv_fps — that truncates the killcam\'s frame-sized archive ring.\n\nImplementation: stock threads its slowdown per viewer and we cannot unthread it, but SetTimeScale is a plain builtin and the LAST caller wins — gf_killcamSlowmoClamp (_gf_rounds.gsc) mirrors stock\'s schedule and re-asserts the floor using stock\'s OWN ramp target, so the cinematic keeps its shape and only its depth changes.' },
     { n:'scr_game_allowfinalkillcam',lbl:'Final Killcam (round end)',type:'tog',def:'1', also:'scr_gf_game_allowfinalkillcam',
       tip:'scr_game_allowfinalkillcam\nThe ROUND-END killcam (the one with the slow-motion). 0 = no round-end replay at all.\n\nA stock TWEAKABLE (registerTweakable "game"/"allowfinalkillcam", _tweakables.gsc:312), so the per-gametype override scr_gf_game_allowfinalkillcam is written in lockstep — a stale override would otherwise silently beat the base dvar.\n\n⚠ RESTART: level.finalkillcam is assigned ONCE at _killcam::init (level init), so a change needs a map_restart to land.\n⚠ This is the BLUNT lever. To keep the replay and only kill the flash, use Final Killcam Slow-Mo above.' },
     { n:'scr_game_allowkillcam',    lbl:'Death Killcam',          type:'tog',  def:'1', also:'scr_gf_game_allowkillcam',
@@ -1771,15 +1850,37 @@ const SRV_SECTIONS = [
   //   SNIPER/HEAVY  — only the 10 loadouts carrying the sniper/heavy package (8 snipers + M202 + Minigun)
   //   NOT GRANTED   — no loadout grants it -> the slider does nothing at all
   // Keep these in sync with the base set in _gf_loadouts.gsc and the package in loadout_editor/server.js.
+  // ⚠⚠ EVERY def/min/max BELOW WAS WRONG until 2026-07-13, and wrong in the most dangerous way.
+  // The panel claimed def 1.0 and offered a range up to 1.5-2.0. A LIVE RCON READ of the registered
+  // defaults + domains (the ONLY authority — see [[engine-dvar-defaults-from-log-dump]]) says:
+  //
+  //   perk_weapSwitchMultiplier      default 0.5    domain 0.01 .. 1
+  //   perk_weapReloadMultiplier      default 0.5    domain 0    .. 1
+  //   perk_weapAdsMultiplier         default 0.5    domain 0.01 .. 1
+  //   perk_weapMeleeMultiplier       default 0.5    domain 0.01 .. 1
+  //   perk_weapSpreadMultiplier      default 0.65   domain 0    .. 1
+  //   perk_weapRateMultiplier        default 0.75   domain 0    .. 1
+  //   perk_sprintRecoveryMultiplier  default 0.6    domain 0    .. 1
+  //   perk_sprintMultiplier          default 2      domain 0    .. 3     (HIGHER = more; sprint duration)
+  //   perk_speedMultiplier           default 1.07   domain 0    .. 5     (HIGHER = faster; Lightweight move speed)
+  //
+  // Two consequences that made the old rows actively harmful:
+  //   1. For the "time" family, the DEFAULT *IS* THE PERK'S EFFECT. 0.5 = the action takes HALF as
+  //      long. 1.0 is NOT "stock" -- it is the WORST value in the domain, i.e. the perk does NOTHING.
+  //      So the old def:'1.0' + a Reset button silently DISABLED the very perk the row exists to tune.
+  //   2. The engine domain CAPS AT 1. Every value above it that the old sliders offered (1.5, 2.0) is
+  //      REJECTED by the server -- the slider moved and nothing happened, which reads as "this dvar is
+  //      broken" when in fact the value was never accepted.
+  // Ranges below now mirror the real domains. NEVER re-guess a default here; read it off the server.
   { title: 'PERK MULTIPLIERS', eff: 'live', per: 'dvar', vars: [
-    { n:'perk_weapSwitchMultiplier',     lbl:'Weapon Switch Speed',  type:'sld', def:'1.0', min:'0.25', max:'1.5', step:'0.001', tip:'perk_weapSwitchMultiplier\nWeapon-swap time multiplier. LOWER = FASTER: 0.833 ≈ 1.2x, 0.5 = 2x, 0.25 = 4x, 1.0 = stock (default).\nGATE: Scout Pro (specialty_fastweaponswitch)\nSCOPE: SNIPER/HEAVY loadouts only (10 of 53 rounds) — no effect on the other 43.' },
-    { n:'perk_weapReloadMultiplier',     lbl:'Reload Speed',         type:'sld', def:'1.0',   min:'0.25', max:'1.5', step:'0.01',  tip:'perk_weapReloadMultiplier\nReload time multiplier. LOWER = FASTER.\nGATE: Sleight of Hand (specialty_fastreload)\nSCOPE: SNIPER/HEAVY loadouts only (10 of 53 rounds).' },
-    { n:'perk_weapAdsMultiplier',        lbl:'ADS Speed',            type:'sld', def:'1.0',   min:'0.25', max:'1.5', step:'0.01',  tip:'perk_weapAdsMultiplier\nAim-down-sight time multiplier. LOWER = FASTER.\nGATE: Sleight of Hand Pro (specialty_fastads)\nSCOPE: SNIPER/HEAVY loadouts only (10 of 53 rounds).' },
-    { n:'perk_sprintMultiplier',         lbl:'Sprint Speed',         type:'sld', def:'1.0',   min:'0.5',  max:'2.0', step:'0.01',  tip:'perk_sprintMultiplier\nSprint speed multiplier. 1.0 = stock. Direction is engine-defined — adjust and test.\nGATE: Lightweight (specialty_movefaster)\nSCOPE: BASE — every player, every round.' },
-    { n:'perk_sprintRecoveryMultiplier', lbl:'Sprint Recovery',      type:'sld', def:'1.0',   min:'0.25', max:'2.0', step:'0.01',  tip:'perk_sprintRecoveryMultiplier\nTime before you can sprint again. LOWER = FASTER recovery.\nGATE: Steady Aim Pro (specialty_sprintrecovery)\nSCOPE: SNIPER/HEAVY loadouts only (10 of 53 rounds).\nNote: Marathon Pro (unlimited sprint) is a BASE perk, so the meter never empties anyway — this mostly matters after a sprint is interrupted.' },
-    { n:'perk_weapRateMultiplier',       lbl:'Fire Rate',            type:'sld', def:'1.0',   min:'0.5',  max:'2.0', step:'0.01',  tip:'perk_weapRateMultiplier\nRate-of-fire multiplier. 1.0 = stock.\nGATE: Double Tap (specialty_rof)\n⚠ SCOPE: NOT GRANTED by any loadout — this slider currently does NOTHING. Add specialty_rof to a loadout (or to gf_perk_on) to make it live.' },
-    { n:'perk_weapSpreadMultiplier',     lbl:'Hip-fire Spread',      type:'sld', def:'1.0',   min:'0.25', max:'1.5', step:'0.01',  tip:'perk_weapSpreadMultiplier\nHip-fire spread multiplier. LOWER = TIGHTER.\nGATE: Steady Aim (specialty_bulletaccuracy)\nSCOPE: SNIPER/HEAVY loadouts only (10 of 53 rounds).' },
-    { n:'perk_weapMeleeMultiplier',      lbl:'Melee Reach',          type:'sld', def:'1.0',   min:'0.5',  max:'2.0', step:'0.01',  tip:'perk_weapMeleeMultiplier\nMelee charge/reach multiplier. 1.0 = stock. Adjust and test.\nGATE: none known — appears ungated in the engine, so it should apply to everyone.' },
+    { n:'perk_weapSwitchMultiplier',     lbl:'Weapon Switch Speed',  type:'sld', def:'0.5',  min:'0.01', max:'1', step:'0.01', tip:'perk_weapSwitchMultiplier\nWeapon-swap TIME multiplier. LOWER = FASTER. Engine default 0.5 (= swaps take half as long -- that IS the perk\'s effect). 1.0 = no benefit at all. Domain 0.01-1; the server REJECTS anything above 1.\nGATE: Scout Pro (specialty_fastweaponswitch)\nSCOPE: SNIPER/HEAVY loadouts only (10 of 53 rounds) — no effect on the other 43.' },
+    { n:'perk_weapReloadMultiplier',     lbl:'Reload Speed',         type:'sld', def:'0.5',  min:'0',    max:'1', step:'0.01', tip:'perk_weapReloadMultiplier\nReload TIME multiplier. LOWER = FASTER. Engine default 0.5 (= Sleight of Hand\'s actual half-time reload). 1.0 = no benefit. Domain 0-1.\nGATE: Sleight of Hand (specialty_fastreload)\nSCOPE: SNIPER/HEAVY loadouts only (10 of 53 rounds).' },
+    { n:'perk_weapAdsMultiplier',        lbl:'ADS Speed',            type:'sld', def:'0.5',  min:'0.01', max:'1', step:'0.01', tip:'perk_weapAdsMultiplier\nAim-down-sight TIME multiplier. LOWER = FASTER. Engine default 0.5. Domain 0.01-1.\nGATE: Sleight of Hand Pro (specialty_fastads)\n⚠ SCOPE: DEAD — specialty_fastads does NOT stick. SetPerk on it does not produce a hasPerk of true (verified live: 6 of 7 gf_perk_on perks land, fastads never does), so this slider currently does nothing for anyone.' },
+    { n:'perk_sprintMultiplier',         lbl:'Sprint Duration',      type:'sld', def:'2',    min:'0',    max:'3', step:'0.05', tip:'perk_sprintMultiplier\nSprint DURATION multiplier. HIGHER = LONGER (opposite direction to the time-multipliers above). Engine default 2 (= Marathon\'s doubled sprint). Domain 0-3.\nGATE: Marathon (specialty_longersprint)\nSCOPE: BASE — every player, every round.\nNote: Marathon Pro (unlimited sprint) is ALSO base, so the meter never empties and this is largely moot.' },
+    { n:'perk_sprintRecoveryMultiplier', lbl:'Sprint Recovery',      type:'sld', def:'0.6',  min:'0',    max:'1', step:'0.01', tip:'perk_sprintRecoveryMultiplier\nTime before you can sprint/ADS again after sprinting. LOWER = FASTER. Engine default 0.6. Domain 0-1.\nGATE: Steady Aim Pro (specialty_sprintrecovery)\nSCOPE: SNIPER/HEAVY loadouts only (10 of 53 rounds).' },
+    { n:'perk_weapRateMultiplier',       lbl:'Fire Rate',            type:'sld', def:'0.75', min:'0',    max:'1', step:'0.01', tip:'perk_weapRateMultiplier\nTime BETWEEN shots. LOWER = FASTER fire. Engine default 0.75. Domain 0-1.\nGATE: Double Tap (specialty_rof)\n⚠ SCOPE: NOT GRANTED by any loadout — this slider does NOTHING. Add specialty_rof to a loadout (or to gf_perk_on) to make it live.' },
+    { n:'perk_weapSpreadMultiplier',     lbl:'Hip-fire Spread',      type:'sld', def:'0.65', min:'0',    max:'1', step:'0.01', tip:'perk_weapSpreadMultiplier\nHip-fire spread multiplier. LOWER = TIGHTER. Engine default 0.65 (= Steady Aim\'s actual effect). 1.0 = no benefit. Domain 0-1.\nGATE: Steady Aim (specialty_bulletaccuracy)\nSCOPE: SNIPER/HEAVY loadouts only (10 of 53 rounds).' },
+    { n:'perk_weapMeleeMultiplier',      lbl:'Melee Recovery Speed', type:'sld', def:'0.5',  min:'0.01', max:'1', step:'0.01', tip:'perk_weapMeleeMultiplier\nMelee-lunge RECOVERY TIME multiplier. LOWER = FASTER recovery. Engine default 0.5 — that default IS the perk\'s whole effect, and it is exactly what the in-game text means by "recovery rate after lunging with knife is reduced". Nothing else needs setting. 1.0 = no benefit. Domain 0.01-1; drop toward 0.01 for a dramatic, near-instant knife.\nGATE: Steady Aim Pro (specialty_fastmeleerecovery)\nSCOPE: SNIPER/HEAVY loadouts only (10 of 53) unless you also put the perk in the base set or in dedicated.cfg\'s gf_perk_on.' },
   ]},
   // via 'both': perkTog() writes the gf_perk_on / gf_perk_off dvar lists over plain rcon (so they
   // stick and 💾 Save can persist them), then fires the perksync bridge call to re-apply the base
@@ -1925,6 +2026,9 @@ const GF_MATCH_VARS = [
     { n:'scr_gf_overtimelimit_large', lbl:'OT Duration — Large (s)',  type:'num', def:'30',   tip:'scr_gf_overtimelimit_large\nOT countdown for LARGE mode. Pauses while contested.' },
     { n:'gf_capture_time',            lbl:'OT Capture — Small (s)',   type:'num', def:'3.5',  tip:'gf_capture_time\nSeconds to capture the OT zone in SMALL mode.' },
     { n:'gf_capture_time_large',      lbl:'OT Capture — Large (s)',   type:'num', def:'5',    tip:'gf_capture_time_large\nSeconds to capture the OT zone in LARGE mode.' },
+
+    { grp:'Map',
+      n:'scr_elevator_failsafe',      lbl:'Hotel: Disable Elevators', type:'tog', def:'1', eff:'nextmap', tip:'scr_elevator_failsafe\nHOTEL ONLY. Parks both elevators at the lower floor with the car + floor doors shut and the shaft sealed, and stops bots pathing over to ride them. 100% stock — mp_hotel ships its own elevator script (maps/mp/mp_hotel_elevators.gsc) and Treyarch built this switch into it; it is the same one the engine forces on for wager matches, so the wager gametypes (gun/oic/shrp/hlnd) already run Hotel with the elevators dead.\nON (Gunfight default): a 42s one-life round has no room for a 3s ride + 3s cooldown lift that can strand a player, and the elevator’s own obstruction handler damages anyone the doors close on — a free kill the map hands out.\nOFF: stock working elevators.\n⚠ TAKES EFFECT ON THE NEXT MAP — mp_hotel reads it at LEVEL LOAD, before the gametype starts (same constraint as the Pre-Match Warmup). `map_restart` is enough to trigger it.\nNo effect on any other map.' },
 ];
 const GF_START_VARS = [
     { n:'scr_gf_lobby',               lbl:'Match Start',               type:'sel', def:'0', opts:[['0','Normal (no lobby)'],['1','Auto lobby (min-players)'],['2','Manual lobby (START)']], tip:'scr_gf_lobby\nHow the match FIRST round starts (before the prematch countdown):\n• Normal = no lobby; the match starts in place (still waits for loaders / Min Players, then the countdown plays).\n• Auto = hold a pregame lobby (desaturated screen) until everyone is loaded and Min Players humans are in, then FAST-RESTART into a fresh match — re-firing the full start presentation (gun-rack, music, welcome). ~1s, no map reload.\n• Manual = hold the lobby until you click START MATCH (Match Control rail) — arrange teams first — then fast-restart. Auto-starts on its own after Manual Lobby Timer seconds (scr_gf_lobby_timer, default 600; 0 = never) so a forgotten hold can’t wedge the server.\nAuto/Manual: START MATCH is an instant override. Match-start only. Manual needs the RCON bridge (this panel).\nSeparate from the PRE-MATCH WARMUP below, which is the engine’s own lobby gametype and runs BEFORE any of this.' },
@@ -2127,9 +2231,11 @@ function layoutColumns(panel,force){
   const cols=_wantCols();
   if(!panel._items){
     // Canonical order, captured BEFORE any re-parenting (afterwards DOM order is col1+col2).
-    // Blocks inside #srv-gt-wrap travel with the wrapper, so they're not separate items.
+    // Blocks inside #srv-gt-wrap travel with the wrapper, so they're not separate items. Same for a
+    // whole block FAVORITES has borrowed INTO a category block: it's part of that block's content,
+    // not a column item of its own (hoisting it into a column would tear it out of its category).
     panel._items=Array.from(panel.querySelectorAll('.block, #srv-gt-wrap'))
-      .filter(el=>el.id==='srv-gt-wrap'||!el.closest('#srv-gt-wrap'));
+      .filter(el=>el.id==='srv-gt-wrap'||(!el.closest('#srv-gt-wrap')&&!(el.parentElement&&el.parentElement.closest('.block'))));
   }
   if(!force && panel._cols===cols) return;
   panel._cols=cols;
@@ -2239,7 +2345,14 @@ document.addEventListener('click',e=>{ if(!e.target.closest('.brand')){ const p=
 // ─── Collapsible sections ─────────────────────────────────────────────────────
 // Click any block title to fold it. Delegated so it covers static + generated blocks.
 // State is keyed by the title text and persisted in localStorage.
-function _blockKey(b){ const t=b.querySelector('.btitle'); return t ? t.textContent.replace(/\s+/g,' ').trim().slice(0,48) : ''; }
+// The block's own title (its first .btitle — a FAVORITES category block holds borrowed blocks with
+// titles of their own, and each keeps its home key so a fold follows it between tabs). The ☆ is
+// stripped: its glyph flips on pin, and a key that changed would orphan the saved fold state.
+function _blockKey(b){
+  const t=b.querySelector('.btitle'); if(!t) return '';
+  const c=t.cloneNode(true); c.querySelectorAll('.fav-star').forEach(s=>s.remove());
+  return c.textContent.replace(/\s+/g,' ').trim().slice(0,48);
+}
 function saveCollapse(){
   const c=[]; document.querySelectorAll('.block.collapsed').forEach(b=>{ const k=_blockKey(b); if(k) c.push(k); });
   try{ localStorage.setItem('gf_collapsed', JSON.stringify(c)); }catch(_){}

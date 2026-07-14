@@ -160,6 +160,26 @@ tr.grp-u td{color:var(--dm);border-left-color:var(--bd)}
 .fav-star:hover{opacity:1;color:var(--wn)}
 .fav-star.on{opacity:1;color:var(--wn)}
 .fav-note{font-size:11px;font-style:italic;color:var(--dm)}
+/* The ☆ on a block TITLE pins the WHOLE panel (buttons and all) — the only way the non-row controls
+   (Add Bot, per-team ±, bot difficulty) reach the pinboard. .btitle isn't a flex row, so this one
+   rides inline ahead of the title text rather than on order:-1. */
+.fav-star-blk{display:inline;padding:0 5px 0 0;font-size:11px;vertical-align:baseline}
+.block:hover>.btitle>.fav-star{opacity:.55}
+/* ── A whole block BORROWED into a FAVORITES category ──
+   It keeps its identity (same node, same rows, same handlers) but must not render as a card inside
+   a card: strip the chrome and demote its title to look like the .sgroup sub-headers beside it.
+   Scoped to #p-fav, so the block is untouched the moment it goes home. */
+#p-fav .block .block{background:none;border:none;border-radius:0;padding:0}
+#p-fav .block .block>.btitle{font-size:9px;font-weight:700;letter-spacing:.1em;color:var(--ac);margin:12px 0 3px;padding:9px 16px 0 0;border-bottom:none;border-top:1px solid var(--bd)}
+#p-fav .block>.btitle+.block>.btitle{margin-top:2px;padding-top:0;border-top:none}
+#p-fav .block .block>.btitle::after{top:9px}
+/* The category carries ONE Set All / 💾 Save row covering everything pinned into it, so a borrowed
+   block's own row would be a duplicate. Hide it (never remove it — the block goes home intact). */
+#p-fav .block .block .set-all-row{display:none}
+/* A ROW inside a borrowed block is already on the pinboard via its parent; its own ☆ would offer a
+   second, redundant claim on the same node (favBuild ignores it). The block's own ★ — in its title —
+   MUST stay: it is how you unpin the panel from the pinboard itself, like every other pin. */
+#p-fav .block .block .srow>.fav-star,#p-fav .block .block .slider-row>.fav-star{display:none}
 /* dvar name in the settings-row right-click header */
 .ctx-dv{font-family:monospace;font-size:10px;font-weight:400;letter-spacing:0;text-transform:none;color:var(--ac);margin-left:7px}
 /* ── Two-column layout for the settings tabs (DASHBOARD + ADVANCED) ──

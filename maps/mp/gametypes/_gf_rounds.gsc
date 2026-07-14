@@ -245,8 +245,23 @@ gf_applySprintUnlimitedClient()
 //   0.25 = stock BO1 (the cinematic as shipped — and the plug, on any client above ~160 fps)
 //   0.6  = DEFAULT — still a clear slow-motion money shot, no command backlog on any real client
 //   1.0  = no slow motion at all (the old "off")
-// The acceptance test is binary and client-side: zero MAX_PACKET_USERCMDS lines in the console
-// during a round-end killcam means the pipeline is keeping up and the plug cannot fire.
+// SHIPPED AND CONFIRMED LIVE (2026-07-13): the plug is GONE and a full lobby plays great. Sampler
+// across 4 round-ends: the timescale floors at 0.62 (never below), server game-frame gap ~80ms.
+//
+// 🛑 MAX_PACKET_USERCMDS STILL PRINTS ON CLIENTS, AND THAT IS NOT A REGRESSION. Do NOT "fix" it by
+// dropping this floor below 0.6 or raising sv_fps — both trade a cosmetic console line for a real
+// bug (the plug returns / the killcam archive truncates), and the live server is currently CORRECT.
+// An earlier comment here called "zero MAX_PACKET_USERCMDS" the acceptance test for this fix. That
+// was WRONG: it conflated two different client limits.
+//   MAX_PACKET_USERCMDS (32) = the PER-PACKET cap. Overflowing it truncates the move packet, dropping
+//     the OLDEST queued commands — the server still gets the newest and keeps acking, so it costs a
+//     few ms of stale input nobody can feel. Cosmetic.
+//   CG_DrawDisconnect        = a SEPARATE, much looser backlog threshold. THAT is the plug, and that
+//     is what this floor cleared.
+// Why 32 is still exceeded at an ~80ms gap is genuinely unknown (our model says it would take a
+// >400 fps client). Suspect the count is commands since the last SENT PACKET (cl_maxpackets), not
+// since the last ack — which would make it mostly client-side. Probe it from a CLIENT
+// (cl_maxpackets 100 / com_maxfps 125), never by changing the server. See CLAUDE.md → Open bugs.
 gf_killcamFloor()
 {
     return gf_cfgFloat( "scr_gf_killcam_slowmo", 0.6, 0.25, 1 );   // seeds the dvar if unset

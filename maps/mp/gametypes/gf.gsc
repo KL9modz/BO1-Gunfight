@@ -333,6 +333,27 @@ onStartGameType()
     if ( getDvar( "scr_killcam_time" ) == "" )
         setDvar( "scr_killcam_time", "" );
 
+    // HOTEL ELEVATORS — OFF by default in Gunfight. mp_hotel ships its OWN elevator system
+    // (maps/mp/mp_hotel_elevators.gsc, NOT the generic maps/mp/_elevator.gsc), and Treyarch built
+    // the off switch into it: scr_elevator_failsafe parks both cars at the lower floor, slams the
+    // car + floor doors shut, DisconnectPaths() on both levels, retitles the use triggers to
+    // "ELEVATOR UNAVAILABLE", and returns before the trigger loop ever arms (so the shaft is sealed,
+    // not left as an open hole). It also short-circuits the bot prox-think, so bots stop pathing
+    // over to ride it. A 42s round has no room for a 3s ride + 3s cooldown lift that can strand a
+    // player mid-round, and the elevator's own obstruction handler DoDamages anyone the doors close
+    // on — in a one-life mode that is a free kill the map hands out.
+    //
+    // Stock forces this on for xblive_wagermatch 1, which is why the wager gametypes (gun/oic/shrp/
+    // hlnd) already run Hotel with the elevators dead; only gf (wagermatch 0) still had them live.
+    //
+    // ⚠ READ AT LEVEL LOAD — mp_hotel::main() -> mp_hotel_elevators::init() runs BEFORE this
+    // gametype main(), the same constraint as xblive_wagermatch. So this seed only takes effect from
+    // the NEXT map load onward; dvars outlive a map change, so it is already in the table by then.
+    // dedicated.cfg sets it too, for the boot-straight-onto-Hotel case where this has never run.
+    // 1 = elevators disabled (GF default), 0 = stock working elevators.
+    if ( getDvar( "scr_elevator_failsafe" ) == "" )
+        setDvar( "scr_elevator_failsafe", "1" );
+
     // Per-round prematch via the engine's native countdown. The engine zeroes level.prematchPeriod
     // every round (Callback_StartGameType) and only refills it once per match, so we set it HERE
     // each round: onStartGameType runs after the engine's prematch randomization and before

@@ -504,6 +504,11 @@ set scr_dom_timelimit "0"                         // Duration in minutes per rou
 
 set g_gametype "gf"                                 // Select gametype from the list above
 set xblive_wagermatch "0"                           // Set to 1 if you plan on using a wager match. This is a MUST! Failure to do so caused script problems
+// Hotel's elevators. mp_hotel ships its own elevator script and Treyarch put the off switch in it.
+// 1 = cars parked, doors shut, shaft sealed, bots stop riding. Stock forces this on for wager matches.
+// Read at LEVEL LOAD, so this must be in the table BEFORE mp_hotel loads -- gf.gsc also seeds it, but
+// that seed only lands from the next map onward. 0 = stock working elevators.
+set scr_elevator_failsafe "1"                       // Disable the Hotel elevators. See above.
 
 //////////////////////////////////////////////////
 // MAP SHORT NAMES ROTATION LIST                //
