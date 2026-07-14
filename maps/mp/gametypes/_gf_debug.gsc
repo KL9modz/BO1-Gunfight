@@ -355,38 +355,14 @@ gf_startHUDPoolOverlay()
     }
 }
 
-gf_debugPrintPerks()
-{
-    self endon( "disconnect" );
-    wait 0.1;
-
-    allPerks = [];
-    allPerks[0]  = "specialty_movefaster";
-    allPerks[1]  = "specialty_bulletpenetration";
-    allPerks[2]  = "specialty_longersprint";
-    allPerks[3]  = "specialty_fastreload";
-    allPerks[4]  = "specialty_gpsjammer";
-    allPerks[5]  = "specialty_quieter";
-    allPerks[6]  = "specialty_armorvest";
-    allPerks[7]  = "specialty_blindeye";
-    allPerks[8]  = "specialty_detectexplosive";
-    allPerks[9]  = "specialty_sprintrecovery";
-    allPerks[10] = "specialty_holdbreath";
-    allPerks[11] = "specialty_bulletaccuracy";
-    allPerks[12] = "specialty_killstreak";
-    allPerks[13] = "specialty_scavenger";
-    allPerks[14] = "specialty_extraammo";
-    allPerks[15] = "specialty_twoattach";
-    allPerks[16] = "specialty_gas_mask";
-    allPerks[17] = "specialty_pistoldeath";
-
-    self iPrintLn( "^5-- perks --" );
-    for ( i = 0; i < allPerks.size; i++ )
-    {
-        if ( self hasPerk( allPerks[i] ) )
-            self iPrintLn( "^2+ " + allPerks[i] );
-    }
-}
+// gf_debugPrintPerks() lived here. DELETED (2026-07-13) — it was dead code (no caller), and it had
+// gone stale in the worst way: it probed a hardcoded 18-token list that still contained the FAKE
+// "specialty_blindeye" and was missing 10 of the perks the mod actually grants today, so it would
+// have reported the wrong answer with total confidence. Replaced by the bridge's READ-ONLY
+// `pperkdump_<num>` (gf_bridgeDumpPerks, _gf_bridge.gsc), which probes the FULL engine specialty
+// table and can be aimed at any player from the RCON panel.
+// ⚠ NOT `pperks_<num>` — that is the WRITE (it GRANTS a fixed extra perk set). Don't reach for it
+// when you meant to inspect.
 
 // ─── Frame-hitch / game-time-dilation monitor ────────────────────────────────
 // Chases the report: "the prematch/preround countdown + the WHOLE game run in
@@ -545,24 +521,25 @@ gf_roundEndProbe( myGen )
     if ( thresh <= 0 )
         thresh = 150;
 
-    // TIMESCALE TRACKING — the actual cause of the mid-killcam "Connection Interrupted" plug.
-    // Stock's final killcam calls SetTimeScale( 0.25 ) two seconds before the killing blow
-    // (_killcam.gsc:253) and restores 1.0 three seconds later. That is invisible to every other
-    // instrument we own: a timescale change COMPRESSES game time against wall time without ever
-    // creating a game-clock gap, and gettime()/wait()/the log timestamps are all game-clock. A
-    // `wait 0.05` still advances gettime() by a healthy 50ms while burning 200ms of wall clock —
-    // which is exactly why 32 round-ends produced ZERO GF_ENDGAP lines. The zero was never
-    // evidence the killcam was clean; it is what a dilation looks like to a game-clock probe.
+    // ⚠ THERE IS NO IN-VM TIMESCALE PROBE, AND THERE CANNOT BE ONE. A previous version of this
+    // thread edge-logged getDvarFloat("timescale") to catch stock's final-killcam SetTimeScale(0.25).
+    // It was DELETED (2026-07-13) because it can never work, and its silence was actively
+    // misleading — it read a steady 1 straight through a round end that an external wall-clock
+    // sampler measured at 0.27x. Two independent reasons it is impossible:
     //
-    // ⚠ UNPROVEN: whether the SetTimeScale builtin mirrors into a readable `timescale` dvar at all
-    // — NO stock GSC ever reads one. getDvarFloat on an unregistered dvar returns 0, so a steady
-    // ts=0 in the log means "the dvar does not exist", NOT "time stopped". That is itself the
-    // answer to whether the panel can display a live timescale.
-    tsPrev = getDvarFloat( "timescale" );
-    tsMin  = tsPrev;
-    verbose = ( getDvarInt( "gf_endprobe_verbose" ) == 1 );
+    //   1. SetTimeScale does not mirror into a readable dvar. (No stock GSC reads one either — that
+    //      should have been the tell.)
+    //   2. Even if it did: a dilation compresses game time against WALL time without ever creating a
+    //      game-clock gap, and gettime(), wait() and the log timestamps are ALL on the game clock.
+    //      A `wait 0.05` still advances gettime() by a healthy 50ms while burning 200ms of wall
+    //      clock. So GF_ENDGAP/GF_HITCH are structurally blind to it too: their zeros were never
+    //      evidence the killcam was clean, they are what a dilation LOOKS like from inside the sim.
+    //
+    // The only clock the dilation cannot touch is one outside the VM. Use RCON: tools/ts_sample.ps1
+    // diffs the gf_endprobe_last heartbeat below against a wall-clock stopwatch, and d(game)/d(wall)
+    // IS the timescale. That is how the killcam floor (scr_gf_killcam_slowmo) was measured and sized.
 
-    // HEARTBEAT INTO A DVAR — this is what actually measures the map_restart hole.
+    // HEARTBEAT INTO A DVAR — the map_restart hole, and the wall-clock sampler's only input.
     // Proven live on the VPS 2026-07-13: this thread logs its in-window lines fine, but its
     // RETIREMENT line never appears — neither from the gen check nor from the 60s ceiling.
     // A thread parked in a timed wait() does NOT come back from map_restart(true) (a thread
@@ -593,29 +570,6 @@ gf_roundEndProbe( myGen )
 
         setDvar( "gf_endprobe_last", "" + now );
 
-        // Edge-trigger on the timescale so one round end produces two lines (the drop and the
-        // restore) instead of 200. t+ is measured from gf_endRound, so the offsets tell us where
-        // in the round-end window stock's slowdown actually lands — and whether it is a hard step
-        // to 0.25 or a ramp (its second arg is a TIME, so it may blend).
-        ts = getDvarFloat( "timescale" );
-        if ( ts < tsMin )
-        {
-            tsMin = ts;
-            // Publish the lowest timescale this round end reached, for the RCON panel's readout.
-            // Written HERE (on each new minimum) and not in the retirement branch below, because
-            // this thread usually never REACHES that branch — it dies inside map_restart. The dvar
-            // is what survives, so the last write before the VM went dark is the value that holds.
-            setDvar( "gf_killcam_ts", "" + tsMin );
-        }
-
-        if ( ts != tsPrev || verbose )
-        {
-            logPrint( "GF_TS: " + tsPrev + " -> " + ts + "  t+" + ( now - t0 ) + "ms"
-                      + "  phase=" + gf_hitchPhase() + "  gap=" + gap + "ms"
-                      + " humans=" + gf_hitchHumans() + " bots=" + gf_hitchBots() + "\n" );
-            tsPrev = ts;
-        }
-
         // Log BEFORE the gen check: map_restart is exactly what changes the generation, so
         // checking first would discard the restart-spanning gap — the most interesting one.
         if ( gap >= thresh )
@@ -637,7 +591,7 @@ gf_roundEndProbe( myGen )
         if ( !isDefined( level.gf_roundGen ) || level.gf_roundGen != myGen )
         {
             logPrint( "GF_ENDTL: thread SURVIVED the restart - round end took " + ( now - t0 ) + "ms  gaps=" + gaps
-                      + " worst=" + worst + "ms  tsMin=" + tsMin
+                      + " worst=" + worst + "ms"
                       + " humans=" + gf_hitchHumans() + " bots=" + gf_hitchBots() + "\n" );
             return;
         }
@@ -677,20 +631,15 @@ gf_reportRoundEndGap()
     dark = now - getDvarInt( "gf_endprobe_last" );
     tot  = now - getDvarInt( "gf_endprobe_t0" );
 
-    // tsNow is read BEFORE gf.gsc's gf_resetTimeScale() has any chance to matter for the log line:
-    // if stock's killcam left the server dilated (its SetTimeScale(1.0) restore sits after a wait,
-    // behind endon("end_killcam"), so a skipped killcam strands it), this is where it shows up.
-    // A leaked value here would mean the NEXT round ran in slow motion — see the open
-    // "prematch countdown runs in slow-motion" TODO.
-    tsNow = getDvarFloat( "timescale" );
-
+    // ⚠ A "did the killcam leak a timescale into this round?" check lived here, reading the
+    // `timescale` dvar. DELETED — the dvar does not track SetTimeScale, so it could only ever have
+    // reported the value it already assumed (see the note in gf_roundEndProbe). gf_resetTimeScale()
+    // in gf.gsc still closes the leak itself; it is unconditional and costs nothing, so a detector
+    // for it buys nothing anyway. If the leak is ever suspected again, measure it from OUTSIDE the
+    // sim with tools/ts_sample.ps1 — a round that STARTS dilated shows up as a game/wall ratio
+    // below 1.0 before the first killcam.
     logPrint( "GF_ENDTL: dark=" + dark + "ms (no script ran)  roundEndTotal=" + tot
-              + "ms  tsMin=" + getDvar( "gf_killcam_ts" ) + " tsNow=" + tsNow
-              + "  gt=" + now + "\n" );
-
-    if ( tsNow != 1 && tsNow != 0 )   // 0 = the dvar does not exist (SetTimeScale does not mirror)
-        logPrint( "GF_TS: LEAKED - the server entered this round at timescale " + tsNow
-                  + " (stock's killcam restore never ran)\n" );
+              + "ms  gt=" + now + "\n" );
 
     setDvar( "gf_endprobe_last", "" );
     setDvar( "gf_endprobe_t0",   "" );

@@ -30,7 +30,11 @@
 //   pgod_<num>         - god mode one player by entitynum
 //   pfreeze_<num>      - freeze one player
 //   punfreeze_<num>    - unfreeze one player
-//   pperks_<num>       - give perks to one player
+//   pperks_<num>       - give perks to one player (WRITE - grants a fixed extra set)
+//   pperkdump_<num>    - READ-ONLY: dump the perks a player ACTUALLY holds, straight from the
+//                        engine (hasPerk over the full specialty table). The only real way to
+//                        verify a perk - a perk is server-side bitfield state, not a dvar, so it
+//                        cannot be inspected from the client. Result -> gf_perkdump dvar + admin chat.
 //   (NO pnoclip_: this was documented here for a long time but never implemented, and it can't be —
 //    T5 has no scriptable noclip. The engine's `noclip` is a cheat-protected console command acting
 //    on the LOCAL player, so it needs sv_cheats 1 AND a listen server. The panel greys it off there.)
@@ -138,6 +142,7 @@ gf_bridgeInit()
 
     setDvar( "gf_state", "0:0:1:0:0:" + level.gameType );
     setDvar( "gf_roster", "" );
+    setDvar( "gf_perkdump", "" );   // pperkdump_<num> result; seeded so an rcon read never echoes "Unknown cmd"
 
     // Copy every mirrored cheat-protected server dvar (gf_sv_botFov -> sv_botFov, ...) onto the real
     // dvar from GSC, where the sv_cheats gate does not apply. This runs EVERY round, but the load-
@@ -463,6 +468,9 @@ gf_bridgeDispatch( cmd )
     if ( isSubStr( cmd, "pgod_"      ) ) { gf_bridgePlayerCmd( "god",      getSubStr( cmd, 5,  cmd.size ) ); return; }
     if ( isSubStr( cmd, "pfreeze_"   ) ) { gf_bridgePlayerCmd( "freeze",   getSubStr( cmd, 8,  cmd.size ) ); return; }
     if ( isSubStr( cmd, "punfreeze_" ) ) { gf_bridgePlayerCmd( "unfreeze", getSubStr( cmd, 10, cmd.size ) ); return; }
+    // Read BEFORE write: "pperkdump_3" does not contain "pperks_", but check the reader first anyway
+    // so a future rename can't silently turn a query into a mutation.
+    if ( isSubStr( cmd, "pperkdump_" ) ) { gf_bridgeDumpPerks( getSubStr( cmd, 10, cmd.size ) ); return; }
     if ( isSubStr( cmd, "pperks_"    ) ) { gf_bridgePlayerCmd( "perks",    getSubStr( cmd, 7,  cmd.size ) ); return; }
 
     // Team move: pteam_<num>_<team> (deferred to next round if unsafe) or pteamforce_<num>_<team>
@@ -1065,6 +1073,76 @@ gf_bridgePlayerCmd( action, numStr )
         target SetPerk( "specialty_bulletaccuracy" );
         gf_bridgeNotify( "^2Perks: " + name );
     }
+}
+
+// --- Perk dump (READ-ONLY) ---------------------------------------------------
+// `pperkdump_<num>` — ask the ENGINE which perks a player actually holds, right now.
+//
+// This is the ONLY honest way to check a perk. A perk is NOT a dvar and NOT client state: SetPerk
+// flips a bit in the player's perk bitfield on the SERVER. There is no client console command that
+// prints it, nothing lands in config_mp.cfg, and a client-side "check" is impossible. So we ask the
+// server, with the same hasPerk() the damage code itself uses — if hasPerk says true, the perk IS
+// live on that player, by definition.
+//
+// It probes the FULL engine specialty table (every name in BlackOpsMP.exe's list), NOT the perks we
+// think we grant. That is the point: it reports what IS, not what we intended, so an unexpected perk
+// shows up rather than hiding. The old probe hardcoded 18 tokens (including a fake one) and could
+// only ever confirm its own assumptions.
+//
+// Output goes two ways, because an admin is often NOT in the game:
+//   - gf_bridgeNotify -> on-screen, to admins in gf_admin_guids
+//   - the gf_perkdump dvar -> readable over plain rcon (`rcon gf_perkdump`) or the panel CONSOLE tab
+// The "specialty_" prefix is stripped in the output purely to keep both under their length limits.
+gf_bridgeDumpPerks( numStr )
+{
+    target = gf_bridgeFindPlayer( int( numStr ) );
+    if ( !isDefined( target ) )
+    {
+        gf_bridgeNotify( "^1PerkDump: no player " + numStr );
+        setDvar( "gf_perkdump", "no player " + numStr );
+        return;
+    }
+
+    specs = gf_allSpecialties();
+    held  = "";
+    n     = 0;
+    for ( i = 0; i < specs.size; i++ )
+    {
+        if ( !target hasPerk( specs[i] ) )
+            continue;
+        if ( held != "" )
+            held += ",";
+        held += getSubStr( specs[i], 10, specs[i].size );   // drop the "specialty_" prefix
+        n++;
+    }
+
+    if ( held == "" )
+        held = "(none)";
+
+    setDvar( "gf_perkdump", target getEntityNumber() + ":" + n + ":" + held );
+    gf_bridgeNotify( "^5PerkDump " + target.name + " (" + n + "): ^7" + held );
+}
+
+// Every specialty the engine knows (its own token table, read out of BlackOpsMP.exe). Kept as one
+// space-delimited string + strTok so the list stays a single readable line to maintain.
+// ⚠ A name that is NOT on this list is not a real perk: SetPerk on it is a SILENT no-op.
+gf_allSpecialties()
+{
+    return strTok(
+        "specialty_armorpiercing specialty_armorvest specialty_bulletaccuracy specialty_bulletdamage " +
+        "specialty_bulletflinch specialty_bulletpenetration specialty_copycat specialty_delayexplosive " +
+        "specialty_detectexplosive specialty_disarmexplosive specialty_explosivedamage specialty_extraammo " +
+        "specialty_extramoney specialty_fallheight specialty_fastads specialty_fastinteract " +
+        "specialty_fastmantle specialty_fastmeleerecovery specialty_fastreload specialty_fastweaponswitch " +
+        "specialty_finalstand specialty_fireproof specialty_flakjacket specialty_gambler " +
+        "specialty_gas_mask specialty_gpsjammer specialty_grenadepulldeath specialty_healthregen " +
+        "specialty_holdbreath specialty_killstreak specialty_longersprint specialty_loudenemies " +
+        "specialty_movefaster specialty_nomotionsensor specialty_noname specialty_nottargetedbyai " +
+        "specialty_pin_back specialty_pistoldeath specialty_quieter specialty_reconnaissance " +
+        "specialty_rof specialty_scavenger specialty_shades specialty_shellshock " +
+        "specialty_showenemyequipment specialty_showonradar specialty_sprintrecovery " +
+        "specialty_stunprotection specialty_twoattach specialty_twogrenades specialty_twoprimaries " +
+        "specialty_unlimitedsprint", " " );
 }
 
 // --- Team management ---------------------------------------------------------

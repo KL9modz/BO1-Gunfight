@@ -511,6 +511,7 @@ function showCtx(e,num,name,isBot){
     <div class="ctx-item yellow" onclick="ctxAction('pfreeze')">Freeze</div>
     <div class="ctx-item yellow" onclick="ctxAction('punfreeze')">Unfreeze</div>
     <div class="ctx-item" onclick="ctxAction('pperks')">Give Perks</div>
+    <div class="ctx-item" onclick="ctxAction('pperkdump')">Dump Perks (read)</div>
     ${noclipItem}${ipItems}${adminItem}`;
   m.style.display='block';
   // Position near cursor, keep in viewport
@@ -539,6 +540,19 @@ async function ctxAction(act,ev){
     await bridge(`punfreeze_${num}`,'Unfreeze → '+name);actLog('Unfrozen: '+name,'ok');
   }else if(act==='pperks'){
     await bridge(`pperks_${num}`,'Perks → '+name);actLog('Perks → '+name,'ok');
+  }else if(act==='pperkdump'){
+    // READ-ONLY probe. A perk is server-side bitfield state (not a dvar, not client state), so the
+    // ONLY truthful check is asking the engine's own hasPerk() — which is what pperkdump_ does.
+    // The GSC writes its answer to the gf_perkdump dvar; read it back and show it.
+    await bridge(`pperkdump_${num}`,'Dump perks → '+name);
+    const r = await rcon('gf_perkdump', true);
+    const m = String(r||'').match(/"([^"]*)"/g);           // rcon echoes: "gf_perkdump" is: "3:18:movefaster,..."
+    const val = m && m.length>1 ? m[1].replace(/"/g,'') : String(r||'').trim();
+    const parts = val.split(':');
+    const list  = parts.length>2 ? parts.slice(2).join(':') : val;
+    const count = parts.length>2 ? parts[1] : '?';
+    toast(`${name}: ${count} perks`,'ok');
+    actLog(`Perks held by ${name} (${count}): ${list}`,'ok');
   }else if(act==='setadmin'){
     const guid=ctxPlayer&&ctxPlayer.guid;
     if(!guid){toast('No GUID for this player','err');return;}
@@ -1696,24 +1710,40 @@ const SRV_SECTIONS = [
   // ─── KILLCAM ────────────────────────────────────────────────────────────────────────────────
   // Why this section exists: BO1's FINAL (round-end) killcam drops the WHOLE SERVER to quarter
   // speed for the money shot — raw _killcam.gsc:253 does SetTimeScale( 0.25 ) two seconds before
-  // the killing blow and restores 1.0 three seconds later. While the server is dilated it retires
-  // each client's usercmds 4x slower than the client produces them, and the engine's "Connection
-  // Interrupted" plug (CG_DrawDisconnect) fires when the server stops ACKING your commands — which
-  // it has, deliberately. So the plug flashes MID-REPLAY on a perfectly healthy connection.
-  // Confirmed live 2026-07-13: the flash coincides exactly with the visible slow-motion.
-  // Not unique to us (stock sd.gsc starts the same final killcam every round) — but Gunfight rounds
-  // are 42s, so a once-a-match curiosity in TDM lands every ~45s here.
+  // the killing blow. MEASURED on the VPS with an RCON wall-clock sampler (the only instrument that
+  // can see it — every probe inside the VM runs on the scaled game clock and is structurally blind):
+  // 0.27x, held for 8-10 REAL seconds, every single round.
+  //
+  // The server retires a client's usercmds only when it runs a GAME FRAME, and
+  //     game frames per real second = sv_fps × timescale
+  // The game-time quantum is 1000/sv_fps and the dilation does NOT shrink it — it spreads those
+  // quanta apart in WALL time. At sv_fps 20 they go from 50ms apart to ~185ms apart. A client makes
+  // one usercmd per client frame (com_maxfps) and they drain only that fast, so past
+  // MAX_PACKET_USERCMDS (32) it truncates its move packet and spams MAX_PACKET_USERCMDS to console
+  // (seen on every client, exactly during the slow-mo). The same backlog makes CG_DrawDisconnect
+  // draw the "Connection Interrupted" plug — it fires when the server stops ACKING your commands,
+  // not when data stops arriving. Two symptoms, one cause.
+  //
+  // ⚠ sv_fps is NOT the lever, even though it is the other term: the killcam rewinds through an
+  // archived snapshot ring sized in FRAMES, not seconds, so raising it buys proportionally LESS
+  // killcam history. Tried live at 80 — the replay ended early and the slow-mo never ran at all.
+  // The only lever is the timescale, hence the floor below.
   { title: 'KILLCAM', eff: 'restart', per: 'dvar', vars: [
-    { n:'scr_gf_killcam_slowmo',    lbl:'Final Killcam Slow-Mo',  type:'tog',  def:'1', eff:'live',
-      tip:'scr_gf_killcam_slowmo\n1 = stock BO1 cinematic (DEFAULT — the world drops to 0.25x speed just before the killing blow).\n0 = Gunfight holds real time across the whole round-end window, so the replay plays at full speed.\n\nTHIS IS THE FIX FOR THE MID-KILLCAM "Connection Interrupted" FLASH. The plug is a FALSE POSITIVE: nothing is wrong with the connection — the server is deliberately running at a quarter speed and therefore not acking the client\'s usercmds, and the engine draws its disconnect warning in response.\n\nCost of turning it OFF: you lose BO1\'s signature slow-motion final kill. Bonus: stock waits 3 GAME-seconds at up to 0.25x, which is up to 12 REAL seconds of round-end dead time on a 42s round.\n\nImplementation: stock threads its slowdown per player and we cannot unthread it, but SetTimeScale is a plain builtin and the LAST caller wins — the mod re-asserts 1.0 across the window (gf_holdRealTime, _gf_rounds.gsc). Takes effect at the next round end.' },
+    { n:'scr_gf_killcam_slowmo',    lbl:'Killcam Slow-Mo Floor',  type:'num',  def:'0.6', eff:'live',
+      tip:'scr_gf_killcam_slowmo\nThe killcam TIMESCALE FLOOR — how far the server is allowed to slow down for the round-end money shot. NOT a toggle (it used to be one; 0/1 no longer mean what they did).\n\n  0.25 = stock BO1 cinematic — AND THE BUG. 200ms between server game-frames, which overruns the usercmd queue of any client above ~160 fps.\n  0.6  = DEFAULT. ~83ms between frames — still a clear slow-motion, no backlog on any real client (safe up to ~385 fps).\n  1.0  = no slow motion at all (the old "off").\n\nClamped to 0.25–1.0. Takes effect at the next round end.\n\nWHY SHALLOWER AND NOT SHORTER: the command backlog builds within ~300ms of the drop, so trimming the slow-mo\'s LENGTH does nothing — only its DEPTH matters.\n\nACCEPTANCE TEST (binary, client-side): watch a round-end killcam with the console open. ZERO "MAX_PACKET_USERCMDS" lines = the pipeline is keeping up = the plug cannot fire. That is a much better signal than squinting at the flash.\n\nImplementation: stock threads its slowdown per viewer and we cannot unthread it, but SetTimeScale is a plain builtin and the LAST caller wins — gf_killcamSlowmoClamp (_gf_rounds.gsc) mirrors stock\'s schedule and re-asserts the floor using stock\'s OWN ramp target, so the cinematic keeps its shape and only its depth changes.' },
     { n:'scr_game_allowfinalkillcam',lbl:'Final Killcam (round end)',type:'tog',def:'1', also:'scr_gf_game_allowfinalkillcam',
       tip:'scr_game_allowfinalkillcam\nThe ROUND-END killcam (the one with the slow-motion). 0 = no round-end replay at all.\n\nA stock TWEAKABLE (registerTweakable "game"/"allowfinalkillcam", _tweakables.gsc:312), so the per-gametype override scr_gf_game_allowfinalkillcam is written in lockstep — a stale override would otherwise silently beat the base dvar.\n\n⚠ RESTART: level.finalkillcam is assigned ONCE at _killcam::init (level init), so a change needs a map_restart to land.\n⚠ This is the BLUNT lever. To keep the replay and only kill the flash, use Final Killcam Slow-Mo above.' },
     { n:'scr_game_allowkillcam',    lbl:'Death Killcam',          type:'tog',  def:'1', also:'scr_gf_game_allowkillcam',
       tip:'scr_game_allowkillcam\nThe ordinary per-death killcam. Unrelated to the plug flash: stock only threads waitFinalKillcamSlowdown() from the ROUND-END killcam (_killcam.gsc:503), never from this one — which is exactly why nobody ever sees the flash on a normal death.\n\nStock tweakable; the scr_gf_game_allowkillcam override is written in lockstep. Read at level init → needs a map_restart.' },
     { n:'scr_killcam_time',         lbl:'Killcam Length (s)',     type:'text', def:'',
       tip:'scr_killcam_time\nHow many seconds of replay the killcam shows. LEAVE EMPTY for stock behaviour — stock derives the length from the WEAPON (_killcam.gsc:554 only reads this dvar when it is non-empty; 5.0s for an ordinary bullet kill).\n\nDIAGNOSTIC USE: this also positions the slow-motion, because stock parks until 2s before the killing blow — wait( max(0, secondsUntilDeath - 2) ). Set 2 and the slow-mo (and the plug flash) jumps to the START of the replay; set 8 and it moves LATER. A symptom you can slide back and forth with a dvar is a confirmed cause.\n\n⚠ Empty = stock. Setting a number overrides the length for EVERY killcam.' },
-    { n:'gf_killcam_ts',            lbl:'Last Round-End Timescale',type:'text',def:'1', eff:'live',
-      tip:'gf_killcam_ts\nREADOUT, not a setting — the mod overwrites it every round end. The LOWEST timescale the server reached during the last round-end window, published by gf_roundEndProbe (_gf_debug.gsc).\n\n0.25 = stock\'s slow-mo ran (expect the plug flash).\n1    = real time held (slow-mo off, or nothing dilated).\n0    = the engine does not mirror SetTimeScale into a readable `timescale` dvar at all, so this readout is not available — no stock GSC reads one, so this is genuinely unknown until the first round end lands in the log.\n\nGround truth is the GF_TS lines in logs\\games_mp.log, which log the drop and the restore with their offsets from round end.' },
+    // gf_killcam_ts ("Last Round-End Timescale") lived here. REMOVED (2026-07-13) — it could never
+    // have worked. SetTimeScale does NOT mirror into a readable `timescale` dvar: the probe read a
+    // steady 1 straight through a round end that an external wall-clock sampler measured at 0.27x.
+    // No stock GSC reads such a dvar either, which should have been the tell. A readout that is
+    // wrong 100% of the time is worse than no readout, so the probe behind it went too.
+    // To actually observe the dilation you need a clock OUTSIDE the sim — see tools/ts_sample.ps1,
+    // which diffs the round-end probe's gettime() heartbeat against an RCON wall clock.
   ]},
   { title: 'GAME RULES', eff: 'restart', per: 'dvar', vars: [
     // Killstreaks / Headshots Only / Force UAV moved to DASHBOARD → GAMEPLAY as single

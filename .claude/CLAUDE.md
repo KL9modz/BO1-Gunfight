@@ -17,6 +17,7 @@ wins** takes the match.
 ## TODO
 
 - Settup remote claude code (ssh vps+repo?) for travel from ipad
+- Website screenshots
 
 ### Open bugs
 - **Which client orphans `.killcam` in the round-end deadlock is still unproven.** The deadlock itself is
@@ -65,25 +66,21 @@ wins** takes the match.
 > (next-round snapshot vs live count — see *Team-size mode*).
 
 ### Ideas & future
-- **Killfeed duration — settle whether the server can force it (test is UNFINISHED).** The killfeed is
-  the engine's **game-message window 0**, not a hudelem: `con_gameMsgWindow0Filter` carries the
-  `"obituary"` type (window 1 = boldgame, window 2 = subtitles), and its on-screen time is
-  **`con_gameMsgWindow0MsgTime`** — **seconds**, stock **5** (siblings: `LineCount` 4, `FadeInTime`
-  0.25, `FadeOutTime` 0.5, `ScrollTime` 0.25). Engine-registered for real (`Domain is any number 0 or
-  bigger`), not a placebo. **A player can already retime their own killfeed today**: `/con_gameMsgWindow0MsgTime 20`
-  in their console — no mod change, and it's `seta` so it persists.
-  ⚠ **What is NOT settled: can the SERVER push it to everyone?** The dvar is `con_*` (client-owned) AND
-  **archived** (`seta` in `config_mp.cfg`) — the one class Plutonium refuses server writes to
-  ([[rcon-dedicated-dvar-push-limits]]) — so the expectation is *blocked*. A dev bridge verb
-  `killfeed_<sec>` (→ `gf_bridgeVisSet( "con_gameMsgWindow0MsgTime", … )`) was written for the test.
-  **Result so far: INCONCLUSIVE.** The bridge dispatched (`gf_cmd` read back empty) and the client
-  stayed at 5 — but the **control was botched**: `fps_1` pushes `cg_drawFPS`, which is *itself* archived,
-  so its failure is consistent with BOTH "push blocked" and "push path dead" and distinguishes nothing.
-  **Redo with a known-good non-archived control** — `thirdperson_1` (`cg_thirdPerson`, user-confirmed
-  working on the VPS) or `visnames_1` — fired at the same client in the same session. If the control
-  lands and the killfeed dvar doesn't, the answer is "server cannot force it" → then the choice is
-  (a) document the console line for players, or (b) own a killfeed in the menu layer (we have the
-  machinery; costs reliable commands per kill + a `mod.ff` rebuild).
+- **Killfeed duration is CLIENT-ONLY — the server cannot force it (SETTLED on the VPS 2026-07-13).**
+  The killfeed is the engine's **game-message window 0**, not a hudelem: `con_gameMsgWindow0Filter`
+  carries the `"obituary"` type (window 1 = boldgame, window 2 = subtitles), and its on-screen time is
+  **`con_gameMsgWindow0MsgTime`** — **seconds**, stock **5** (siblings: `LineCount` 4, `FadeInTime` 0.25,
+  `FadeOutTime` 0.5, `ScrollTime` 0.25). A player retimes their own killfeed with
+  `/con_gameMsgWindow0MsgTime 20` in their console — works today, no mod change, and it's `seta` so it
+  persists. ⚠ **A server push is REFUSED**: the dvar is `con_*` (client-owned) *and* archived, the class
+  Plutonium blocks ([[rcon-dedicated-dvar-push-limits]]). Proven on the dedicated VPS with a live human:
+  the bridge dispatched (`gf_ack` advanced), `cg_thirdPerson` pushed in the same session **landed**
+  (control), and the killfeed dvar **stayed at 5**. Dev verb `killfeed_<sec>` (`_gf_bridge.gsc`) exists
+  and is kept only as the reproduction. **Remaining choice if we ever want to own the timing:** document
+  the console line for players (cheap), or render our own killfeed in the menu layer (costs reliable
+  commands per kill + a `mod.ff` rebuild). ⚠ **Never use an archived dvar as the control** in a push test —
+  `cg_drawFPS` is itself `seta`, so `fps_1` fails under BOTH hypotheses and proves nothing (it wasted the
+  first run of this experiment). ([[killfeed-duration-client-archived]])
 - **Own the prematch/intro countdown with `gettime()`** so a hitch degrades to a 1-frame stutter (the
   planned fully-custom-timers branch). **This is the real fix for the slow-mo countdown** — see the
   frame-hitch bug above: the hitch itself is the engine's `map_restart` and is not ours to delete, but the
@@ -92,8 +89,9 @@ wins** takes the match.
   (wall time to advance 0.5s of game time), and the stall is a fixed lump of wall-clock work — more frames
   per second on a CPU-starved box buys more overhead and *more* dilation, not less. VPS runs 20; leave it.
 - **Move the loadout slide-out into the menu layer** (kill the last GSC dvar-animation stream). `gf_slideLoadout`
-  pushes 2 dvars at 20 Hz for 0.5s = **~25 reliable commands/human/round, forever** — the last unbatched push
-  stream after the `setClientDvars` pass ([[server-command-overflow-reliable-command-budget]]). The menu can
+  pushes 1 batched command per 0.05s step for 0.5s = **~13 reliable commands/human/round, forever** — halved
+  from 26 by batching the off+alpha pair, but still the densest stream the mod emits, and the only one a
+  batch can't take to zero ([[server-command-overflow-reliable-command-budget]]). The menu can
   animate for free: `milliseconds()` works in an `exp` (stock `after_action_report.menu` / `game_summary.menu`
   interpolate off `ui_time_marker` + `exec "setdvartotime"`). ⚠ **BLOCKED on one unverified fact:** the menu's
   only clock is **client-local**, so the start marker must be stamped **by the client** from a menu event
@@ -486,23 +484,37 @@ try to bundle the `.iwi` → build error.
   `hud_rankscroreupdate` is parked offscreen each spawn so stock "+N" XP pushes can't race ours.
 
 ⚠ **Every `setClientDvar` is ONE reliable server command, and the client's ring buffer for them is
-FIXED (`MAX_RELIABLE_COMMANDS`).** A client hard-errors **`Server command overflow`** — a `Com_Error`
-*disconnect*, not a warning — the moment the server's command sequence outruns what that client has
-executed by more than the ring. So overflow needs a **burst** *and* a client that has **stopped
-acking**, which is why the one place it bites is the Auto/Manual **lobby START**: `map_restart(false)`
-stalls every client while it re-inits, and the spawn wave's push burst lands inside that stall. **The
-fix is `setClientDvarS` (plural)** — the stock variadic builtin that carries every name/value pair in a
-**single** command (stock: `_globallogic_player.gsc:91`; 9 pairs in one call at
-`_zombiemode_challenges.gsc:217`). The spawn burst is batched into groups of ≤8 pairs, taking it from
-**~45 commands/human to ~12**; `gf_pushHealthRow` pushes its whole row as one command whenever *any* of
-its 5 values changes (fewer commands than the old per-dvar path on **both** the spawn burst and the
-0.1 s in-firefight loop — re-sending an unchanged pair inside a batch is free; it's the command **count**
-that is scarce). ⚠ **Never expand a batch back into individual pushes**, and never add an unbatched
-per-player push loop. `gf_hudRevealStagger` spreads what's left across frames — it is a complement to
-the batching, **not** a substitute ([[server-command-overflow-reliable-command-budget]],
-[[connection-interrupted-mitigations]]).
-⚠ **A GSC dvar animation is a reliable-command STREAM** — `gf_slideLoadout` / `gf_fadeDvar` push at
-20 Hz for the whole duration (the 0.5 s loadout outro = ~25 commands/human/round). The menu layer can
+FIXED (`MAX_RELIABLE_COMMANDS`).** Blowing it produces **two different client `Com_Error` disconnects —
+the same disease, detected at opposite ends**: **`Server command overflow`** (the *server* sees a client
+stop acking and its outgoing queue overrun) and **`CL_CGameNeedsServerCommand: a reliable command was
+cycled out`** (the *client* received everything but cgame reached for a command already overwritten in
+its own ring). ⚠ **Never chase the second as a new bug** — both mean *too many reliable commands in a
+window where the client isn't executing them*. That needs a **burst** *and* a **frozen** client, which is
+why the one place it bites is the Auto/Manual **lobby START**: `map_restart(false)` stalls every client
+while it re-inits, and the push burst lands inside that stall. **The fix is `setClientDvarS` (plural)** —
+the stock variadic builtin that carries every name/value pair in a **single** command (stock:
+`_globallogic_player.gsc:91`; 9 pairs in one call at `_zombiemode_challenges.gsc:217`). The spawn burst is
+batched into groups of ≤8 pairs, taking it from **~45 commands/human to ~12**; `gf_pushHealthRow` pushes
+its whole row as one command whenever *any* of its 5 values changes (fewer commands than the old per-dvar
+path on **both** the spawn burst and the 0.1 s in-firefight loop — re-sending an unchanged pair inside a
+batch is free; it's the command **count** that is scarce).
+⚠ **A `grep setClientDvar` audit is NOT enough — hunt the O(n²) call: a loop over players containing a
+loop over data.** That is what the first batching pass missed. `gf_lobbyRosterLoop` pushed `pcount` **plus
+one command per occupied name slot, per human, per roster change** — the only stream in the mod whose cost
+scales with player count, sitting *in the lobby*, the tightest window there is. It compounded with the bot
+fill (the reconciler adds on a 0.5s stagger; the loop ticks at 0.5s → ~one roster change **per bot**), so a
+12-bot fill cost **~156 reliable commands per human** — over the ring on its own. Now padded to the 12 fixed
+slots and pushed as flat batched groups (1 command for a ≤6 lobby, 2 for 7-12).
+⚠ **Never expand a batch back into individual pushes**, and never add an unbatched per-player push loop.
+`gf_hudRevealStagger` spreads what's left across frames — it is a complement to the batching, **not** a
+substitute. ⚠ **Our share is not proven to be the dominant one**: `map_restart(false)` also makes the engine
+re-send configstrings (themselves reliable commands) and the bot kick-all fires immediately before it. If
+"cycled out" recurs, the next lever is to **stop churning bots across the restart**, not to shave more mod
+pushes ([[server-command-overflow-reliable-command-budget]], [[connection-interrupted-mitigations]]).
+⚠ **A GSC dvar animation is a reliable-command STREAM** — `gf_slideLoadout` pushes one *batched* command
+per 0.05 s step for the whole duration (the 0.5 s loadout outro = **~13** commands/human/round, halved
+from 26 by batching the off+alpha pair; `gf_fadeDvar` is currently dead code — the panel reveal snaps).
+Batching is the floor here, not the fix: an animation is a stream by construction. The menu layer can
 own a time-based animation for free (`milliseconds()` in an `exp`, e.g. `ui_time_marker` +
 `exec "setdvartotime"` in stock `after_action_report.menu` / `game_summary.menu`) — **but** the menu's
 only clock is **client-local**, so a marker must be stamped *by the client* from a menu event; the

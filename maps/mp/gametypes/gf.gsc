@@ -653,12 +653,6 @@ onStartGameType()
     level notify( "gf_hitch_reinit" );
     level thread gf_hitchMonitor();
 
-    // Killcam timescale readout for the RCON panel (gf_roundEndProbe overwrites it every round end
-    // with the lowest timescale that window reached). Seeded so the panel's connect-sweep never
-    // reads it by bare name and gets "Unknown cmd" before the first round has ended.
-    if ( getDvar( "gf_killcam_ts" ) == "" )
-        setDvar( "gf_killcam_ts", "1" );
-
     // Report the round-end dark window from the FAR side of map_restart. gf_roundEndProbe runs
     // on the near side and dies inside the restart (a thread parked in a timed wait does not
     // come back), so it stamps a heartbeat into a dvar and we read it here — the first mod code
@@ -670,10 +664,12 @@ onStartGameType()
     // Undo any timescale stock's final-killcam slowdown left behind. Its SetTimeScale(1.0) restore
     // sits AFTER a wait and behind endon("end_killcam"), so if every viewer skips (or drops out of)
     // the killcam in that window the restore never runs and the server is stranded at 0.25x — and
-    // nothing in stock ever puts it back. One unconditional call per round closes that hole.
-    // ⚠ ORDER: this MUST stay below gf_reportRoundEndGap() above, which logs GF_TS: LEAKED if the
-    // round STARTED dilated. Reset first and the detector would only ever see the value it just
-    // wrote — erasing the evidence for the bug it exists to catch.
+    // nothing in stock ever puts it back. gf_killcamSlowmoClamp restores 1.0 on its own path too,
+    // but only when it actually ran; this is the unconditional net that also covers the stock-depth
+    // (floor 0.25) case, where the clamp returns early and never touches the timescale at all.
+    // There is deliberately NO detector for the leak: the `timescale` dvar does not track
+    // SetTimeScale, so nothing inside the VM can see one (see _gf_debug.gsc). This costs a single
+    // builtin call per round, so guard it and move on.
     gf_resetTimeScale();
 
     // #strip-begin - pre-prematch hold (dev/main only; stripped from public release)

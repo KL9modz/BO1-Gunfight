@@ -477,10 +477,9 @@ Per-player thread that waits on `level "gf_round_over"` and then hides the menu 
 Returns `45` — the team-bar fill width in pixels that `gf_pushHealthRow` scales by the health fraction.
 
 #### `gf_updateSelfBar()`
-Per-player update of the bottom-center self health bar (menu-rendered). Reads `self.health` (0 if dead/undefined) and computes `show` (1 only if HP > 0 and `sessionstate == "playing"`). Pushes `ui_gf_self_hp` only when the cached `gf_sbHp` changes; on a `show` change it either threads `gf_slideSelfBarIn()` (reveal) or pushes `ui_gf_self_show 0` (hide). Change-gated so it doesn't spam dvars each tick.
+Per-player update of the bottom-center self health bar (menu-rendered). Reads `self.health` (0 if dead/undefined) and computes `show` (1 only if HP > 0 and `sessionstate == "playing"`). Change-gated on both cached values (`gf_sbHp` / `gf_sbShow`) so a static bar pushes nothing at all. When `show` flips (spawn / death) the HP value rides along in the **same batched** `setClientDvars` as `ui_gf_self_show` (+ `ui_gf_self_off 0` on the reveal) — one reliable command, not two; the HP-only path (in a firefight) stays a single `setClientDvar`.
 
-#### `gf_slideSelfBarIn()`
-Per-player thread that reveals the self bar. Fires/`endon`s `"gf_sb_slide"` (singleton) and `endon`s `"disconnect"`. The intro slide is currently DISABLED (snap-in): it just sets `ui_gf_self_off = 0` and `ui_gf_self_show = 1`. (The menu adds `ui_gf_self_off` to the bar's Y; the disabled animation would slide it 40→0.)
+The former `gf_slideSelfBarIn()` reveal thread is **gone**, folded into this function: its slide was already disabled (it only snapped `ui_gf_self_off` to 0), so it had no yields and inlining it cost nothing while saving a reliable command per spawn. ⚠ If an animated reveal is ever restored it must **not** come back as a GSC dvar animation — that is a 20 Hz reliable-command stream per human (see `gf_slideLoadout`). Animate it in the menu layer.
 
 #### `gf_debugElemProbe()` *(dev only — strip-wrapped)*
 Dev HUD-allocation probe, only threaded under `gf_debug_elem_probe`. `endon`s `"disconnect"`/`"game_ended"`, waits 9s (after both intros build), then allocates `newClientHudElem` up to 1024 times until the pool runs out, frees them all, and reports the free count via `iPrintLnBold` + `logPrint`. Measures only the allocation pool (~900+ free), NOT the real ~17 DRAWN render cap. Wrapped in `// #strip-begin … // #strip-end` so it's removed from public builds.
@@ -532,6 +531,8 @@ Per-player thread that shows the menu-rendered create-a-class loadout overview, 
 
 #### `gf_slideLoadout( offFrom, offTo, alphaFrom, alphaTo, dur )`
 Per-player linear slide+fade of the whole overview over `dur` seconds in 0.05s frames (`steps = int(dur/0.05)`, min 1). The menu adds `ui_gf_lo_off` to every item's X and multiplies `ui_gf_lo_alpha` into every item's alpha, so this drives the block as one. Raises `ui_gf_lo_show` on the first frame (so the block is never seen parked), keeps `ui_gf_lo_off` fractional (no `int()` rounding, to avoid uneven 20Hz steps), then snaps to the final `offTo`/`alphaTo`.
+
+⚠ **This is a reliable-command STREAM** — the densest one the mod emits. Each step's `off`+`alpha` pair is pushed as **one batched `setClientDvars`**, so the 0.5s outro costs **13** reliable commands per human per round (it was 26 unbatched). Never expand the pair back into two pushes. The real end-state is to let the **menu layer** own the animation (`milliseconds()` in an `exp`), which costs zero reliable commands — blocked on the client-local-clock question (see CLAUDE.md).
 
 #### `gf_getPerkShader( specialty )`
 Resolves a perk specialty string to its full HUD shader name via the engine perk tables: `level.perkReferenceToIndex[specialty]` → `level.tbl_PerkData[idx]["reference_full"]`. Returns `"white"` if the perk/index isn't found.

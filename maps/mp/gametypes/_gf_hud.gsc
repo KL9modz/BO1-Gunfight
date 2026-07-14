@@ -258,34 +258,39 @@ gf_updateSelfBar()
     if ( hp > 0 && self.sessionstate == "playing" )
         show = 1;
 
-    if ( !isDefined( self.gf_sbHp ) || self.gf_sbHp != hp )
+    hpChanged   = ( !isDefined( self.gf_sbHp )   || self.gf_sbHp   != hp   );
+    showChanged = ( !isDefined( self.gf_sbShow ) || self.gf_sbShow != show );
+
+    if ( !hpChanged && !showChanged )
+        return;                                 // static bar pushes nothing at all
+
+    self.gf_sbHp   = hp;
+    self.gf_sbShow = show;
+
+    // ⚠ BATCHED — when `show` flips (spawn / death) the hp value rides along in the SAME reliable
+    // command instead of costing its own. Re-sending an unchanged pair inside a batch is free; it is
+    // the command COUNT that is scarce. See the batching note in gf_showWeaponHUD.
+    //
+    // The old gf_slideSelfBarIn() thread is folded in here. Its slide was already disabled (it only
+    // snapped ui_gf_self_off to 0), so it had no yields and inlining loses nothing. ⚠ If an animated
+    // reveal is ever restored, it must NOT come back as a GSC dvar animation — that is a 20 Hz
+    // reliable-command STREAM per human (see gf_slideLoadout). Animate it in the menu layer.
+    if ( showChanged && show )
     {
-        self.gf_sbHp = hp;
-        self setClientDvar( "ui_gf_self_hp", hp );
+        self setClientDvars( "ui_gf_self_hp",   hp,
+                             "ui_gf_self_off",  0,
+                             "ui_gf_self_show", 1 );
+        return;
     }
 
-    if ( !isDefined( self.gf_sbShow ) || self.gf_sbShow != show )
+    if ( showChanged )
     {
-        self.gf_sbShow = show;
-        if ( show )
-            self thread gf_slideSelfBarIn();   // reveals via animated ui_gf_self_off
-        else
-            self setClientDvar( "ui_gf_self_show", 0 );
+        self setClientDvars( "ui_gf_self_hp",   hp,
+                             "ui_gf_self_show", 0 );
+        return;
     }
-}
 
-// Slide-from-bottom reveal: the menu items add dvarFloat("ui_gf_self_off") to their Y,
-// so animating the dvar 40→0 slides the whole bar up from below the screen edge.
-// Runs over gf_REVEAL_TIME() to match the panel/loadout reveals (synced spawn-in).
-gf_slideSelfBarIn()
-{
-    self notify( "gf_sb_slide" );
-    self endon( "gf_sb_slide" );
-    self endon( "disconnect" );
-
-    // INTRO ANIM DISABLED (snap in): was a slide of ui_gf_self_off 40->0 over gf_REVEAL_TIME().
-    self setClientDvars( "ui_gf_self_off",  0,
-                         "ui_gf_self_show", 1 );
+    self setClientDvar( "ui_gf_self_hp", hp );   // hp only — the in-firefight path, 1 command
 }
 
 // #strip-begin - dev HUD allocation probe (only threaded under gf_debug_elem_probe; stripped from public)
@@ -696,20 +701,29 @@ gf_slideLoadout( offFrom, offTo, alphaFrom, alphaTo, dur )
     if ( steps < 1 )
         steps = 1;
 
-    self setClientDvar( "ui_gf_lo_off", offFrom );
-    self setClientDvar( "ui_gf_lo_alpha", alphaFrom );
-    self setClientDvar( "ui_gf_lo_show", 1 );
+    // ⚠ BATCHED ON PURPOSE — setClientDvarS (plural), one command per animation STEP instead of two.
+    // A GSC dvar animation is a reliable-command STREAM: at 20 Hz the 0.5s outro used to cost 26
+    // reliable commands per human per round (3 seed + 2 x 10 steps + 2 tail + the caller's show=0),
+    // i.e. a ~52/sec burst landing mid-gameplay on top of the 0.1s health-row loop. Batching the
+    // off+alpha pair halves the stream to 13. It is still the densest thing the mod emits — the real
+    // end-state is to let the MENU own the animation (milliseconds() in an exp), which costs zero
+    // reliable commands; that is blocked on the client-local-clock question, see CLAUDE.md.
+    self setClientDvars( "ui_gf_lo_off",   offFrom,
+                         "ui_gf_lo_alpha", alphaFrom,
+                         "ui_gf_lo_show",  1 );
 
     for ( i = 1; i <= steps; i++ )
     {
         wait 0.05;
         frac = i / steps;
-        self setClientDvar( "ui_gf_lo_off",   offFrom   + ( offTo - offFrom ) * frac );
-        self setClientDvar( "ui_gf_lo_alpha", alphaFrom + ( alphaTo - alphaFrom ) * frac );
+        self setClientDvars( "ui_gf_lo_off",   offFrom   + ( offTo - offFrom ) * frac,
+                             "ui_gf_lo_alpha", alphaFrom + ( alphaTo - alphaFrom ) * frac );
     }
 
-    self setClientDvar( "ui_gf_lo_off",   offTo );
-    self setClientDvar( "ui_gf_lo_alpha", alphaTo );
+    // Exact landing. The loop's last step already lands here (frac = steps/steps = 1), so this is
+    // belt-and-braces for any future caller whose duration doesn't divide evenly — one command.
+    self setClientDvars( "ui_gf_lo_off",   offTo,
+                         "ui_gf_lo_alpha", alphaTo );
 }
 
 gf_getPerkShader( specialty )
