@@ -653,3 +653,67 @@ gf_endProbeMark( label )
               + " humans=" + gf_hitchHumans() + " bots=" + gf_hitchBots()
               + " gt=" + gettime() + "\n" );
 }
+
+// ─── Spawn-yaw probe ───────────────────────────────────────────────────────
+//
+// "Rare wrong-facing spawn": the location is right, the yaw is not. The curated table and the
+// selection path are both deterministic (one hardcoded yaw per point, round-robin cursor), so the
+// question is not WHICH yaw we chose — it is whether the engine kept the one we handed it.
+//
+// Two samples answer that, and they distinguish the two hypotheses on their own:
+//   t0 (one frame after spawn) — the client cannot have turned meaningfully yet, so a large delta
+//      here means the engine never applied our angles. Immune to player input by construction.
+//   t1 (+1s) — a delta that is ~0 at t0 and LARGE at t1 means the server applied the yaw but the
+//      client's view came from somewhere else (stale deltaangles / the round-end killcam camera)
+//      and the client then told the server where it was really looking.
+//
+// Bots are skipped (the AI drives its own angles every frame; every sample would be noise).
+// set gf_debug_spawnyaw 1. Grep the log for GF_SPAWNYAW.
+gf_yawDelta( a, b )
+{
+    d = a - b;
+    while ( d > 180 )
+        d -= 360;
+    while ( d <= -180 )
+        d += 360;
+    return d;
+}
+
+gf_probeSpawnYaw( intendedYaw, source )
+{
+    self endon( "disconnect" );
+
+    if ( getDvarInt( "gf_debug_spawnyaw" ) <= 0 )
+        return;
+
+    if ( self istestclient() )
+        return;
+
+    org = self.origin;
+
+    wait 0.05;
+    d0 = gf_yawDelta( intendedYaw, self getPlayerAngles()[1] );
+
+    wait 1.0;
+    d1 = gf_yawDelta( intendedYaw, self getPlayerAngles()[1] );
+
+    // Log every spawn, not just the bad ones: the baseline is what proves a flagged line is real.
+    // A rare bug needs the boring lines around it to be trustworthy.
+    flag = "";
+    if ( abs( d0 ) > 60 )
+        flag = "  ENGINE_DROPPED_ANGLES";
+    else if ( abs( d1 ) > 60 )
+        flag = "  CLIENT_VIEW_OVERRODE";
+
+    // Concatenating an undefined into a string is a runtime error, so resolve the flag first.
+    prematch = 0;
+    if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
+        prematch = 1;
+
+    logPrint( "GF_SPAWNYAW: " + self.name + " src=" + source
+              + " intended=" + int( intendedYaw )
+              + " d0=" + int( d0 ) + " d1=" + int( d1 )
+              + " prematch=" + prematch
+              + " org=" + int( org[0] ) + "," + int( org[1] ) + "," + int( org[2] )
+              + flag + "\n" );
+}

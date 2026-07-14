@@ -2763,13 +2763,12 @@ gf_showOvertimeMessage()
 {
     maps\mp\_utility::playSoundOnPlayers( "mpl_hq_cap_us" );
 
-    // Announcer VO: stock "Overtime" callout, then our CTF cue ("ctf_start", registered as
-    // game["dialog"]["gf_overtime_cue"] in gf.gsc::onPrecacheGameType) right after. leaderDialog
-    // queues per-player, so the second line auto-plays ~3s behind the first (see
-    // playLeaderDialogOnPlayer in _globallogic_audio). No team arg -> both teams hear both.
-    // "overtime" comes from the shared _globallogic_audio::init() dialog table.
+    // Announcer VO: stock "Overtime" callout ("overtime" comes from the shared
+    // _globallogic_audio::init() dialog table). No team arg -> both teams hear it.
     maps\mp\gametypes\_globallogic_audio::leaderDialog( "overtime" );
-    maps\mp\gametypes\_globallogic_audio::leaderDialog( "gf_overtime_cue" );
+
+    // The CTF cue follows it — but held by us, not by the stock queue. See gf_overtimeCueVO.
+    level thread gf_overtimeCueVO();
 
     titleText = &"MP_OVERTIME_CAPS";
     if ( isDefined( game["strings"] ) && isDefined( game["strings"]["overtime"] ) )
@@ -2786,6 +2785,54 @@ gf_showOvertimeMessage()
             continue;
 
         player thread maps\mp\gametypes\_hud_message::oldNotifyMessage( titleText, undefined, undefined, ( 1, 0, 0 ), undefined, overtimeMsgDuration );
+    }
+}
+
+// The CTF cue ("ctf_start", registered as game["dialog"]["gf_overtime_cue"] in
+// gf.gsc::onPrecacheGameType) that follows the stock "Overtime" callout.
+//
+// It does NOT go through leaderDialog, for two reasons:
+//   1. Cancellable. leaderDialog queues the line into self.leaderDialogQueue, and the drain
+//      thread (playLeaderDialogOnPlayer) carries only self endon("disconnect") — nothing
+//      round-scoped. So a queued line fires even if the round has already ended, which is why
+//      a 2-second overtime still announced "capture the flag". Holding the line ourselves lets
+//      gf_ot_done / game_ended kill it before it is ever spoken.
+//   2. Timing. The queue's spacing is a hardcoded wait(3.0) in playLeaderDialogOnPlayer, so
+//      anything behind "Overtime" lands at exactly 3.0s. We want 2.0s.
+//
+// Playing the alias directly is what the stock path does anyway — faction prefix + dialog key.
+gf_overtimeCueVO()
+{
+    level endon( "gf_ot_done" );
+    level endon( "game_ended" );
+
+    // Tune freely — this is the only thing that sets the gap behind the "Overtime" callout.
+    // Too low and the two lines talk over each other (stock's queue used a blanket 3.0).
+    wait( 1.0 );
+
+    if ( isDefined( level.allowAnnouncer ) && !level.allowAnnouncer )
+        return;
+    if ( !isDefined( game["dialog"] ) || !isDefined( game["dialog"]["gf_overtime_cue"] ) )
+        return;
+
+    for ( i = 0; i < level.players.size; i++ )
+    {
+        player = level.players[i];
+        if ( !isDefined( player ) || !isPlayer( player ) )
+            continue;
+
+        team = player.pers["team"];
+        if ( !isDefined( team ) || ( team != "allies" && team != "axis" ) )
+            continue;
+
+        if ( isDefined( level.wagerMatch ) && level.wagerMatch )
+            faction = "vox_wm_";
+        else if ( isDefined( game["voice"] ) && isDefined( game["voice"][team] ) )
+            faction = game["voice"][team];
+        else
+            continue;
+
+        player playLocalSound( faction + game["dialog"]["gf_overtime_cue"] );
     }
 }
 
@@ -3712,7 +3759,14 @@ gf_getHPWinner()
 // Neutral round-end reason string for the native WIN/LOSS banner subtitle
 // (outcomeText in _hud_message::teamOutcomeNotify, fed via endGame's 2nd arg).
 // The banner header is already team-relative (ROUND WIN / ROUND LOSS / ROUND DRAW),
-// so the subtitle states the absolute reason — matching stock SD ("BOMB DEFUSED").
+// so the subtitle states the absolute reason. Title Case, no trailing period — a GF house
+// style, deliberately NOT stock's (the shipped strings are sentence case: "Bomb defused",
+// "Score limit reached"; the ALL-CAPS belongs to the HEADER, a separate _CAPS key family).
+// The engine setText's the subtitle raw and never re-cases it, so the case lives entirely
+// in these literals. ⚠ Stock's own match-end subtitle renders on the SAME banner seconds
+// after our final round one, so it is re-cased to match in gf.gsc onStartGameType
+// (game["strings"]["score_limit_reached"] et al) — change the case here and there, or the
+// last banner of a match reads in two styles.
 // reason: "capture" (OT flag taken) | "health" (timer/OT decided by total HP) |
 //         "elim" (a team fully wiped out). winner == "tie" => draw wording.
 gf_reasonText( reason, winner )
@@ -3720,17 +3774,17 @@ gf_reasonText( reason, winner )
     isTie = ( !isDefined( winner ) || winner == "tie" );
 
     if ( reason == "capture" )
-        return "Objective captured";
+        return "Objective Captured";
 
     if ( reason == "elim" )
     {
         if ( isTie )
-            return "Both teams eliminated";
-        return "Team eliminated";
+            return "Both Teams Eliminated";
+        return "Team Eliminated";
     }
 
     // health
     if ( isTie )
-        return "Time expired - equal health";
-    return "Time expired - health advantage";
+        return "Time Expired - Equal Health";
+    return "Time Expired - Health Advantage";
 }

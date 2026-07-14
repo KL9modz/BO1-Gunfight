@@ -460,8 +460,18 @@ onStartGameType()
     if ( getDvar( "gf_debug_spawns" ) == "" )    setDvar( "gf_debug_spawns", "0" );
     if ( getDvar( "gf_debug_hud_pool" ) == "" )  setDvar( "gf_debug_hud_pool", "0" );
     if ( getDvar( "gf_debug_elem_probe" ) == "" ) setDvar( "gf_debug_elem_probe", "0" );
+    if ( getDvar( "gf_debug_spawnyaw" ) == "" )  setDvar( "gf_debug_spawnyaw", "0" );
     if ( getDvar( "gf_force_loadout" ) == "" )    setDvar( "gf_force_loadout", "-1" );   // loadout test aids (read in _gf_loadouts.gsc)
     if ( getDvar( "gf_force_camo" ) == "" )       setDvar( "gf_force_camo", "-1" );
+
+    // The RCON panel READS this one back to show which vision set is live, so it has to be
+    // registered or the panel's bare-name sweep echoes "Unknown cmd gf_vis_vision". Seeded to the
+    // key the mod would have used anyway — gf_roundVisionKey() falls back to "enhance" on empty —
+    // so this changes no behavior; it just makes the live value self-describing.
+    // ⚠ Seed it to "enhance", never "" and never "normal": empty is only ever a TRANSIENT state
+    // (the bridge's visreset clears the dvar and this re-seeds it next round), and "normal" is the
+    // EXPLICIT map-default key, which is a different look.
+    if ( getDvar( "gf_vis_vision" ) == "" )       setDvar( "gf_vis_vision", "enhance" );
     // #strip-end
 
     // Flinch (damage view-kick) scale — mult of stock bg_viewKickScale (0.2).
@@ -491,6 +501,19 @@ onStartGameType()
     // init below, which reads the level.gf_defaultVision this establishes. The actual apply is
     // deferred to prematch_over — the stock countdown stomps vision after this callback returns.
     gf_initRoundVision();
+
+    // Match-end banner subtitle. Stock's getEndReasonText() OVERWRITES the reason we hand endGame
+    // on the match-end path only (_globallogic.gsc: `if (!isOneRound()) endReasonText =
+    // getEndReasonText();`, after startNextRound returns false), so the last banner of a match is
+    // the engine's, not ours — we win by scorelimit, so it reads MP_SCORE_LIMIT_REACHED. Stock
+    // ships these sentence case ("Score limit reached"); gf_reasonText's round subtitles are Title
+    // Case, and both render on the same banner within seconds. Re-case the engine's copies to
+    // match. A raw string is fine here (no precache, no mod.ff rebuild) — same as match_starting_in
+    // below. The forcedEnd path returns &"MP_ENDED_GAME" as a direct ref, not via game["strings"],
+    // so an admin force-end stays sentence case; re-casing that would cost a str override + rebuild.
+    game["strings"]["score_limit_reached"] = "Score Limit Reached";
+    game["strings"]["time_limit_reached"]  = "Time Limit Reached";
+    game["strings"]["round_limit_reached"] = "Round Limit Reached";
 
     // roundsplayed == 0 is the match's first round (longer intro); later rounds get the shorter one.
     // These fixed values ARE the public build's prematch — it has no dvars for this (see the
@@ -828,6 +851,9 @@ onSpawnPlayer( teamOverride )
             self.lastSpawnPoint = spawn( "script_origin", customSpawn["origin"] );
 
             self spawn( customSpawn["origin"], customSpawn["angles"], "gf" );
+            // #strip-begin - spawn-yaw probe (dev/main only; stripped from public release)
+            self thread maps\mp\gametypes\_gf_debug::gf_probeSpawnYaw( customSpawn["angles"][1], "curated" );
+            // #strip-end
             return;
         }
     }
@@ -850,6 +876,9 @@ onSpawnPlayer( teamOverride )
     }
 
     self spawn( spawnPoint.origin, spawnPoint.angles, "gf" );
+    // #strip-begin - spawn-yaw probe (dev/main only; stripped from public release)
+    self thread maps\mp\gametypes\_gf_debug::gf_probeSpawnYaw( spawnPoint.angles[1], "startspawn" );
+    // #strip-end
 }
 
 onSpawnPlayerUnified()

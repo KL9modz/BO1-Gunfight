@@ -251,7 +251,7 @@ async function doConn(){
   const btn=g('cBtn');btn.disabled=true;btn.textContent='…';
   try{
     const d=await fetchStatus();
-    if(d.ok){setLive(true);tick(d);actLog('Connected to '+((_profiles[_activeProfile]||{}).name||conn().host)+' ('+conn().host+')','ok');reqNotifyPerm();pushAdminGuid();seedCmdSeq();readServerDvars();readMatchDvars();readBotDiff();loadRotation();}
+    if(d.ok){setLive(true);tick(d);actLog('Connected to '+((_profiles[_activeProfile]||{}).name||conn().host)+' ('+conn().host+')','ok');reqNotifyPerm();pushAdminGuid();seedCmdSeq();readServerDvars();readMatchDvars();readBridgeState();loadRotation();}
     else{toast('Failed: '+d.error,'err');setLive(false);}
   }catch(e){toast('Error: '+e.message,'err');setLive(false);}
   btn.disabled=false;
@@ -293,7 +293,7 @@ function updateSyncUI(){
 // fresh=true (the ↻ Read button) tells the server to CLEAR its cached "unregistered dvar" set for
 // this profile and re-probe every name — so a dvar that became registered since connect is picked
 // back up. Connect (doConn) calls the no-arg readServerDvars/readMatchDvars → cached (quiet).
-function readAllFromServer(fresh){ readServerDvars(fresh); readMatchDvars(fresh); }
+function readAllFromServer(fresh){ readServerDvars(fresh); readMatchDvars(fresh); readBridgeState(fresh); }
 function disconnect(){
   setLive(false);
   _roster={};_rosterSig='';_lastPlayers=[];_grouped=false;_playersSig='';
@@ -1363,14 +1363,36 @@ async function botDiff(d){
   }
 }
 function hlBotDiff(d){ ['easy','normal','hard','fu'].forEach(k=>g('d-'+k).classList.toggle('sel',k===d)); }
-// The live difficulty IS the bot_difficulty dvar (_bot::diffBots re-applies the preset from it every
-// 1.5s and writes it back, so it always reflects reality). Read it on connect rather than assuming a
-// default — gf.gsc seeds "fu" at boot, and dedicated.cfg may override that. One-name read, connect only.
-async function readBotDiff(){
+
+// Legacy vision keys the GSC still honours (_gf_rounds::gf_visionSetForKey) but the dropdown no
+// longer offers — fold them onto the option that renders the same set, so a server carrying an old
+// persisted key doesn't leave the control showing a value it isn't running.
+const VIS_ALIAS={contrast:'enhance',invert:'enhance',night:'thermal'};
+// ⚠ EMPTY gf_vis_vision means the GUNFIGHT DEFAULT ("enhance"), NOT the map's own vision — the bare
+// map vision is reachable only via the EXPLICIT "normal" key (gf_roundVisionKey returns "enhance" on
+// empty). A naive visSel.value = value would therefore show "Normal (map default)" on a server that
+// is actually running the contrast pop. Unknown keys mirror the GSC's own fallback: the map default.
+function hlVisionSet(v){
+  if(v===null||v===undefined) return;   // read timed out / dvar unset — leave the control alone
+  const sel=g('visSel'); if(!sel) return;
+  let k=String(v).trim().toLowerCase();
+  if(k==='') k='enhance';
+  if(VIS_ALIAS[k]) k=VIS_ALIAS[k];
+  sel.value=[...sel.options].some(o=>o.value===k)?k:'normal';
+}
+// Both of these are BRIDGE-owned controls, not settings rows: they carry no data-dvar and no srv_/mt_
+// id, so srvApplyValues never touches them and a sync would otherwise leave each showing its first
+// option forever (that is the bug this read fixes). One batched read for the pair.
+//   bot_difficulty — the live difficulty IS the dvar (_bot::diffBots re-applies the preset from it
+//     every 1.5s and writes it back). gf.gsc seeds "fu"; dedicated.cfg may override that.
+//   gf_vis_vision  — the live vision key, re-applied every round by _gf_rounds::gf_applyRoundVision.
+async function readBridgeState(fresh){
   if(!live) return;
   try{
-    const r=await fetchDvars(['bot_difficulty']);
-    if(r&&r.ok) hlBotDiff(String(r.values['bot_difficulty']||'').trim().toLowerCase());
+    const r=await fetchDvars(['bot_difficulty','gf_vis_vision'],fresh);
+    if(!r||!r.ok) return;
+    hlBotDiff(String(r.values['bot_difficulty']||'').trim().toLowerCase());
+    hlVisionSet(r.values['gf_vis_vision']);
   }catch(_){}
 }
 
@@ -1571,6 +1593,10 @@ async function visResetAll(){
   g('sGridI').value=g('vGridI').value=1;
   g('sGridC').value=g('vGridC').value=0;
   g('cbFog').checked=true;g('cbHDR').checked=true;
+  // visreset CLEARS gf_vis_vision, and an empty key means the Gunfight default — so a reset lands on
+  // Enhance, not Normal. (The r_* sliders above really do reset to the engine's stock values; the
+  // vision set is the one line where "stock" means the mod's own look.)
+  hlVisionSet('enhance');
   if(ok){actLog('Visuals reset to stock','ok');toast('Visuals reset to stock','ok');}
 }
 // Both bg_fallDamage* dvars carry the engine's cheat-protected flag, which is why they show up in

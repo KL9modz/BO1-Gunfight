@@ -211,11 +211,11 @@
 
   <div class="block" data-eff="live" data-per="transient">
     <div class="btitle">FUN &amp; VISION  <span style="font-weight:400;font-size:10px;color:var(--dm)">all players</span></div>
-    <div class="srow" data-via="bridge" data-tip="VisionSetNaked, all players (bridge: vision_&lt;set&gt;)&#10;All sets are in common_vision.csv so they apply on every map. PERSISTS across rounds (gf_vis_vision, re-applied each round) until Normal or Reset All Visuals.&#10;There is NO true colour-invert in T5 (the r_film* path can't negate RGB) — 'Enhance' is what the old Invert/Night actually did (a contrast pop).">
+    <div class="srow" data-via="bridge" data-tip="VisionSetNaked, all players (bridge: vision_&lt;set&gt;)&#10;All sets are in common_vision.csv so they apply on every map. PERSISTS across rounds (gf_vis_vision, re-applied each round) until you pick another set.&#10;ENHANCE IS GUNFIGHT'S DEFAULT — the mod ships the contrast pop, so Reset All Visuals lands back HERE, not on Normal. 'Normal' is the map's own untouched vision, which is a deliberate override like any other set.&#10;There is NO true colour-invert in T5 (the r_film* path can't negate RGB) — 'Enhance' is what the old Invert/Night actually did (a contrast pop).">
       <span class="slbl">Vision Set</span><span style="flex:1"></span>
-      <select id="visSel" class="ctrl" onchange="bridge('vision_'+this.value)" title="VisionSetNaked, all players. Persists across rounds until Normal / Reset All Visuals.">
+      <select id="visSel" class="ctrl" onchange="bridge('vision_'+this.value)" title="VisionSetNaked, all players. Persists across rounds. Enhance is the Gunfight default; Normal is the map's own vision.">
         <option value="normal">Normal (map default)</option>
-        <option value="enhance">Enhance (contrast pop)</option>
+        <option value="enhance" selected>Enhance (contrast pop)</option>
         <option value="bw">Black &amp; White</option>
         <option value="berserk">Berserk (warm, high contrast)</option>
         <option value="thermal">Thermal (dark night)</option>
@@ -465,7 +465,7 @@
       <label class="tog ctrl"><input type="checkbox" id="cbHDR" checked onchange="bridge('vishdr_'+(cbHDR.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
     </div>
     <div class="row" style="margin-top:6px">
-      <button class="b-gh ctrl" data-tip="Bridge: visreset&#10;Clears ALL gf_vis_* tweaks (stops every per-spawn push), pushes engine defaults to players currently in the session, and restores the map's default vision set.&#10;Ambient 0 · Grid Intensity 1 · Grid Contrast 0 · Fog on · HDR on · Vision normal" onclick="visResetAll()">&#x21BA; Reset All Visuals (stock)</button>
+      <button class="b-gh ctrl" data-tip="Bridge: visreset&#10;Clears ALL gf_vis_* tweaks (stops every per-spawn push) and pushes the engine defaults to players currently in the session.&#10;Ambient 0 · Grid Intensity 1 · Grid Contrast 0 · Fog on · HDR on · Vision ENHANCE&#10;&#10;The r_* rows really do reset to stock; the VISION SET resets to Gunfight's own default (Enhance), because that is what a fresh round applies. For the map's untouched vision, pick Normal explicitly." onclick="visResetAll()">&#x21BA; Reset All Visuals (stock)</button>
     </div>
   </div>
 
