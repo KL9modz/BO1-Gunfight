@@ -88,6 +88,10 @@ onPrecacheGameType()
     precacheShader( "hud_frame_faction_fade" );
     precacheShader( "hud_frame_faction_lines" );
     precacheShader( "hud_death_suicide" );
+    // Scoreboard dead-marker. A statusicon needs its OWN precache pass — the
+    // precacheShader above does not register it for that slot (stock does the same
+    // for "hud_status_dead" in _globallogic.gsc). Same white skull the health panel uses.
+    precacheStatusIcon( "hud_death_suicide" );
     precacheString( &"PLATFORM_PRESS_TO_SPAWN" );
 
     // Loadout HUD shaders — must be precached here (not in onStartGameType)
@@ -357,7 +361,7 @@ onStartGameType()
     if ( getDvar( "scr_gf_minplayers_timer" ) == "" )
         setDvar( "scr_gf_minplayers_timer", "0" );// min-players "start anyway" ceiling (s). 0 = never auto-start (hold until enough humans / admin START). Was a hardcoded 90s that started too-thin matches
     if ( getDvar( "scr_gf_load_wait" ) == "" )
-        setDvar( "scr_gf_load_wait", "0" );       // max s to hold the prematch for map-loading clients (0 = off, default; slow loaders may miss the intro)
+        setDvar( "scr_gf_load_wait", "10" );      // max s to hold the prematch for map-loading clients (0 = off; a loader that misses the gate still gets scr_gf_load_grace). Non-zero ARMS the hold, so every match start now pays the 3s arrival floor
     if ( getDvar( "scr_gf_load_grace" ) == "" )
         setDvar( "scr_gf_load_grace", "20" );     // s past prematch_over to keep grace open for a still-loading client so it spawns into round 1 (0 = off)
     if ( getDvar( "scr_gf_lobby" ) == "" )

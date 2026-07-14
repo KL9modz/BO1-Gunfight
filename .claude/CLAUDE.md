@@ -53,11 +53,37 @@ wins** takes the match.
 - **SECURITY:** rotate the leaked RCON password (VPS `dedicated.cfg`) + the exposed Plutonium server key.
 - **Prevent a duplicate launcher from squatting port 28960 after a reboot** (root cause of the reported
   "FF/settings revert on restart").
+- **`GF-Watchdog` misses a script-compile crash — the server can be DOWN while the task reads `Running`.**
+  Observed live 2026-07-12: a GSC compile error → `SV_Shutdown`, the game exe gone, but the
+  `GF-GameServer` scheduled task still reported `State: Running`, because the task's process is the
+  `cmd.exe`/bat wrapper and *that* survives the game's exit. Nothing auto-recovered it; a manual
+  Stop/Start-ScheduledTask (plus killing a stray `plutonium` launcher) was needed. **A watchdog that
+  checks task state cannot see this class of death — it must check for the
+  `plutonium-bootstrapper-win32` PROCESS** (and/or an rcon `status` reply), not the task.
 
 > Known design caveat, not a bug: **large/small spawn mode takes effect one round after the HUD readout**
 > (next-round snapshot vs live count — see *Team-size mode*).
 
 ### Ideas & future
+- **Killfeed duration — settle whether the server can force it (test is UNFINISHED).** The killfeed is
+  the engine's **game-message window 0**, not a hudelem: `con_gameMsgWindow0Filter` carries the
+  `"obituary"` type (window 1 = boldgame, window 2 = subtitles), and its on-screen time is
+  **`con_gameMsgWindow0MsgTime`** — **seconds**, stock **5** (siblings: `LineCount` 4, `FadeInTime`
+  0.25, `FadeOutTime` 0.5, `ScrollTime` 0.25). Engine-registered for real (`Domain is any number 0 or
+  bigger`), not a placebo. **A player can already retime their own killfeed today**: `/con_gameMsgWindow0MsgTime 20`
+  in their console — no mod change, and it's `seta` so it persists.
+  ⚠ **What is NOT settled: can the SERVER push it to everyone?** The dvar is `con_*` (client-owned) AND
+  **archived** (`seta` in `config_mp.cfg`) — the one class Plutonium refuses server writes to
+  ([[rcon-dedicated-dvar-push-limits]]) — so the expectation is *blocked*. A dev bridge verb
+  `killfeed_<sec>` (→ `gf_bridgeVisSet( "con_gameMsgWindow0MsgTime", … )`) was written for the test.
+  **Result so far: INCONCLUSIVE.** The bridge dispatched (`gf_cmd` read back empty) and the client
+  stayed at 5 — but the **control was botched**: `fps_1` pushes `cg_drawFPS`, which is *itself* archived,
+  so its failure is consistent with BOTH "push blocked" and "push path dead" and distinguishes nothing.
+  **Redo with a known-good non-archived control** — `thirdperson_1` (`cg_thirdPerson`, user-confirmed
+  working on the VPS) or `visnames_1` — fired at the same client in the same session. If the control
+  lands and the killfeed dvar doesn't, the answer is "server cannot force it" → then the choice is
+  (a) document the console line for players, or (b) own a killfeed in the menu layer (we have the
+  machinery; costs reliable commands per kill + a `mod.ff` rebuild).
 - **Own the prematch/intro countdown with `gettime()`** so a hitch degrades to a 1-frame stutter (the
   planned fully-custom-timers branch). **This is the real fix for the slow-mo countdown** — see the
   frame-hitch bug above: the hitch itself is the engine's `map_restart` and is not ours to delete, but the
@@ -750,7 +776,7 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_match_prematch_seconds` / `scr_gf_prematch_seconds` | 20 / 7 | Native prematch countdown length: first round / later rounds. |
 | `scr_gf_min_players` | 1 | Min **humans** to start (1 = off); a release condition on the pre-prematch hold. |
 | `scr_gf_minplayers_timer` | 0 | Min-players "start anyway" ceiling (s); **0 = never auto-start**. |
-| `scr_gf_load_wait` | 0 | Max s to hold the prematch for still-loading clients (0 = off; 3s floor). |
+| `scr_gf_load_wait` | 10 | Max s to hold the prematch for still-loading clients — a **ceiling**, not a duration (releases the moment the last loader is off its loading screen). `0` = off. ⚠ Any non-zero value **arms the hold**, and the 3s arrival floor is then unconditional: every match start pays 3s even with nobody loading (the floor exists so a poll running before the engine has delivered the first connect callbacks can't wave the gate through on an empty tracker). |
 | `scr_gf_load_grace` | 20 | s past prematch_over to keep round-1 grace open for a straggler loader (0 = off). |
 | `scr_gf_lobby` | 0 | Match Start: **0 Normal** / **1 Auto** / **2 Manual** (Auto/Manual fast-restart via `map_restart(false)`). |
 | `scr_gf_lobby_timer` | 600 | Manual-lobby auto-start ceiling (s); 0 = never auto-start. |

@@ -303,9 +303,12 @@ gf_nativePrematchTicker()
 // everyone simultaneously. Match's first round only: between-round map_restarts
 // re-begin in ~1-2s and the roster spawn gate already covers those.
 //
-// Bounds: scr_gf_load_wait = ceiling in seconds (default 0 = gate off,
+// Bounds: scr_gf_load_wait = ceiling in seconds (default 10; 0 = gate off,
 // clamped <=120), plus a 3s arrival floor so an early poll that runs before the
 // engine has delivered the first connect callbacks can't wave the gate through.
+// The floor is unconditional once the gate is armed, so a non-zero default costs
+// every match start 3s even with nobody loading — that is the price of the gate
+// being able to see a client that has not finished connecting yet.
 // A first-time FastDL downloader (30-60s+ in-place engine rebuild) is
 // deliberately NOT absorbed — they land mid-round-1 like today. Bots are test
 // clients (begin instantly) and are excluded from both the wait and the readout,
@@ -335,7 +338,7 @@ gf_armLoadGate()
     // lobby (scr_gf_lobby = Auto/Manual). The tracker snapshot feeds all — the min-players
     // count includes still-loading humans, which only the tracker can see (pre-begin clients
     // aren't in level.players).
-    loadOn  = ( gf_cfgFloat( "scr_gf_load_wait", 0, 0, 120 ) > 0 );
+    loadOn  = ( gf_cfgFloat( "scr_gf_load_wait", 10, 0, 120 ) > 0 );
     minOn   = ( int( gf_cfgFloat( "scr_gf_min_players", 1, 1, 8 ) ) > 1 );
     lobbyOn = ( int( gf_cfgFloat( "scr_gf_lobby", 0, 0, 2 ) ) >= 1 );   // Auto or Manual
     if ( !loadOn && !minOn && !lobbyOn )
@@ -441,7 +444,7 @@ gf_waitForLoadingClients()
     // All are match-start only (the roundsplayed guard above). The min-players count
     // reads the tracker snapshot (humans, computed in the loop) so it includes
     // still-loading humans — a loader still counts as "here".
-    loadWait    = gf_cfgFloat( "scr_gf_load_wait", 0, 0, 120 );
+    loadWait    = gf_cfgFloat( "scr_gf_load_wait", 10, 0, 120 );
     minP        = int( gf_cfgFloat( "scr_gf_min_players", 1, 1, 8 ) );
     lobby       = int( gf_cfgFloat( "scr_gf_lobby", 0, 0, 2 ) );   // 0 = Normal (default), 1 = Auto lobby, 2 = Manual lobby
     restartMode = ( lobby >= 1 );   // Auto/Manual do the fast map_restart(false) on release
@@ -1745,6 +1748,16 @@ gf_onSpawnSpectator( origin, angles )
         return;
     }
     // #strip-end
+
+    // Re-assert the skull dead-marker. in_spawnSpectator (_globallogic_spawn.gsc:359) stomps
+    // statusicon back to "hud_status_dead" a beat before invoking this callback, which is what
+    // reverted the icon a few seconds after death (the killcam ending routes the corpse here —
+    // one life, so there is no respawn). Mirrors stock's own condition: a real spectator keeps a
+    // CLEARED icon, so the guard is what lets a parked bot stay clean (gf.gsc seats it on the
+    // spectator team precisely to get that). The lobby-hold branch above already returned — a
+    // player waiting in the lobby is not dead and must not be marked as such.
+    if ( isDefined( self.pers["team"] ) && self.pers["team"] != "spectator" )
+        self.statusicon = "hud_death_suicide";
 
     // Mid-match spectator (a late joiner or a REJOIN): clear any stale lobby HUD. A client that was in a
     // prior lobby got ui_gf_lobby_show=1; if it left before the release that zeroes it, that 1 persists on
@@ -3231,6 +3244,14 @@ gf_onRoundEndGame()
 
 gf_onPlayerKilled( eInflictor, attacker, iDamage, sMeansOfDeath, sWeapon, vDir, sHitLoc, psOffsetTime, deathAnimDuration )
 {
+    // Scoreboard dead-marker: our white skull instead of the stock medal. Safe to write
+    // here because stock sets "hud_status_dead" early in Callback_PlayerKilled
+    // (_globallogic_player.gsc:1292) but does not invoke this hook until line 1698 — so
+    // this lands after it, not before. ONLY the dead value is overridden: the match-start
+    // load gate identifies still-loading clients by statusicon == "hud_status_connecting"
+    // (gf_anyTrackedClientLoading), so that value must keep its stock meaning.
+    self.statusicon = "hud_death_suicide";
+
     // On death, every player who damaged the victim (killer and assisters alike)
     // sees a popup with their own exact damage share — no floor.
     victimKey = "v" + int( self.entnum );
