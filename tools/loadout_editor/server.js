@@ -101,6 +101,7 @@ const BASE_PERKS = [
     "specialty_armorvest",                                // Body Armor (-20% bullet, non-BO1 token)
     "specialty_shades", "specialty_stunprotection",       // Tactical Mask Pro (both halves)
     "specialty_loudenemies",                              // Ninja Pro half (everyone's footsteps louder)
+    "specialty_fastmeleerecovery",                        // Steady Aim Pro half (faster melee-lunge recovery)
 ];
 // ⚠ specialty_bulletflinch (Hardened Pro) is NOT a base perk and must not be added back here: it
 // gates perk_damageKickReduction (default 0.2 = an 80% flinch cut), a SECOND multiplier under
@@ -121,7 +122,8 @@ const PACKAGES = {
                                              // class trait here, never a base perk.
             "specialty_bulletaccuracy",      // Steady Aim
             "specialty_sprintrecovery",      // Steady Aim Pro — faster ADS after sprint
-            "specialty_fastmeleerecovery",   // Steady Aim Pro — faster melee recovery
+            // specialty_fastmeleerecovery (Steady Aim Pro's melee half) is NOT here — it is a BASE
+            // perk now, so every loadout already has it. Re-adding it would just be a duplicate SetPerk.
             "specialty_holdbreath",          // Scout
             "specialty_fastweaponswitch",    // Scout Pro — faster weapon switch
             "specialty_fastreload",          // Sleight of Hand

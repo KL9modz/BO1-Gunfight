@@ -240,7 +240,7 @@ gf_hidePanelChromeOnRoundEnd()
 // pushing ui_gf_rN_fw. The 4-skull-per-row cap is enforced by the MENU now (each skull is
 // gated ui_gf_hp_mode == 0); when either team is > 4 the shared mode flips to 1 so BOTH rows
 // hide their skull clusters and show the ui_gf_rN_alivecount "Alive: N" readout (6v6 support).
-gf_HP_BAR_W() { return 45; }
+gf_HP_BAR_W() { return 40; }
 
 // ─── Self health bar (bottom-center) ─────────────────────────────────────────
 // FULLY CLIENT-RENDERED via ui_mp/hud_gf_health.menu (in mod.ff): the bar, name, and

@@ -16,6 +16,7 @@ wins** takes the match.
 
 ## TODO
 
+- Map/mode vote
 - Settup remote claude code (ssh vps+repo?) for travel from ipad
 - Website screenshots
 
@@ -131,8 +132,6 @@ wins** takes the match.
 - Site/branding: design pass; server ads; credit Plutonium/bots; show per-map feature support; on-brand
   Discord live-count card ([[discord-widget-csp-frame-src]]). Setup guide: recommend `cg_fov 65`,
   `cg_fovScale 1.4`. BO1 server "role" tied to Discord activity.
-  - Map/mode vote
-  - Perks per class
 
 ---
 
@@ -646,12 +645,27 @@ rebuild; dvar values/positions are GSC-tunable. Intro slide/fade animations are 
   ([[flinch-bg-viewkickscale-not-replicated]])
 - ⚠ **Every `perk_*` dvar is a MAGNITUDE; the matching `specialty_*` perk is its GATE.** The engine (or
   `_class.gsc`) only consults the dvar for a player who **has** the perk — they never "fight", but a
-  slider whose gate nobody holds is a **dead control that silently does nothing**. So the panel's PERK
-  MULTIPLIERS sliders are scoped by what the loadouts actually grant: `perk_sprintMultiplier` is **BASE**
-  (Lightweight, everyone); `perk_weapSwitchMultiplier` / `_weapReloadMultiplier` / `_weapAdsMultiplier` /
-  `_sprintRecoveryMultiplier` / `_weapSpreadMultiplier` are **SNIPER/HEAVY only** (their gates ride in that
-  package — so they affect **10 of 53 rounds**); and **`perk_weapRateMultiplier` is DEAD** — its gate is
-  `specialty_rof` (Double Tap), which no loadout grants. Each slider's tooltip now states its gate + scope.
+  slider whose gate nobody holds is a **dead control that silently does nothing**. Scopes: `perk_speedMultiplier`
+  (Lightweight), `perk_sprintMultiplier` (Marathon) and **`perk_weapMeleeMultiplier`** (Steady Aim Pro's
+  `fastmeleerecovery`) are **BASE** — live for everyone. `perk_weapSwitchMultiplier` / `_weapReloadMultiplier` /
+  `_sprintRecoveryMultiplier` / `_weapSpreadMultiplier` are **SNIPER/HEAVY only** (10 of 53 rounds).
+  **`perk_weapRateMultiplier` is DEAD** (gate `specialty_rof`, granted by nobody), and **`perk_weapAdsMultiplier`
+  is DEAD** for the reason below.
+- ⚠⚠ **A `perk_*` multiplier's REGISTERED DEFAULT *is* the perk's effect — and `1.0` is NOT "stock", it is
+  the WORST value.** Live-read defaults: `weapReload`/`weapAds`/`weapSwitch`/`weapMelee` **0.5**,
+  `weapSpread` **0.65**, `weapRate` **0.75**, `sprintRecovery` **0.6** — all with a domain that **CAPS AT 1**.
+  So 0.5 = "the action takes half as long", and setting 1.0 **silently disables the perk's benefit**. Two of
+  these run the other way: `sprintMultiplier` (default **2**, domain 0-3) and `speedMultiplier` (**1.07**,
+  0-5) are *higher = more*. ⚠ The panel shipped `def:'1.0'` + ranges to 2.0 on all eight — its Reset button
+  was **disabling** the perks it claimed to tune, and every value >1 it offered was **rejected by the
+  server** (which reads as "the dvar is broken"). Fixed. **Never re-guess a default here — read it off the
+  running server** ([[perk-multiplier-defaults-are-the-effect]], [[read-the-server-not-the-file]]).
+- ⚠ **`specialty_fastads` NEVER STICKS — it is a dead perk.** Proven live with `pperkdump_<num>`: with
+  `gf_perk_on` listing 7 perks, **6 land on every player and `fastads` never does**, while 11 other perks
+  set in the same loop all do. It is a real engine token (used by stock `shrp.gsc`) and nothing unsets it —
+  root cause unknown. Consequences: **Sleight of Hand Pro cannot be granted**, and `perk_weapAdsMultiplier`
+  is a dead slider. It still sits in the sniper/heavy package doing nothing; leave it until the cause is
+  found (removing it would delete a real effect if `hasPerk` — not `SetPerk` — turns out to be the liar).
 - **`g_fix_viewkick_dupe` is INERT on T5 MP — it was never the second flinch multiplier.** (The real one
   was a **perk**: `specialty_bulletflinch` → `perk_damageKickReduction` 0.2×, now out of the base set —
   see Flinch above.) With that perk gone, `scr_gf_flinch` is the only *global* flinch knob and `0.5` →
@@ -1276,11 +1290,14 @@ We call it **"Body Armor"**, named for its effect — do **not** give it a BO1-s
 suits a 42s round) — accept that headshots bypass it, so they are worth proportionally more and both
 score (= damage dealt) and the most-HP-wins decision tilt toward them. Real Flak Jacket is
 `specialty_flakjacket` (explosives; also granted); its Pro is `specialty_fireproof` (not granted).
-**GF's base set (9, every spawn, `gf_giveCustomLoadout`):** `movefaster` + `fallheight` (Lightweight +
+**GF's base set (10, every spawn, `gf_giveCustomLoadout`):** `movefaster` + `fallheight` (Lightweight +
 Pro), `longersprint` + `unlimitedsprint` (Marathon + Pro), `armorvest` (Body Armor, above), `flakjacket`
 (Flak Jacket), `shades` + `stunprotection` (Tactical Mask Pro's two halves), `loudenemies` (Ninja Pro's
-"enemies are louder" half). **Four Pros are granted without their base perk** — that's the à-la-carte
-model, not an oversight. ⚠ **`bulletflinch` (Hardened Pro) is deliberately NOT here** — it is a second
+"enemies are louder" half), `fastmeleerecovery` (Steady Aim Pro's melee half — *"recovery rate after
+lunging with knife is reduced"*). **Five Pros are granted without their base perk** — that's the
+à-la-carte model, not an oversight. ⚠ **`fastmeleerecovery` needs NO dvar**: it gates
+`perk_weapMeleeMultiplier`, whose *registered default 0.5 already halves recovery time* — the default **is**
+the perk ([[perk-multiplier-defaults-are-the-effect]]). ⚠ **`bulletflinch` (Hardened Pro) is deliberately NOT here** — it is a second
 flinch multiplier (0.2×) under `scr_gf_flinch` and belongs to the sniper/heavy package alone (see Flinch). `loudenemies` is the trick for
 *globally louder footsteps*: it is **listener-side**, so granting it to everyone (and `quieter` to nobody)
 makes everyone hear everyone else louder, symmetrically — there is no footstep-volume dvar in the engine
