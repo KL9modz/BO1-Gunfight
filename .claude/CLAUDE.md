@@ -291,6 +291,40 @@ before `prematch_over` would draw over the native countdown — so activation pa
 window is disabled (`grenadeLauncherDudTime`/`thrownGrenadeDudTime = -1`) for exactly this reason
 ([[paused-timer-freezes-gettimepassed]], [[gf-timer-prematch-and-pause-model]]).
 
+### Final-killcam slow motion (`scr_gf_killcam_slowmo` = the timescale FLOOR)
+Stock's round-end killcam drops the **whole server** to `SetTimeScale(0.25)` for the money shot
+(`raw/_killcam.gsc::waitFinalKillcamSlowdown`, threaded per viewer from `finalKillcam()` — the
+round-end cam only, never the per-death one). **Measured on the VPS: 0.27x, held for 8-10 REAL
+seconds, every round.** That is what made the "Connection Interrupted" plug flash mid-replay, and it
+is **one bug with the `MAX_PACKET_USERCMDS` console spam**, not two:
+
+> The server retires a client's usercmds only when it runs a **game frame**, and
+> **`game frames/sec = sv_fps × timescale`**. The game-time quantum is `1000/sv_fps` and a dilation
+> does **not** shrink it — it spreads those quanta apart in **wall** time (at `sv_fps 20`, from 50ms
+> to **~185ms**). A client makes one usercmd per client frame, so the queue is `com_maxfps × gap`;
+> past `MAX_PACKET_USERCMDS` (**32**) it truncates its move packet, and the same backlog makes
+> `CG_DrawDisconnect` draw the plug — **it fires when the server stops ACKING your commands, not when
+> data stops arriving.** Stock 0.25 → 200ms gap → overruns above ~160 client fps (everyone). 0.6 →
+> 83ms → overruns above ~385 (nobody).
+
+`gf_killcamSlowmoClamp` (threaded from `gf_endRound`) therefore clamps the slow-mo's **DEPTH, not its
+length** — shortening it does nothing, the backlog builds within ~300ms of the drop. It anchors on
+stock's `play_final_killcam` notify, mirrors stock's schedule, and re-asserts the floor at 10 Hz using
+**stock's own `deathTime` ramp target**, so the cinematic keeps its shape and only its depth changes
+(`SetTimeScale` is a plain builtin — the last caller wins). `gf_resetTimeScale()` in `onStartGameType`
+is the unconditional net for a leaked dilation.
+⚠ It bails unless `level.inFinalKillcam`: stock fires `play_final_killcam` **every** round, killcam or
+not, so clamping unguarded would *slow down* a normal round end.
+⚠ **`sv_fps` is NOT the lever**, though it is the other term: the killcam rewinds through an archived
+snapshot ring sized in **frames, not seconds**, so raising it buys proportionally *less* killcam
+history. Tried live at 80 — the replay ended early and the slow-mo never ran at all. **Leave it at 20.**
+⚠ **No probe inside the GSC VM can see a dilation** — `SetTimeScale` doesn't mirror into a readable
+`timescale` dvar, and `gettime()`/`wait()`/the log timestamps all share the *scaled* clock, so
+`GF_HITCH`/`GF_ENDGAP` are blind to it (**their zeros were never an all-clear**). Measure it from
+outside the sim with **`tools/ts_sample.ps1`** (RCON is the only wall clock we have).
+Acceptance test is binary and client-side: **zero `MAX_PACKET_USERCMDS` lines during a round-end
+killcam.** ([[killcam-slowmo-timescale-usercmd-backlog]])
+
 ### Overtime & the two-layer zone color system
 `gf_onTimeLimit`: if both teams are alive at expiry → overtime (unless `scr_gf_overtimelimit <= 0`, then
 HP decides immediately); else HP decides. Overtime is a custom ms-decrement clock (`gf_beginOvertime`/
@@ -777,6 +811,7 @@ tables → `docs/REFERENCE.md`.
 | `gf_capture_time` / `_large` | 3.5 / 5 | OT zone hold-to-capture seconds, small / large. |
 | `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (auto goes large when a team hits 5+). |
 | `scr_gf_flinch` | 0.5 | Flinch scale (× stock `bg_viewKickScale` 0.2) → **half stock kick**. The **only global flinch reducer**: 1.0 = stock, 0 = none. (The sniper/heavy package's `specialty_bulletflinch` adds a further **0.2×** for those 10 loadouts only — never put it back in the base set.) Pushed **per-client every spawn, unconditionally** — the server dvar alone doesn't replicate, and the push beats a player's own autoexec (clamp 0-3). |
+| `scr_gf_killcam_slowmo` | 0.6 | The round-end killcam's **timescale FLOOR** (clamp 0.25-1.0) — **not a toggle** (it used to be one; 0/1 no longer mean what they did). `0.25` = stock BO1 cinematic **and the bug**; `1.0` = no slow motion. Stock's 0.25 spaces the server's game frames ~200ms apart, overrunning `MAX_PACKET_USERCMDS` (32) on any client above ~160 fps → the "Connection Interrupted" plug. `0.6` → ~83ms, safe to ~385 fps, still a clear slow-mo. Clamp the **depth, not the length**. ⚠ `sv_fps` is not the lever — it truncates the killcam's frame-sized archive ring. |
 | `scr_gf_jump_fatigue` | 0 | **0 = OFF (the GF default)** / 1 = stock. Drives the engine's `jump_slowdownEnable` (post-jump movement drag — "jump fatigue"). The mod owns it so OFF ships as a default even with no cfg and no panel (`gf_applyJumpFatigue`, re-applied every round). RCON bridge: `jumpfatigue_<0\|1>`. |
 | `scr_gf_sprint_unlimited` | 0 | **0 = stock** / 1 = the sprint meter never empties. Drives the client dvar `player_sprintUnlimited`, **pushed per-client every spawn** — stock's only push is at connect and is ON-only, so a bare `set` on it reaches nobody already in the server and can never turn it back off (`gf_applySprintUnlimited` + `_Client`). RCON bridge: `sprintunlimited_<0\|1>`. |
 | `g_fix_viewkick_dupe` | 1 | **INERT on T5 MP** — the engine never registered it (live read: `Domain is any text`, `default:` mirrors our own `set`). Harmless, does nothing. Flinch is `scr_gf_flinch` alone. |
@@ -900,10 +935,17 @@ An empty value renders as **nothing** (the engine does not fall back to printing
 shipped: `SB_SCORE` → **"Damage"** (score in this mod IS cumulative damage dealt) and
 `CONNECTIONINTERUPTED` → **""** (blanks the between-rounds banner — note the engine's own typo, one R).
 
-The banner blank is the **only** lever that exists: `CG_DrawDisconnect` is client engine code and the
+The banner blank is the only lever on the *rendering*: `CG_DrawDisconnect` is client engine code and the
 client has **no `cg_drawDisconnect` dvar** (verified against `BlackOpsMP.exe`), so GSC and the menu layer
-can't reach it. It **hides** the banner; it does not close the snapshot gap (the irreducible floor of stock
-`map_restart(true)` round cycling — see [[connection-interrupted-mitigations]]). ⚠ It also suppresses the
+can't reach it. It **hides** the banner; it does not remove the cause.
+⚠ **It was never the "irreducible floor of `map_restart`", and treating it as one cost a lot of time.**
+That framing is retired: `GF_ENDTL` measures `dark=0ms` (the server never goes snapshot-silent), and
+`map_restart` runs *after* the killcam anyway, so it cannot land mid-replay. The plug people actually saw
+was the **final-killcam timescale dilation starving the usercmd ack rate** — a real, fixable server-side
+cause, now fixed by the slow-mo floor (see *Final-killcam slow motion*). Keep the blank as cosmetic cover
+for genuine lag; do **not** cite it as evidence a symptom is unfixable.
+([[killcam-slowmo-timescale-usercmd-backlog]], [[connection-interrupted-mitigations]])
+⚠ It also suppresses the
 warning for **genuine** lag/packet loss.
 ⚠ **Only the TEXT is gone — the PLUG ICON still renders, and cannot be removed.** It is material
 `net_disconnect` → colorMap image `net` (Q3's inherited phone-jack); no dvar, and its position is hardcoded.
