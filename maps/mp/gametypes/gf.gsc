@@ -315,13 +315,17 @@ onStartGameType()
     // so the "everyone dead but round can't end" window never outlives the spawn wave.
     level.gracePeriod = 15;
 
-    // FINAL-KILLCAM SLOW MOTION — see gf_killcamSlowmoOn() in _gf_rounds.gsc for the full story.
-    // Stock's round-end killcam drops the whole server to SetTimeScale(0.25) two seconds before the
-    // killing blow, which stops the server acking clients' usercmds and makes the engine's own
-    // "Connection Interrupted" plug flash mid-replay on a healthy connection. Seeded here so the
-    // RCON panel can read/toggle it from boot; gf_endRound acts on it.
+    // FINAL-KILLCAM SLOW MOTION — the killcam TIMESCALE FLOOR, not a toggle. Full story (and the
+    // wall-clock measurements behind the 0.6) in gf_killcamFloor() / gf_killcamSlowmoClamp(),
+    // _gf_rounds.gsc. Short version: the server retires usercmds only on a game frame, and game
+    // frames per real second = sv_fps x timescale. Stock's 0.25 at sv_fps 20 spaces them ~200ms
+    // apart, so every client's usercmd queue overruns MAX_PACKET_USERCMDS (32) and the engine draws
+    // its "Connection Interrupted" plug on a perfectly healthy connection. 0.6 keeps a real slow
+    // motion while holding the gap at ~83ms. Seeded here so the RCON panel can read it from boot;
+    // gf_endRound acts on it.
+    //   0.25 = stock BO1 cinematic (and the plug)   0.6 = default   1.0 = no slow motion
     if ( getDvar( "scr_gf_killcam_slowmo" ) == "" )
-        setDvar( "scr_gf_killcam_slowmo", "1" );   // 1 = stock cinematic (default), 0 = hold real time
+        setDvar( "scr_gf_killcam_slowmo", "0.6" );
     // Stock reads scr_killcam_time as a STRING and only uses it when non-empty (_killcam.gsc:554),
     // deriving camtime from the weapon otherwise. So seed it EMPTY: the panel gets a dvar it can
     // read without an "Unknown cmd", and stock keeps its own per-weapon default until someone sets

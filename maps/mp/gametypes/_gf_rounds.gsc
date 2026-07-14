@@ -210,31 +210,125 @@ gf_applySprintUnlimitedClient()
 // are 42s, so what is a once-a-match curiosity in TDM lands every ~45s here. That is the whole
 // difference between "a quirk nobody mentions" and "our server has a netcode bug".
 //
-// scr_gf_killcam_slowmo: 1 = stock cinematic (DEFAULT — no behaviour change), 0 = neutralized.
-// ⚠ There is no dvar for this and no way to unthread stock's per-player slowdown. But SetTimeScale
-// is a plain builtin and the LAST caller wins, so we simply re-assert real time across the window
-// and stock's 0.25 survives at most one frame. Do not "fix" this by shipping a mod _killcam.gsc:
-// overriding a stock script means keeping its ENTIRE public surface or the server won't compile.
-gf_killcamSlowmoOn()
+// WHY 0.25 IS THE BUG, MEASURED (2026-07-13, VPS, RCON wall-clock sampler — the only instrument
+// that can see this; every probe inside the VM runs on the scaled game clock and is structurally
+// blind to a dilation):
+//
+//   The server retires a client's usercmds only when it runs a GAME FRAME, and
+//       game frames per real second = sv_fps × timescale
+//   The game-time quantum is 1000/sv_fps and the dilation does NOT shrink it — it spreads those
+//   quanta apart in WALL time. Measured at sv_fps 20: gettime() advances in exact 50ms steps, and
+//   during the killcam those steps arrive ~185ms apart instead of 50ms (0.27x, for 8-10 REAL
+//   seconds, every single round).
+//
+//   A client generates one usercmd per client frame (com_maxfps) and they drain only that fast, so
+//   the queue depth is  com_maxfps × frame-gap.  The client's outbound packet holds at most
+//   MAX_PACKET_USERCMDS = 32; past that it truncates and prints MAX_PACKET_USERCMDS to the console
+//   (observed on every client, exactly during the slow-mo). The same backlog is what makes the
+//   engine draw its "Connection Interrupted" plug — CG_DrawDisconnect fires when the server stops
+//   ACKING your commands, not when data stops arriving. Both symptoms, one cause.
+//
+//       stock 0.25 -> 200ms gap -> overruns above ~160 fps  (i.e. essentially every real client)
+//       0.6        ->  83ms gap -> overruns above ~385 fps  (i.e. nobody)
+//
+// ⚠ sv_fps IS NOT THE LEVER, even though it is the other term. Raising it shrinks the gap, but the
+// killcam rewinds through an archived snapshot ring sized in FRAMES, not seconds — so 4x sv_fps
+// buys a quarter as much killcam history and the replay gets truncated or skipped outright. Tried
+// live at sv_fps 80: the killcam ended early, stock's slowdown never reached its SetTimeScale at
+// all, and the sampler saw no dilation. It "fixes" the plug by breaking the feature. Leave sv_fps
+// at 20 ([[vps-prematch-slowmo-framehitch]] says the same thing for a different reason).
+//
+// So the ONLY lever is the timescale itself, and the fix is to make the slow motion SHALLOWER, not
+// shorter — shortening it does nothing, because the backlog builds within ~300ms of the drop.
+//
+// scr_gf_killcam_slowmo is therefore the killcam TIMESCALE FLOOR, not a toggle:
+//   0.25 = stock BO1 (the cinematic as shipped — and the plug, on any client above ~160 fps)
+//   0.6  = DEFAULT — still a clear slow-motion money shot, no command backlog on any real client
+//   1.0  = no slow motion at all (the old "off")
+// The acceptance test is binary and client-side: zero MAX_PACKET_USERCMDS lines in the console
+// during a round-end killcam means the pipeline is keeping up and the plug cannot fire.
+gf_killcamFloor()
 {
-    return ( int( gf_cfgFloat( "scr_gf_killcam_slowmo", 1, 0, 1 ) ) != 0 );   // seeds the dvar if unset
+    return gf_cfgFloat( "scr_gf_killcam_slowmo", 0.6, 0.25, 1 );   // seeds the dvar if unset
 }
 
-// Hold real time across the whole round-end window. Threaded from gf_endRound when the toggle is
-// off. It cannot gate on level.inFinalKillcam: the killcam does not START until ~5s in (stock's
-// roundEndDelay shows the WIN/LOSS banner first), so at thread start the flag is still false.
-// Retires on the generation change; a thread parked in a timed wait does not survive map_restart
-// anyway, so this can never leak into the next round.
-gf_holdRealTime( myGen )
+// The final killcam's replay length, mirroring _killcam.gsc::calcKillcamTime() for the FINAL cam
+// (which always passes respawn=false and no maxtime). An explicit scr_killcam_time wins; otherwise
+// stock's 5.0s. Its other branches are unreachable here: artillery/airstrike/napalm need
+// killstreaks (this mod has none) and the grenade branch is gated behind respawn==true.
+gf_killcamCamTime()
 {
-    for ( i = 0; i < 400; i++ )        // 20s ceiling — the gen check retires us on the happy path
+    if ( getDvar( "scr_killcam_time" ) != "" )
+        return getDvarFloat( "scr_killcam_time" );
+
+    return 5.0;
+}
+
+// Re-assert the floor across stock's dilation window. Stock threads waitFinalKillcamSlowdown()
+// per viewer and we cannot unthread it — but SetTimeScale is a plain builtin and the LAST caller
+// wins, so we simply overwrite its 0.25 with ours. Do NOT "fix" this by shipping a mod
+// _killcam.gsc: overriding a stock script means keeping its ENTIRE public surface or the server
+// won't compile.
+//
+// Stock's schedule, anchored on the play_final_killcam notify (t0):
+//     t0 + 0.05                 finalKillcam() finishes its own wait and threads the slowdown
+//     t0 + 0.05 + (camtime-2)   SetTimeScale( 0.25, deathTime - 500 )   <- ramps, arg2 is a TIME
+//     deathTime + 1000          SetTimeScale( 1.0, getTime() + 500 )    <- restores
+// We start one frame BEFORE its drop so our ramp is the one already in flight, re-assert at 10 Hz
+// (a viewer whose killcam starts late would otherwise re-drop us to 0.25 mid-window), and hand the
+// restore back just before stock's own — which then re-affirms 1.0 harmlessly.
+//
+// Passing the SAME deathTime target keeps stock's cinematic SHAPE (a smooth ramp reaching the floor
+// 500ms before the killing blow) and changes only its depth. A hard snap would be its own hazard:
+// an instantaneous 4x step is exactly what desyncs a client's time-delta filter.
+gf_killcamSlowmoClamp( myGen )
+{
+    floor = gf_killcamFloor();
+    if ( floor <= 0.25 )
+        return;                     // stock depth requested — nothing to clamp
+
+    // ⚠ NOT a bare waittill on a level notify that might never fire: a thread parked in a waittill
+    // SURVIVES map_restart (one parked in a timed wait does not), so a round that never fired it
+    // would strand one of these forever, one per round. Safe here because stock's
+    // postRoundFinalKillcam() fires this EVERY round, killcam or not — which is also why the
+    // inFinalKillcam check below is mandatory.
+    level waittill( "play_final_killcam" );
+
+    if ( gf_roundGenChanged( myGen ) )
+        return;
+
+    // No final killcam this round (nobody died last — the round was decided on the clock, on HP,
+    // or by an overtime capture). Stock never dilates, so clamping would SLOW a full-speed round
+    // end instead of speeding up a slow one.
+    if ( !isDefined( level.inFinalKillcam ) || !level.inFinalKillcam )
+        return;
+
+    t0      = gettime();
+    camtime = gf_killcamCamTime();
+
+    // Mirrors stock's own deathTime: getTime() + secondsUntilDeath*1000, evaluated inside the
+    // slowdown thread at t0+0.05, where secondsUntilDeath = camtime + level.lastKillCam.deathTimeOffset.
+    // deathTimeOffset is only non-zero for a last-stand death, which this mod cannot produce (no
+    // Second Chance), so it is 0.
+    deathTime = t0 + 50 + int( camtime * 1000 );
+
+    // NOT max( 0, ... ): max() lives in common_scripts\utility and this file does not #include it —
+    // T5 has no transitive includes, so that would be an `unknown function` that fails the WHOLE
+    // server at compile time and would not surface until a client connected.
+    delay = camtime - 2.1;
+    if ( delay > 0 )
+        wait( delay );
+
+    while ( gettime() < deathTime + 900 )        // stock restores at deathTime + 1000
     {
         if ( gf_roundGenChanged( myGen ) )
             return;
 
-        SetTimeScale( 1.0, gettime() );
-        wait 0.05;
+        SetTimeScale( floor, int( deathTime - 500 ) );
+        wait 0.1;
     }
+
+    SetTimeScale( 1.0, gettime() + 500 );
 }
 
 // Belt-and-braces, EVERY round, regardless of the toggle: stock's restore to 1.0 sits AFTER its
@@ -1204,11 +1298,11 @@ gf_lobbyCamPut()
 // ─── Lobby roster ("IN THE LOBBY" name list) ───────────────────────────────
 // Live combined player+bot list for the custom lobby HUD. Level-scope; runs for the Auto/Manual hold
 // only (started from gf_waitForLoadingClients alongside gf_lobbyCamWatcher). Rebuilds the roster each
-// tick and pushes it — ONLY on change — to every begun human via setClientDvar (menus read CLIENT
-// dvars, and a dedicated server's setDvar doesn't replicate). 12 fixed name slots (ui_gf_lobby_p0..11)
-// + a count (ui_gf_lobby_pcount) that gates each slot's menu visibility. Retires with the hold via the
-// same notifies the load tracker / cam watcher use. Still-connecting + demo clients are excluded; bots
-// are listed with a "(bot)" tag per the combined-list design.
+// tick and pushes it — ONLY on change, and BATCHED (setClientDvarS) — to every begun human (menus read
+// CLIENT dvars, and a dedicated server's setDvar doesn't replicate). 12 fixed name slots
+// (ui_gf_lobby_p0..11) + a count (ui_gf_lobby_pcount) that gates each slot's menu visibility. Retires
+// with the hold via the same notifies the load tracker / cam watcher use. Still-connecting + demo
+// clients are excluded; bots are listed with a "(bot)" tag per the combined-list design.
 gf_lobbyRosterLoop()
 {
     level endon( "game_ended" );
@@ -1233,8 +1327,9 @@ gf_lobbyRosterLoop()
             names[ names.size ] = nm;
         }
 
-        // Push only when the roster actually changes (a join/leave/rename) so we're not spraying ~13
-        // client dvars every half-second at a static lobby.
+        // Push only when the roster actually changes (a join/leave/rename) so a static lobby pushes
+        // nothing at all. The change gate is the FIRST line of defence on reliable-command volume;
+        // the batching below is the second.
         sig = "" + names.size;
         for ( i = 0; i < names.size; i++ )
             sig = sig + "|" + names[i];
@@ -1242,18 +1337,53 @@ gf_lobbyRosterLoop()
         if ( sig != lastSig )
         {
             lastSig = sig;
+
+            // ⚠ BATCHED ON PURPOSE — setClientDvarS (plural). This loop used to push pcount + one
+            // command PER OCCUPIED SLOT (up to 13 reliable commands per human, per roster change),
+            // which made it the only push stream in the mod whose COST SCALES WITH PLAYER COUNT —
+            // and it lives in the pregame lobby, the exact window where the reliable-command ring is
+            // already tightest (the Auto/Manual START does map_restart(false), which stalls every
+            // client while the burst keeps queueing). Bots are added on a 0.5s stagger and this loop
+            // ticks at 0.5s, so a full bot fill was ~one roster change per bot: a 12-bot fill cost
+            // ~156 reliable commands per human. Batched, the same fill costs ~12-24.
+            //
+            // Re-sending an unchanged pair inside a batch is FREE — it is the command COUNT that is
+            // scarce, not the bytes — so we pad the 12 fixed slots and push them as flat groups
+            // rather than tailoring the call to the occupied count. Slots past pcount are hidden by
+            // the menu (each row is gated on pcount > N), so the padding is never seen.
+            // See the batching note in _gf_hud.gsc::gf_showWeaponHUD.
+            slot = [];
+            for ( s = 0; s < 12; s++ )
+            {
+                if ( s < names.size )
+                    slot[s] = names[s];
+                else
+                    slot[s] = "";
+            }
+
             for ( i = 0; i < level.players.size; i++ )
             {
                 pl = level.players[i];
                 if ( !isDefined( pl ) || pl istestclient() || pl isdemoclient() )
                     continue;   // bots/demo render no HUD — don't push to them
-                pl setClientDvar( "ui_gf_lobby_pcount", "" + names.size );
-                // Push only OCCUPIED slots. Menu rows are gated on pcount > N, so any slot past the count
-                // is hidden regardless of leftover text — no need to clear empties. ~names.size+1 client
-                // dvars per change instead of a flat 13; reliable-command volume matters (see the
-                // "server command overflow" note in gf_lobbyCamPut).
-                for ( s = 0; s < names.size; s++ )
-                    pl setClientDvar( "ui_gf_lobby_p" + s, names[s] );
+
+                pl setClientDvars( "ui_gf_lobby_pcount", "" + names.size,
+                                   "ui_gf_lobby_p0",     slot[0],
+                                   "ui_gf_lobby_p1",     slot[1],
+                                   "ui_gf_lobby_p2",     slot[2],
+                                   "ui_gf_lobby_p3",     slot[3],
+                                   "ui_gf_lobby_p4",     slot[4],
+                                   "ui_gf_lobby_p5",     slot[5] );
+
+                // Slots 6-11 only exist for a 7+ lobby. Below that the menu has them hidden anyway
+                // (pcount gate), so skipping the second command keeps the common small lobby at ONE.
+                if ( names.size > 6 )
+                    pl setClientDvars( "ui_gf_lobby_p6",  slot[6],
+                                       "ui_gf_lobby_p7",  slot[7],
+                                       "ui_gf_lobby_p8",  slot[8],
+                                       "ui_gf_lobby_p9",  slot[9],
+                                       "ui_gf_lobby_p10", slot[10],
+                                       "ui_gf_lobby_p11", slot[11] );
             }
         }
 
@@ -2446,11 +2576,11 @@ gf_endRound( winner )
     // within a frame.
     level thread gf_postRoundWatchdog( level.gf_roundGen );
 
-    // Kill stock's final-killcam slow motion (and with it the mid-killcam "Connection Interrupted"
-    // plug) when the admin has turned it off. Must be threaded BEFORE endGame: stock's per-player
-    // slowdown thread is armed from the killcam that endGame's post-round events start.
-    if ( !gf_killcamSlowmoOn() )
-        level thread gf_holdRealTime( level.gf_roundGen );
+    // Clamp stock's final-killcam slow motion to scr_gf_killcam_slowmo (the timescale FLOOR), which
+    // is what keeps the server's game-frame cadence — and with it every client's usercmd pipeline —
+    // inside the engine's own disconnect threshold. Must be threaded BEFORE endGame: stock's
+    // per-player slowdown thread is armed from the killcam that endGame's post-round events start.
+    level thread gf_killcamSlowmoClamp( level.gf_roundGen );
 
     // #strip-begin - round-end timeline probe (dev/main only; stripped from public release)
     // Samples the killcam -> map_restart window at 20 Hz and logs every window the server went
