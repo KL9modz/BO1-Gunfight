@@ -158,6 +158,13 @@ onPrecacheGameType()
     precacheShader( "hud_acoustic_sensor"      );
     precacheShader( "hud_deployable_camera"    );
 
+    // Marathon Pro's overview tile. Stock precaches only the BASE create-a-class perk icons
+    // (via reference_full, _class.gsc:421) — Flak and Hardened are in that set, but a _pro_256
+    // icon is not, so it renders blank without this. (The armorvest/Juggernaut art,
+    // specialty_juggernaut_zombies, was tested here and checkerboards — it isn't in the MP zones —
+    // so Body Armor stays a global rule and is never shown as a tile.)
+    precacheShader( "perk_marathon_pro_256" );          // Marathon Pro tile (Tier 3 green)
+
     // Special weapons (minigun = Death Machine, m202 = Grim Reaper) are NOT in the
     // normal MP weapon table, so the class system never auto-precaches them like it
     // does famas/galil/etc. Without an explicit PrecacheItem here, GiveWeapon()

@@ -232,8 +232,14 @@ gf_giveCustomLoadout()
     }
     self EnableWeaponCycling();
 
-    self SetPerk( "specialty_movefaster"        );   // Lightweight
-    self SetPerk( "specialty_fallheight"        );   // Lightweight Pro — no fall damage
+    // ⚠ Lightweight's SPEED half (specialty_movefaster, +movespeed) is deliberately OFF by default —
+    // the base +7% made the tight 42s rounds feel twitchy. perk_speedMultiplier (1.07) is its
+    // magnitude gate and now reaches nobody; an admin can still opt it in globally via the RCON Perks
+    // tab (gf_perk_on) or a loadout via its 8th field. The Pro half below is KEPT: no-fall-damage is
+    // pure QoL for a jump-heavy mode and is independent of the speed boost (à-la-carte — a Pro grants
+    // without its base). Removing movefaster here is what makes it off by default in EVERY build; the
+    // dev-only gf_perk_off override is no longer the thing holding it off.
+    self SetPerk( "specialty_fallheight"        );   // Lightweight Pro — no fall damage (speed boost intentionally not granted)
     self SetPerk( "specialty_longersprint"      );   // Marathon
     // Marathon Pro — the sprint meter never empties. This is the ENGINE's own perk bit (it is in
     // BlackOpsMP.exe's specialty table) and it is consumed by engine movement code: no stock GSC
@@ -450,70 +456,22 @@ gf_load( pri, sec, equip, lethal, tactical, camo, camoSec, perks )
         }
     }
 
-    // Resolve the 3 HUD perk slots now, for the same reason. The overview has exactly three
-    // (ui_gf_lo_icon5/6/7) and they share ONE `visible` flag in the menu, so a slot cannot be
-    // hidden individually without a mod.ff rebuild — all three are ALWAYS filled: this
-    // loadout's added perks first, then padded from the base set, skipping anything this
-    // loadout removed (never advertise a perk we just took away).
-    show  = [];
-    icons = [];   // icon-parent of each perk already shown — the same icon is never used twice
-
-    // Two passes over this loadout's added perks: BASE perks first, then Pro abilities. Base-first
-    // matters because a Pro borrows its PARENT's art (Pros have no create-a-class icon of their
-    // own), so showing a perk next to its own Pro would render the SAME icon in two slots and waste
-    // one. With the sniper package's 8 tokens this yields Hardened / Steady Aim / Scout — the three
-    // parent perks — instead of Hardened / Steady Aim / Steady Aim Pro.
-    for ( pass = 0; pass < 2 && show.size < 3; pass++ )
-    {
-        for ( i = 0; i < load["perkAdds"].size && show.size < 3; i++ )
-        {
-            tk   = load["perkAdds"][i];
-            info = gf_perkInfo( tk );
-            isBasePerk = ( info["p"] == tk );        // a Pro points at a different parent
-            if ( pass == 0 && !isBasePerk ) continue;
-            if ( pass == 1 &&  isBasePerk ) continue;
-            if ( gf_listHas( icons, info["p"] ) ) continue;
-
-            show[ show.size ]   = tk;
-            icons[ icons.size ] = info["p"];
-        }
-    }
-
-    pad = [];                                  // base-set pad order == what the HUD showed before this feature
-    pad[0] = "specialty_flakjacket";
-    pad[1] = "specialty_longersprint";
-    pad[2] = "specialty_movefaster";
-    for ( i = 0; i < pad.size && show.size < 3; i++ )
-    {
-        if ( gf_listHas( load["perkRems"], pad[i] ) )
-            continue;
-        info = gf_perkInfo( pad[i] );
-        if ( gf_listHas( icons, info["p"] ) )
-            continue;
-        show[ show.size ]   = pad[i];
-        icons[ icons.size ] = info["p"];
-    }
-
-    for ( i = 0; i < 3; i++ )
-    {
-        if ( i < show.size )
-        {
-            info = gf_perkInfo( show[i] );
-            // Icon comes from gf_getPerkShader on the PARENT perk: a Pro ability is not a
-            // create-a-class item and so has no art of its own, but the engine precached every
-            // real perk's material (_class.gsc:421). Borrowing the parent's icon is both what
-            // BO1 itself does and the only way to stay inside the precached set — inventing a
-            // material name here would ship a missing-texture checkerboard.
-            load["perkShader" + i] = gf_getPerkShader( info["p"] );
-            load["perkName"   + i] = info["n"];
-        }
-        else
-        {
-            // Only reachable if a loadout removes every base perk in the pad list and adds none.
-            load["perkShader" + i] = "white";
-            load["perkName"   + i] = "";
-        }
-    }
+    // ── Fixed perk overview — the SAME three tiles for every loadout ──────────────────────────
+    // Gunfight's kit is shared, so the overview shows one representative perk per tier color
+    // instead of a per-loadout list: Flak Jacket (Tier 1 blue) · Hardened (Tier 2 orange) ·
+    // Marathon Pro (Tier 3 green). The three slots (ui_gf_lo_icon5/6/7) share one `visible` flag,
+    // so all three are always filled. specialty_armorvest ("Body Armor", -20% non-headshot bullet)
+    // is NOT a tile — it's a global rule of the mode, granted to everyone, not a per-loadout perk.
+    //
+    // gf_getPerkShader() resolves a specialty token to its create-a-class icon (reference_full,
+    // stock-precached at _class.gsc:421) — that covers Flak and Hardened. A _pro_256 icon has no
+    // token entry, so Marathon Pro is named by material directly and precached in onPrecacheGameType.
+    // (Verified on-screen 2026-07: perk_marathon_pro_256 renders; a zombies material —
+    // specialty_juggernaut_zombies, the true art for armorvest/Juggernaut — does NOT load in MP,
+    // it checkerboards, which is why Body Armor stays a rule and never a tile.)
+    load["perkShader0"] = gf_getPerkShader( "specialty_flakjacket" );        load["perkName0"] = "Flak Jacket";
+    load["perkShader1"] = gf_getPerkShader( "specialty_bulletpenetration" ); load["perkName1"] = "Hardened";
+    load["perkShader2"] = "perk_marathon_pro_256";                           load["perkName2"] = "Marathon Pro";
 
     return load;
 }
