@@ -13,6 +13,12 @@
 #      the actual dedicated server (via loopback RCON) still alive" - a hung/
 #      crashed game server shows up here even if every task's State still says
 #      Running (a wedged process doesn't necessarily exit).
+#   2b. Judges the GAME SERVER by the plutonium-bootstrapper-win32 PROCESS + status
+#      liveness, NOT by GF-GameServer's task State - because a GSC compile crash
+#      (SV_Shutdown) drops the game exe while the task's cmd.exe/bat wrapper lives
+#      on, so State stays Running while the server is DOWN. If the bat's own restart
+#      loop is also wedged, nothing self-heals; the watchdog then bounces the task
+#      (the manual fix that worked live 2026-07-12). See checks 3a/3b/3e.
 #   3. Pushes an ntfy alert (reusing tools\notify\config.json's topic) on
 #      transition into trouble, and again on recovery. While a problem
 #      persists it re-alerts only every $ReAlertMinutes so a long outage
@@ -28,6 +34,10 @@
 [CmdletBinding()]
 param(
     [string[]] $Tasks            = @('GF-GameServer', 'GF-JoinNotify', 'GF-RconPanel', 'GF-StatusService', 'GF-ConnLogger'),
+    # The scheduled task that runs the game-server launch bat. Its process is the cmd.exe/bat
+    # WRAPPER, which survives the game exe's death, so its State is a LIE about server health -
+    # the process/RCON checks below are the truth. Named separately so it can be bounced directly.
+    [string]   $GameServerTask   = 'GF-GameServer',
     [string]   $AdminJsonPath    = 'C:\inetpub\wwwroot\admin\live\admin.json',
     [string]   $HealthJsonPath   = 'C:\inetpub\wwwroot\admin\live\health.json',
     [int]      $AdminStaleSecs  = 90,
@@ -248,6 +258,10 @@ $canAct = (-not $WhatIf -and -not $NoRemediate)
 $boot = @(Get-Process -Name 'plutonium-bootstrapper-win32' -ErrorAction SilentlyContinue)
 $upd  = @(Get-Process -Name 'plutonium'                    -ErrorAction SilentlyContinue)
 
+# Set when 3a kills a wedged updater this run, so 3e gives the bat one full cycle to relaunch
+# from that lighter touch before escalating to a whole-task restart.
+$updaterRemediatedThisRun = $false
+
 # (3a) WEDGED UPDATER. The launch bat runs `plutonium.exe -update-only` before each
 # (re)launch; if it hangs, the loop is stuck there with NO game server, yet GF-GameServer
 # stays State=Running (the task can't see it). Signature: plutonium.exe present, bootstrapper
@@ -259,6 +273,7 @@ if ($upd.Count -gt 0 -and $boot.Count -eq 0) {
         $anyProblem = $true
         Log "updater WEDGE: plutonium.exe up ${ageSec}s with no game server"
         if ($canAct) {
+            $updaterRemediatedThisRun = $true
             try { $upd | Stop-Process -Force; Log 'killed wedged plutonium.exe (bat loop will relaunch the server)' }
             catch { Log "kill failed: $($_.Exception.Message)" }
         }
@@ -269,7 +284,10 @@ if ($upd.Count -gt 0 -and $boot.Count -eq 0) {
             Set-Item-State 'updater-wedge' $true (Get-Date).ToString('o')
         } elseif (-not $WhatIf) { Set-Item-State 'updater-wedge' $true (Get-Item-State 'updater-wedge').lastAlert }
     }
-} else {
+} elseif ($boot.Count -gt 0) {
+    # Genuine recovery only when the game server is actually back. The old bare `else` also fired
+    # here when BOTH processes were absent (server DOWN, not the wedge signature) - a false
+    # "recovered". That down-with-no-updater state is now owned by check 3e below.
     if (-not $WhatIf -and (Should-Alert 'updater-wedge' $false)) {
         Send-Alert -title 'Gunfight VPS - updater recovered' -message 'Game server process is up again.' -priority 'default' -tags 'white_check_mark'
     }
@@ -300,6 +318,53 @@ if (Test-Path $AdminJsonPath) {
         }
         if (-not $WhatIf) { Set-Item-State 'server-hung' $false $null }
     }
+}
+
+# (3e) DEAD SERVER, TASK STILL "RUNNING" (the compile-crash class - the case task-state check 1
+# is blind to by construction). A GSC compile error (or any hard crash) drops the game exe ->
+# SV_Shutdown, but GF-GameServer's cmd.exe/bat WRAPPER survives, so its State stays Running while
+# the server is DOWN. If the bat's own restart loop is also wedged, nothing relaunches. The only
+# truthful signals are the PROCESS (no bootstrapper) and STATUS liveness (admin.json dark). We
+# escalate to a full task restart only once the server has been dark past the HARD threshold - a
+# full watchdog cycle beyond 3a's lighter "kill the wedged updater and trust the bat" attempt, so
+# a bat that can self-heal already had its chance. Deliberately NOT conditioned on plutonium.exe:
+# the crash can leave a stray launcher (3a's target) or none, and either way a wedged bat needs
+# the task bounced - the manual fix used live 2026-07-12 (Stop/Start the task + clear strays).
+$darkAge = 0
+$serverDark = $false
+if (Test-Path $AdminJsonPath) {
+    $darkAge = [int]((New-TimeSpan -Start (Get-Item $AdminJsonPath).LastWriteTime -End (Get-Date)).TotalSeconds)
+    $serverDark = ($darkAge -gt $AdminHardStaleSecs)
+}
+$gsTask = Get-ScheduledTask -TaskName $GameServerTask -ErrorAction SilentlyContinue
+if ($boot.Count -eq 0 -and $serverDark -and $gsTask -and $gsTask.State -eq 'Running' -and -not $updaterRemediatedThisRun) {
+    $anyProblem = $true
+    Log "server DEAD but $GameServerTask still Running: no bootstrapper, status dark ${darkAge}s (compile-crash class) - the bat is not self-recovering"
+    if ($canAct) {
+        # Clear any stray launcher (re-query fresh; the $upd snapshot may be stale), then bounce the task.
+        @(Get-Process -Name 'plutonium' -ErrorAction SilentlyContinue) | Stop-Process -Force -ErrorAction SilentlyContinue
+        try {
+            Stop-ScheduledTask  -TaskName $GameServerTask -ErrorAction SilentlyContinue
+            Start-ScheduledTask -TaskName $GameServerTask
+            Log "restarted the $GameServerTask task (fresh bat wrapper)"
+        } catch {
+            Log "$GameServerTask restart FAILED: $($_.Exception.Message)"
+        }
+    }
+    if (-not $WhatIf -and (Should-Alert 'server-dead' $true)) {
+        Send-Alert -title 'Gunfight VPS - server dead (task still Running)' `
+            -message "No game-server process and status dark ${darkAge}s while $GameServerTask reported Running (a GSC compile crash looks exactly like this). $(if($canAct){"Bounced the $GameServerTask task to relaunch."}else{'Remediation disabled.'})" `
+            -priority 'urgent' -tags 'rotating_light,robot'
+        Set-Item-State 'server-dead' $true (Get-Date).ToString('o')
+    } elseif (-not $WhatIf) { Set-Item-State 'server-dead' $true (Get-Item-State 'server-dead').lastAlert }
+} elseif ($boot.Count -gt 0) {
+    # Recovery only when the game server process is genuinely back (Should-Alert gates it to a real
+    # prior 'server-dead'); we hold the down-state through transient boot-absent runs (e.g. 3a just
+    # acted) so the alert doesn't clear before the bootstrapper actually returns.
+    if (-not $WhatIf -and (Should-Alert 'server-dead' $false)) {
+        Send-Alert -title 'Gunfight VPS - server process back' -message 'The game server process is running again.' -priority 'default' -tags 'white_check_mark'
+    }
+    if (-not $WhatIf) { Set-Item-State 'server-dead' $false $null }
 }
 
 # (3c) STUCK MATCH. The server answers but the round number is frozen (health.roundStuck).

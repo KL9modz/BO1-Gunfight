@@ -21,22 +21,38 @@ wins** takes the match.
 - Website screenshots
 
 ### Open bugs
-- **Clients still print `MAX_PACKET_USERCMDS` during the round-end killcam.** Cosmetic only — **the server
-  is healthy and the game plays great; this is NOT a regression and NOT urgent.** 🛑 **The one hard
-  constraint: do NOT chase it by lowering `scr_gf_killcam_slowmo` below 0.6 or raising `sv_fps`.** Both
-  "fix" the spam by breaking something real (the plug comes back / the killcam archive truncates), and the
-  live server is currently *correct*. The 0.6 floor already cut the server's game-frame gap from ~185ms to
-  ~80ms and **killed the "Connection Interrupted" plug**, which was the symptom that mattered. The spam is
-  a *different, tighter* client limit: `MAX_PACKET_USERCMDS` (32) is the **per-packet** cap, and exceeding
-  it merely truncates the oldest queued commands (the server still gets the newest and keeps acking) —
-  whereas the plug is `CG_DrawDisconnect`'s much looser backlog threshold. **Unknown:** why 32 is still
-  exceeded at an ~80ms gap. Our model says a client would need >~400 fps; either the count is not
-  "commands since the last ack" (more likely it is commands since the last *sent packet*, i.e. driven by
-  `cl_maxpackets`, which would make it largely a client-side matter), or `com_maxfps` is higher than
-  assumed. **Cheap next probe, zero server risk: have one client set `cl_maxpackets 100` (and/or
-  `com_maxfps 125`) and see if the spam stops.** That single read tells us which limit we are actually
-  hitting, and it costs nothing to try. ⚠ Do not touch the server to test this.
-  ([[killcam-slowmo-timescale-usercmd-backlog]])
+- **RESOLVED — the `MAX_PACKET_USERCMDS` killcam spam is a CLIENT-side `cl_maxpackets` limit, self-fixable,
+  cosmetic.** Proven live 2026-07-15: a client running `com_maxfps 237` / `cl_maxpackets 30` (stock) spat
+  ~37 lines per round-end killcam; setting **`cl_maxpackets 100` on that client killed the spam outright**,
+  with `com_maxfps` untouched. So the count is **usercmds-per-outgoing-packet** (driven by the send rate),
+  **not** the `com_maxfps × ack-gap` backlog — at 30 packets/sec the client crams enough queued commands
+  into each packet to cross 32 during the slow-mo ack stall; at 100 it drains in smaller sends. **Nothing
+  server-side is involved and the hard constraint is vindicated** — the fix was never the floor or `sv_fps`
+  (both still off-limits; lowering the floor brings the `CG_DrawDisconnect` plug back, raising `sv_fps`
+  truncates the killcam archive ring). `cl_maxpackets` is archived (`seta`), so a player sets it once and
+  it sticks → this is now a **player-facing recommendation** (like `cg_fov`), not an engineering item. TODO:
+  add `cl_maxpackets 100` to `docs/GETTING_STARTED.md`. ([[killcam-slowmo-timescale-usercmd-backlog]])
+- **Stock weapon-data console warnings — cosmetic, client-side, NOT ours (a whole family).** The mod ships
+  **zero** weapon files and no `weaponOptions.csv` (`raw/weapons/` is empty), so every one of these is pure
+  Treyarch data that surfaces more here than in vanilla only because the rotating pool hands out
+  rarely-equipped attachment combos. **Same class as the `MAX_PACKET_USERCMDS` noise: do not chase any of
+  them.** Two seen so far:
+  - **`CG_SetWeaponHidePartBits: No such bone tag (…) for weapon (…)`** — e.g. `tag_scope_colt` on
+    `python_speed_mp`, `tag_iron_sightlow`/`tag_scope_colt` on `m16_ir_mp`. Each weapon def's `hideTags\…`
+    list names model bones to hide when equipped, and some stock files list bones that don't exist on that
+    model/attachment combo. Engine can't find the bone → one line, moves on; the tag simply isn't hidden
+    (nothing to hide), weapon renders fine.
+  - **`Couldn't find weapon parent '' for weapon 'sticky_grenade_mp' in weaponOptions.csv`** (also
+    `frag_grenade_mp` etc.). `weaponOptions.csv` is stock's camo-index table, keyed per weapon **parent**;
+    grenades have an **empty `parentWeaponName`** (confirmed) because they have no camo. When the options
+    system touches a grenade, parent `''` → lookup miss → warning. This is *correct* (no camo to resolve).
+    Our own `CalcWeaponOptions` targets only primary/secondary — grenades get a plain 1-arg `GiveWeapon` —
+    so it's stock give/validation chatter, not a bad arg from us.
+  The ONLY silencer is shipping patched copies of the affected stock files in `raw/…` with the dead
+  tags/lookups removed — real cost (one file per variant; `build_ff.ps1` cleans `raw/` because Plutonium
+  reads it as a fallback *over* stock, so a stray staged file silently overrides the real game
+  [[build-stage-transitive-menu]]). **Leave them** unless the planned custom-weapon-file pass (ADS-FOV /
+  move-speed tuning) forks these same files anyway — then the cleanup is a free ride-along.
 - **Which client orphans `.killcam` in the round-end deadlock is still unproven.** The deadlock itself is
   now broken by `gf_postRoundWatchdog` (the infinite round can't recur), but the *leaker* was never pinned:
   `finalKillcam`'s only live endon is `self endon("disconnect")`, and a disconnected player leaves
@@ -79,14 +95,6 @@ wins** takes the match.
 - **SECURITY:** rotate the leaked RCON password (VPS `dedicated.cfg`) + the exposed Plutonium server key.
 - **Prevent a duplicate launcher from squatting port 28960 after a reboot** (root cause of the reported
   "FF/settings revert on restart").
-- **`GF-Watchdog` misses a script-compile crash — the server can be DOWN while the task reads `Running`.**
-  Observed live 2026-07-12: a GSC compile error → `SV_Shutdown`, the game exe gone, but the
-  `GF-GameServer` scheduled task still reported `State: Running`, because the task's process is the
-  `cmd.exe`/bat wrapper and *that* survives the game's exit. Nothing auto-recovered it; a manual
-  Stop/Start-ScheduledTask (plus killing a stray `plutonium` launcher) was needed. **A watchdog that
-  checks task state cannot see this class of death — it must check for the
-  `plutonium-bootstrapper-win32` PROCESS** (and/or an rcon `status` reply), not the task.
-
 > Known design caveat, not a bug: **large/small spawn mode takes effect one round after the HUD readout**
 > (next-round snapshot vs live count — see *Team-size mode*).
 
@@ -113,18 +121,22 @@ wins** takes the match.
   ⚠ Do **not** pair this with the once-floated **sv_fps 30** experiment: `GF_HITCH` is *game-time dilation*
   (wall time to advance 0.5s of game time), and the stall is a fixed lump of wall-clock work — more frames
   per second on a CPU-starved box buys more overhead and *more* dilation, not less. VPS runs 20; leave it.
-- **Move the loadout slide-out into the menu layer** (kill the last GSC dvar-animation stream). `gf_slideLoadout`
-  pushes 1 batched command per 0.05s step for 0.5s = **~13 reliable commands/human/round, forever** — halved
-  from 26 by batching the off+alpha pair, but still the densest stream the mod emits, and the only one a
-  batch can't take to zero ([[server-command-overflow-reliable-command-budget]]). The menu can
-  animate for free: `milliseconds()` works in an `exp` (stock `after_action_report.menu` / `game_summary.menu`
-  interpolate off `ui_time_marker` + `exec "setdvartotime"`). ⚠ **BLOCKED on one unverified fact:** the menu's
-  only clock is **client-local**, so the start marker must be stamped **by the client** from a menu event
-  (`onOpen` on a menuDef / `onEnter` on an itemDef) — the server **cannot** push a marker in its `gettime()`
-  base. Our overview lives in an always-loaded `loadMenu`'d HUD menu with no obvious per-round event. **Settle
-  it with one `mod.ff` rebuild:** render `milliseconds()` in a debug itemDef and compare against `gettime()`.
-  If it tracks, it's server-synced `cg.time` and the server can stamp the marker directly (trivial). If it's
-  client realtime, either find a per-round menu event or just snap the outro out (the intro is already a snap).
+- **Loadout slide-out stays a GSC dvar-animation stream — the "menu-owned free" version is RESOLVED
+  UNVIABLE** ([[menu-milliseconds-client-local-no-per-round-event]], settled 2026-07-15 with no rebuild). The
+  loadout **outro slides+fades via `gf_slideLoadout`** (the intro snaps): 1 batched command per 0.05s step for
+  0.5s = **~13 reliable commands/human/round**, the densest stream the mod emits and the only one a batch can't
+  take to zero ([[server-command-overflow-reliable-command-budget]]). ⚠ **It is kept deliberately** — the slide
+  reads better than a pop, and it fires ~8s into the round, mid-gameplay, NOT in the `map_restart(false)`
+  lobby-START stall where the reliable-command overflow actually bites (that needs a burst AND a frozen client),
+  so it is a *purity* cost, not a live-problem cost. **Why the free menu-owned path is dead:** `milliseconds()`
+  in a menu `exp` is the **CLIENT's UI-realtime clock, not server `cg.time`** (proof: `raw/ui/main.menu` scrolls
+  fog with `milliseconds() % PERIOD` *before any server connection*), so the server **cannot** stamp the start
+  marker; stock only ever stamps it **client-side** in a menu's `onOpen` (`game_summary`/AAR `exec
+  "setdvartotime"`), and our always-loaded `loadMenu` HUD has **no per-round client event** to stamp one (no
+  `onDvarChanged`; the only server→client open trigger, `openMenu`, steals input focus). ⚠ **Do NOT re-open
+  this as "unverified" or burn a `mod.ff` rebuild on the `milliseconds()`-vs-`gettime()` probe — `main.menu`
+  already answered it.** If the count ever must drop, coarsen the animation (step 0.05→0.1s halves it; shorten
+  0.5→0.3s, the fade masks the coarser stepping); snapping the outro (like the intro) is the zero-cost floor.
 - **Hybrid custom round-timer HUD:** keep the native engine-driven `MM:SS` for the normal phase, own only
   the final ≤10s (orange `S.T` tenths) via the menu layer, route OT through the same element.
 - **Mid-round late spawn / bot backfill** (designed ~25 lines, not built): let a client added mid-round
@@ -604,17 +616,20 @@ re-send configstrings (themselves reliable commands) and the bot kick-all fires 
 pushes ([[server-command-overflow-reliable-command-budget]], [[connection-interrupted-mitigations]]).
 ⚠ **A GSC dvar animation is a reliable-command STREAM** — `gf_slideLoadout` pushes one *batched* command
 per 0.05 s step for the whole duration (the 0.5 s loadout outro = **~13** commands/human/round, halved
-from 26 by batching the off+alpha pair; `gf_fadeDvar` is currently dead code — the panel reveal snaps).
-Batching is the floor here, not the fix: an animation is a stream by construction. The menu layer can
-own a time-based animation for free (`milliseconds()` in an `exp`, e.g. `ui_time_marker` +
-`exec "setdvartotime"` in stock `after_action_report.menu` / `game_summary.menu`) — **but** the menu's
-only clock is **client-local**, so a marker must be stamped *by the client* from a menu event; the
-server cannot push one in its own `gettime()` base. Unverified whether an always-loaded `loadMenu` HUD
-menu can fire such an event per round — see the open TODO.
+from 26 by batching the off+alpha pair; the intro snaps; `gf_fadeDvar` is currently dead code). ⚠ **Kept on
+purpose:** the slide reads better than a pop, and it fires ~8 s into the round, mid-gameplay — NOT in the
+`map_restart(false)` lobby-START stall where the overflow bites (a burst AND a frozen client), so it is a
+*purity* cost, not a live-problem cost. Batching is the floor here, not the fix: an animation is a stream by
+construction. The zero-cost "menu owns the animation" end-state is **RESOLVED UNVIABLE**
+([[menu-milliseconds-client-local-no-per-round-event]]): `milliseconds()` in an `exp` is the **client's
+UI-realtime clock, not server `cg.time`** (`raw/ui/main.menu` scrolls fog with it pre-connection), so the
+server can't stamp the marker; stock only stamps it client-side in a menu's `onOpen` (`exec "setdvartotime"`),
+and our always-loaded `loadMenu` HUD has no per-round client event to do so (no `onDvarChanged`; `openMenu`
+steals focus). Don't re-open it or burn a `mod.ff` probe — settled.
 
 Menu **structure** changes need a `mod.ff`
-rebuild; dvar values/positions are GSC-tunable. Intro slide/fade animations are currently disabled
-(snap-in); only the loadout outro animates. Related: [[menu-rendered-loadout-overview]],
+rebuild; dvar values/positions are GSC-tunable. The loadout intro snaps (snap-in); only the loadout outro
+animates (`gf_slideLoadout`). Related: [[menu-rendered-loadout-overview]],
 [[script-hudelem-number-oversized]]. Full ui_gf_* map → `docs/REFERENCE.md`.
 
 ### Damage scoring, friendly fire, flinch, vision
@@ -1168,7 +1183,16 @@ in-game browser name comes from the Plutonium **server key label**, not `sv_host
 `activity.json` plus the `.secured`-gated `admin.json`/`health.json`, all atomically), `GF-ConnLogger`
 (zero RCON — diffs `admin.json`), `GF-JoinNotify` (ntfy alerts), `GF-Watchdog` (short-lived, re-invoked
 every 3 min so it can't exhaust a retry budget; restarts dead tasks, recovers wedges, `map_rotate`s a
-stuck match).
+stuck match). ⚠ **`GF-Watchdog` judges the GAME server by the `plutonium-bootstrapper-win32` PROCESS +
+`admin.json` liveness, never by `GF-GameServer`'s task State** — a GSC **compile crash** (`SV_Shutdown`)
+drops the game exe while the task's `cmd.exe`/bat wrapper survives, so State reads `Running` while the
+server is DOWN. Escalation ladder in `watchdog.ps1`: **3a** kills a wedged `plutonium.exe` updater
+(bootstrapper gone, launcher up >120s) and trusts the bat to relaunch; **3b** kills a *hung* bootstrapper
+(process up, status dark >300s) and trusts the bat; **3e** is the compile-crash net — bootstrapper gone +
+status dark >300s + `GF-GameServer` still `Running` + 3a didn't act this run → clears strays and
+**Stop/Start-restarts the `GF-GameServer` task** (a fresh bat wrapper — the manual fix that worked live
+2026-07-12). 3e waits one full cycle past 3a (via `$updaterRemediatedThisRun`) so a self-healing bat gets
+first crack before the heavier task bounce ([[deploy-restart-wedges-on-plutonium-updater]]).
 
 **Muting a player (the owner's own connects).** `tools/ignore.local.json` (gitignored + `/XF`-excluded,
 so it's box-local; shared loader `tools/ignore_list.ps1`, re-read on change with no restart) lists GUIDs

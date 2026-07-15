@@ -682,8 +682,12 @@ gf_showWeaponHUD( load )
 
     wait 8;
 
-    // Slide back out + fade (off 0 -> 70, alpha 1 -> 0) over 0.5s. The intro is a snap now, so this
-    // is the only loadout animation left.
+    // Slide back out + fade (off 0 -> 70, alpha 1 -> 0) over 0.5s. This is a ~13 reliable-command/human/round
+    // stream (the densest the mod emits) — but it fires ~8s into the round, mid-gameplay, NOT in the
+    // map_restart(false) lobby-START stall where the reliable-command overflow actually bites (that needs a
+    // burst AND a frozen client). So it is a purity cost, not a live-problem cost, and the slide is worth it.
+    // The zero-cost path is a menu-owned animation (milliseconds() in an exp), blocked on the client-local-
+    // clock question — see CLAUDE.md "Menu-owned loadout slide-out animation".
     self gf_slideLoadout( 0, 70, 1, 0, 0.5 );
     self setClientDvar( "ui_gf_lo_show", 0 );
 }
