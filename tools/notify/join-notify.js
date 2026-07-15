@@ -211,7 +211,19 @@ function sendNtfy(cfg, { title, message, priority, tags }) {
 // One HTTP GET to ip-api.com per UNIQUE IP, cached for the process lifetime. A 2s
 // timeout + graceful '' fallback means a slow/down lookup never delays a push by more
 // than 2s (and never at all for a repeat IP). LAN/loopback/link-local IPs are skipped.
+// Format: "City, State 🇺🇸" — city + `region` (the short state/province code, e.g. CA)
+// + a flag emoji derived from the ISO2 `countryCode`. The flag renders in the ntfy phone
+// app (the "emoji flags don't render on Windows" caveat is a website-only concern). If
+// the country code is missing/odd, fall back to the plain country name.
 const geoCache = new Map();   // ip -> region string ('' = looked up, nothing useful)
+
+// ISO2 country code → flag emoji (two regional-indicator symbols). '' for anything not
+// exactly two ASCII letters, so a junk/absent code never emits a broken glyph.
+function ccToFlag(cc) {
+  if (!/^[A-Za-z]{2}$/.test(cc || '')) return '';
+  return cc.toUpperCase().replace(/./g, (c) => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65));
+}
+
 function geoLookup(addr) {
   return new Promise((resolve) => {
     const ip = String(addr || '').split(':')[0];
@@ -224,14 +236,19 @@ function geoLookup(addr) {
     const finish = (val) => { if (settled) return; settled = true; geoCache.set(ip, val); resolve(val); };
     let req;
     try {
-      req = http.get('http://ip-api.com/json/' + ip + '?fields=status,country,city', (res) => {
+      req = http.get('http://ip-api.com/json/' + ip + '?fields=status,country,countryCode,region,city', (res) => {
         let data = '';
         res.on('data', (c) => { data += c; });
         res.on('end', () => {
           try {
             const j = JSON.parse(data);
-            if (j && j.status === 'success') finish([j.city, j.country].filter(Boolean).join(', '));
-            else finish('');
+            if (j && j.status === 'success') {
+              const place = [j.city, j.region].filter(Boolean).join(', ');
+              const flag  = ccToFlag(j.countryCode);
+              // flag → "City, State 🇺🇸"; no flag → "City, State, Country" (name fallback).
+              finish(flag ? (place ? place + ' ' + flag : flag)
+                          : [place, j.country].filter(Boolean).join(', '));
+            } else finish('');
           } catch (_) { finish(''); }
         });
       });
@@ -252,10 +269,13 @@ function fmtDuration(ms) {
 }
 
 // region + ping → the parts appended to a JOIN alert (empty if we have neither).
+// A ping ≥ 999 is the connect-time placeholder (the client hasn't settled a real RTT
+// yet at the moment we first see it in `status`), so it's dropped rather than shown as
+// a misleading "999ms" — join alerts simply omit the ping until it's a real reading.
 function detailBits(region, ping) {
   const bits = [];
   if (region) bits.push(region);
-  if (ping != null && !isNaN(ping)) bits.push(ping + 'ms');
+  if (ping != null && !isNaN(ping) && ping < 999) bits.push(ping + 'ms');
   return bits;
 }
 

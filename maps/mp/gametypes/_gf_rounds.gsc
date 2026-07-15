@@ -524,12 +524,26 @@ gf_waitForLoadingClients()
     if ( getDvar( "gf_matchArmed" ) == "1" )
     {
         setDvar( "gf_matchArmed", "0" );
-        // Lobby->match team transfer: re-apply the arranged-teams snapshot the lobby wrote before
-        // the fast-restart. Force auto-assign so returning humans skip the team-select menu and
-        // spawn frozen in prematch; gf_applyTeamPlan then places each on their planned side (the
-        // stock switch is the harmless warmup during prematch). Bots are re-padded by the fill
-        // reconciler from gf_fill_n. Then fall through to a normal prematch -> gunfight.
+        // Lobby->match team transfer: re-apply the arranged-teams snapshot the lobby wrote before the
+        // fast-restart. forceAutoAssign makes returning humans skip the team-select menu; the seating
+        // itself happens at CONNECT via the connect-time autoassign override (level.gf_autoJoinBalance,
+        // installed every round in gf.gsc onStartGameType — it delegates to gf_autoassignPlanned while
+        // a plan is live), while each player is still spectator/dead — so the stock switch's suicide()
+        // is invisible and no player visibly dies+respawns at match start. gf_applyTeamPlan stays as a
+        // backstop (finds everyone already seated -> no-op; still heals any straggler the override
+        // missed, incl. a rare joiner in the window before gf_teamPlanEntries is parsed below). Bots
+        // are re-padded by the fill reconciler. Then fall through to a normal prematch -> gunfight.
         level.forceAutoAssign = true;
+
+        // Parse the snapshot ONCE into a level array (consume the dvar here so the NEXT lobby writes a
+        // fresh plan). Both gf_autoassignPlanned and the gf_applyTeamPlan backstop read this array. The
+        // autoassign override is already installed (gf.gsc) and reads this at connect time, so no
+        // separate install here — a re-save of level.autoassign would capture OUR override and recurse.
+        plan = getDvar( "gf_teamplan" );
+        setDvar( "gf_teamplan", "" );
+        if ( plan != "" )
+            level.gf_teamPlanEntries = strTok( plan, "," );
+
         level thread gf_applyTeamPlan();
         level thread gf_applyBotPlan();          // re-seat manually-arranged bots (fill-off); inert when gf_fill_n > 0
         return;
@@ -954,12 +968,11 @@ gf_applyTeamPlan()
 {
     level endon( "game_ended" );
 
-    plan = getDvar( "gf_teamplan" );
-    setDvar( "gf_teamplan", "" );        // consume once
-    if ( plan == "" )
+    // The gf_matchArmed branch already parsed + consumed the gf_teamplan dvar into this array (so the
+    // connect-time gf_autoassignPlanned override can share it); we are the backstop over the same plan.
+    if ( !isDefined( level.gf_teamPlanEntries ) )
         return;
-
-    entries  = strTok( plan, "," );
+    entries  = level.gf_teamPlanEntries;
     total    = entries.size;
     deadline = gettime() + 45000;        // bound: never run past the intro
 
@@ -1094,6 +1107,115 @@ gf_teamPlanLookup( entries, guid )
         return "";
     }
     return "";
+}
+
+// Connect-time autoassign override for the lobby->match transfer (installed as level.autoassign in the
+// gf_matchArmed branch, restored to stock by the next round's map_restart(true) -> SetupCallbacks).
+// Stock Callback_PlayerConnect calls [[level.autoassign]]() for every human reconnecting into the real
+// match; running here — while pers["team"] is still "spectator" and sessionstate is "dead" — lets us
+// seat the PLANNED side before the player ever spawns, so gf_applyTeamPlan finds them already correct
+// and never runs the VISIBLE prematch suicide()+respawn that flickered each player at match start.
+// Unplanned joiners, bots, and any connect after prematch fall through to the stock random autoassign.
+gf_autoassignPlanned()
+{
+    if ( !isDefined( level.gf_teamPlanEntries )
+         || self istestclient() || self isdemoclient()
+         || !( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod ) )
+    {
+        self [[level.gf_stockAutoassign]]();     // no plan / bot / past prematch -> stock behaviour
+        return;
+    }
+
+    want = gf_teamPlanLookup( level.gf_teamPlanEntries, "" + self getGuid() );
+    if ( want == "" )
+    {
+        self [[level.gf_stockAutoassign]]();     // fresh joiner not in the plan
+        return;
+    }
+    if ( want == "spectator" )
+        return;                                  // stock connect already parked them spectator
+
+    self gf_seatJoinTeam( want );
+}
+
+// Seat `self` on `want` while pre-spawn (spectator/dead), mirroring menuAutoAssign's tail
+// (_globallogic_ui.gsc) MINUS the random pick and its suicide() — the player is pre-spawn here, so no
+// kill is needed to move them, and beginClassChoice threads the (frozen, prematch) spawn straight
+// onto `want`. Shared by the lobby->match plan (gf_autoassignPlanned) and the mid-match human-balance
+// autoassign (gf_autoJoinBalance).
+gf_seatJoinTeam( want )
+{
+    self.pers["team"]       = want;
+    self.team               = want;
+    self.pers["class"]      = undefined;
+    self.class              = undefined;
+    self.pers["weapon"]     = undefined;
+    self.pers["savedmodel"] = undefined;
+    self maps\mp\gametypes\_globallogic_ui::updateObjectiveText();
+    self.sessionteam        = want;
+    if ( !isAlive( self ) )
+        self.statusicon = "hud_status_dead";
+    self notify( "joined_team" );
+    level notify( "joined_team" );
+    self notify( "end_respawn" );
+    self thread maps\mp\gametypes\_globallogic_ui::preventTeamSwitchExploit();
+    self maps\mp\gametypes\_globallogic_ui::beginClassChoice();
+}
+
+// Connect-time autoassign for a LIVE match — installed as level.autoassign every round in
+// onStartGameType (gf.gsc), saving stock's into level.gf_stockAutoassign. Two jobs, in order:
+//   1) Lobby->match transfer plan live? delegate to gf_autoassignPlanned (seats the planned side).
+//      Its own fallbacks reach level.gf_stockAutoassign = REAL stock (saved once, before this install
+//      is active), never back through here — so there is no recursion.
+//   2) Otherwise a normal mid-match human joiner: seat the fewer-HUMAN side, but ONLY when the human
+//      split is already lopsided (|allies-axis| > 1). A balanced/near-balanced split falls through to
+//      the stock team pick, so a player can still choose a side (e.g. to squad with a friend). Bots
+//      are IGNORED for this count — the reconciler evens team SIZE with bots at the round boundary;
+//      this only steers HUMANS. Suicide-free: the joiner is pre-spawn and can't spawn until the next
+//      round anyway (one-life maySpawn), so seating them now costs no death.
+// Dev/main only — the install in gf.gsc is strip-wrapped; the public build keeps stock autoassign.
+gf_autoJoinBalance()
+{
+    if ( self istestclient() || self isdemoclient() )
+    {
+        self [[level.gf_stockAutoassign]]();
+        return;
+    }
+    if ( isDefined( level.gf_teamPlanEntries ) )
+    {
+        self gf_autoassignPlanned();
+        return;
+    }
+
+    ha = 0;
+    hx = 0;
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( !isDefined( p ) || p == self || p istestclient() || p isdemoclient() )
+            continue;
+        if ( !isDefined( p.pers["team"] ) )
+            continue;
+        if ( p.pers["team"] == "allies" )
+            ha++;
+        else if ( p.pers["team"] == "axis" )
+            hx++;
+    }
+
+    diff = ha - hx;
+    if ( diff < 0 )
+        diff = hx - ha;                              // abs without unary minus
+    if ( diff <= 1 )                                 // balanced enough — let the player pick a side
+    {
+        self [[level.gf_stockAutoassign]]();
+        return;
+    }
+
+    want = "axis";
+    if ( hx > ha )
+        want = "allies";
+    self gf_seatJoinTeam( want );                    // seat the lighter HUMAN side (pre-spawn, no kill)
 }
 
 // Apply a planned team to self during prematch. Mirrors the bridge's gf_applyTeamMove but is

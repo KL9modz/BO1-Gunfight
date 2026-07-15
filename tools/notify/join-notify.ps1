@@ -176,7 +176,22 @@ function Send-Ntfy($cfg, $title, $message, $priority, $tags) {
 # One HTTP GET to ip-api.com per UNIQUE IP, cached for the process lifetime. 2s timeout
 # + graceful '' fallback: a slow/down lookup never delays a push by more than 2s (and
 # never at all for a repeat IP). LAN/loopback/link-local IPs are skipped.
+# Format: "City, State <flag>" — city + `region` (the short state/province code, e.g. CA)
+# + a flag emoji from the ISO2 `countryCode`. The flag renders in the ntfy phone app (the
+# "emoji flags don't render on Windows" caveat is website-only); Send-Ntfy already UTF-8
+# encodes the body. If the country code is missing/odd, fall back to the plain country name.
 $script:geoCache = @{}
+
+# ISO2 country code -> flag emoji (two regional-indicator symbols, each a 4-byte code point
+# built via a surrogate pair). '' for anything not exactly two ASCII letters.
+function CC-ToFlag($cc) {
+  $u = [string]$cc
+  if ($u -notmatch '^[A-Za-z]{2}$') { return '' }
+  $u = $u.ToUpper()
+  return [char]::ConvertFromUtf32(0x1F1E6 + ([int][char]$u[0] - 65)) + `
+         [char]::ConvertFromUtf32(0x1F1E6 + ([int][char]$u[1] - 65))
+}
+
 function Get-Region($addr) {
   $ip = ([string]$addr).Split(':')[0]
   if (-not $ip -or $ip -eq 'unknown') { return '' }
@@ -184,10 +199,15 @@ function Get-Region($addr) {
   if ($script:geoCache.ContainsKey($ip)) { return $script:geoCache[$ip] }
   $region = ''
   try {
-    $r = Invoke-RestMethod -UseBasicParsing -TimeoutSec 2 -Uri "http://ip-api.com/json/${ip}?fields=status,country,city"
+    $r = Invoke-RestMethod -UseBasicParsing -TimeoutSec 2 -Uri "http://ip-api.com/json/${ip}?fields=status,country,countryCode,region,city"
     if ($r.status -eq 'success') {
-      $parts = @($r.city, $r.country | Where-Object { $_ })
-      $region = ($parts -join ', ')
+      $place = (@($r.city, $r.region | Where-Object { $_ }) -join ', ')
+      $flag  = CC-ToFlag $r.countryCode
+      if ($flag) {                                   # "City, State <flag>"
+        if ($place) { $region = "$place $flag" } else { $region = $flag }
+      } else {                                       # no flag -> "City, State, Country"
+        $region = (@($place, $r.country | Where-Object { $_ }) -join ', ')
+      }
     }
   } catch { $region = '' }
   $script:geoCache[$ip] = $region
@@ -205,10 +225,13 @@ function Format-Duration($ms) {
 }
 
 # region + ping -> parts appended to a JOIN alert (empty array if we have neither).
+# A ping >= 999 is the connect-time placeholder (no real RTT settled yet at the moment we
+# first see the joiner in `status`), so it's dropped rather than shown as a misleading
+# "999ms" — join alerts simply omit the ping until it's a real reading.
 function Get-DetailBits($region, $ping) {
   $bits = New-Object System.Collections.ArrayList
   if ($region) { [void]$bits.Add([string]$region) }
-  if ($null -ne $ping) { [void]$bits.Add("${ping}ms") }
+  if ($null -ne $ping -and $ping -lt 999) { [void]$bits.Add("${ping}ms") }
   return $bits
 }
 function Get-JoinDetail($region, $ping) {

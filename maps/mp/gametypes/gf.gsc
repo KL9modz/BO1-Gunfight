@@ -287,6 +287,16 @@ onStartGameType()
     level.maySpawn = ::gf_lobbyMaySpawn;
     // #strip-end
 
+    // #strip-begin - mid-match human-balance autoassign (dev/main only; public keeps stock autoassign)
+    // Seat a mid-match human joiner on the fewer-HUMAN side when the split is lopsided (|A-X| > 1),
+    // and act as the single delegate for the lobby->match transfer plan. SetupCallbacks() (called from
+    // main() every round, before onStartGameType) has just reset level.autoassign to stock, so saving
+    // it here captures the REAL stock fn ONCE — every fallback path (incl. gf_autoassignPlanned's)
+    // lands on stock, never back through our override. Re-installed each round (map_restart wipes it).
+    level.gf_stockAutoassign = level.autoassign;
+    level.autoassign         = maps\mp\gametypes\_gf_rounds::gf_autoJoinBalance;
+    // #strip-end
+
     gf_registerLoadoutCycleDvar(); // also sets level.gf_cfg_roundsPerLoadout
     gf_registerOvertimeLimitDvar(); // also sets level.gf_cfg_overtimeLimit
     gf_initDamageScoring(); // relies on level.gf_cfg_roundsPerLoadout

@@ -322,12 +322,14 @@ gf_bridgeTelemetry()
         if ( isDefined( level.gf_inLobbyHold ) && level.gf_inLobbyHold )
             hold = 1;
 
-        // Fields 8-11: dynamic-fill telemetry so the panel shows the live fill state. fillN is
-        // the per-team target (gf_fill_n); pAllies/pAxis are the current PLAYING counts (humans+
-        // bots) per side; parked is the count of bots benched in spectator for reuse. Computed
-        // from the reconciler's own classifier so the panel matches exactly what the fill sees.
-        // All appended (index-based parse), so older panels ignore them.
-        fillN  = maps\mp\gametypes\_bot::gf_fillTarget();   // CLAMPED (0-6) — echo what the fill actually uses, not a raw out-of-range dvar
+        // Fields 8-11: dynamic-fill telemetry so the panel shows the live fill state. fillN is the
+        // configured FLOOR (gf_fill_n, clamped) — the panel seeds its input from this, so it must be
+        // the dvar, NOT the effective size (gf_teamSizeTarget); the live composition is already shown
+        // by pAllies/pAxis (the current PLAYING counts, humans+bots, per side). parked is the count of
+        // bots benched in spectator for reuse. Computed from the reconciler's own classifier so the
+        // panel matches exactly what the fill sees. All appended (index-based parse), so older panels
+        // ignore them.
+        fillN  = maps\mp\gametypes\_bot::gf_fillTarget();   // CLAMPED floor (0-6) — the configured min, what the panel input seeds from
         fc     = maps\mp\gametypes\_bot::gf_reconcileCount();
         pAll   = fc["allies_human"] + fc["allies_bot"];
         pAxi   = fc["axis_human"]   + fc["axis_bot"];

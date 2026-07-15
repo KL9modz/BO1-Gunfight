@@ -514,11 +514,14 @@ function showCtx(e,num,name,isBot){
     <div class="ctx-item" onclick="ctxAction('pperkdump')">Dump Perks (read)</div>
     ${noclipItem}${ipItems}${adminItem}`;
   m.style.display='block';
-  // Position near cursor, keep in viewport
+  // Position near cursor, keep in viewport. Measure the REAL rendered size (the menu is already
+  // display:block) instead of guessing a height — the player menu's item count varies (IP/admin/noclip
+  // rows are conditional) and a hardcoded estimate let a tall menu spill past the bottom edge.
   const vw=window.innerWidth,vh=window.innerHeight;
+  const mw=m.offsetWidth,mh=m.offsetHeight;
   let lft=e.clientX+4,top=e.clientY+4;
-  if(lft+170>vw) lft=e.clientX-174;
-  if(top+360>vh) top=Math.max(4,vh-364);
+  if(lft+mw>vw) lft=Math.max(4,e.clientX-mw-4);
+  if(top+mh>vh) top=Math.max(4,vh-mh-4);
   m.style.left=lft+'px';m.style.top=top+'px';
 }
 async function ctxAction(act,ev){
@@ -869,10 +872,13 @@ function showRowCtx(e,row){
     + (ctls.length ? `<div class="ctx-item yellow" onclick="rowCtxAction('reset')">↺ Reset to default${def!==''?' ('+x(def)+')':''}</div>`
                    : `<div class="ctx-item cur">↺ Reset to default <span style="opacity:.6">— n/a</span></div>`);
   m.style.display='block';
+  // Measure the real rendered size (menu is already display:block) rather than guess — keeps the
+  // menu on screen regardless of item count.
   const vw=window.innerWidth,vh=window.innerHeight;
+  const mw=m.offsetWidth,mh=m.offsetHeight;
   let lft=e.clientX+4, top=e.clientY+4;
-  if(lft+210>vw) lft=Math.max(4,e.clientX-214);
-  if(top+140>vh) top=Math.max(4,vh-144);
+  if(lft+mw>vw) lft=Math.max(4,e.clientX-mw-4);
+  if(top+mh>vh) top=Math.max(4,vh-mh-4);
   m.style.left=lft+'px'; m.style.top=top+'px';
 }
 async function rowCtxAction(act){
@@ -1326,7 +1332,7 @@ async function applyFillN(){
   const n=Math.max(0,Math.min(6,parseInt(g('vFillN').value)||0));
   g('vFillN').value=n;
   const r=await rcon(`set gf_fill_n ${n}`);
-  const lbl=n>0?(n+'v'+n):'off';
+  const lbl=n>0?('min '+n+'v'+n):'off';   // gf_fill_n is a FLOOR — humans can push the size higher
   r.ok?(actLog('Fill → '+lbl,'ok'),toast('Fill → '+lbl,'ok')):toast('Failed','err');
 }
 // Reflect live fill state (from gf_state fields 8-11) in the BOT MANAGEMENT readout, and seed the
@@ -1337,7 +1343,7 @@ function updateFillReadout(s){
   const inp=g('vFillN');
   if(inp && document.activeElement!==inp) inp.value=s.fillN;
   el.textContent = s.fillN<=0 ? 'off'
-    : `${s.fillN}v${s.fillN} · now ${s.playAllies}v${s.playAxis}`+(s.parked?` · ${s.parked} parked`:'');
+    : `min ${s.fillN}v${s.fillN} · now ${s.playAllies}v${s.playAxis}`+(s.parked?` · ${s.parked} parked`:'');
 }
 // Even out the teams via the GSC bridge. Server-side pick (bots first) + safe apply (immediate in
 // prematch/lobby, deferred to next round mid-round). Feedback is the private bridge notify in-game.
@@ -1574,6 +1580,16 @@ function su(vid,sid,mn,mx){
 async function resetDv(dv,def,vid,sid){
   g(vid).value=def;g(sid).value=def;
   await sdvv(dv,def);
+}
+// Movement preset — low-gravity float. Jump is the slider's actual max (1000); g_speed and
+// bg_gravity are plain server dvars a raw rcon `set` writes fine on the dedicated box.
+async function moonMode(){
+  const p=[['g_speed',220,'vSpeed','sSpeed'],['bg_gravity',600,'vGrav','sGrav'],
+           ['jump_height',1000,'vJump','sJump']];
+  for(const[,v,vid,sid]of p){g(vid).value=v;g(sid).value=v;}
+  const r=await batchCmds(p.map(([dv,v])=>`set ${dv} ${v}`),50);
+  r&&r.ok?(toast('Moon Mode on','ok'),actLog('Moon Mode: speed 220 / grav 600 / jump 1000','ok'))
+         :toast('Moon Mode failed','err');
 }
 async function visBridge(prefix,vid){
   const v=g(vid).value;

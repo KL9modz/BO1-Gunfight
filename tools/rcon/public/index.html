@@ -162,7 +162,7 @@
       <button class="b-gh b-sm ctrl" onclick="botTeam('add','axis')">＋</button>
       <button class="b-gh b-sm ctrl" onclick="botTeam('kick','axis')">－</button>
     </div>
-    <div class="srow" data-tip="gf_fill_n — ROUND-BOUNDARY FILL (per team)&#10;Pads each side to exactly N players (humans+bots) at every ROUND BOUNDARY. Mid-round joins/leaves (and this setting) take effect at the next round start — bots never move mid-round. Humans are NEVER moved. Displaced bots park in spectator for reuse (kicked under slot pressure). Survives map restart AND the lobby fast-restart.&#10;0 = OFF (manual bot control sticks)."><span class="slbl">Fill (per team)</span>
+    <div class="srow" data-tip="gf_fill_n — ROUND-BOUNDARY FILL: MINIMUM team size (a floor)&#10;NOT a hard target. Each side is padded to max(bigger human team, N) at every ROUND BOUNDARY, so HUMANS define the size and bots only top up: a full human lobby runs bot-free (4 humans = 2v2, 0 bots; 8 = 4v4, 0 bots), an odd split rounds UP to an even team (3 humans = 2v2 with 1 bot; 5 = 3v3), and a sparse lobby fills to this floor (1 human, N=2 = 2v2 with 3 bots). Teams are always even. Mid-round joins/leaves (and this setting) take effect at the next round start — bots never move mid-round. Humans are NEVER auto-moved. Mid-match human joiners are auto-seated on the fewer-HUMAN side when teams are lopsided. Displaced bots park in spectator for reuse (kicked under slot pressure). Survives map restart AND the lobby fast-restart.&#10;0 = OFF (manual bot control sticks)."><span class="slbl">Fill (min size)</span>
       <input id="vFillN" class="num ctrl" type="number" value="0" min="0" max="6">
       <button class="b-ac b-sm ctrl" onclick="applyFillN()">Apply</button>
       <span class="shint" id="fillReadout">off</span></div>
@@ -323,7 +323,8 @@
   <div id="adv-start-body" class="flow"></div>
 
   <div class="block" data-eff="live" data-per="dvar">
-    <div class="btitle">MOVEMENT  <span style="font-weight:400;font-size:10px;color:var(--dm)">affects all players</span></div>
+    <div class="btitle">MOVEMENT  <span style="font-weight:400;font-size:10px;color:var(--dm)">affects all players</span>
+      <button class="b-gh b-sm ctrl" style="float:right" data-tip="Moon Mode&#10;Low-gravity float: Move Speed 220, Gravity 600, Jump Height at max (1000). Sets all three live and syncs the sliders. Use ↺ on each row (or restore Gravity 800 / Speed 190 / Jump 39) to revert." onclick="moonMode()">🌙 Moon Mode</button></div>
     <div class="slider-row">
       <span class="slbl" style="min-width:120px">Move Speed</span>
       <input type="range" id="sSpeed" min="50" max="500" value="190" oninput="sv('sSpeed','vSpeed')" onchange="sdvv('g_speed',this.value)" class="ctrl">

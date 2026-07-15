@@ -27,9 +27,11 @@ The "server now active" alert comes through at **high** priority so it cuts thro
 Disturb; the heartbeat is **min** priority so it lands silently as a health check.
 
 **Details in each alert:** every message carries the current `map / gametype`. A **join**
-alert also adds the player's **region** (city, country — geolocated from their IP) and
-**ping** on a second line, e.g. `Berlin, Germany  |  84ms`. A **leave** alert reports how
-long they were on, e.g. `PlayerX left after 34m 10s`.
+alert also adds the player's **region** (city, state, and a country flag emoji — geolocated
+from their IP) and **ping** on a second line, e.g. `San Diego, CA 🇺🇸  |  84ms`. The ping is
+omitted when it's still the connect-time placeholder (999), so a fresh joiner's line is often
+just the region. A **leave** alert reports how long they were on, e.g. `PlayerX left after
+34m 10s`.
 
 > **Region lookup** is one HTTP GET to `ip-api.com` per unique IP, cached for the process
 > lifetime with a 2s timeout — so it never delays a push by more than 2s, and not at all for
@@ -119,7 +121,7 @@ Unregister-ScheduledTask -TaskName "GF Join Notifier" -Confirm:$false
 | `heartbeatMins` | `GF_HEARTBEAT_MINS` | `0` | Minutes between silent "still alive — N online" pushes; `0` = off |
 | `serverName` | `GF_SERVER_NAME` | `Gunfight` | Shown in the push title |
 | `quietStart` | `GF_QUIET_START` | `false` | Skip the "notifier online" push at launch |
-| `geoLookup` | `GF_GEO_LOOKUP` | `true` | Add region (city, country) to join alerts via `ip-api.com`; `false` = off (no third-party IP lookup) |
+| `geoLookup` | `GF_GEO_LOOKUP` | `true` | Add region (city, state, country flag) to join alerts via `ip-api.com`; `false` = off (no third-party IP lookup) |
 
 **Currently deployed on the VPS:** topic `gunfight`, `notifyLeaves`/`notifyFirstJoin`/
 `notifyEmpty` on, `heartbeatMins` 60. Running as scheduled task "GF Join Notifier".

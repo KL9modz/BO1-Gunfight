@@ -65,7 +65,15 @@ wins** takes the match.
 - **Mod may still change some client settings** — the r_* vis-tweak force-push was removed; confirm
   nothing else writes a saved client dvar.
 - **Democlient round-cam lag.**
-- **Start music is killed by the ambient map music.**
+- **Round-1 intro sting may clip if GF's long spawn sting overruns stock's per-player `wait 15` —
+  UNTESTED.** Music is **100% stock** (a `level.nextMusicState` + level-wide `prematch_over` underscore
+  push was written and **reverted** — driving the bed level-wide clips late joiners). The engine's native
+  timing is **per-player self-relative** (`sndStartMusicSystem`, threaded on `self` at each player's own
+  first spawn → the underscore starts a fixed 15s after *that* player's sting) and is late-joiner-safe by
+  construction; sting + bed are the **same composition**, so the seam is pure timing, not a crossfade.
+  **Test by ear:** does an on-time intro get cut before it resolves? If yes, GF's long sting > 15s — fix by
+  keeping the **per-player** model and bumping the offset (per-player `wait N` from each spawn), **never**
+  going level-wide. ([[intro-sting-killed-by-underscore-shared-channel]])
 - **Minimap compass doesn't show wager (zoomed) size on some DLC maps** — inherent to the resident-art
   whitelist excluding First Strike/Escalation maps.
 - **SECURITY:** rotate the leaked RCON password (VPS `dedicated.cfg`) + the exposed Plutonium server key.
@@ -487,12 +495,30 @@ killstreak names — those fire the "called-in" announcer + holster-lock), the `
 ### Dynamic bot fill + team management
 **One round-boundary reconciler** (`gf_reconcilerInit` in `_bot.gsc`, dev-only) is the single authority
 over bot counts and placement; BotWarfare's own managers (`addBots`/`teamBots`/`doNonDediBots`) are
-**deleted**. `gf_fill_n` = **per-team target N** (`3` → 3v3): each side is padded to exactly N *playing*
-clients (humans+bots) at **each round start**, and **bots absorb all variance**. **Humans are never
-auto-moved** (if humans on a side exceed N, that side's bots go to 0 and it stays big while the other
-side still fills). Mid-round roster changes (and fill-N changes) are deliberately ignored until the next
-boundary — worst case one ~45s round. `gf_fill_n 0` = reconciler inert — the mode in which manual
-per-team bot add/kick/move sticks (with fill on, a manual move lasts at most until the round ends).
+**deleted**. **`gf_fill_n` is a MINIMUM team size (a FLOOR), not a hard target** — the reconciler pads
+**both** sides to `T = max(bigger human side, gf_fill_n)` at **each round start**, so **humans define the
+size and bots only top up**: a full human lobby runs bot-free (4 humans → **2v2, 0 bots**; 8 → **4v4, 0
+bots**), an odd split rounds **up** to an even team (`gf_teamSizeTarget`, so 3 humans → 2v2 with one bot,
+5 → 3v3), and a sparse lobby fills to the floor (1 human, floor 2 → 2v2 with 3 bots). **Bots absorb all
+variance** and **humans are never auto-moved** (a lopsided-but-never-moved human roster still gets an even
+*size* — the short side fills with bots; e.g. 4 humans stacked one side → the other fills to 4v4). Mid-round
+roster changes (and fill-N changes) are deliberately ignored until the next boundary — worst case one ~45s
+round. `gf_fill_n 0` = reconciler inert — the mode in which manual per-team bot add/kick/move sticks (with
+fill on, a manual move lasts at most until the round ends). ⚠ The old "pad both sides to a fixed N
+regardless of the human split" behavior — and its "extra bots on both sides even when humans could just
+play each other" side effect — is retired.
+
+**Human balancing (new-joiner steering).** A **mid-match human joiner** is auto-seated on the fewer-**human**
+side, but **only when the human split is already lopsided (`|allies − axis| > 1`)** — a balanced/near-balanced
+split falls through to the stock team pick so a player can still choose a side (e.g. to squad with a friend).
+This is the `level.autoassign = gf_autoJoinBalance` override (`_gf_rounds.gsc`, installed every round in
+`gf.gsc onStartGameType`, saving stock into `level.gf_stockAutoassign`). It **ignores bots** (the reconciler
+evens team *size* with bots at the boundary; the override only steers *humans*) and is **suicide-free** — the
+joiner is pre-spawn and can't spawn until the next round anyway (one-life `maySpawn`), so seating them costs no
+death. ⚠ It is also the **single delegate for the lobby→match transfer plan**: when `level.gf_teamPlanEntries`
+is live it hands off to `gf_autoassignPlanned` (whose fallbacks reach the saved *real* stock — never back
+through the override, so **no recursion**). This is why the `gf_matchArmed` branch no longer installs its own
+autoassign override — a second save there would capture `gf_autoJoinBalance` as "stock" and recurse.
 
 **Boundary-only = suicide-free + overshoot-free by construction.** ONE yield-free `gf_boundaryPass` per
 round, triggered by: `gf_round_over` +0.5s (inside the killcam, where every eliminated bot is already
@@ -758,6 +784,24 @@ rebuild; dvar values/positions are GSC-tunable. Intro slide/fade animations are 
   and **unreliable on dedicated**, which is exactly why the look lever above is `visionSetNaked` and
   not r_* ([[rcon-dedicated-dvar-push-limits]]). RCON-only, stripped from public builds. `r_gamma` is a
   saved client dvar Plutonium blocks.
+- **Round-1 intro music is 100% stock — do NOT own it, and NEVER drive the underscore level-wide.** The
+  whole MP music system is a **single shared client channel** (`_music::setMusicState` → one `musicCmd`
+  client-system state), so anything set on it *replaces* rather than layers. The round-1 spawn sting
+  (`game["music"]["spawn_<team>"]`, a long match-start piece in `mus/mp/spawn/long/`) and its ambient bed
+  (`mus_underscore`) are the **same composition** (e.g. `Chopperintro_spawn_long` → `Chopperintro_underscore`,
+  matched per map by `loadspec`), so the intro *resolves into its own loop* — there is no alias crossfade
+  (`template MUS_NORMAL_2D` has empty `fade_in`/`fade_out`); the seam is pure **timing**. Stock nails that
+  timing by being **per-player and self-relative**: `sndStartMusicSystem` is threaded on `self` at each
+  player's **own first spawn** (`_globallogic_spawn.gsc:100`) and does `wait 15; self
+  set_music_on_player("UNDERSCORE")` — so every player's bed starts a fixed 15s after *their own* sting,
+  and a late joiner's is delayed exactly as much as their sting was. It can never land mid-sting for
+  anyone. ⚠ **A level-wide push (all players at `prematch_over`, or any global timer) breaks exactly this**
+  — it synchronizes the hand-off to one wall-clock moment and guillotines whoever spawned late. A
+  `level.nextMusicState` + `prematch_over` "fix" was written and reverted for this reason. The one real
+  limitation: stock's `wait 15` is a fixed floor (never earlier than 15s post-spawn, no "sting done"
+  callback exists), so it's only perfect when the sting ≈15s — a gap if shorter, a clip if the long sting
+  overruns 15s. If a clip ever needs fixing, keep stock's **per-player self-relative** model and bump the
+  offset (per-player `wait N` from each spawn); never go level-wide. ([[intro-sting-killed-by-underscore-shared-channel]])
 - **Headshots-only** (`level.gf_headshotsOnly`) is a dev-bridge flag, off/undefined in public builds.
 
 ### Spawns & wager map zone
@@ -910,7 +954,7 @@ tables → `docs/REFERENCE.md`.
 **Bots** (dev-only reconciler)
 | dvar | default | meaning |
 |---|---|---|
-| `gf_fill_n` | 0 | Per-team fill target N (3 = 3v3); **0 = reconciler inert** (manual bot control sticks). Clamp 0-6. |
+| `gf_fill_n` | 0 | **Minimum team size (a FLOOR), not a hard target.** The reconciler pads both sides to `max(bigger human side, gf_fill_n)`, so humans define the size and bots only top up (4 humans → 2v2, 0 bots; 3 → 2v2 with 1 bot; 1 → fills to the floor). Even teams always; **0 = reconciler inert** (manual bot control sticks). Clamp 0-6. |
 | `gf_fill_kick_floor` | 2 | Client slots kept free for humans; a parked bot is kicked once total ≥ `sv_maxclients − this`. |
 | `bot_difficulty` | fu | BotWarfare AI difficulty (easy/normal/hard/fu). Seeded if-empty in `gf.gsc` (a `dedicated.cfg` value or a live panel `botdiff_*` wins); `_bot::diffBots` re-applies the preset from it every 1.5s. |
 

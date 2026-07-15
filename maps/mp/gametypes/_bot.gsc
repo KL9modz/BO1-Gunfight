@@ -403,6 +403,13 @@ gf_boundaryPass()
 	gf_clearAllParkPending();            // recompute deferred parks fresh from THIS roster
 	c = gf_reconcileCount();
 
+	// Human-driven size: pad both sides to max(bigger human team, floor). `n` held the floor from
+	// gf_fillTarget() above; this raises it to cover the humans so a full human lobby needs no bots
+	// and a lopsided-but-never-moved human roster still gets an EVEN team size (bots fill the short
+	// side). Everything below (park surplus bots -> spectator, deploy deficit, kick excess) already
+	// enforces this size symmetrically, so this one line is the whole policy change.
+	n = gf_teamSizeTarget(c, n);
+
 	maxClients = getDvarInt("sv_maxclients");
 	if(maxClients < 1) maxClients = 18;
 	ceiling = maxClients - gf_fillKickFloor();
@@ -632,13 +639,32 @@ gf_clearAllParkPending()
 	}
 }
 
-// Per-team fill target N (clamped 0-6). 0 = fill off.
+// Per-team fill FLOOR (clamped 0-6). 0 = fill off (reconciler inert, manual bot control sticks).
+// This is no longer a HARD target — see gf_teamSizeTarget(): humans define the actual size and bots
+// only top up. gf_fill_n is the SMALLEST team the reconciler will maintain with bots.
 gf_fillTarget()
 {
 	n = getDvarInt("gf_fill_n");
 	if(n < 0) n = 0;
 	if(n > 6) n = 6;
 	return n;
+}
+
+// The per-team size the reconciler pads BOTH sides to (so teams stay EVEN). gf_fill_n is a FLOOR,
+// not a hard target: the size tracks the bigger human side, so a full human lobby (e.g. 4v4) runs
+// with ZERO bots and an odd split (3 humans) rounds UP to an even 2v2 with a single bot. Bots only
+// top up the deficit below this. Not clamped by the 0-6 bot clamp — humans set the ceiling here; the
+// bots actually ADDED are still bounded by the client ceiling in gf_boundaryPass's deploy loop.
+// `floor` is gf_fillTarget() (already > 0 when this is reached — the caller returns early at 0).
+gf_teamSizeTarget(c, floor)
+{
+	humanMax = c["allies_human"];
+	if(c["axis_human"] > humanMax)
+		humanMax = c["axis_human"];
+	t = humanMax;
+	if(floor > t)
+		t = floor;
+	return t;
 }
 
 // Client-slot headroom to keep free for humans (>=0).
