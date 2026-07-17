@@ -412,7 +412,7 @@ gf_nativePrematchTicker()
 // everyone simultaneously. Match's first round only: between-round map_restarts
 // re-begin in ~1-2s and the roster spawn gate already covers those.
 //
-// Bounds: scr_gf_load_wait = ceiling in seconds (default 10; 0 = gate off,
+// Bounds: scr_gf_load_wait = ceiling in seconds (default 20; 0 = gate off,
 // clamped <=120), plus a 3s arrival floor so an early poll that runs before the
 // engine has delivered the first connect callbacks can't wave the gate through.
 // The floor is unconditional once the gate is armed, so a non-zero default costs
@@ -447,7 +447,7 @@ gf_armLoadGate()
     // lobby (scr_gf_lobby = Auto/Manual). The tracker snapshot feeds all — the min-players
     // count includes still-loading humans, which only the tracker can see (pre-begin clients
     // aren't in level.players).
-    loadOn  = ( gf_cfgFloat( "scr_gf_load_wait", 10, 0, 120 ) > 0 );
+    loadOn  = ( gf_cfgFloat( "scr_gf_load_wait", 20, 0, 120 ) > 0 );
     minOn   = ( int( gf_cfgFloat( "scr_gf_min_players", 1, 1, 8 ) ) > 1 );
     lobbyOn = ( int( gf_cfgFloat( "scr_gf_lobby", 0, 0, 2 ) ) >= 1 );   // Auto or Manual
     if ( !loadOn && !minOn && !lobbyOn )
@@ -567,7 +567,7 @@ gf_waitForLoadingClients()
     // All are match-start only (the roundsplayed guard above). The min-players count
     // reads the tracker snapshot (humans, computed in the loop) so it includes
     // still-loading humans — a loader still counts as "here".
-    loadWait    = gf_cfgFloat( "scr_gf_load_wait", 10, 0, 120 );
+    loadWait    = gf_cfgFloat( "scr_gf_load_wait", 20, 0, 120 );
     minP        = int( gf_cfgFloat( "scr_gf_min_players", 1, 1, 8 ) );
     lobby       = int( gf_cfgFloat( "scr_gf_lobby", 0, 0, 2 ) );   // 0 = Normal (default), 1 = Auto lobby, 2 = Manual lobby
     restartMode = ( lobby >= 1 );   // Auto/Manual do the fast map_restart(false) on release

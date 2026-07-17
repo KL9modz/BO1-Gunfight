@@ -502,7 +502,8 @@ roll at give time). `gf_initLoadouts` builds a **53-entry** hand-authored pool o
 (`game["gf_init"]` gate), Fisher-Yates shuffles it, stores it in `game["gf_pool"]`. Delivery is the
 **`level.giveCustomLoadout = ::gf_giveCustomLoadout` hook** — stock `_class::giveLoadout` calls it during
 the spawn's loadout build, so there's no `takeAllWeapons` overwrite race (`level.onGiveLoadout` does not
-exist in T5). Base perks: Lightweight (+no-fall-damage), Marathon, Flak Jacket, flash/stun resist. Fast
+exist in T5). Base perks: no-fall-damage (Lightweight Pro — the speed half `movefaster` is deliberately
+**not** granted, the +7% made 42s rounds twitchy), Marathon, Flak Jacket, flash/stun resist. Fast
 weapon switch is **not** in the base set (admins add it via `gf_perk_on`).
 
 Per-slot camo via `CalcWeaponOptions` (primary + independent secondary); rolled once at pool build.
@@ -766,12 +767,13 @@ animates (`gf_slideLoadout`). Related: [[menu-rendered-loadout-overview]],
   ([[flinch-bg-viewkickscale-not-replicated]])
 - ⚠ **Every `perk_*` dvar is a MAGNITUDE; the matching `specialty_*` perk is its GATE.** The engine (or
   `_class.gsc`) only consults the dvar for a player who **has** the perk — they never "fight", but a
-  slider whose gate nobody holds is a **dead control that silently does nothing**. Scopes: `perk_speedMultiplier`
-  (Lightweight), `perk_sprintMultiplier` (Marathon) and **`perk_weapMeleeMultiplier`** (Steady Aim Pro's
+  slider whose gate nobody holds is a **dead control that silently does nothing**. Scopes:
+  `perk_sprintMultiplier` (Marathon) and **`perk_weapMeleeMultiplier`** (Steady Aim Pro's
   `fastmeleerecovery`) are **BASE** — live for everyone. `perk_weapSwitchMultiplier` / `_weapReloadMultiplier` /
   `_sprintRecoveryMultiplier` / `_weapSpreadMultiplier` are **SNIPER/HEAVY only** (10 of 53 rounds).
-  **`perk_weapRateMultiplier` is DEAD** (gate `specialty_rof`, granted by nobody), and **`perk_weapAdsMultiplier`
-  is DEAD** for the reason below.
+  **`perk_speedMultiplier` is DEAD by default** (gate `movefaster` no longer in the base set — opt back in
+  via `gf_perk_on`), **`perk_weapRateMultiplier` is DEAD** (gate `specialty_rof`, granted by nobody), and
+  **`perk_weapAdsMultiplier` is DEAD** for the reason below.
 - ⚠⚠ **A `perk_*` multiplier's REGISTERED DEFAULT *is* the perk's effect — and `1.0` is NOT "stock", it is
   the WORST value.** Live-read defaults: `weapReload`/`weapAds`/`weapSwitch`/`weapMelee` **0.5**,
   `weapSpread` **0.65**, `weapRate` **0.75**, `sprintRecovery` **0.6** — all with a domain that **CAPS AT 1**.
@@ -1041,7 +1043,7 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_match_prematch_seconds` / `scr_gf_prematch_seconds` | 20 / 7 | Native prematch countdown length: first round / later rounds. |
 | `scr_gf_min_players` | 1 | Min **humans** to start (1 = off); a release condition on the pre-prematch hold. |
 | `scr_gf_minplayers_timer` | 0 | Min-players "start anyway" ceiling (s); **0 = never auto-start**. |
-| `scr_gf_load_wait` | 10 | Max s to hold the prematch for still-loading clients — a **ceiling**, not a duration (releases the moment the last loader is off its loading screen). `0` = off. ⚠ Any non-zero value **arms the hold**, and the 3s arrival floor is then unconditional: every match start pays 3s even with nobody loading (the floor exists so a poll running before the engine has delivered the first connect callbacks can't wave the gate through on an empty tracker). |
+| `scr_gf_load_wait` | 20 | Max s to hold the prematch for still-loading clients — a **ceiling**, not a duration (releases the moment the last loader is off its loading screen). `0` = off. ⚠ Any non-zero value **arms the hold**, and the 3s arrival floor is then unconditional: every match start pays 3s even with nobody loading (the floor exists so a poll running before the engine has delivered the first connect callbacks can't wave the gate through on an empty tracker). |
 | `scr_gf_load_grace` | 20 | s past prematch_over to keep round-1 grace open for a straggler loader (0 = off). |
 | `scr_gf_lobby` | 0 | Match Start: **0 Normal** / **1 Auto** / **2 Manual** (Auto/Manual fast-restart via `map_restart(false)`). |
 | `scr_gf_lobby_timer` | 600 | Manual-lobby auto-start ceiling (s); 0 = never auto-start. |
@@ -1489,8 +1491,10 @@ We call it **"Body Armor"**, named for its effect — do **not** give it a BO1-s
 suits a 42s round) — accept that headshots bypass it, so they are worth proportionally more and both
 score (= damage dealt) and the most-HP-wins decision tilt toward them. Real Flak Jacket is
 `specialty_flakjacket` (explosives; also granted); its Pro is `specialty_fireproof` (not granted).
-**GF's base set (10, every spawn, `gf_giveCustomLoadout`):** `movefaster` + `fallheight` (Lightweight +
-Pro), `longersprint` + `unlimitedsprint` (Marathon + Pro), `armorvest` (Body Armor, above), `flakjacket`
+**GF's base set (9, every spawn, `gf_giveCustomLoadout`):** `fallheight` (Lightweight Pro — the speed
+half `movefaster` is deliberately NOT granted: +7% made the 42s rounds twitchy; `perk_speedMultiplier`
+reaches nobody unless an admin opts it back in via `gf_perk_on`),
+`longersprint` + `unlimitedsprint` (Marathon + Pro), `armorvest` (Body Armor, above), `flakjacket`
 (Flak Jacket), `shades` + `stunprotection` (Tactical Mask Pro's two halves), `loudenemies` (Ninja Pro's
 "enemies are louder" half), `fastmeleerecovery` (Steady Aim Pro's melee half — *"recovery rate after
 lunging with knife is reduced"*). **Five Pros are granted without their base perk** — that's the

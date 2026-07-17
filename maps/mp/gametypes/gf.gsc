@@ -428,7 +428,7 @@ onStartGameType()
     if ( getDvar( "scr_gf_minplayers_timer" ) == "" )
         setDvar( "scr_gf_minplayers_timer", "0" );// min-players "start anyway" ceiling (s). 0 = never auto-start (hold until enough humans / admin START). Was a hardcoded 90s that started too-thin matches
     if ( getDvar( "scr_gf_load_wait" ) == "" )
-        setDvar( "scr_gf_load_wait", "10" );      // max s to hold the prematch for map-loading clients (0 = off; a loader that misses the gate still gets scr_gf_load_grace). Non-zero ARMS the hold, so every match start now pays the 3s arrival floor
+        setDvar( "scr_gf_load_wait", "20" );      // max s to hold the prematch for map-loading clients (0 = off; a loader that misses the gate still gets scr_gf_load_grace). Non-zero ARMS the hold, so every match start now pays the 3s arrival floor
     if ( getDvar( "scr_gf_load_grace" ) == "" )
         setDvar( "scr_gf_load_grace", "20" );     // s past prematch_over to keep grace open for a still-loading client so it spawns into round 1 (0 = off)
     if ( getDvar( "scr_gf_lobby" ) == "" )
