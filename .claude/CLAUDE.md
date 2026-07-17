@@ -532,7 +532,8 @@ Each `gf_boundaryPass` runs three stages:
 3. **Bots pad both sides to `T = max(bigger human side, gf_fill_n)`** — humans define the size, bots
    absorb ALL variance, enough humans = **zero bots** (4 humans, target 2 → 2v2 bot-free; 7 humans →
    4v3 humans + 1 bot = 4v4; 1 human, target 2 → 2v2 with 3 bots). Bots only ever sit on the side with
-   fewer humans; default difficulty is the hardest (`bot_difficulty fu`, seeded). **`gf_fill_n 0` = no
+   fewer humans; default difficulty is the hardest (`bot_difficulty fu`, set by `dedicated.cfg` — it is
+   an **engine-registered** dvar, so a seed can't own it; see the dvar table). **`gf_fill_n 0` = no
    bot fill** (stages 1-2 still run; manual per-team bot add/kick/move sticks).
 
 **Team-size lock** (`gf_team_lock`, default 0): `gf_fill_n` becomes a hard **HUMAN** cap per side — a
@@ -1060,7 +1061,7 @@ tables → `docs/REFERENCE.md`.
 | `gf_team_switch` | 1 | Players may switch teams themselves, immediately (alive mid-round = die + sit out the round; prematch/grace = free). 0 = self-switching refused; admin moves still work. Bridge: `teamswitch_<0\|1>`. |
 | `scr_gf_latespawn` | 1 | A joiner/mover makes their FIRST spawn into a live round while their team has ≥1 alive — never in OT, never a respawn. Two ways in, both size-preserving: it **fills a gap** (team stays no bigger than the enemy's, by roster — anyone, bots included), or a **HUMAN takes a bot's spot** (that bot is removed; a bot never displaces anyone; a team full of humans makes the joiner wait for the boundary). 0 = always spectate until next round. Bridge: `latespawn_<0\|1>`. |
 | `gf_fill_kick_floor` | 2 | Client slots kept free for humans; a parked bot is kicked once total ≥ `sv_maxclients − this`. |
-| `bot_difficulty` | fu | BotWarfare AI difficulty (easy/normal/hard/fu — **hardest is the default**). Seeded if-empty in `gf.gsc` (a `dedicated.cfg` value or a live panel `botdiff_*` wins); `_bot::diffBots` re-applies the preset from it every 1.5s. |
+| `bot_difficulty` | normal (engine); cfg ships **fu** | BotWarfare AI difficulty. ⚠ A **REAL ENGINE dvar** (BO1 Combat Training), registered at process start: default `normal`, enum domain easy/normal/hard/fu (live rcon read 2026-07-17) — so it is **never empty and a GSC seed-if-empty can never fire** (the one gf.gsc carried was dead code, removed; the VPS's old "fu" was a live panel click that a restart silently reverted). The GF default fu is owned by `dedicated.cfg` (VPS + example). `_bot::diffBots` re-applies the `sv_bot*` preset from it every 1.5s, so cfg / panel `botdiff_*` changes land within a tick. |
 
 **Perks / RCON-managed / plumbing**
 | dvar | default | meaning |

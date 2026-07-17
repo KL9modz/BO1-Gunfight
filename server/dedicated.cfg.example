@@ -313,6 +313,12 @@ set con_displayRconOutput "0"                       // Print the output of comma
 // they are alive. In a ONE-LIFE gametype that is a live player killed mid-round. Keep it 0 -- Gunfight
 // balances at ROUND BOUNDARIES via the bot reconciler (gf_fill_n) and the RCON Balance Teams button.
 set scr_teambalance "0"
+// Bot difficulty (dev/VPS builds -- BotWarfare AI). bot_difficulty is a REAL ENGINE dvar (BO1 Combat
+// Training), registered at process start: default "normal", domain easy/normal/hard/fu. It is NEVER
+// empty, so a GSC seed-if-empty can never own this default (the one gf.gsc carried was dead code) --
+// the cfg is the owner, and this line is a genuine deviation from the engine default. Gunfight ships
+// the hardest. A live RCON panel botdiff_* click still overrides until the next server restart.
+set bot_difficulty "fu"
 // scr_teamup removed: it's a CoD4/WaW dvar that does NOT exist in Black Ops (T5) — nothing reads it, and a bare RCON read of it prints "Unknown cmd".
 //set scr_teamKillPunishCount "4"                   // After how many teamkills are players punished?
 

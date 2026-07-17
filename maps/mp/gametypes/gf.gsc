@@ -731,14 +731,16 @@ onStartGameType()
         thread maps\mp\gametypes\_bot::init();
     }
 
-    // Default bot difficulty. bot_difficulty is BotWarfare's own dvar: _bot::diffBots re-reads it
-    // every 1.5s and re-applies the whole sv_bot* preset from it. Nothing seeded it, and an unset
-    // value falls through bot_set_difficulty's final else to "normal" (which then writes the dvar
-    // back) — so the default was normal by fallthrough, not by choice. Seed-if-empty: a
-    // dedicated.cfg value and a live panel botdiff_* both still win, and because the preset writes
-    // the dvar back this only ever fires on the first round after a server boot.
-    if ( getDvar( "bot_difficulty" ) == "" )
-        setDvar( "bot_difficulty", "fu" );
+    // Default bot difficulty — OWNED BY dedicated.cfg (set bot_difficulty "fu"), NOT seeded here.
+    // bot_difficulty is a REAL ENGINE dvar (BO1 Combat Training), registered at process start as an
+    // enum: default "normal", domain easy/normal/hard/fu (live rcon read 2026-07-17). It is
+    // therefore NEVER empty, so the seed-if-empty that used to sit here was dead code that never
+    // fired once — the "fu" the VPS ran was a live panel botdiff_fu click surviving in-process,
+    // silently reverted to "normal" by the next server restart. GSC can't own this default without
+    // stomping a deliberate cfg value (an engine-registered "normal" is indistinguishable from an
+    // admin's chosen "normal"), so the GF default is a cfg deviation from the engine default —
+    // exactly what dedicated.cfg is for. _bot::diffBots re-applies the whole sv_bot* preset from
+    // the dvar every 1.5s, so a cfg value or a live panel botdiff_* click lands within a tick.
 
     // Frame-hitch / slow-mo diagnostic (dev only). Chases the "prematch/preround
     // countdown + whole game runs in slow-motion until it hits 0" report: samples
