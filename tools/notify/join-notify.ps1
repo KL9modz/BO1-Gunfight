@@ -7,6 +7,8 @@
 #   LEAVE           a human leaves           (notifyLeaves)     -> low priority
 #   EMPTY           last human leaves, server now 0 (notifyEmpty) low
 #   HEARTBEAT       periodic "still alive - N online" (heartbeatMins) min priority
+#   ISSUE / recover status poll can't reach the server     (notifyIssues) high / default
+#                   edge-triggered after 3 straight failures - see the Poll-failure section
 #
 # Polls `status` over loopback RCON, diffs the human-player set by GUID, POSTs to your
 # ntfy topic. Config: env vars (GF_*) override config.json (next to this file) override
@@ -285,6 +287,52 @@ function Get-LogDetail($place, $ping) {
   return ''
 }
 
+# ── Poll-failure alerting (🔴) ────────────────────────────────────────────────
+# A failed `status` poll means the server - or the RCON panel in front of it - is unreachable.
+# Do-Tick runs every pollMs (12s default), so two rules keep this off the spam line:
+#   * EDGE-TRIGGERED. One 🔴 when an outage starts, one 🟢 when it clears. Never one per tick.
+#   * A STREAK THRESHOLD. A single dropped UDP reply is routine, so the failure must persist
+#     $IssueFailStreak consecutive polls (~36s at the default cadence) before it alerts at all.
+# A genuinely long outage re-alerts only every $IssueReAlertMins.
+#
+# ⚠ GF-Watchdog is the AUTHORITY on health, not this: it watches the game process + task states
+# and can actually restart them (its checks 3a/3b/3e), and it alerts on trouble AND recovery
+# already - including on GF-JoinNotify itself being down. This notifier only reports what its
+# own poll sees, so a real outage will buzz once from each. That redundancy is the point (they
+# fail independently), but set notifyIssues=false in config.json to leave health to the watchdog.
+$script:IssueFailStreak  = 3
+$script:IssueReAlertMins = 30
+$script:pollFails   = 0      # consecutive failed polls
+$script:pollDown    = $false # a 🔴 is outstanding for the current outage
+$script:pollAlertAt = $null  # when the current outage last (re-)alerted
+
+function Report-PollFail($cfg, $reason) {
+  $script:pollFails++
+  Write-Log "status poll failed ($reason) - keeping last baseline  [fail $($script:pollFails)]"
+  if (-not $cfg.notifyIssues) { return }
+  if ($script:pollFails -lt $script:IssueFailStreak) { return }
+  $due = $false
+  if (-not $script:pollDown) { $due = $true }
+  elseif ($null -ne $script:pollAlertAt -and `
+          ((Get-Date) - $script:pollAlertAt).TotalMinutes -ge $script:IssueReAlertMins) { $due = $true }
+  if (-not $due) { return }
+  $script:pollDown    = $true
+  $script:pollAlertAt = Get-Date
+  [void](Send-Ntfy $cfg "$($cfg.serverName) - server unreachable" `
+    "status poll has failed $($script:pollFails)x`n$reason" 'high' @('red_circle'))
+}
+
+function Report-PollOk($cfg) {
+  if ($script:pollDown -and $cfg.notifyIssues) {
+    Write-Log 'status poll RECOVERED'
+    [void](Send-Ntfy $cfg "$($cfg.serverName) - server reachable again" `
+      'The status poll is answering again.' 'default' @('green_circle'))
+  }
+  $script:pollFails   = 0
+  $script:pollDown    = $false
+  $script:pollAlertAt = $null
+}
+
 # ── Poll tick ─────────────────────────────────────────────────────────────────
 $script:known      = $null   # hashtable key-> {name,joinedAt,ping,addr}; $null until first poll seeds it
 $script:lastOnline = 0
@@ -297,12 +345,13 @@ function Do-Tick($cfg) {
     $u = 'http://127.0.0.1:{0}/api/status?host={1}&port={2}&password={3}' -f $script:PanelPort, $cfg.host, $cfg.port, [uri]::EscapeDataString([string]$cfg.password)
     $j = Invoke-RestMethod -UseBasicParsing -TimeoutSec 20 -Uri $u
     if ($j.ok) { $text = [string]$j.raw }
-    else { Write-Log "status poll failed via panel ($($j.error)) - keeping last baseline"; return }
-  } catch { $text = $null }
+    else { Report-PollFail $cfg "panel reached the server but it did not answer: $($j.error)"; return }
+  } catch { $text = $null }   # panel itself is down -> fall through to direct rcon
   if ($null -eq $text) {
     try { $text = Parse-RconResponse (Send-Rcon $cfg.host $cfg.port $cfg.password 'status') }
-    catch { Write-Log "status poll failed ($($_.Exception.Message)) - keeping last baseline"; return }
+    catch { Report-PollFail $cfg "panel down and direct rcon failed: $($_.Exception.Message)"; return }
   }
+  Report-PollOk $cfg   # a poll got through: clears the streak, fires the 🟢 if one is outstanding
 
   $st   = Parse-Status $text
   $now  = Get-Date
@@ -362,7 +411,7 @@ function Do-Tick($cfg) {
         Write-Log "FIRST $($p.name)  (server now active, $($cur.Count) online)$logd"
         if ($cfg.notifyFirstJoin) {
           [void](Send-Ntfy $cfg "$($p.name) joined an empty server  ($($cur.Count))$mapSuffix" `
-            $body 'high' @('green_circle', $ptag))
+            $body 'high' @($ptag))
           continue
         }
       }
@@ -412,6 +461,7 @@ $cfg = [pscustomobject]@{
   notifyLeaves    = As-Bool (Get-CfgVal $fileCfg 'GF_NOTIFY_LEAVES' 'notifyLeaves' $false) $false
   notifyFirstJoin = As-Bool (Get-CfgVal $fileCfg 'GF_NOTIFY_FIRST' 'notifyFirstJoin' $true) $true
   notifyEmpty     = As-Bool (Get-CfgVal $fileCfg 'GF_NOTIFY_EMPTY' 'notifyEmpty' $false) $false
+  notifyIssues    = As-Bool (Get-CfgVal $fileCfg 'GF_NOTIFY_ISSUES' 'notifyIssues' $true) $true
   heartbeatMins   = [int](Get-CfgVal $fileCfg 'GF_HEARTBEAT_MINS' 'heartbeatMins' 0)
   serverName      = Get-CfgVal $fileCfg 'GF_SERVER_NAME' 'serverName' 'Gunfight'
   quiet           = As-Bool (Get-CfgVal $fileCfg 'GF_QUIET_START' 'quietStart' $false) $false
@@ -427,6 +477,7 @@ Write-Log "  server     $($cfg.host):$($cfg.port)"
 Write-Log "  rcon pw    $(if ($pwLen) { "($pwLen chars)" } else { 'MISSING' })"
 Write-Log "  ntfy       $($cfg.ntfyServer)/$(if ($cfg.ntfyTopic) { $cfg.ntfyTopic } else { '(NO TOPIC SET)' })"
 Write-Log "  poll       $($cfg.pollMs)ms   leaves=$($cfg.notifyLeaves)  firstJoin=$($cfg.notifyFirstJoin)  empty=$($cfg.notifyEmpty)"
+Write-Log "  issues     $(if ($cfg.notifyIssues) { "on (red alert after $($script:IssueFailStreak) failed polls, re-alert $($script:IssueReAlertMins)min)" } else { 'off' })"
 Write-Log "  heartbeat  $(if ($cfg.heartbeatMins -gt 0) { "$($cfg.heartbeatMins) min" } else { 'off' })"
 Write-Log "  geo        $(if ($cfg.geoLookup) { 'on (ip-api.com)' } else { 'off' })"
 

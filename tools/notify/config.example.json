@@ -10,6 +10,8 @@
   "notifyLeaves": false,
   "notifyFirstJoin": true,
   "notifyEmpty": false,
+  "_notifyIssues": "Red alert when the status poll can't reach the server (edge-triggered, after 3 straight failures) + a green one on recovery. GF-Watchdog alerts on health too, so a real outage buzzes once from each - set false to leave that to the watchdog alone.",
+  "notifyIssues": true,
   "heartbeatMins": 0,
   "serverName": "Gunfight",
   "quietStart": false,
