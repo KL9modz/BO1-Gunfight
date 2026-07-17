@@ -53,7 +53,11 @@ param(
     [int]    $FirstRunLookbackHours = 2,
     # Brute force is constant and harmless against a key-only sshd. Only a genuine SPIKE is worth
     # a buzz - measured floor is ~9/day, so this is ~50x the floor.
-    [int]    $BruteForceSpikePerHour = 20,
+    # ⚠ PER RUN, not per hour: the count is "since the last bookmark", and at the registered 3-min
+    # cadence 20 hits/run is ~400/hr. Named PerHour at first, which was a lie - the window is the
+    # gap between runs, so the same number means a different RATE on a different cadence. If you
+    # re-schedule this task, re-think this number.
+    [int]    $BruteForceSpikePerRun = 20,
     [int]    $ReAlertMinutes  = 60,   # a persisting condition (low disk) re-alerts at most this often
     [int]    $DiskFreeGbMin   = 10,
     [switch] $Summary,                # print what it sees, touch nothing
@@ -219,8 +223,15 @@ $new['knownSshUsers'] = @($knownUsers)
 
 # ══ 2. SSH brute force: DIGEST, never per-event ═══════════════════════════════
 # ~9/day of invalid-user probes is the internet, not an incident. Only a spike is news.
+#
+# ⚠ SKIPPED ON THE FIRST RUN. The first run has no bookmark so it reads $FirstRunLookbackHours
+# (2h) instead of the ~3min a steady run covers - the count is not comparable to the threshold,
+# and it fired a spike alert on install for exactly this reason (observed live 2026-07-17: "108
+# invalid-user attempts", which was 2h of ordinary background radiation, not a burst).
 $invalid = @($sshEvents | Where-Object { ($_.Message -split "`n")[0] -match 'Invalid user (\S+) from (\S+)' })
-if ($invalid.Count -ge $BruteForceSpikePerHour) {
+if ($sshBookmark -le 0) {
+    Log "brute-force digest skipped on the first run ($($invalid.Count) invalid-user hits over the ${FirstRunLookbackHours}h backfill - window not comparable)"
+} elseif ($invalid.Count -ge $BruteForceSpikePerRun) {
     $ips = @($invalid | ForEach-Object { if ((($_.Message -split "`n")[0]) -match 'from (\S+) port') { $Matches[1] } }) |
            Group-Object | Sort-Object Count -Descending | Select-Object -First 3
     $top = ($ips | ForEach-Object { "$($_.Name) x$($_.Count)" }) -join ', '
