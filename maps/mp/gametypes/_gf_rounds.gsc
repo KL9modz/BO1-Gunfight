@@ -2093,10 +2093,14 @@ gf_playerSpawnedCB()
 
     // Drive the entire per-player health panel in the PLAYER's own context (create +
     // update + destroy) — T5 client HUD elements don't network if created from a level
-    // thread. Mirrors the loadout HUD pattern. Suppressed during the pregame lobby hold
-    // (the panel would flash in on the frozen spawn then get hidden by the lobby cam move).
+    // thread. Mirrors the loadout HUD pattern. Suppressed during the RESTART lobby hold
+    // (the panel would flash in on the throwaway frozen spawn then get hidden by the lobby
+    // cam move). Gated on the RESTART hold (not gf_inLobbyHold) for the same reason
+    // gf_giveCustomLoadout is: a non-restart Normal-mode hold frozen-spawns players whose
+    // spawn IS the match spawn and is never rebuilt, so keying off the broad flag left
+    // anyone who loaded in during the load/min gate with no panel for all of round 1.
     if ( ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
-        && ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold ) )
+        && ( !isDefined( level.gf_lobbyRestartHold ) || !level.gf_lobbyRestartHold ) )
         self thread gf_runHealthHUD();
 
     // #strip-begin - spawn recorder + HUD-pool overlays (dev/main only; stripped from public release)

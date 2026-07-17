@@ -323,10 +323,13 @@ gf_giveCustomLoadout()
     // Humans only: gf_showWeaponHUD pushes ~21 setClientDvar (8 icons + 8 names + anchor/anim) to
     // build the menu-rendered loadout overview. A bot has no client, so pushing to it is pure waste
     // - and it fires for the whole bot fill in the round-start spawn wave, right at the transition.
-    // Also suppressed during the pregame lobby hold: the overview would slide in on the frozen
-    // prematch spawn then get yanked when the lobby cam moves the player to spectator (the "lobby HUD
+    // Also suppressed during the RESTART lobby hold: the overview would slide in on the throwaway
+    // frozen spawn then get yanked when the lobby cam moves the player to spectator (the "lobby HUD
     // flash"). The real match re-gives the loadout on the map_restart(false) spawn and shows it then.
-    if ( !isBot && ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold ) )
+    // Gated on the RESTART hold (not gf_inLobbyHold) for the same reason the loadout build above is:
+    // a non-restart Normal-mode hold's frozen spawn IS the match spawn and never gets rebuilt, so the
+    // broad flag hid the overview for all of round 1 for anyone who loaded in during the gate.
+    if ( !isBot && ( !isDefined( level.gf_lobbyRestartHold ) || !level.gf_lobbyRestartHold ) )
         self thread gf_showWeaponHUD( load );
 }
 
