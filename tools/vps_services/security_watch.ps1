@@ -225,9 +225,16 @@ $new['knownSshUsers'] = @($knownUsers)
 # ~9/day of invalid-user probes is the internet, not an incident. Only a spike is news.
 #
 # ⚠ SKIPPED ON THE FIRST RUN. The first run has no bookmark so it reads $FirstRunLookbackHours
-# (2h) instead of the ~3min a steady run covers - the count is not comparable to the threshold,
-# and it fired a spike alert on install for exactly this reason (observed live 2026-07-17: "108
-# invalid-user attempts", which was 2h of ordinary background radiation, not a burst).
+# (2h) instead of the ~3min a steady run covers, so its count cannot be judged by a threshold
+# meant for a 3-min window. It fired on install for that reason (2026-07-17, "108 invalid-user
+# attempts").
+#
+# ⚠ That install-time alert was a REAL burst, not noise - do not read this skip as "bursts don't
+# happen here". 43.160.219.175 ran 95 attempts in ~2 MINUTES (root x19, then ubuntu/deploy/admin/
+# pi/git/hadoop/postgres/kali - a stock scanner dictionary), against a 7d baseline of ~23. All 95
+# died at preauth because sshd is key-only. The steady-state path would have caught it correctly
+# (95 in one 3-min run >> 20). The ONLY thing this skip gives up is a burst that lands in the 2h
+# backfill of a FRESH INSTALL - a one-time blind spot, not an ongoing one.
 $invalid = @($sshEvents | Where-Object { ($_.Message -split "`n")[0] -match 'Invalid user (\S+) from (\S+)' })
 if ($sshBookmark -le 0) {
     Log "brute-force digest skipped on the first run ($($invalid.Count) invalid-user hits over the ${FirstRunLookbackHours}h backfill - window not comparable)"
