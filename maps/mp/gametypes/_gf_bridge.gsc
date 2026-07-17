@@ -42,6 +42,10 @@
 //   jumpfatigue_<0|1>  - post-jump slowdown: scr_gf_jump_fatigue -> jump_slowdownEnable (GF default 0)
 //   sprintunlimited_<0|1> - sprint meter never empties: scr_gf_sprint_unlimited -> per-client
 //                        player_sprintUnlimited (GF default 0 = stock)
+//   balance_<0|1>      - even the HUMAN split (off-by-1) at every round boundary (gf_team_balance, default 1)
+//   teamlock_<0|1>     - gf_fill_n becomes a hard HUMAN cap per side; overflow spectates, queued (gf_team_lock, default 0)
+//   teamswitch_<0|1>   - players may switch teams themselves (gf_team_switch, default 1; admin moves unaffected)
+//   latespawn_<0|1>    - joiners/movers may spawn INTO a live round while their team has >=1 alive (scr_gf_latespawn, default 1)
 //   svset_<dvar>=<val> - set a CHEAT-PROTECTED server dvar (bot tuning, timescale, jump/fall) from GSC,
 //                        which is not cheat-gated — so it works on the dedicated VPS with sv_cheats 0.
 //                        Also mirrors the value into gf_<dvar> so it can persist via dedicated.cfg.
@@ -90,9 +94,10 @@
 // Telemetry dvars (read-only):
 //   gf_ack    -> sequence id of the last processed gf_cmd (written the instant it's dispatched);
 //                the panel polls it to confirm a command was received. "0" = none yet.
-//   gf_state  -> "wA:wX:round:aliveA:aliveX:gametype:hold:fillN:pAllies:pAxis:parked" (every 2s)
-//                e.g.  "3:2:5:2:1:gf:0:3:3:3:1"  (fields 8-11 = dynamic-fill telemetry: per-team
-//                fill target, current playing count per side, parked-bot count)
+//   gf_state  -> "wA:wX:round:aliveA:aliveX:gametype:hold:fillN:pAllies:pAxis:parked:botDiff" (every 2s)
+//                e.g.  "3:2:5:2:1:gf:0:3:3:3:1:fu"  (fields 8-11 = dynamic-fill telemetry: per-team
+//                fill target, current playing count per side, parked-bot count; field 12 = live bot
+//                difficulty preset, so the panel's Difficulty row stays lit without a separate read)
 //   gf_roster -> "<num>,<team>,<alive>,<pending>,<bot>;..." per connected player, e.g.
 //                "1,a,1,-,0;2,x,0,x,1"  (team/pending code: a=allies x=axis s=spectator -=none;
 //                alive 1/0; bot 1/0). Drives the RCON panel's per-player team badges + move buttons.
@@ -335,7 +340,14 @@ gf_bridgeTelemetry()
         pAxi   = fc["axis_human"]   + fc["axis_bot"];
         parked = fc["parked"];
 
-        setDvar( "gf_state", wA + ":" + wX + ":" + rn + ":" + aA + ":" + aX + ":" + level.gameType + ":" + hold + ":" + fillN + ":" + pAll + ":" + pAxi + ":" + parked );
+        // 12th field: the live bot difficulty (easy/normal/hard/fu), so the panel's Difficulty row
+        // stays lit on the current preset without a separate dvar read (it changes rarely, but a cfg
+        // value / another admin / the boot seed would otherwise never reach a connected panel). A
+        // preset word with no colons, so it appends cleanly to the index-based parse. _bot::diffBots
+        // writes bot_difficulty back from the preset every 1.5s, so this is always populated.
+        diff = getDvar( "bot_difficulty" );
+
+        setDvar( "gf_state", wA + ":" + wX + ":" + rn + ":" + aA + ":" + aX + ":" + level.gameType + ":" + hold + ":" + fillN + ":" + pAll + ":" + pAxi + ":" + parked + ":" + diff );
         setDvar( "gf_roster", gf_bridgeRosterString() );
     }
 }
@@ -441,6 +453,12 @@ gf_bridgeDispatch( cmd )
     if ( isSubStr( cmd, "flinch_" ) ) { gf_bridgeFlinch( getSubStr( cmd, 7, cmd.size ) ); return; }
     if ( isSubStr( cmd, "jumpfatigue_" ) ) { gf_bridgeJumpFatigue( getSubStr( cmd, 12, cmd.size ) ); return; }
     if ( isSubStr( cmd, "sprintunlimited_" ) ) { gf_bridgeSprintUnlimited( getSubStr( cmd, 16, cmd.size ) ); return; }
+
+    // --- Team system toggles (the boundary reconciler + menu wrappers read these live) ---
+    if ( isSubStr( cmd, "balance_"    ) ) { gf_bridgeTeamToggle( "gf_team_balance",  getSubStr( cmd, 8,  cmd.size ), "Human auto-balance" );     return; }
+    if ( isSubStr( cmd, "teamlock_"   ) ) { gf_bridgeTeamToggle( "gf_team_lock",     getSubStr( cmd, 9,  cmd.size ), "Team-size lock" );         return; }
+    if ( isSubStr( cmd, "teamswitch_" ) ) { gf_bridgeTeamToggle( "gf_team_switch",   getSubStr( cmd, 11, cmd.size ), "Player team switching" );  return; }
+    if ( isSubStr( cmd, "latespawn_"  ) ) { gf_bridgeTeamToggle( "scr_gf_latespawn", getSubStr( cmd, 10, cmd.size ), "Mid-round late spawn" );   return; }
 
     // Cheat-protected SERVER dvars, written from GSC so they work with sv_cheats 0 (the only
     // correct value on a dedicated server). Format: svset_<dvar>=<value>. See gf_bridgeServerDvarSet.
@@ -818,6 +836,25 @@ gf_bridgeJumpFatigue( value )
         gf_bridgeNotify( "^2Jump fatigue: OFF" );
 }
 
+// --- Team-system toggles ------------------------------------------------------
+// One generic 0/1 setter for the team dvars the reconciler and menu wrappers read live:
+// gf_team_balance (even the human split at each boundary), gf_team_lock (gf_fill_n becomes a
+// hard human cap + queue), gf_team_switch (players may switch teams themselves), and
+// scr_gf_latespawn (joiners/movers may spawn into a live round). No apply step needed — every
+// consumer reads the dvar at decision time.
+gf_bridgeTeamToggle( dvar, value, label )
+{
+    on = ( int( value ) != 0 );
+    if ( on )
+        setDvar( dvar, "1" );
+    else
+        setDvar( dvar, "0" );
+    if ( on )
+        gf_bridgeNotify( "^2" + label + ": ON" );
+    else
+        gf_bridgeNotify( "^3" + label + ": OFF" );
+}
+
 // --- Unlimited sprint --------------------------------------------------------
 // value = 1 (sprint meter never empties) or 0 (stock — the Gunfight default).
 // Stores it in scr_gf_sprint_unlimited (the source of truth, so onStartGameType re-applies it
@@ -1159,8 +1196,10 @@ gf_allSpecialties()
 // gf_playerSpawnedCB's overflow rule) so an over-cap move is refused with feedback, not silently
 // bounced to spectator. Moving a bot is allowed.
 
-// arg = "<num>_<allies|axis|spec>". force=true applies the move immediately even mid-round
-// (stock switch -> respawns the player), bypassing the next-round defer; the team-size cap still holds.
+// arg = "<num>_<allies|axis|spec>". force=true applies the move immediately even mid-round via the
+// sequenced move (gf_seqTeamMove: die + late-spawn onto the new team if the round admits it, else sit
+// out; free during prematch/grace), bypassing the next-round defer. The panel's default team-move
+// click sends this (pteamforce_); its ⏭ button sends the deferred pteam_. The team-size cap still holds.
 gf_bridgeTeamCmd( arg, force )
 {
     if ( !isDefined( force ) )
@@ -1188,8 +1227,8 @@ gf_bridgeTeamCmd( arg, force )
         return;
     }
 
-    // force applies immediately regardless of round state (admin override — the ⚠ in the panel warns
-    // it respawns a live player, costing them the round; during a live round that's a mid-round death).
+    // force applies immediately regardless of round state via the sequenced move (admin override):
+    // free during prematch/grace, a mid-round death + late-spawn onto the new team otherwise.
     if ( force || gf_bridgeTeamSafeNow() )
     {
         target gf_applyTeamMove( team );
@@ -1238,27 +1277,16 @@ gf_bridgeTeamSafeNow()
     return isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod;
 }
 
-// Apply a team move to self. If the player is already in-world this round (spawned/frozen in
-// prematch), use the full stock switch (respawns them on the new side now). Otherwise a quiet
-// persistent reassign is enough: the round's spawn wave reads pers["team"] and _globallogic_player
-// re-derives self.team from it, so they simply spawn on the new side — no respawn, no double-spawn.
+// Apply a team move to self IMMEDIATELY, whatever their state, via the sequenced move in
+// _gf_rounds (suicide -> wait for the death to settle -> quiet reassign -> drive the respawn).
+// NEVER the raw stock switch — its async suicide racing the respawn was the "spawned at the
+// enemy spawns / spawned with 1 HP" bug. Semantics by state: prematch-frozen = the free warmup
+// switch (life restored, respawned on the new side); ALIVE mid-round = the admin force-move —
+// die, then LATE-SPAWN onto the new team if the round admits it (team has >=1 alive, no OT),
+// else finish the round seated on the new side; dead/spectating = quiet seat + spawn attempt.
 gf_applyTeamMove( team )
 {
-    if ( self.sessionstate == "playing" )
-    {
-        if      ( team == "allies" ) self [[level.allies]]();
-        else if ( team == "axis"   ) self [[level.axis]]();
-        else                         self [[level.spectator]]();
-
-        // The stock switch suicide()s a "playing" (prematch-frozen, alive) player without restoring
-        // its life, so an admin move applied during prematch can leave the player DEAD/spectating the
-        // round (maySpawn denies the switch's respawn once both teams have existed). gf_reseatRespawn
-        // gives the life back so the respawn is admitted. Real teams only (spectator wants no respawn).
-        if ( team != "spectator" )
-            self thread maps\mp\gametypes\_gf_rounds::gf_reseatRespawn();
-    }
-    else
-        self gf_forceTeamQuiet( team );
+    self thread maps\mp\gametypes\_gf_rounds::gf_seqTeamMove( team, true );
 }
 
 // The persistent-state half of the stock menuAllies/menuAxis/menuSpectator (minus the suicide +

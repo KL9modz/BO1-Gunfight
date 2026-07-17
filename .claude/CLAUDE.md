@@ -17,10 +17,18 @@ wins** takes the match.
 ## TODO
 
 - Map/mode vote
-- Settup remote claude code (ssh vps+repo?) for travel from ipad
 - Website screenshots
 
 ### Open bugs
+- **Unidentified bot mis-seater (contained by GF_FILLGUARD, culprit unknown).** Live listen-server repro
+  2026-07-16: after a joining human displaced a bot (parked to spectator), the NEXT round started with
+  that bot seated on the ENEMY side (3 bots vs human+1). The reconciler provably planned zero moves for
+  that state (1v0 humans, T=2, no surplus/deficit), stock's re-begin only autoassigns `needteam` clients
+  (parked bots never get it), and `teamWatch` only re-fires if `pers["team"]` goes undefined (nothing
+  does) — so the seater is an untraced path. **Contained structurally:** the maySpawn fill-discipline
+  gate now parks any over-size bot at its spawn attempt and prints `GF_FILLGUARD: parked bot <name> …`.
+  **Next occurrence: read that console line** — it names the bot and round; work backward from what
+  touched that bot's pers["team"] between the boundary pass and the spawn wave.
 - **RESOLVED — the `MAX_PACKET_USERCMDS` killcam spam is a CLIENT-side `cl_maxpackets` limit, self-fixable,
   cosmetic.** Proven live 2026-07-15: a client running `com_maxfps 237` / `cl_maxpackets 30` (stock) spat
   ~37 lines per round-end killcam; setting **`cl_maxpackets 100` on that client killed the spam outright**,
@@ -139,8 +147,6 @@ wins** takes the match.
   0.5→0.3s, the fade masks the coarser stepping); snapping the outro (like the intro) is the zero-cost floor.
 - **Hybrid custom round-timer HUD:** keep the native engine-driven `MM:SS` for the normal phase, own only
   the final ≤10s (orange `S.T` tenths) via the menu layer, route OT through the same element.
-- **Mid-round late spawn / bot backfill** (designed ~25 lines, not built): let a client added mid-round
-  spawn into a live round when its team still has ≥1 alive (double-blocked in OT).
 - RCON: gas/stun/flash intensity sliders; mantle/climb speed control.
 - Lobby ready-up / team-picking UI; lobby fly-cam controls.
 - Min-players option that also counts bots (`scr_gf_min_players` counts humans only today).
@@ -473,17 +479,21 @@ surface or the server won't compile — see the `unknown function` rule in the T
 ### Team-size mode (large vs small)
 `level.gf_largeMode` (re-derived each round by `gf_resolveTeamMode`) is the single flag driving spawns,
 the wager-blocker allow-list, the OT flag choice, and which `_large` dvar variant is read.
-`scr_gf_teamspawnmode` = `auto` | `large` | `small`. **auto** is hard-wired to the health-panel skull cap
-(`gf_hudSkullCap()`=4, mirroring the menu's `cnt > 4` gate): **≤4 per team → small** (curated clustered
-wager-style spawns + skulls), **any team of 5+ → large** (full-map `mp_tdm_spawn` + `alive/total`
-readout). It keys off the **larger** team (2v6 → large). Each mode reads its own dvar copy
-(`_timelimit`/`_overtimelimit`/`gf_capture_time` + `_large`) so flipping never clobbers the other.
+`scr_gf_teamspawnmode` = `auto` | `large` | `small`. **auto** triggers on **9+ seated HUMANS** (a 5v4
+human split or more, `gf_autoLargeFromHumans`/`gf_countSeatedHumans`): bots **never** trigger it, so a
+bot-padded 6v6 keeps the tight curated wager spawns and only a genuinely big human lobby opens the map
+up (full-map `mp_tdm_spawn`). Each mode reads its own dvar copy (`_timelimit`/`_overtimelimit`/
+`gf_capture_time` + `_large`) so flipping never clobbers the other. The health panel's skulls-vs-
+`Alive: N` readout is now a **pure HUD decision** (per-team body count > 4, `_gf_hud` + the menu gate) —
+it no longer shares a switch point with the spawn mode.
 
 ⚠ **Inherent one-round lag:** the spawn mode is a snapshot (`game["gf_autoLargeMode"]`, captured
-post-prematch by `gf_updateAutoTeamMode`, applied *next* round) while the HUD readout is live — so a
-roster crossing 4↔5 shows the readout one round before the spawns switch. By design (a live count inside
-`onStartGameType` is unreliable — bots/late joiners connect after it), not a bug. ⚠ `gf_hudSkullCap()`
-must stay in lockstep with the menu skull gate (rebuild-gated). Full detail → `docs/REFERENCE.md`.
+post-prematch by `gf_updateAutoTeamMode`, applied *next* round) — the 9th human's join opens the map one
+round later. By design (a live count inside `onStartGameType` is unreliable — bots/late joiners connect
+after it), not a bug. ⚠ Small mode can now hold up to 6 bodies/side on 5 curated points — the curated
+picker returns `undefined` when every point is occupied and the caller falls back to the stock
+telefrag-aware team-start pool (never spawn ONTO an occupied point; the old raw-cursor fallback
+telefragged the occupant). Full detail → `docs/REFERENCE.md`.
 
 ### Loadout system
 Shared random, **deterministic by round index** — every client reads the same
@@ -504,52 +514,122 @@ killstreak names — those fire the "called-in" announcer + holster-lock), the `
 `hud_death_suicide`). See [[special-weapons-precacheitem-and-camo]], [[invalid-weapon-finger-gun-fallback]],
 [[reference_t5_mp_weapons]]. Dev aids: `gf_force_loadout`, `gf_force_camo`.
 
-### Dynamic bot fill + team management
-**One round-boundary reconciler** (`gf_reconcilerInit` in `_bot.gsc`, dev-only) is the single authority
-over bot counts and placement; BotWarfare's own managers (`addBots`/`teamBots`/`doNonDediBots`) are
-**deleted**. **`gf_fill_n` is a MINIMUM team size (a FLOOR), not a hard target** — the reconciler pads
-**both** sides to `T = max(bigger human side, gf_fill_n)` at **each round start**, so **humans define the
-size and bots only top up**: a full human lobby runs bot-free (4 humans → **2v2, 0 bots**; 8 → **4v4, 0
-bots**), an odd split rounds **up** to an even team (`gf_teamSizeTarget`, so 3 humans → 2v2 with one bot,
-5 → 3v3), and a sparse lobby fills to the floor (1 human, floor 2 → 2v2 with 3 bots). **Bots absorb all
-variance** and **humans are never auto-moved** (a lopsided-but-never-moved human roster still gets an even
-*size* — the short side fills with bots; e.g. 4 humans stacked one side → the other fills to 4v4). Mid-round
-roster changes (and fill-N changes) are deliberately ignored until the next boundary — worst case one ~45s
-round. `gf_fill_n 0` = reconciler inert — the mode in which manual per-team bot add/kick/move sticks (with
-fill on, a manual move lasts at most until the round ends). ⚠ The old "pad both sides to a fixed N
-regardless of the human split" behavior — and its "extra bots on both sides even when humans could just
-play each other" side effect — is retired.
+### Team system: size, balance, lock, switching, late spawn (refactored 2026-07-16)
+**One round-boundary TEAM reconciler** (`gf_reconcilerInit` in `_bot.gsc`, dev-only) is the single
+authority over next-round team composition; BotWarfare's own managers (`addBots`/`teamBots`/
+`doNonDediBots`) are **deleted**. **`gf_fill_n` is the per-team TARGET size** (default **2**, clamp 0-6).
+Each `gf_boundaryPass` runs three stages:
+1. **Seat the lock queue** — spectating humans the team-size lock turned away, seated in **join order**
+   (`pers["gf_seatQueued"]` = join seq) whenever a seat opens; quiet reassign (they're spectators).
+2. **Even the HUMAN split to off-by-1** (`gf_team_balance` 1, default) — the **most recent joiner**
+   (`pers["gf_joinSeq"]`, stamped at connect in `_bot::onPlayerConnect` via `gf_joinSeqOf`) on the
+   bigger side moves. How it lands is state-dependent and always race-free: not-"playing" → quiet
+   reassign now; prematch-frozen → `gf_seqTeamMove` (sequenced suicide→settle→reassign→respawn, life
+   restored); killcam survivor → `pers["gf_movePending"]`, consumed in their next **pre-spawn** window
+   (the `maySpawn` hook in gf.gsc — same mechanism as `gf_parkPending`). `gf_team_balance 0` = humans
+   never auto-moved (for arranged teams).
+3. **Bots pad both sides to `T = max(bigger human side, gf_fill_n)`** — humans define the size, bots
+   absorb ALL variance, enough humans = **zero bots** (4 humans, target 2 → 2v2 bot-free; 7 humans →
+   4v3 humans + 1 bot = 4v4; 1 human, target 2 → 2v2 with 3 bots). Bots only ever sit on the side with
+   fewer humans; default difficulty is the hardest (`bot_difficulty fu`, seeded). **`gf_fill_n 0` = no
+   bot fill** (stages 1-2 still run; manual per-team bot add/kick/move sticks).
 
-**Human balancing (new-joiner steering).** A **mid-match human joiner** is auto-seated on the fewer-**human**
-side, but **only when the human split is already lopsided (`|allies − axis| > 1`)** — a balanced/near-balanced
-split falls through to the stock team pick so a player can still choose a side (e.g. to squad with a friend).
-This is the `level.autoassign = gf_autoJoinBalance` override (`_gf_rounds.gsc`, installed every round in
-`gf.gsc onStartGameType`, saving stock into `level.gf_stockAutoassign`). It **ignores bots** (the reconciler
-evens team *size* with bots at the boundary; the override only steers *humans*) and is **suicide-free** — the
-joiner is pre-spawn and can't spawn until the next round anyway (one-life `maySpawn`), so seating them costs no
-death. ⚠ It is also the **single delegate for the lobby→match transfer plan**: when `level.gf_teamPlanEntries`
-is live it hands off to `gf_autoassignPlanned` (whose fallbacks reach the saved *real* stock — never back
-through the override, so **no recursion**). This is why the `gf_matchArmed` branch no longer installs its own
-autoassign override — a second save there would capture `gf_autoJoinBalance` as "stock" and recurse.
+**Team-size lock** (`gf_team_lock`, default 0): `gf_fill_n` becomes a hard **HUMAN** cap per side — a
+joiner finding both sides full spectates, **queued in join order**, auto-seated at the next boundary
+when a seat opens. Bots never count against the lock (a joining human displaces a bot, never spectates
+because of one). Inert at `gf_fill_n 0`.
 
-**Boundary-only = suicide-free + overshoot-free by construction.** ONE yield-free `gf_boundaryPass` per
-round, triggered by: `gf_round_over` +0.5s (inside the killcam, where every eliminated bot is already
-un-"playing"), the match-start gate release (`gf_load_gate_reset` with players present — pre-spawn, so
-the round-1 wave reads the finished plan; the Auto/Manual lobby-release fire instead **kicks all bots**
-pre-restart and the post-restart pass rebuilds the fill clean), and one roster-settle pass after init.
-Placement is a **quiet pers reassign** (`gf_botQuietSetTeam`, mirror of the bridge's `gf_forceTeamQuiet`
-— no suicide path exists); an **alive ("playing", incl. prematch-frozen) bot is never touched**: a
-surplus one gets `pers["gf_parkPending"]` and `gf_lobbyMaySpawn` (gf.gsc) routes it to a clean spectator
-in its next pre-spawn window. Adds are staggered (0.5s) and **generation-stamped** (`level.gf_fillGen` —
-a newer pass cancels an older pass's add loop) with steer marks (`.gf_fillPending = team`, counted
-toward the target team while mid-connect) — the old model's racing passes + wrong-team autoassign
-landings were the "bots exceed the target" bug, and its mid-prematch stock switches racing the async
-spawn commit were the "bots suicide during the countdown" bug. Displaced bots **park in spectator** for
-reuse; the parked reserve is capped at the live human count (so *reducing* N kicks freed bots) and
-`gf_fill_kick_floor` kicks parked bots before they breach `sv_maxclients`. Counts key off
-`level.players` + `istestclient()`, never `level.bots` (which a restart desyncs). Every persistent bot
-loop carries `endon("bot_reinit")`; `init()` fires `bot_reinit` before re-threading so a
-restart-surviving manager set collapses to one. Full detail →
+**Immediate self team-switching** (`gf_team_switch`, default 1): the `level.allies/axis/spectator` menu
+handlers are wrapped (`gf_menuAllies`/`gf_menuAxis`/`gf_menuSpectator` in `_gf_rounds.gsc`, installed
+each round next to the autoassign override, stock saved into `level.gf_stock*`). Dead/spectating players
+re-seat instantly (and may late-spawn); an **ALIVE mid-round switcher dies and sits out the round**
+(their life is spent — `maySpawn` gate A enforces the sit-out); during prematch/grace the switch is free
+(life restored + respawned). `gf_team_switch 0` = self-switching refused (admin moves still work). Lock
+capacity is enforced on self-joins; **admin moves bypass the lock** (admin intent wins).
+
+**Mid-round late spawn** (`scr_gf_latespawn`, default 1): a player/bot may make their **first** spawn
+into a LIVE round while their team still has **≥1 alive** — never during overtime (stock `inOvertime`
+still blocks), never a respawn (gate A untouched). Implemented in the `maySpawn` hook: it pre-sets
+`self.hasSpawned = true` to satisfy stock gate B (`!inGracePeriod && !hasSpawned`), which is the gate
+that exists to deny exactly this. Covers joiners, spectators picking a team, and admin force moves.
+⚠ **There are exactly two ways in, and both preserve the round's team SIZE** (`gf_lateSpawnAllowed`):
+1. **Fill a gap** — the spawn leaves its team no bigger than the enemy's (`mine + 1 <= other`, by
+   **roster**, not alive: one life per round means a team that lost players is still "N for this
+   round", so treating its dead as a gap would hand it free bodies mid-fight). Open to anyone,
+   **bots included** (3v2 → 3v3 after someone leaves).
+2. **Take a bot's spot — HUMANS ONLY.** A human never waits a round for a seat a bot is keeping warm:
+   the spawn is admitted and that bot is removed (via the fill-discipline gate's seat priority — see
+   below — which covers the countdown/grace too), so the size is unchanged. A **bot never displaces
+   anyone** to get in. A team full of *humans* has no spot to take → the joiner waits for the
+   boundary (a human may take a bot's spot, not another human's).
+
+The gap rule is load-bearing **for bots**: the reconciler's adds are staggered 0.5s apart
+(`gf_addFillBots`) and `gf_matchStartPass` waits for a QUIET roster — which a human's join *resets* —
+so its pass can fire mid-round and add bots. Stock's gate B used to park all of those in spectator
+harmlessly; admitting them unconditionally ran rounds over the target (the "it kept all 4 bots /
+rounds starting with an extra bot" regression).
+
+**FILL DISCIPLINE — the spawn-gate half of the size policy (`GF_FILLGUARD` + seat priority).** The
+boundary pass only *plans* the composition; the `maySpawn` hook *enforces* it at the one door every
+client passes through, size = `max(bigger human side, gf_fill_n)`. Two halves:
+- **Bots:** a bot may not spawn when its side already holds the size — it is quiet-parked at its
+  spawn attempt and logged (`GF_FILLGUARD: parked bot <name> - <team> already at size N (round R)`),
+  so an over-size round is structurally impossible whatever mis-seated it (a stock autoassign
+  landing, a menu-response race). Denials cascade correctly (each park flips pers, so the next bot's
+  count drops — a side never over-parks).
+- **Humans — seat priority, never denied:** a human spawning onto a side already at size that still
+  holds a bot **displaces a bot** (`gf_displaceBotForHuman`). This runs on EVERY admitted human
+  spawn — **including the prematch countdown and grace**, where stock admits directly and the
+  late-spawn path never runs (without it, a countdown join onto a 2-bot side STACKED to 3 bodies —
+  live repro 2026-07-16). A dead/unspawned bot is quiet-parked; an alive/frozen one takes the
+  **sequenced suicide-park** (`gf_seqTeamMove("spectator")` — stays connected and reusable; the old
+  kick threw away a client the reconciler would just re-add). ⚠ The maySpawn trigger is only a cheap
+  **pre-filter**; the displacer **recomputes the real over-size at apply time** (`gf_targetRoundSize`,
+  the shared formula) and trims **only the genuine excess** — one-bot-per-call was WRONG. During the
+  size-bump / fill churn the roster is transiently over-counted (a fill bot momentarily on this side
+  before it's steered away), so an unconditional removal killed a REAL bot for a phantom seat and
+  dropped a correct 3v3 to 3v2 at random (live repro 2026-07-16). If the team has settled back to
+  size, `over <= 0` and it removes nothing. Also safe against denied spawns (re-checks the human
+  actually spawned). `.gf_displacePending` claims prevent two same-frame humans picking one bot;
+  stale claims are wiped each boundary pass.
+
+`gf_fill_n 0` (manual bot mode) disables the whole gate so a deliberate 3v1 bot setup sticks. Born
+from a live 2026-07-16 listen-server repro: a parked displaced bot ended up seated on the enemy side
+next round via a path the reconciler provably didn't take (its math planned zero moves for that
+state) — watch for the GF_FILLGUARD line to identify it. ⚠ `gf_displaceBotForHuman` **must run after the
+human's spawn commits** — removing a team's last alive client mid-round reads as a team wipe
+(`onDeadEvent` → the round ends early) — and re-checks state, since `maySpawn` is only a predicate and
+the spawn it green-lit may never have happened. It prefers a **not-playing** bot (quiet park — the
+free primitive); an **alive/frozen** bot takes the **sequenced suicide-park** (`gf_seqTeamMove` to
+spectator — stays connected and reusable; never a kick, never a raw stock switch). Accepted:
+replacing a dead bot lifts the team's alive count by one, replacing an alive one is a pure swap —
+both keep the roster identical, which is the invariant that matters.
+
+**⚠ The sequenced team move (`gf_seqTeamMove`, `_gf_rounds.gsc`) is the ONLY way to move a "playing"
+player.** Stock `menuAllies`/`menuAxis` suicide() asynchronously and drive the respawn in the same
+frame; racing that (the old stock-switch + `gf_reseatRespawn` recovery pair — both now deleted) was the
+root cause of the rare "**spawned at the enemy spawns / spawned with 1 HP**" bug after team moves. The
+primitive sequences suicide → wait for death to settle (bounded ~2s) → quiet reassign (also clears
+`pers["savedmodel"]` — a stale one renders the wrong team's skin) → then drives the respawn. The bridge's
+`gf_applyTeamMove` (pteam/pteamforce), the lobby plan's `gf_planApplyMove`, the menu wrappers, and the
+balancer's prematch moves all route through it. `pteamforce_` on an alive player = **die + late-spawn**
+onto the new team (round rules permitting).
+
+**Human-joiner steering at connect** (`level.autoassign = gf_autoJoinBalance`, unchanged in spirit):
+lopsided human split (diff > 1) → seat the lighter side; balanced → stock pick (players can squad up);
+now also lock-aware (both sides full → spectate + queue; one side full → the open side), and an ALIVE
+player picking Auto Assign routes through the sequenced move. Still the single delegate for the
+lobby→match transfer plan (`gf_autoassignPlanned` fallbacks reach saved *real* stock — no recursion).
+
+**Boundary-only remains the rule** — ONE yield-free `gf_boundaryPass` per round, triggered by:
+`gf_round_over` +0.5s (inside the killcam), the match-start gate release (pre-spawn; the Auto/Manual
+lobby-release instead kicks all bots pre-restart when fill > 0), and one roster-settle pass after init
+(these now run **even at fill 0** — balancing/queue are fill-independent). Bot placement is the quiet
+`gf_botQuietSetTeam`; surplus alive bots defer via `pers["gf_parkPending"]` → `gf_lobbyMaySpawn`; adds
+are staggered + generation-stamped (`level.gf_fillGen`) with `.gf_fillPending` steer marks; displaced
+bots park in spectator (reserve capped at live human count; `gf_fill_kick_floor` kicks before
+`sv_maxclients`). Counts key off `level.players` + `istestclient()`, never `level.bots`. Every
+persistent bot loop carries `endon("bot_reinit")`. Full detail →
 [[gf-fill-reconciler-and-team-transfer]], `docs/DEV.md`.
 
 ⚠ **`gf_boundaryListener` must NOT carry `endon("game_ended")`** — that notify fires at the end of
@@ -864,12 +944,15 @@ GSC side: the panel writes `set gf_cmd <seq>:<cmd>`, `gf_bridgePoll` reads+clear
 non-idempotent command. ⚠ The mark is **seeded from the `gf_ack` dvar every round, never reset** — a
 command that restarts the match itself (`matchrestart`, `lobbystart`) wipes the round that owed it an
 ack, so a reset would leave the panel un-acked → it resends the same seq → the wiped mark lets it
-**re-run** (one click, N restarts, each re-arming the next). Telemetry (dedicated-only single-token reads): **`gf_state`** (11 colon fields:
-`wA:wX:round:aliveA:aliveX:gametype:hold:fillN:pAllies:pAxis:parked`) and **`gf_roster`**
+**re-run** (one click, N restarts, each re-arming the next). Telemetry (dedicated-only single-token reads): **`gf_state`** (12 colon fields:
+`wA:wX:round:aliveA:aliveX:gametype:hold:fillN:pAllies:pAxis:parked:botDiff` — field 12 is the live
+bot-difficulty preset, so the panel's Difficulty row stays lit on the current value every tick) and **`gf_roster`**
 (`<num>,<team>,<alive>,<pending>,<bot>;…`). Command feedback is private to `gf_admin_guids`
 (`gf_bridgeNotify`); only `saymsg` broadcasts. Team moves: `pteam_<num>_<team>` defers to next-round
-prematch (`pers["gf_pendingTeam"]`, applied on `spawned_player`); `pteamforce_` applies now (respawns).
-⚠ A live human cannot be moved without dying — deferral is why. Verbs cover bots, balance-teams,
+prematch (`pers["gf_pendingTeam"]`, applied on `spawned_player`); `pteamforce_` applies now via the
+**sequenced move** (`_gf_rounds::gf_seqTeamMove` — an alive player **dies + late-spawns** onto the new
+team when the round admits it; never the racy stock switch). Team-system toggles: `balance_`/
+`teamlock_`/`teamswitch_`/`latespawn_<0|1>`. Verbs cover bots, balance-teams,
 match-control (`lobbystart`, endround, the two restarts, pause/resume), gameplay toggles, and fun/visual
 commands. **`roundrestart`** replays the round with no score/loadout-rotation/side-switch by ending it as
 a `"tie"` through `gf_endRound` with `game["roundsplayed"]` pre-decremented (endGame's `++` nets it back)
@@ -966,12 +1049,16 @@ tables → `docs/REFERENCE.md`.
 | `party_minplayers` | 2 | Players the **stock warmup** waits for (its only gate). Counts bots. Unrelated to `scr_gf_min_players`. |
 | `scr_pregame_timelimit` | 0 | Warmup time limit (min). ⚠ Keep **0** — stock registers it seed-if-empty at 5, and its time-out **rotates the map** instead of starting the match. Seeded to 0 by `gf.gsc` (strip-marked) + `dedicated.cfg.example`. |
 
-**Bots** (dev-only reconciler)
+**Teams & bots** (dev-only reconciler)
 | dvar | default | meaning |
 |---|---|---|
-| `gf_fill_n` | 0 | **Minimum team size (a FLOOR), not a hard target.** The reconciler pads both sides to `max(bigger human side, gf_fill_n)`, so humans define the size and bots only top up (4 humans → 2v2, 0 bots; 3 → 2v2 with 1 bot; 1 → fills to the floor). Even teams always; **0 = reconciler inert** (manual bot control sticks). Clamp 0-6. |
+| `gf_fill_n` | 2 | **Per-team TARGET size.** Boundary pass evens humans to off-by-1, then pads both sides with bots to `max(bigger human side, gf_fill_n)` — humans define the size, bots absorb variance, enough humans = zero bots. **0 = no bot fill** (balancing/queue still run; manual bot control sticks). Clamp 0-6. With `gf_team_lock 1` this is also the hard HUMAN cap per side. |
+| `gf_team_balance` | 1 | Even the HUMAN split (off-by-1) at every round boundary, moving the most recent joiner. 0 = humans never auto-moved (arranged teams). Bridge: `balance_<0\|1>`. |
+| `gf_team_lock` | 0 | 1 = `gf_fill_n` is a hard human cap per side; overflow joiners spectate, queued in join order, auto-seated when a seat opens. Bots never count against it. Bridge: `teamlock_<0\|1>`. |
+| `gf_team_switch` | 1 | Players may switch teams themselves, immediately (alive mid-round = die + sit out the round; prematch/grace = free). 0 = self-switching refused; admin moves still work. Bridge: `teamswitch_<0\|1>`. |
+| `scr_gf_latespawn` | 1 | A joiner/mover makes their FIRST spawn into a live round while their team has ≥1 alive — never in OT, never a respawn. Two ways in, both size-preserving: it **fills a gap** (team stays no bigger than the enemy's, by roster — anyone, bots included), or a **HUMAN takes a bot's spot** (that bot is removed; a bot never displaces anyone; a team full of humans makes the joiner wait for the boundary). 0 = always spectate until next round. Bridge: `latespawn_<0\|1>`. |
 | `gf_fill_kick_floor` | 2 | Client slots kept free for humans; a parked bot is kicked once total ≥ `sv_maxclients − this`. |
-| `bot_difficulty` | fu | BotWarfare AI difficulty (easy/normal/hard/fu). Seeded if-empty in `gf.gsc` (a `dedicated.cfg` value or a live panel `botdiff_*` wins); `_bot::diffBots` re-applies the preset from it every 1.5s. |
+| `bot_difficulty` | fu | BotWarfare AI difficulty (easy/normal/hard/fu — **hardest is the default**). Seeded if-empty in `gf.gsc` (a `dedicated.cfg` value or a live panel `botdiff_*` wins); `_bot::diffBots` re-applies the preset from it every 1.5s. |
 
 **Perks / RCON-managed / plumbing**
 | dvar | default | meaning |
@@ -1130,7 +1217,9 @@ content), so `git checkout main` after cloning and push `main` with `tools/push_
   (`gf_waitForLoadingClients` and everything it drives — load gate, min-players, Auto/Manual lobby +
   its camera/roster HUD, the team/bot plan transfer), the engine pregame warmup (the
   `g_pregame_enabled` seed is strip-marked — unseeded, the engine defaults it to 0 and BO1's own
-  `_pregame` gametype can never come up, so there is **no `_pregame.gsc` to exclude**), bots, the RCON
+  `_pregame` gametype can never come up, so there is **no `_pregame.gsc` to exclude**), bots, the whole
+  team system (balancer, lock/queue, the menu-wrapper switch rules, mid-round late spawn — public keeps
+  stock autoassign + stock team menus), the RCON
   bridge, debug tooling, admin pause, the `gf_vis_*` r_* push, the RCON perk overrides, and the
   `level.maySpawn` hook (stock guards it with `isDefined`, so the public build installs none and falls
   through to stock grace/lives). The prematch **countdown stays** — pinned at a fixed 20s/7s, with the
@@ -1178,7 +1267,49 @@ Security runbook status → `docs/VPS_HARDENING.md`, [[gunfight-us-security-audi
 The live server is a Contabo VPS ([[vps-server-provisioned]]); the launch bat + `sv_maxclients` latch
 live only in `C:\gameserver\T5\start_mp_server.bat` ([[vps-launch-bat-and-maxclients-latch]]); the
 in-game browser name comes from the Plutonium **server key label**, not `sv_hostname`
-([[plutonium-serverkey-sets-browser-name]]). Box helpers are Scheduled Tasks (`register_services.ps1`):
+([[plutonium-serverkey-sets-browser-name]]).
+
+**Remote access: SSH (22) is open to ANY IP; RDP (3389) is pinned to the home IP.** SSH carries the
+travel/ops path — rule `SSH-Any-In (travel)`, **additive** (the older `OpenSSH home` /
+`OpenSSH (scoped to home IP)` rules are left in place, so it reverts with a single
+`Disable-NetFirewallRule`). **RDP is still `RDP-AdminOnly-In` → `76.167.246.191` only**, so from a
+non-home network the routes are SSH or the **Contabo VNC console `144.126.146.144:63019`** (which
+bypasses the firewall).
+
+⚠ **Public SSH is safe ONLY because sshd is key-only — and that takes TWO directives, not one.**
+`PasswordAuthentication no` **and** `KbdInteractiveAuthentication no`. Kbd-interactive offers its **own**
+password path on Windows OpenSSH and is **ON by default**, so `PasswordAuthentication no` alone leaves
+**Administrator brute-forceable from the internet** (this was the live state until it was fixed).
+⚠ Both must sit in the **global** section: `sshd_config` ends with a `Match Group administrators` block,
+so a directive appended at the end silently lands **inside** it and does nothing globally.
+⚠ **`sshd -T` and the config file are not the same question, and neither is the last word** — verify on
+the wire: `ssh -v -o PubkeyAuthentication=no <host>` must answer
+`Authentications that can continue: publickey` **and nothing else**. ⚠ For **admin** accounts Windows
+OpenSSH ignores `~/.ssh/authorized_keys` and reads only
+`C:\ProgramData\ssh\administrators_authorized_keys` (which is why the per-user file is absent yet login
+works).
+
+**Claude Code is installed on the box** (`C:\Users\Administrator\.local\bin\claude.exe`, native build, on
+the Administrator user PATH — no Node.js on the box and none needed) and authenticated on the Max plan
+(`authMethod: claude.ai`, so it draws on the subscription, **not** metered API credits — ⚠ never set
+`ANTHROPIC_API_KEY` there, it silently takes precedence). Credentials live in
+`%USERPROFILE%\.claude\.credentials.json` and are **per-Windows-user**, so a task running as SYSTEM would
+be unauthenticated.
+
+**Ops from any device = the `gf-vps` Remote Control session.** Scheduled task **`GF-ClaudeRC`** runs
+`claude rc --name gf-vps` 24/7; open the Claude **mobile app** / `claude.ai/code` → **Code** tab →
+`gf-vps` and drive the box: RCON via the panel API on `127.0.0.1:3000` (never a second poller), dvar/cfg
+edits, log reads, `deploy.ps1`. **Outbound HTTPS only** — no inbound port, no key on the device.
+⚠ **`rc` is a HIDDEN subcommand** (absent from `claude --help`) and is a **server mode** — it needs no TTY
+and spawns one child per session. ⚠ The **`--remote-control` FLAG is a different thing** (interactive TUI,
+needs a real console, dies headless) — do not substitute it. ⚠ `setup-token` tokens are **rejected** for
+Remote Control; it needs full-scope OAuth. ⚠ **Exactly one server may run** (two ⇒ `ambiguous: multiple
+remote-control servers match name`); its parent must be `svchost.exe`, and unregistering the task does
+**not** kill the process. ⚠ **Security: the Claude account is now equivalent to the SSH key** — a permanent
+admin agent on the live server, drivable by whoever holds that account.
+⚠ **Claude Code on the WEB cannot reach the box** (HTTP-only sandbox proxy, raw TCP never passes) and the
+app's **SSH-host** entry is **desktop-brokered** (invisible to the iPad) — both tested; the full dead-end
+table is in `docs/DEV.md` *Working remotely*. Don't re-run that hunt. Box helpers are Scheduled Tasks (`register_services.ps1`):
 `GF-RconPanel`, `GF-StatusService` (the single box-side RCON reader → writes the public `status.json` +
 `activity.json` plus the `.secured`-gated `admin.json`/`health.json`, all atomically), `GF-ConnLogger`
 (zero RCON — diffs `admin.json`), `GF-JoinNotify` (ntfy alerts), `GF-Watchdog` (short-lived, re-invoked

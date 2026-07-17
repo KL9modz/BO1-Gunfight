@@ -133,6 +133,8 @@ tr.grp-u td{color:var(--dm);border-left-color:var(--bd)}
 .ctx-item.red{color:var(--ng)}.ctx-item.green{color:var(--ok)}.ctx-item.yellow{color:var(--wn)}
 .ctx-sep{border-top:1px solid var(--bd);margin:3px 0}
 .ctx-hint{font-size:9px;color:var(--dm);font-style:italic;padding:2px 10px 3px}
+.ctx-mini{margin-left:auto;font:inherit;font-size:9px;padding:2px 7px;border-radius:3px;border:1px solid var(--bd);background:transparent;color:var(--dm);cursor:pointer;white-space:nowrap}
+.ctx-mini:hover{background:var(--bd);color:var(--tx)}
 
 /* Main */
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden}

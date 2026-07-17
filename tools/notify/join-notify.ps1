@@ -26,6 +26,9 @@
 . (Join-Path $PSScriptRoot '..\ignore_list.ps1')
 $script:IgnoreFile = Join-Path $PSScriptRoot '..\ignore.local.json'
 
+# Get-GfMapName: shared map id -> display name, so an alert says "Nuketown", not "mp_nuked".
+. (Join-Path $PSScriptRoot '..\map_names.ps1')
+
 function Write-Log($msg) {
   Write-Host ("[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $msg)
 }
@@ -156,30 +159,62 @@ function P-Key($p) {
 }
 
 # ── ntfy push ─────────────────────────────────────────────────────────────────
-# Player name goes in the BODY (utf8-safe); Title header stays ASCII so a fancy name
-# can never break header encoding.
+# Sent as ntfy's JSON publish format: the topic travels in the BODY and the server URL is the
+# bare root, so title/message/tags are all fields of one UTF-8 JSON document.
+#
+# This replaced the X-Title/Priority/Tags HEADER form for one reason: HTTP header values are
+# ASCII, and the title now carries a country flag emoji (a 4-byte code point built from a
+# surrogate pair). A header cannot survive that. The old header form is also why the player
+# name was pinned to the body - with JSON, every field is unicode-safe and that constraint is
+# gone. Do NOT move a title back into a header.
+#
+# `priority` is a NUMBER in JSON (the header form accepted the names). Call sites keep passing
+# the names and this maps them, so a bad/unknown name degrades to normal rather than throwing.
+$script:NtfyPriority = @{ min = 1; low = 2; default = 3; high = 4; max = 5 }
+
 function Send-Ntfy($cfg, $title, $message, $priority, $tags) {
   if (-not $cfg.ntfyTopic) { Write-Log '[ntfy] no topic configured - cannot send'; return $false }
-  $uri = "$($cfg.ntfyServer)/$($cfg.ntfyTopic)"
-  $headers = @{ Title = $title; Priority = $priority; Tags = $tags }
+  $prio = 3
+  if ($script:NtfyPriority.ContainsKey([string]$priority)) { $prio = $script:NtfyPriority[[string]$priority] }
+  # [string[]] forces a JSON array even for a single tag (ConvertTo-Json unwraps a lone element).
+  $payload = [ordered]@{
+    topic    = [string]$cfg.ntfyTopic
+    title    = [string]$title
+    message  = [string]$message
+    priority = $prio
+    tags     = [string[]]@($tags)
+  }
+  $headers = @{}
   if ($cfg.ntfyToken) { $headers['Authorization'] = "Bearer $($cfg.ntfyToken)" }
   try {
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes([string]$message)
-    Invoke-RestMethod -Uri $uri -Method Post -Body $bytes -Headers $headers `
-      -ContentType 'text/plain; charset=utf-8' -TimeoutSec 15 | Out-Null
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $payload -Compress -Depth 4))
+    Invoke-RestMethod -Uri $cfg.ntfyServer -Method Post -Body $bytes -Headers $headers `
+      -ContentType 'application/json; charset=utf-8' -TimeoutSec 15 | Out-Null
     return $true
   }
   catch { Write-Log "[ntfy] error: $($_.Exception.Message)"; return $false }
 }
 
+# 👤 one player, 👥 more than one. ntfy renders an emoji-shortcode tag immediately BEFORE the
+# title, so this reads as a badge on the alert rather than as text in the body - which is why
+# the body only needs the bare "(N)".
+function Count-Tag($n) {
+  if ([int]$n -gt 1) { return 'busts_in_silhouette' }
+  return 'bust_in_silhouette'
+}
+
 # ── GeoIP (region from IP) ──────────────────────────────────────────────────────
 # One HTTP GET to ip-api.com per UNIQUE IP, cached for the process lifetime. 2s timeout
-# + graceful '' fallback: a slow/down lookup never delays a push by more than 2s (and
+# + graceful empty fallback: a slow/down lookup never delays a push by more than 2s (and
 # never at all for a repeat IP). LAN/loopback/link-local IPs are skipped.
-# Format: "City, State <flag>" — city + `region` (the short state/province code, e.g. CA)
-# + a flag emoji from the ISO2 `countryCode`. The flag renders in the ntfy phone app (the
-# "emoji flags don't render on Windows" caveat is website-only); Send-Ntfy already UTF-8
-# encodes the body. If the country code is missing/odd, fall back to the plain country name.
+#
+# Returns the two halves SEPARATELY - @{ flag = '🇺🇸'; place = 'San Diego, California, United
+# States' } - because they land in different parts of the alert: the flag goes in the TITLE,
+# the spelled-out place in the BODY. Either can be '' on its own (an odd/missing countryCode
+# still yields a place; a city-less result still yields a flag).
+# `regionName` is the field that spells the state out ("California"); `region` is the short
+# code ("CA") the old single-line format used. Flags render in the ntfy phone app - the
+# "emoji flags don't render on Windows" caveat is website-only.
 $script:geoCache = @{}
 
 # ISO2 country code -> flag emoji (two regional-indicator symbols, each a 4-byte code point
@@ -193,25 +228,25 @@ function CC-ToFlag($cc) {
 }
 
 function Get-Region($addr) {
+  $none = [pscustomobject]@{ flag = ''; place = '' }
   $ip = ([string]$addr).Split(':')[0]
-  if (-not $ip -or $ip -eq 'unknown') { return '' }
-  if ($ip -match '^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)') { return '' }
+  if (-not $ip -or $ip -eq 'unknown') { return $none }
+  if ($ip -match '^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)') { return $none }
   if ($script:geoCache.ContainsKey($ip)) { return $script:geoCache[$ip] }
-  $region = ''
+  $geo = $none
   try {
-    $r = Invoke-RestMethod -UseBasicParsing -TimeoutSec 2 -Uri "http://ip-api.com/json/${ip}?fields=status,country,countryCode,region,city"
+    $r = Invoke-RestMethod -UseBasicParsing -TimeoutSec 2 -Uri "http://ip-api.com/json/${ip}?fields=status,country,countryCode,regionName,city"
     if ($r.status -eq 'success') {
-      $place = (@($r.city, $r.region | Where-Object { $_ }) -join ', ')
-      $flag  = CC-ToFlag $r.countryCode
-      if ($flag) {                                   # "City, State <flag>"
-        if ($place) { $region = "$place $flag" } else { $region = $flag }
-      } else {                                       # no flag -> "City, State, Country"
-        $region = (@($place, $r.country | Where-Object { $_ }) -join ', ')
+      # -Unique keeps first-seen order and collapses a city-state's repeated name, so Berlin
+      # reads "Berlin, Germany" rather than "Berlin, Berlin, Germany".
+      $geo = [pscustomobject]@{
+        flag  = (CC-ToFlag $r.countryCode)
+        place = ((@($r.city, $r.regionName, $r.country | Where-Object { $_ }) | Select-Object -Unique) -join ', ')
       }
     }
-  } catch { $region = '' }
-  $script:geoCache[$ip] = $region
-  return $region
+  } catch { $geo = $none }
+  $script:geoCache[$ip] = $geo
+  return $geo
 }
 
 # Human-readable session length. 45 -> "45s", 1830000ms -> "30m 30s", 3720000 -> "1h 2m".
@@ -224,23 +259,28 @@ function Format-Duration($ms) {
   if ($rm) { return "${h}h ${rm}m" } else { return "${h}h" }
 }
 
-# region + ping -> parts appended to a JOIN alert (empty array if we have neither).
+# location + ping -> the two bits of a JOIN alert's BODY ("<flag> City, State, Country  |  42ms").
+# Everything scannable (who / how many / where) is in the TITLE - this is the detail underneath.
 # A ping >= 999 is the connect-time placeholder (no real RTT settled yet at the moment we
 # first see the joiner in `status`), so it's dropped rather than shown as a misleading
 # "999ms" — join alerts simply omit the ping until it's a real reading.
-function Get-DetailBits($region, $ping) {
+function Get-DetailBits($loc, $ping) {
   $bits = New-Object System.Collections.ArrayList
-  if ($region) { [void]$bits.Add([string]$region) }
+  if ($loc) { [void]$bits.Add([string]$loc) }
   if ($null -ne $ping -and $ping -lt 999) { [void]$bits.Add("${ping}ms") }
   return $bits
 }
-function Get-JoinDetail($region, $ping) {
-  $bits = Get-DetailBits $region $ping
-  if ($bits.Count -gt 0) { return "`n" + ($bits -join '  |  ') }
-  return ''
+# Never returns '' — an empty ntfy message renders as a bodyless alert. Both bits drop out only
+# when geoLookup is off (or the IP is LAN/loopback) AND the ping is still the placeholder.
+function Get-JoinBody($loc, $ping) {
+  $bits = Get-DetailBits $loc $ping
+  if ($bits.Count -gt 0) { return ($bits -join '  |  ') }
+  return 'No location data'
 }
-function Get-LogDetail($region, $ping) {
-  $bits = Get-DetailBits $region $ping
+# The console log takes the place WITHOUT the flag: this lands in a text log on a Windows box,
+# where flag emoji don't render.
+function Get-LogDetail($place, $ping) {
+  $bits = Get-DetailBits $place $ping
   if ($bits.Count -gt 0) { return "  [" + ($bits -join ', ') + "]" }
   return ''
 }
@@ -282,8 +322,16 @@ function Do-Tick($cfg) {
     $cur[$k] = [pscustomobject]@{ name = $p.name; joinedAt = $joined; ping = $p.ping; addr = $p.addr }
   }
 
+  # Map reads as its real name ("Nuketown"), same table the admin console + website use; an
+  # unlisted id falls through to the raw "mp_*" rather than vanishing.
+  $mapName = ''
+  if ($st.map) { $mapName = Get-GfMapName $st.map }
+  # Join titles carry the map alone; $ctx (map + gametype) still backs the heartbeat/empty
+  # alerts and the watcher's own status line.
+  $mapSuffix = ''
+  if ($mapName) { $mapSuffix = "  $mapName" }
   $ctx = ''
-  if ($st.map) { $ctx = $st.map; if ($st.gametype) { $ctx = "$($st.map) / $($st.gametype)" } }
+  if ($mapName) { $ctx = $mapName; if ($st.gametype) { $ctx = "$ctx / $($st.gametype)" } }
   $ctxSuffix = ''
   if ($ctx) { $ctxSuffix = "  -  $ctx" }
   $script:lastOnline = $cur.Count
@@ -302,22 +350,25 @@ function Do-Tick($cfg) {
   foreach ($p in $real) {
     $k = P-Key $p
     if (-not $script:known.ContainsKey($k)) {
-      $region = ''
-      if ($cfg.geoLookup) { $region = Get-Region $p.addr }   # <=2s, cached per IP
-      $detail = Get-JoinDetail $region $p.ping
-      $logd   = Get-LogDetail  $region $p.ping
+      $geo = [pscustomobject]@{ flag = ''; place = '' }
+      if ($cfg.geoLookup) { $geo = Get-Region $p.addr }   # <=2s, cached per IP
+      # Body leads with the flag: "🇺🇸 San Diego, California, United States  |  42ms".
+      $loc  = ((@($geo.flag, $geo.place) | Where-Object { $_ }) -join ' ')
+      $body = Get-JoinBody $loc $p.ping
+      $logd = Get-LogDetail $geo.place $p.ping          # log gets the place without the flag
+      $ptag = Count-Tag $cur.Count                      # 👤 / 👥 by TOTAL players online
       if ($wasEmpty -and -not $firstDone) {
         $firstDone = $true
         Write-Log "FIRST $($p.name)  (server now active, $($cur.Count) online)$logd"
         if ($cfg.notifyFirstJoin) {
-          [void](Send-Ntfy $cfg "$($cfg.serverName) - server now active" `
-            "$($p.name) joined an empty server$ctxSuffix$detail" 'high' 'green_circle,bust_in_silhouette')
+          [void](Send-Ntfy $cfg "$($p.name) joined an empty server  ($($cur.Count))$mapSuffix" `
+            $body 'high' @('green_circle', $ptag))
           continue
         }
       }
       Write-Log "JOIN  $($p.name)  ($($cur.Count) online)$logd"
-      [void](Send-Ntfy $cfg "$($cfg.serverName) - player joined" `
-        "$($p.name) joined  ($($cur.Count) online)$ctxSuffix$detail" 'default' 'bust_in_silhouette')
+      [void](Send-Ntfy $cfg "$($p.name) joined  ($($cur.Count))$mapSuffix" `
+        $body 'default' @($ptag))
     }
   }
 
@@ -328,7 +379,7 @@ function Do-Tick($cfg) {
         $sess = Format-Duration (($now - $info.joinedAt).TotalMilliseconds)
         Write-Log "LEAVE $($info.name)  ($($cur.Count) online, played $sess)"
         [void](Send-Ntfy $cfg "$($cfg.serverName) - player left" `
-          "$($info.name) left after $sess  ($($cur.Count) online)" 'low' 'wave')
+          "$($info.name) left after $sess  ($($cur.Count))" 'low' @('wave'))
       }
     }
   }
@@ -336,7 +387,7 @@ function Do-Tick($cfg) {
   if ($cfg.notifyEmpty -and $cur.Count -eq 0 -and $script:known.Count -gt 0) {
     Write-Log 'EMPTY server now has 0 players'
     [void](Send-Ntfy $cfg "$($cfg.serverName) - server empty" `
-      "Last player left - 0 online$ctxSuffix" 'low' 'zzz')
+      "Last player left - 0 online$ctxSuffix" 'low' @('zzz'))
   }
 
   $script:known = $cur
@@ -384,7 +435,7 @@ if (-not $cfg.password)  { Write-Host "`nFATAL: no rcon_password (not in config/
 
 if (-not $cfg.quiet) {
   [void](Send-Ntfy $cfg "$($cfg.serverName) - notifier online" `
-    'Join notifier started and watching the server.' 'low' 'satellite_antenna')
+    'Join notifier started and watching the server.' 'low' @('satellite_antenna'))
 }
 
 $lastHeartbeat = Get-Date
@@ -395,7 +446,7 @@ while ($true) {
     $msg = "Watcher alive - $($script:lastOnline) player(s) online"
     if ($script:lastCtx) { $msg += "  -  $($script:lastCtx)" }
     Write-Log "HEARTBEAT $msg"
-    [void](Send-Ntfy $cfg "$($cfg.serverName) - heartbeat" $msg 'min' 'green_heart')
+    [void](Send-Ntfy $cfg "$($cfg.serverName) - heartbeat" $msg 'min' @('green_heart'))
   }
   Start-Sleep -Milliseconds $cfg.pollMs
 }

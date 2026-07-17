@@ -84,6 +84,8 @@ $ErrorActionPreference = 'Stop'
 
 # Shared with GF-JoinNotify: Get-GfIgnoreList (mtime-cached) + Test-GfIgnored.
 . (Join-Path $PSScriptRoot '..\ignore_list.ps1')
+# Shared with GF-JoinNotify: Get-GfMapName (map id -> display name).
+. (Join-Path $PSScriptRoot '..\map_names.ps1')
 if ([string]::IsNullOrEmpty($IgnoreFile)) { $IgnoreFile = Join-Path $PSScriptRoot '..\ignore.local.json' }
 
 # storage\t5\mods\mp_gunfight\tools\status_service\ -> four parents = storage\t5\
@@ -339,16 +341,13 @@ function Build-PublicActivity {
     return @($out.ToArray())
 }
 
+# Map id -> display name now comes from the shared tools\map_names.ps1 (dot-sourced at the top),
+# so the website, the phone alerts and the admin console cannot drift apart. The local table this
+# replaced had two faults: it called mp_havoc "Hazard" (it is JUNGLE - Hazard is mp_golfcourse),
+# and it knew none of the 12 DLC maps, which fell through to a raw "mp_*" on the site.
 function Map-Name {
     param([string]$raw)
-    switch ($raw) {
-        'mp_nuked'       { 'Nuketown' } 'mp_havoc' { 'Hazard' } 'mp_cairo' { 'Havana' }
-        'mp_cosmodrome'  { 'Launch' }   'mp_firingrange' { 'Firing Range' }
-        'mp_duga'        { 'Grid' }      'mp_hanoi' { 'Hanoi' }  'mp_array' { 'Array' }
-        'mp_cracked'     { 'Cracked' }   'mp_crisis' { 'Crisis' } 'mp_radiation' { 'Radiation' }
-        'mp_mountain'    { 'Summit' }    'mp_villa' { 'Villa' }  'mp_russianbase' { 'WMD' }
-        default { $raw }
-    }
+    return (Get-GfMapName $raw)
 }
 
 # --- Recent-activity feed (name-only, in-memory ring, no IP) -------------------

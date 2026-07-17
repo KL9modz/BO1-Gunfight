@@ -302,6 +302,31 @@ onStartGameType()
     // lands on stock, never back through our override. Re-installed each round (map_restart wipes it).
     level.gf_stockAutoassign = level.autoassign;
     level.autoassign         = maps\mp\gametypes\_gf_rounds::gf_autoJoinBalance;
+
+    // Player team-choice wrappers (same install pattern as autoassign above: SetupCallbacks just
+    // reset the stock handlers, so these saves capture REAL stock — every passthrough lands on
+    // stock, never back through the wrapper). They own the rcon switch kill-switch
+    // (gf_team_switch), the team-size lock (gf_team_lock + queue), and SAFE immediate switching:
+    // an ALIVE mid-round switcher goes through the sequenced move (die + sit out the round)
+    // instead of stock's racy suicide+respawn — the wrong-team/1hp spawn bug.
+    level.gf_stockAllies    = level.allies;
+    level.gf_stockAxis      = level.axis;
+    level.gf_stockSpectator = level.spectator;
+    level.allies            = maps\mp\gametypes\_gf_rounds::gf_menuAllies;
+    level.axis              = maps\mp\gametypes\_gf_rounds::gf_menuAxis;
+    level.spectator         = maps\mp\gametypes\_gf_rounds::gf_menuSpectator;
+
+    // GF's round-boundary balancer is the SINGLE owner of team balance, so stock's competing
+    // keep-balanced policy is disabled here. Stock's canJoinTeam (_globallogic_ui.gsc:427) otherwise
+    // REFUSES any join that would put a team 2+ ahead — which would silently contradict this mod's
+    // rule that team choice is free (join a friend's side; the next boundary evens it by moving the
+    // most recent joiner) and would show the player a bare "cannot join team" instead. Two owners of
+    // one concept is the failure mode; this makes it one.
+    // _serversettings::init sets this from g_teamchange_keepbalanced, but it is THREADED earlier in
+    // _globallogic (:1766, no yield before the assignment) and onStartGameType runs after (:1880), so
+    // this wins; nothing re-reads the dvar afterwards (no watcher touches it). Re-set every round
+    // because map_restart wipes level.*. Admins gate switching with gf_team_switch / gf_team_lock.
+    level.teamchange_keepbalanced = false;
     // #strip-end
 
     gf_registerLoadoutCycleDvar(); // also sets level.gf_cfg_roundsPerLoadout
@@ -436,14 +461,24 @@ onStartGameType()
     // this callback has never run.
     if ( getDvar( "scr_pregame_timelimit" ) == "" )
         setDvar( "scr_pregame_timelimit", "0" );
-    // Dynamic bot fill. gf_fill_n is the PER-TEAM target N (humans+bots per side): the Gunfight
-    // round-boundary reconciler (gf_reconcilerInit in _bot.gsc, dev-only) pads each side to exactly
-    // N with bots at each round boundary — mid-round roster changes are absorbed at the next round
-    // start. It MUST be a dvar — the only state that survives the lobby's map_restart(false).
+    // TEAM SIZE + BOT FILL. gf_fill_n is the per-team TARGET size: at every round boundary the
+    // reconciler (gf_reconcilerInit in _bot.gsc, dev-only) evens the HUMAN split to off-by-1
+    // (moving the most recent joiner; gf_team_balance 0 disables), then pads BOTH sides with bots
+    // to max(bigger human side, gf_fill_n) — so humans define the size, bots absorb the variance,
+    // and enough humans means ZERO bots. 0 = no bot fill (human balancing still runs; manual bot
+    // control sticks). It MUST be a dvar — the only state surviving the lobby's map_restart(false).
     if ( getDvar( "gf_fill_n" ) == "" )
-        setDvar( "gf_fill_n", "0" );              // 0 = fill off; 3 = 3v3, 4 = 4v4, ... (clamped 0-6 on read)
+        setDvar( "gf_fill_n", "2" );              // per-team target size (clamped 0-6 on read); 0 = no bots
     if ( getDvar( "gf_fill_kick_floor" ) == "" )
         setDvar( "gf_fill_kick_floor", "2" );     // client slots kept free for humans: a parked bot is KICKED (not parked) once level.players >= sv_maxclients - this
+    if ( getDvar( "gf_team_balance" ) == "" )
+        setDvar( "gf_team_balance", "1" );        // 1 = even the HUMAN split (off-by-1) at every round boundary; 0 = never move humans
+    if ( getDvar( "gf_team_lock" ) == "" )
+        setDvar( "gf_team_lock", "0" );           // 1 = gf_fill_n is a hard HUMAN cap per side: overflow joiners spectate, queued (join order) for the next open seat
+    if ( getDvar( "gf_team_switch" ) == "" )
+        setDvar( "gf_team_switch", "1" );         // 1 = players may switch teams themselves (immediately; alive mid-round = die + sit out); 0 = self-switching disabled
+    if ( getDvar( "scr_gf_latespawn" ) == "" )
+        setDvar( "scr_gf_latespawn", "1" );       // 1 = a joiner/mover may spawn INTO a live round while their team has >=1 alive (never in OT); 0 = spectate until next round
     if ( getDvar( "gf_teamplan" ) == "" )
         setDvar( "gf_teamplan", "" );             // lobby->match transfer: "<guid>:<a|x|s>,..." snapshot written pre-restart, re-applied post-restart (survives map_restart(false))
     // #strip-end
@@ -937,9 +972,11 @@ onSpawnPlayerUnified()
 // deliberately strict (single flag) because a stray false during the live match would block ALL
 // spawning.
 //
-// Both of its jobs are dev-only (the lobby hold, and the bot reconciler's surplus-bot park), so the
-// public build ships neither the hook nor its assignment in onStartGameType — stock maySpawn guards
-// with isDefined( level.maySpawn ), so it falls straight through to its own grace/lives logic.
+// All four of its jobs are dev-only — the lobby hold, the reconciler's surplus-bot park
+// (gf_parkPending), the balancer's deferred human move (gf_movePending), and the mid-round
+// late-spawn admit (scr_gf_latespawn) — so the public build ships neither the hook nor its
+// assignment in onStartGameType; stock maySpawn guards with isDefined( level.maySpawn ), so it
+// falls straight through to its own grace/lives logic.
 gf_lobbyMaySpawn()
 {
     if ( isDefined( level.gf_lobbyRestartHold ) && level.gf_lobbyRestartHold )
@@ -961,7 +998,265 @@ gf_lobbyMaySpawn()
         return false;
     }
 
+    // Deferred team move (human balancing). The boundary reconciler cannot quietly move a player
+    // who was still ALIVE at the boundary (a round survivor in the killcam), so it marks them
+    // pers["gf_movePending"] instead and the move lands HERE — the pre-spawn window of their next
+    // spawn, where flipping team state is race-free (the same mechanism as gf_parkPending above).
+    // Unlike the park, the spawn CONTINUES on the new team, so class stays defined (spawnClient
+    // already validated it); only the cached model/weapon clear so they re-derive for the new side
+    // (a stale pers["savedmodel"] renders the WRONG TEAM's skin — the old wrong-team-look bug).
+    if ( isDefined( self.pers["gf_movePending"] ) )
+    {
+        team = self.pers["gf_movePending"];
+        self.pers["gf_movePending"] = undefined;
+        if ( team == "allies" || team == "axis" )
+        {
+            self.pers["team"]       = team;
+            self.team               = team;
+            self.sessionteam        = team;
+            self.pers["weapon"]     = undefined;
+            self.pers["savedmodel"] = undefined;
+        }
+    }
+
+    // FILL DISCIPLINE — the spawn-gate half of the reconciler's size policy, enforced at the one
+    // door every client walks through. Team size = max(bigger human side, gf_fill_n), the exact
+    // formula the boundary pass pads to (the pass only PLANS; this gate ENFORCES). Inert at
+    // gf_fill_n 0 (manual bot mode — an admin's deliberate 3v1 bot setup must stick). Two halves:
+    //
+    //   BOTS  — a bot may not spawn when its side already holds the size: it is quiet-parked
+    //           (reusable) + logged GF_FILLGUARD, so ANY mis-seat — a stock autoassign landing, a
+    //           menu-response race, a stray plan — self-corrects instead of over-sizing the round.
+    //           Denials cascade correctly: each park flips pers, so the next bot's count drops.
+    //
+    //   HUMANS — never denied; instead, SEAT PRIORITY: a human spawning onto a side already at
+    //           size that still holds a bot displaces that bot (gf_displaceBotForHuman — dead bot:
+    //           quiet park; alive/frozen bot: sequenced suicide-park, still reusable). This runs on
+    //           EVERY admitted human spawn — the prematch countdown and grace included, where stock
+    //           admits directly and the late-spawn path below never runs. Without it a human
+    //           joining a 2-bot side during the countdown STACKED to 3 bodies (live repro
+    //           2026-07-16). Safe against denied spawns: the displacer re-checks the human actually
+    //           spawned before touching any bot, so threading it pre-verdict costs nothing.
+    if ( isDefined( self.pers["team"] )
+        && ( self.pers["team"] == "allies" || self.pers["team"] == "axis" )
+        && !( self isdemoclient() ) )
+    {
+        sizeT = gf_targetRoundSize();
+        if ( sizeT > 0 && gf_teamRosterCount( self.pers["team"], self ) >= sizeT )
+        {
+            if ( self istestclient() )
+            {
+                PrintLn( "GF_FILLGUARD: parked bot " + self.name + " - " + self.pers["team"]
+                    + " already at size " + sizeT + " (round " + game["roundsplayed"] + ")" );
+                self.pers["team"] = "spectator";
+                self.team         = "spectator";
+                self.sessionteam  = "spectator";
+                return false;
+            }
+            // Human: this is only a cheap PRE-FILTER (the roster is transiently over-counted during
+            // the size-bump / fill churn — a fill bot momentarily on this side before it's steered).
+            // gf_displaceBotForHuman re-checks the REAL over-size at apply time and removes only the
+            // genuine excess, so a spurious trigger here is a harmless no-op — never a killed bot.
+            self thread gf_displaceBotForHuman( self.pers["team"] );
+        }
+    }
+
+    // LATE SPAWN — admit a first spawn into a LIVE round (mid-round joiners, admin force moves,
+    // spectators picking a team) while their team still has >=1 alive, it isn't overtime, and the
+    // spawn preserves the round's team size (gf_lateSpawnAllowed: fill a gap, or displace a bot).
+    // Stock maySpawn's gate B (`!inGracePeriod && !hasSpawned`) exists to deny exactly this, so
+    // satisfying it deliberately is the whole feature: pre-set hasSpawned (spawnPlayer sets it
+    // true on this same spawn anyway). Gate A (lives) is deliberately NOT touched — an eliminated
+    // player stays out for the round — and stock's own inOvertime check still runs after us.
+    if ( getDvarInt( "scr_gf_latespawn" ) == 1
+        && isDefined( level.gf_roundActive ) && level.gf_roundActive
+        && !( isDefined( level.gf_roundEnding ) && level.gf_roundEnding )
+        && !level.inOvertime
+        && !( isDefined( level.inGracePeriod ) && level.inGracePeriod )   // grace: stock admits already
+        && !self.hasSpawned
+        && isDefined( self.pers["lives"] ) && self.pers["lives"]
+        && isDefined( self.pers["team"] )
+        && ( self.pers["team"] == "allies" || self.pers["team"] == "axis" )
+        && isDefined( level.aliveCount ) && isDefined( level.aliveCount[ self.pers["team"] ] )
+        && level.aliveCount[ self.pers["team"] ] >= 1
+        && self gf_lateSpawnAllowed() )
+    {
+        self.hasSpawned = true;
+    }
+
     return true;
+}
+
+// Two ways into a live round, and never a third — the round's team SIZE is preserved either way:
+//
+//   1. FILL A GAP — the spawn leaves our team no bigger than the enemy's. Open to anyone, bots
+//      included (a team someone left, or a fill bot that never landed: 3v2 -> 3v3).
+//   2. TAKE A BOT'S SPOT — HUMANS ONLY. Bots are filler and yield to a human immediately, so a human
+//      never waits a round for a seat a bot is keeping warm. Admits the spawn and removes that bot
+//      (gf_displaceBotForHuman), so the size is unchanged. A bot never displaces anyone to get in.
+//
+// Otherwise (team full of HUMANS) the spawn waits for the boundary — a human may take a bot's spot,
+// not another human's.
+//
+// The gap rule is load-bearing for BOTS: the reconciler's adds are staggered 0.5s apart
+// (gf_addFillBots) and gf_matchStartPass waits for a QUIET roster — which a human's join RESETS — so
+// its pass can fire mid-round and add bots. Stock's gate B used to park all of them harmlessly in
+// spectator; admitting them unconditionally is what ran rounds over the target ("it kept all 4 bots",
+// "rounds starting with an extra bot").
+//
+// ROSTER, not alive count (gf_teamRosterCount): one life per round means a team that has lost players
+// is still "N for this round", so treating its dead as a gap would hand it free bodies mid-fight.
+gf_lateSpawnAllowed()
+{
+    mine  = gf_teamRosterCount( self.pers["team"], self );
+    other = gf_teamRosterCount( getOtherTeam( self.pers["team"] ), self );
+    if ( mine + 1 <= other )
+        return true;                                   // 1. genuine gap
+
+    if ( self istestclient() )
+        return false;                                  // a bot never displaces anyone to get in
+    if ( !isDefined( gf_pickDisplaceableBot( self.pers["team"] ) ) )
+        return false;                                  // 2. no bot to displace: all humans, and full
+
+    // Pure admission — the displacement itself is driven by the fill-discipline gate above, which
+    // runs on every admitted human spawn (this late-spawn path is just one of them).
+    return true;
+}
+
+// The per-team target SIZE for this round (the exact formula the boundary reconciler pads to):
+// max(bigger human side, gf_fill_n). 0 when fill is off (gf_fill_n 0) — the whole fill-discipline
+// gate is inert then, so manual bot setups stick. Single source of truth for the maySpawn gate AND
+// gf_displaceBotForHuman, so they can never disagree on what "over size" means.
+gf_targetRoundSize()
+{
+    fillN = getDvarInt( "gf_fill_n" );
+    if ( fillN < 0 ) fillN = 0;
+    if ( fillN > 6 ) fillN = 6;
+    if ( fillN == 0 )
+        return 0;
+
+    s  = maps\mp\gametypes\_gf_rounds::gf_countTeamHumans( "allies" );
+    hX = maps\mp\gametypes\_gf_rounds::gf_countTeamHumans( "axis" );
+    if ( hX > s )
+        s = hX;
+    if ( fillN > s )
+        s = fillN;
+    return s;
+}
+
+// Clients holding a seat on `team` for THIS round: on the team, not spectating, excluding `exclude`.
+// A bot already retired (pers["gf_parkPending"] by the reconciler, or being displaced right now)
+// holds no seat and must not make the team look full.
+gf_teamRosterCount( team, exclude )
+{
+    n = 0;
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( !isDefined( p ) || p isdemoclient() )
+            continue;
+        if ( isDefined( exclude ) && p == exclude )
+            continue;
+        if ( isDefined( p.pers["gf_parkPending"] ) && p.pers["gf_parkPending"] )
+            continue;
+        if ( isDefined( p.gf_displacePending ) )
+            continue;
+        if ( isDefined( p.pers["team"] ) && p.pers["team"] == team )
+            n++;
+    }
+    return n;
+}
+
+// The bot a joining human takes the spot of: any bot on `team` the reconciler hasn't already retired.
+// PREFERS one that is NOT "playing" (dead this round / never spawned), because parking it is the free,
+// race-free primitive this whole architecture is built on; an ALIVE bot has no quiet primitive (a
+// quiet reassign of a playing client corrupts alive counts) and must be kicked, so it is the fallback.
+// Consequence of that preference, accepted deliberately: replacing a DEAD bot lifts the team's alive
+// count by one mid-round (it backfills a fallen bot), whereas replacing an alive one is a pure swap.
+// Both keep the ROSTER — the round's team size — identical, which is the invariant that matters.
+gf_pickDisplaceableBot( team )
+{
+    alive = undefined;
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( !isDefined( p ) || !( p istestclient() ) || p isdemoclient() )
+            continue;
+        if ( !( isDefined( p.pers["team"] ) && p.pers["team"] == team ) )
+            continue;
+        if ( isDefined( p.pers["gf_parkPending"] ) && p.pers["gf_parkPending"] )
+            continue;                                  // already retired by the reconciler
+        if ( isDefined( p.gf_displacePending ) )
+            continue;                                  // already claimed by another joining human
+        if ( isDefined( p.sessionstate ) && p.sessionstate == "playing" )
+        {
+            if ( !isDefined( alive ) )
+                alive = p;                             // fallback: costs a kick
+            continue;
+        }
+        return p;                                      // not playing: the free one
+    }
+    return alive;
+}
+
+// Trim `team` back to its target size after a human took a bot's spot, so the size is unchanged.
+// ⚠ Runs AFTER the human's spawn commits: removing a team's last ALIVE client mid-round reads as a
+// team WIPE (onDeadEvent -> the round ends early), so the human must be standing on that team first.
+//
+// ⚠ Removes only the GENUINE excess, recomputed here at apply time — NOT "one bot per call". The
+// maySpawn trigger is a cheap pre-filter over a roster that is transiently over-counted during the
+// size-bump / fill churn (a fill bot momentarily on this side before it's steered away). If it has
+// settled back to size by now, `over` is <= 0 and this removes NOTHING. Unconditionally killing one
+// bot here is what dropped a correct 3v3 to 3v2 at random (a real bot suicided for a phantom seat).
+gf_displaceBotForHuman( team )
+{
+    self endon( "disconnect" );
+    self notify( "gf_displaceBot" );     // collapse to one live copy per player
+    self endon( "gf_displaceBot" );
+    level endon( "game_ended" );
+
+    wait 0.05;                           // spawnClient commits the spawn on this frame
+
+    if ( self.sessionstate != "playing" )
+        return;                          // the spawn never happened: leave the bots alone
+    if ( !( isDefined( self.pers["team"] ) && self.pers["team"] == team ) )
+        return;
+
+    sizeT = gf_targetRoundSize();
+    if ( sizeT <= 0 )
+        return;
+    // Roster now INCLUDES the spawned human (exclude undefined). Over-size => trim exactly the
+    // surplus. gf_pickDisplaceableBot only ever returns BOTS, so if the excess is humans it returns
+    // undefined and we stop — a human is never displaced here (that's the balancer's job).
+    over = gf_teamRosterCount( team, undefined ) - sizeT;
+    while ( over > 0 )
+    {
+        bot = gf_pickDisplaceableBot( team );
+        if ( !isDefined( bot ) )
+            return;
+
+        // Claim it yield-free so this loop (and a second human spawning this frame) skips it next
+        // scan — gf_pickDisplaceableBot and gf_teamRosterCount both exclude a claimed bot. The
+        // boundary pass wipes any stale claim (gf_clearAllMovePending).
+        bot.gf_displacePending = true;
+
+        if ( isDefined( bot.sessionstate ) && bot.sessionstate == "playing" )
+        {
+            // Alive or prematch-frozen: sequenced suicide-park (suicide -> death settles -> quiet
+            // reassign to spectator). Keeps the bot CONNECTED and reusable — kicking it threw away a
+            // client the reconciler would just re-add, and during the countdown a kick is pure churn.
+            // switching_teams inside the primitive keeps the death off the books.
+            bot thread maps\mp\gametypes\_gf_rounds::gf_seqTeamMove( "spectator", false );
+        }
+        else
+        {
+            bot gf_quietSetTeam( "spectator" );              // parked, reusable by the next pass
+            bot.gf_displacePending = undefined;              // never leave a stale claim on a bot that lives on
+        }
+        over--;
+    }
 }
 // #strip-end
 

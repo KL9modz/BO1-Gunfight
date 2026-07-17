@@ -116,6 +116,12 @@ onPlayerConnect()
 	{
 		level waittill("connected", player);
 
+		// Join-order stamp for the balancer ("most recent joiner" moves first) and the lock
+		// queue (seated in join order). One-shot per client: pers survives map_restart(true),
+		// so re-begins between rounds keep the original order (the lobby's false-restart wipes
+		// pers and everyone re-stamps in reconnect order — acceptable drift).
+		player maps\mp\gametypes\_gf_rounds::gf_joinSeqOf();
+
 		player thread watch_shoot();
 		player thread watch_grenade();
 		player thread connected();
@@ -139,12 +145,16 @@ handleBots()
 }
 
 // ============================================================================
-// GUNFIGHT ROUND-BOUNDARY BOT RECONCILER
+// GUNFIGHT ROUND-BOUNDARY TEAM RECONCILER (humans + bots)
 // ----------------------------------------------------------------------------
-// ONE authority over bot COUNTS and PLACEMENT, acting only at ROUND BOUNDARIES. Source of
-// truth = the dvar gf_fill_n (per-team target N; each side is padded to N *playing* clients,
-// humans+bots, with bots absorbing the variance). It MUST be a dvar — the only state that
-// survives the lobby's map_restart(false).
+// ONE authority over the next round's TEAM COMPOSITION, acting only at ROUND BOUNDARIES.
+// Source of truth = the dvar gf_fill_n (per-team TARGET size). Each pass: (1) seat the
+// team-size-lock queue (spectating humans, join order); (2) even the HUMAN split to off-by-1
+// (gf_team_balance 1, most recent joiner moves); (3) pad both sides with bots to
+// max(bigger human side, gf_fill_n) — humans define the size, bots absorb ALL variance, and
+// enough humans means ZERO bots. gf_fill_n MUST be a dvar — the only state that survives the
+// lobby's map_restart(false). gf_fill_n 0 = no bot fill (stages 1-2 still run; manual bot
+// control sticks).
 //
 // WHY boundary-only (this replaced an always-on 0.5s driver + human connect/disconnect
 // watchers): reconciling mid-round/mid-prematch forced stock team switches ([[level.allies]]()
@@ -152,16 +162,19 @@ handleBots()
 // async spawn commit across thread yields — the "bots kill themselves during the countdown"
 // bug. Repeated passes racing mid-connect adds and wrong-team autoassign landings were the
 // "bots exceed the fill target" bug. At a boundary neither race exists: everything is planned
-// in ONE yield-free pass, placement is a QUIET pers reassign (gf_botQuietSetTeam — no suicide
-// path even exists), and an alive round-winner is never touched at all (deferred mark).
+// in ONE yield-free pass and placement goes through race-free primitives only — quiet pers
+// reassign (gf_botQuietSetTeam / _gf_rounds::gf_quietSetTeam), the deferred pers marks
+// (gf_parkPending / gf_movePending, consumed in the target's next PRE-spawn window), or the
+// sequenced prematch move (_gf_rounds::gf_seqTeamMove). Never a raw stock switch.
 //
-// Invariant: each team = exactly N playing at round start, BOTS-ONLY variance. Humans are
-// NEVER moved — if the humans on a side exceed N, that side's bots drop to 0 and it stays
-// big; the OTHER side still fills to N. A displaced bot PARKS in spectator for reuse (KICKED
-// instead under client-slot pressure so a human can always connect; REDUCING the fill number
-// kicks the freed bots too). Mid-round roster changes (a human joins/leaves) are deliberately
-// ignored until the next boundary — worst case one ~45s round — which is also why a manual
-// panel move with fill ON only lasts until that boundary (fill OFF = manual mode sticks).
+// Invariant: each team = exactly N playing at round start, with bots only ever on the side
+// with fewer humans. Humans are moved ONLY by stage 2's off-by-1 evening (disable with
+// gf_team_balance 0) — a merely-uneven-but-legal split (off-by-1) is bot-compensated, never
+// human-moved. A displaced bot PARKS in spectator for reuse (KICKED instead under client-slot
+// pressure so a human can always connect; REDUCING the fill number kicks the freed bots too).
+// Mid-round roster changes are deliberately ignored until the next boundary — worst case one
+// ~45s round — which is also why a manual panel move with fill ON only lasts until that
+// boundary (fill OFF = manual bot mode sticks).
 //
 // Triggers (all run the same gf_boundaryPass):
 //   1. gf_round_over  — every round end; runs 0.5s in, INSIDE the killcam/intermission, where
@@ -262,21 +275,26 @@ gf_gateListener()
 	for(;;)
 	{
 		level waittill("gf_load_gate_reset");
-		if(gf_fillTarget() <= 0)
-			continue;                    // fill off: gates are none of our business
 		if(getDvar("gf_matchArmed") == "1")
 		{
-			players = level.players;
-			for(i = 0; i < players.size; i++)
+			// Bot kick-all only makes sense when the fill will rebuild them post-restart;
+			// with fill OFF the bots are carried by gf_botplan instead — never touch them.
+			if(gf_fillTarget() > 0)
 			{
-				p = players[i];
-				if(isDefined(p) && p istestclient() && !(p isdemoclient()))
-					kick(p getEntityNumber(), "EXE_PLAYERKICKED");
+				players = level.players;
+				for(i = 0; i < players.size; i++)
+				{
+					p = players[i];
+					if(isDefined(p) && p istestclient() && !(p isdemoclient()))
+						kick(p getEntityNumber(), "EXE_PLAYERKICKED");
+				}
 			}
 			continue;
 		}
 		if(level.players.size == 0)
 			continue;
+		// Runs even with fill OFF: the pass still owns human balancing + the lock queue
+		// (gf_boundaryPass skips only its BOT stages at gf_fill_n 0).
 		gf_boundaryPass();
 	}
 }
@@ -383,31 +401,50 @@ gf_reconcileCount()
 }
 
 // ONE reconcile pass: plan the next round's composition from the live roster, acting only
-// through suicide-free primitives (quiet pers reassign / deferred pers mark / kick / staggered
-// add). Yield-free, so it is atomic vs. all other script (GSC has no preemption) — and it is
-// the ONLY writer, so two passes can never race a half-applied change. gen-stamped so a newer
-// pass cancels an older pass's still-staggering add thread (the old overshoot source).
+// through race-free primitives (quiet pers reassign / deferred pers mark / sequenced prematch
+// move / kick / staggered add). Yield-free, so it is atomic vs. all other script (GSC has no
+// preemption) — and it is the ONLY writer, so two passes can never race a half-applied change.
+// gen-stamped so a newer pass cancels an older pass's still-staggering add thread.
+//
+// Stage order: (1) seat queued spectator humans (the team-size lock's waiting line, join order);
+// (2) even the HUMAN split to off-by-1 (gf_team_balance, most recent joiner moves); (3) bots pad
+// both sides to max(bigger human side, gf_fill_n) — humans define the size, bots absorb ALL
+// variance, and enough humans means zero bots. Stages 1-2 always run; the bot stages are skipped
+// at gf_fill_n 0 (no bot fill — manual bot control sticks).
 gf_boundaryPass()
 {
-	n = gf_fillTarget();
-	if(n <= 0)
-	{
-		gf_clearAllParkPending();        // fill OFF: drop any stale defer marks so a manually
-		return;                          // managed bot never spectates a round on an old mark
-	}                                    // fill OFF -> reconciler inert (manual bot control sticks)
-
 	if(!isDefined(level.gf_fillGen))     // level.* is wiped each map_restart; a surviving stale
 		level.gf_fillGen = 0;            // add thread compares against the fresh value and quits
 	level.gf_fillGen++;
 
 	gf_clearAllParkPending();            // recompute deferred parks fresh from THIS roster
-	c = gf_reconcileCount();
+	gf_clearAllMovePending();            // ...and stale deferred human moves (recomputed below)
 
-	// Human-driven size: pad both sides to max(bigger human team, floor). `n` held the floor from
-	// gf_fillTarget() above; this raises it to cover the humans so a full human lobby needs no bots
-	// and a lopsided-but-never-moved human roster still gets an EVEN team size (bots fill the short
-	// side). Everything below (park surplus bots -> spectator, deploy deficit, kick excess) already
-	// enforces this size symmetrically, so this one line is the whole policy change.
+	c  = gf_reconcileCount();
+	hA = c["allies_human"];
+	hX = c["axis_human"];
+
+	// --- Stage 1: seat queued humans (lock overflow) into open seats, join order.
+	r  = gf_seatQueuedHumans( hA, hX );
+	hA = r["a"];
+	hX = r["x"];
+
+	// --- Stage 2: even the human split (off-by-1), most recent joiner moves.
+	r  = gf_balanceHumans( hA, hX );
+	hA = r["a"];
+	hX = r["x"];
+
+	// --- Stage 3+: bots. Skipped entirely at fill 0 (no bot fill; manual bots stick).
+	n = gf_fillTarget();
+	if(n <= 0)
+		return;
+
+	// Human-driven size: pad both sides to max(bigger human team, target), using the POST-move
+	// human counts from the stages above (a planned move is already where that human will be next
+	// round). A full human lobby needs no bots; an odd human split gets exactly one bot on the
+	// short side; bots only ever sit on the side with fewer humans.
+	c["allies_human"] = hA;
+	c["axis_human"]   = hX;
 	n = gf_teamSizeTarget(c, n);
 
 	maxClients = getDvarInt("sv_maxclients");
@@ -639,9 +676,184 @@ gf_clearAllParkPending()
 	}
 }
 
-// Per-team fill FLOOR (clamped 0-6). 0 = fill off (reconciler inert, manual bot control sticks).
-// This is no longer a HARD target — see gf_teamSizeTarget(): humans define the actual size and bots
-// only top up. gf_fill_n is the SMALLEST team the reconciler will maintain with bots.
+// Drop every stale deferred human-move mark before this pass recomputes the plan (mirror of
+// gf_clearAllParkPending — a balance decision that resolved itself before the player's next
+// spawn must not still teleport them across teams). Also wipes stale .gf_displacePending claims
+// (set by gf.gsc's seat-priority displacement while a suicide-park settles): a claim that survives
+// to a boundary is done settling, and a parked bot carrying one would be invisible to roster
+// counts and permanently un-displaceable after the DEPLOY stage reuses it.
+gf_clearAllMovePending()
+{
+	players = level.players;
+	for(i = 0; i < players.size; i++)
+	{
+		p = players[i];
+		if(!isDefined(p))
+			continue;
+		if(isDefined(p.pers["gf_movePending"]))
+			p.pers["gf_movePending"] = undefined;
+		if(isDefined(p.gf_displacePending))
+			p.gf_displacePending = undefined;
+	}
+}
+
+// ── Stage 1: seat queued spectator humans (join order) into open seats. The queue holds humans
+// the team-size lock turned away (pers["gf_seatQueued"] = their join sequence). Lock ON: a seat
+// exists while a side holds fewer than gf_fill_n humans; lock OFF: any queued player seats
+// immediately on the lighter human side (marks then only exist transiently). Quiet reassign is
+// always safe here — a queued player is a spectator, never "playing". Returns the updated human
+// counts as r["a"]/r["x"].
+gf_seatQueuedHumans( hA, hX )
+{
+	lockOn = (getDvarInt("gf_team_lock") == 1);
+	s = gf_fillTarget();
+
+	for(;;)
+	{
+		best = undefined;
+		players = level.players;
+		for(i = 0; i < players.size; i++)
+		{
+			p = players[i];
+			if(!isDefined(p) || p istestclient() || p isdemoclient())
+				continue;
+			if(!isDefined(p.pers["gf_seatQueued"]))
+				continue;
+			if(!(isDefined(p.pers["team"]) && p.pers["team"] == "spectator"))
+			{
+				p.pers["gf_seatQueued"] = undefined;   // got a team some other way: mark is stale
+				continue;
+			}
+			if(isDefined(p.sessionstate) && p.sessionstate == "playing")
+				continue;
+			if(!isDefined(best) || p.pers["gf_seatQueued"] < best.pers["gf_seatQueued"])
+				best = p;
+		}
+		if(!isDefined(best))
+			break;
+
+		want = "axis";
+		if(hA <= hX)
+			want = "allies";
+		if(lockOn && s > 0)
+		{
+			if(hA >= s && hX >= s)
+				break;                             // no seat open — the queue keeps waiting
+			if(want == "allies" && hA >= s)
+				want = "axis";
+			else if(want == "axis" && hX >= s)
+				want = "allies";
+		}
+
+		best.pers["gf_seatQueued"] = undefined;
+		best maps\mp\gametypes\_gf_rounds::gf_quietSetTeam(want);
+		best iprintln("^2A team seat opened - you are in next round");
+		if(want == "allies")
+			hA++;
+		else
+			hX++;
+	}
+
+	r = [];
+	r["a"] = hA;
+	r["x"] = hX;
+	return r;
+}
+
+// ── Stage 2: even the HUMAN split to off-by-1 (gf_team_balance 1). The MOST RECENT JOINER on the
+// bigger side moves (join-sequence order — least disruptive to established players). How the move
+// lands depends on the player's state: not "playing" (dead in the killcam, spectating) -> quiet
+// pers reassign NOW; prematch-frozen -> sequenced move (life restored, respawned on the new side
+// during the countdown); alive round survivor at a round-end boundary -> pers["gf_movePending"],
+// consumed race-free in their next PRE-spawn window (the maySpawn hook in gf.gsc). Never a raw
+// stock switch — that async suicide+respawn was the wrong-team/1hp spawn bug. Returns updated
+// counts as r["a"]/r["x"].
+gf_balanceHumans( hA, hX )
+{
+	if(getDvarInt("gf_team_balance") == 1)
+	{
+		for(;;)
+		{
+			diff = hA - hX;
+			if(diff < 0)
+				diff = hX - hA;
+			if(diff <= 1)
+				break;
+
+			from = "allies";
+			to   = "axis";
+			if(hX > hA)
+			{
+				from = "axis";
+				to   = "allies";
+			}
+
+			pick = undefined;
+			pickSeq = -1;
+			players = level.players;
+			for(i = 0; i < players.size; i++)
+			{
+				p = players[i];
+				if(!isDefined(p) || p istestclient() || p isdemoclient())
+					continue;
+				if(!(isDefined(p.pers["team"]) && p.pers["team"] == from))
+					continue;
+				if(isDefined(p.gf_balanceMoved) && p.gf_balanceMoved == level.gf_fillGen)
+					continue;                      // already planned this pass (pers may not have flipped yet)
+				seq = p maps\mp\gametypes\_gf_rounds::gf_joinSeqOf();
+				if(!isDefined(pick) || seq > pickSeq)
+				{
+					pick = p;
+					pickSeq = seq;
+				}
+			}
+			if(!isDefined(pick))
+				break;
+
+			gf_humanPlanMove(pick, to);
+			if(from == "allies")
+			{
+				hA--;
+				hX++;
+			}
+			else
+			{
+				hX--;
+				hA++;
+			}
+		}
+	}
+
+	r = [];
+	r["a"] = hA;
+	r["x"] = hX;
+	return r;
+}
+
+// Land a planned human move through the right race-free primitive for the player's state
+// (see gf_balanceHumans). gf_balanceMoved (entity field, gen-stamped) keeps this pass's pick
+// loop from re-picking a player whose pers hasn't flipped yet.
+gf_humanPlanMove( p, team )
+{
+	p.gf_balanceMoved = level.gf_fillGen;
+
+	if(isDefined(p.sessionstate) && p.sessionstate == "playing")
+	{
+		if(isDefined(level.inPrematchPeriod) && level.inPrematchPeriod)
+			p thread maps\mp\gametypes\_gf_rounds::gf_seqTeamMove(team, true);
+		else
+			p.pers["gf_movePending"] = team;
+	}
+	else
+		p maps\mp\gametypes\_gf_rounds::gf_quietSetTeam(team);
+
+	p iprintln("^3You were moved to balance the teams");
+}
+
+// Per-team TARGET size (clamped 0-6). 0 = no bot fill (human balancing + the lock queue still
+// run; manual bot control sticks). Humans above the target grow the team naturally — see
+// gf_teamSizeTarget(): the padded size is max(bigger human side, this). With gf_team_lock 1 this
+// same number becomes the hard HUMAN cap per side (_gf_rounds::gf_teamLockDenies).
 gf_fillTarget()
 {
 	n = getDvarInt("gf_fill_n");
@@ -650,11 +862,12 @@ gf_fillTarget()
 	return n;
 }
 
-// The per-team size the reconciler pads BOTH sides to (so teams stay EVEN). gf_fill_n is a FLOOR,
-// not a hard target: the size tracks the bigger human side, so a full human lobby (e.g. 4v4) runs
-// with ZERO bots and an odd split (3 humans) rounds UP to an even 2v2 with a single bot. Bots only
-// top up the deficit below this. Not clamped by the 0-6 bot clamp — humans set the ceiling here; the
-// bots actually ADDED are still bounded by the client ceiling in gf_boundaryPass's deploy loop.
+// The per-team size the reconciler pads BOTH sides to (so teams stay EVEN): max(bigger human side,
+// the gf_fill_n target). The caller has already evened the humans to off-by-1 and stamped the
+// POST-move counts into `c`, so a full human lobby (e.g. 4v4) runs with ZERO bots and an odd human
+// count gets exactly one bot on the short side (7 humans -> 4v3 + 1 bot = 4v4). Not clamped by the
+// 0-6 target clamp — humans set the ceiling here; the bots actually ADDED are still bounded by the
+// client ceiling in gf_boundaryPass's deploy loop.
 // `floor` is gf_fillTarget() (already > 0 when this is reached — the caller returns early at 0).
 gf_teamSizeTarget(c, floor)
 {

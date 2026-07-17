@@ -379,9 +379,9 @@ function parseMapRotation(str) {
 }
 
 function parseGfState(stateStr) {
-  // format: "wA:wX:round:aliveA:aliveX:gametype:hold:fillN:pAllies:pAxis:parked"
-  // (hold added 2026-07-05, fill fields 8-11 added 2026-07-08; older servers omit trailing
-  // fields → parts[i] undefined → sane defaults, so this stays back-compatible)
+  // format: "wA:wX:round:aliveA:aliveX:gametype:hold:fillN:pAllies:pAxis:parked:botDiff"
+  // (hold added 2026-07-05, fill fields 8-11 added 2026-07-08, botDiff added 2026-07-16; older
+  // servers omit trailing fields → parts[i] undefined → sane defaults, so this stays back-compatible)
   const parts = String(stateStr).split(':');
   if (parts.length < 5) return null;
   const num = (v, d) => (v === undefined || v === '' ? d : (parseInt(v) || 0));
@@ -397,6 +397,9 @@ function parseGfState(stateStr) {
     playAllies: num(parts[8], 0),                          // current playing count (humans+bots) allies
     playAxis:   num(parts[9], 0),                          // current playing count axis
     parked:     num(parts[10], 0),                         // bots benched in spectator for reuse
+    botDiff:    parts[11] !== undefined                    // live bot difficulty preset (null = server predates it)
+                  ? String(parts[11]).replace(/\^\d/g, '').trim().toLowerCase()
+                  : null,
   };
 }
 

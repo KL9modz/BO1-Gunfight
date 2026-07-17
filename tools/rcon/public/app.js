@@ -338,6 +338,10 @@ async function pollTick(gen){
         if(s.gametype) g('sGt').textContent=s.gametype;
         setLobbyHold(s.lobbyHold);
         updateFillReadout(s);
+        // Keep the Difficulty row lit on the live preset (gf_state field 12) every tick, so a cfg
+        // value / another admin / the boot seed is reflected without a separate dvar read. Guard on
+        // a non-empty value so an older server (botDiff null) never clears the connect-time highlight.
+        if(s.botDiff) hlBotDiff(s.botDiff);
       }
       if(d.roster){
         _roster={}; for(const e of d.roster) _roster[e.num]=e;
@@ -483,7 +487,10 @@ function showCtx(e,num,name,isBot){
   const guid=(!isBot && pl.guid && pl.guid!=='0')?pl.guid:'';   // stable id for the feedback-admin allowlist
   ctxPlayer={num,name,isBot,ip,guid};
   const ct=(_roster[num]||{}).team||'';   // current team (grays its own move item)
-  const teamItem=(t,code,label)=>`<div class="ctx-item ${ct===t?'cur':''}" onclick="ctxAction('team_${code}',event)">${label}</div>`;
+  // Primary click = FORCE NOW; the inline "next round" button = queue it (pteam_) without disturbing
+  // the live round. Both visible — nothing hidden behind a modifier. The .cur row (player's current
+  // team) is pointer-events:none, which correctly disables both the row and its mini-button.
+  const teamItem=(t,code,label)=>`<div class="ctx-item ${ct===t?'cur':''}" onclick="ctxAction('team_${code}',event)">${label}<button class="ctx-mini" title="Queue this move for the NEXT round instead of forcing it now" onclick="event.stopPropagation();ctxAction('teamq_${code}',event)">⏭ next round</button></div>`;
   const ipItems=ip?`<div class="ctx-sep"></div>
     <div class="ctx-item" onclick="ctxAction('copyip')">Copy IP</div>
     <div class="ctx-item" onclick="ctxAction('locate')">Locate (city)</div>`:'';
@@ -505,7 +512,7 @@ function showCtx(e,num,name,isBot){
     ${teamItem('allies','allies','<span class="tm tm-a">A</span> Move to Allies')}
     ${teamItem('axis','axis','<span class="tm tm-x">X</span> Move to Axis')}
     ${teamItem('spectator','spec','<span class="tm tm-s">S</span> Move to Spectator')}
-    <div class="ctx-hint">Shift+click a move = ⚠ force now (respawns)</div>
+    <div class="ctx-hint">Move = ⚠ force now (free in prematch) · ⏭ = queue for next round</div>
     <div class="ctx-sep"></div>
     <div class="ctx-item green" onclick="ctxAction('pgod')">God Mode</div>
     <div class="ctx-item yellow" onclick="ctxAction('pfreeze')">Freeze</div>
@@ -563,15 +570,18 @@ async function ctxAction(act,ev){
     await rcon('set gf_admin_guids '+guid,true);   // push live; re-pushed on every reconnect
     actLog('Feedback admin → '+name+' ('+guid+')','ok'); toast('Private feedback → '+name,'ok');
     if(_lastPlayers.length)renderPlayers();   // repaint the ★ marker
-  }else if(act==='team_allies'||act==='team_axis'||act==='team_spec'){
-    // Normal: applies live during prematch, else the mod defers to the next round (never suicides
-    // a live player). Shift+click FORCES it now (pteamforce_) — respawns the player this round.
-    const code=act.slice(5);   // allies | axis | spec
+  }else if(act.indexOf('team_')===0||act.indexOf('teamq_')===0){
+    // Two explicit actions, both visible in the menu (nothing behind a modifier):
+    //   team_<code>  (primary click) = FORCE now via pteamforce_ — the mod's sequenced move: free
+    //                during the prematch countdown / grace (life restored + respawned, the usual
+    //                team-arranging window), and mid-round it dies + late-spawns onto the new team if
+    //                the round admits it (else sits out the round). This is the default.
+    //   teamq_<code> (the ⏭ button)  = QUEUE for next round via pteam_ — never touches the live round.
+    const defer=act.indexOf('teamq_')===0;
+    const code=act.slice(defer?6:5);   // allies | axis | spec
     const lbl={allies:'Allies',axis:'Axis',spec:'Spectator'}[code];
-    const force=!!(ev&&ev.shiftKey);
-    if(force && !confirm(`Force ${name} to ${lbl} NOW?\nThis respawns them — during a live round it costs them the round.`))return;
-    await bridge(`${force?'pteamforce':'pteam'}_${num}_${code}`,(force?'⚠ Force → ':'Team → ')+lbl+': '+name);
-    actLog((force?'Force team → ':'Team → ')+lbl+': '+name,force?'wn':(code==='spec'?'wn':'ok'));
+    await bridge(`${defer?'pteam':'pteamforce'}_${num}_${code}`,(defer?'Team (next round) → ':'⚠ Force → ')+lbl+': '+name);
+    actLog((defer?'Team (next round) → ':'Force team → ')+lbl+': '+name,defer?'ok':'wn');
   }else if(act==='pnoclip'){
     // Listen only (see noclipItem). Even there, verify the reply — noclip is cheat-protected, so it
     // is refused the moment sv_cheats is 0, and the old code logged success unconditionally.
@@ -1332,8 +1342,8 @@ async function applyFillN(){
   const n=Math.max(0,Math.min(6,parseInt(g('vFillN').value)||0));
   g('vFillN').value=n;
   const r=await rcon(`set gf_fill_n ${n}`);
-  const lbl=n>0?('min '+n+'v'+n):'off';   // gf_fill_n is a FLOOR — humans can push the size higher
-  r.ok?(actLog('Fill → '+lbl,'ok'),toast('Fill → '+lbl,'ok')):toast('Failed','err');
+  const lbl=n>0?('target '+n+'v'+n):'no bots';   // gf_fill_n is a TARGET — humans can push the size higher; 0 = no bot fill (balancing still runs)
+  r.ok?(actLog('Team size → '+lbl,'ok'),toast('Team size → '+lbl,'ok')):toast('Failed','err');
 }
 // Reflect live fill state (from gf_state fields 8-11) in the BOT MANAGEMENT readout, and seed the
 // input from the live value unless the admin is editing it. fillN null = server predates fill telemetry.
@@ -1342,8 +1352,8 @@ function updateFillReadout(s){
   if(s.fillN===null||s.fillN===undefined){ el.textContent=''; return; }
   const inp=g('vFillN');
   if(inp && document.activeElement!==inp) inp.value=s.fillN;
-  el.textContent = s.fillN<=0 ? 'off'
-    : `min ${s.fillN}v${s.fillN} · now ${s.playAllies}v${s.playAxis}`+(s.parked?` · ${s.parked} parked`:'');
+  el.textContent = s.fillN<=0 ? 'no bots'
+    : `target ${s.fillN}v${s.fillN} · now ${s.playAllies}v${s.playAxis}`+(s.parked?` · ${s.parked} parked`:'');
 }
 // Even out the teams via the GSC bridge. Server-side pick (bots first) + safe apply (immediate in
 // prematch/lobby, deferred to next round mid-round). Feedback is the private bridge notify in-game.

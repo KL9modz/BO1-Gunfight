@@ -236,11 +236,11 @@ See the header of `maps/mp/gametypes/_gf_bridge.gsc` for the complete command li
 
 ## Bots (dev / listen-server)
 
-The bot framework is vendored under `maps/mp/bots/` (`_bot_loadout`, `_bot_script`, `_bot_utility`; original author INeedGames) and integrated by `maps/mp/gametypes/_bot.gsc`. `_bot::init()` registers the `bots_*` dvars (kept for the vendored AI) and threads `diffBots` (difficulty) plus the Gunfight **round-boundary fill reconciler** — the single authority over bot counts and placement (`gf_fill_n` = per-team target N; see the big header block in `_bot.gsc`). BotWarfare's own managers (`addBots` / `teamBots` / `doNonDediBots`) are **deleted**. It is wired in from `gf.gsc` inside a `#strip-begin … #strip-end` block, so it is **stripped from public builds** — bots are a development / server-side aid only.
+The bot framework is vendored under `maps/mp/bots/` (`_bot_loadout`, `_bot_script`, `_bot_utility`; original author INeedGames) and integrated by `maps/mp/gametypes/_bot.gsc`. `_bot::init()` registers the `bots_*` dvars (kept for the vendored AI) and threads `diffBots` (difficulty) plus the Gunfight **round-boundary TEAM reconciler** — the single authority over next-round team composition (see the big header block in `_bot.gsc`). Each boundary pass: (1) seats the team-size-lock queue (spectating humans, join order); (2) evens the **human** split to off-by-1 (`gf_team_balance`, most recent joiner moves via `pers["gf_joinSeq"]`); (3) pads both sides with bots to `max(bigger human side, gf_fill_n)` — `gf_fill_n` is the per-team target (default 2), 0 = no bot fill (stages 1-2 still run). BotWarfare's own managers (`addBots` / `teamBots` / `doNonDediBots`) are **deleted**. It is wired in from `gf.gsc` inside a `#strip-begin … #strip-end` block, so it is **stripped from public builds** — bots and the team system are a development / server-side aid only.
 
 Gunfight-specific behavior that matters:
 
-- The reconciler acts **only at round boundaries** — round end (inside the killcam), the match-start gate release, and one roster-settle pass after init — and only through suicide-free primitives: a quiet pers reassign (`gf_botQuietSetTeam`) for un-"playing" bots, a deferred `pers["gf_parkPending"]` mark (consumed pre-spawn by `gf_lobbyMaySpawn`) for alive ones, kicks, and 0.5s-staggered generation-stamped adds. It never moves a bot mid-round and never stock-switches one (the stock team switch suicides any "playing" client — the historical "bots suicide at spawn" bug).
+- The reconciler acts **only at round boundaries** — round end (inside the killcam), the match-start gate release, and one roster-settle pass after init — and only through race-free primitives: a quiet pers reassign (`gf_botQuietSetTeam` / `_gf_rounds::gf_quietSetTeam`) for un-"playing" clients, the deferred `pers["gf_parkPending"]` / `pers["gf_movePending"]` marks (consumed pre-spawn by `gf_lobbyMaySpawn`) for alive ones, the sequenced prematch move (`_gf_rounds::gf_seqTeamMove` — suicide → death settles → reassign → respawn), kicks, and 0.5s-staggered generation-stamped adds. It never moves a client mid-round and never raw stock-switches one (the stock team switch's async suicide racing the respawn was both the historical "bots suicide at spawn" bug and the rare "spawned on the wrong team / at 1 HP" bug).
 - `bot_set_difficulty()` (`easy` / `normal` / `hard` / `fu`) is the dvar set behind the bridge's `botdiff_*` commands. It rewrites the whole `sv_bot*` preset from whatever `bot_difficulty` holds, and `diffBots` re-runs it every 1.5s — so `bot_difficulty` always reflects the live difficulty (the panel reads it on connect to highlight the right button). The default is **`fu`**, seeded if-empty in `gf.gsc`'s bot block; a `dedicated.cfg` value or a live `botdiff_*` still wins, since the preset writes the dvar back and the seed only fires when it's empty (first round after a server boot).
 
 Bots run on both a local listen server and the dedicated VPS. The current Plutonium T5 build spawns test clients on a dedicated server without any executable patch (confirmed live 2026-07-04). On the VPS bots are enabled at **runtime via the RCON panel** (`gf_fill_n`, set over rcon), so they never appear in `dedicated.cfg` — a config grep does not prove "no bots."
@@ -257,6 +257,41 @@ Dev-only, gated behind dvars set **before** loading the map. Stripped from publi
 | `gf_debug_hud_pool 1` | **HUD pool overlay** — bottom-left readout of server team-elem and per-player client-hudelem counts (`SV: n/64  DRAWN: n/17`). The `DRAWN` figure tracks the empirical ~17 per-client *render* cap (an engine limit no script probe can read); the overlay turns red at/over budget. |
 
 `_gf_debug.gsc` also has `gf_debugPrintPerks()` for dumping a player's active perks, and a `gf_do_dump` entity scanner referenced by the project notes.
+
+---
+
+## Working remotely (iPad / travel)
+
+**Ops from any device → `gf-vps`.** A **Remote Control server** runs 24/7 on the VPS. Open the Claude **mobile app** (or `claude.ai/code`) → **Code** tab → session **`gf-vps`** (computer icon, green "Connected") → tell it to do ops: RCON via the panel API on `127.0.0.1:3000` (never a second poller), dvar/`dedicated.cfg` edits, log reads, `deploy.ps1`. **Outbound HTTPS only — no inbound port, no key on the device.** This is the answer to "drive the server from an iPad".
+
+**How it's wired.** Scheduled task **`GF-ClaudeRC`** runs `claude rc --name gf-vps` (cwd `C:\gfdeploy\BO1-Gunfight`).
+
+- ⚠ **`rc` is a HIDDEN subcommand** — `.command("remote-control",{hidden:true}).alias("rc")`, so it does **not** appear in `claude --help`. It is a **server mode**: it idles and spawns one child per session (`--print --sdk-url …/code/sessions/cse_…`). That is why it needs **no TTY** and works headless.
+- ⚠ **Do NOT use the `--remote-control` FLAG instead.** That form starts an interactive TUI with RC bolted on, needs a real console, and under a scheduled task it registered nothing and **died on its own**. The flag and the subcommand are different features. This cost an evening.
+- ⚠ **Registered from raw XML**, because PowerShell **cannot express an indefinite repetition**: `-RepetitionDuration ([TimeSpan]::MaxValue)` → `P99999999DT23H59M59S` and `([TimeSpan]::Zero)` → `PT0S` are **both rejected** by Task Scheduler. In XML, **omitting `<Duration>`** inside `<Repetition>` *is* "indefinitely".
+- **Triggers: at-logon** (the box AutoAdminLogons as Administrator) **+ a 5-minute repetition**. With `MultipleInstancesPolicy=IgnoreNew` that repetition is a **self-heal poll** — a live server is left alone, a dead one restarts within 5 min. Needed because **a network outage >~10 min kills the session by design**.
+- ⚠ **Exactly one `rc --name gf-vps` server may run** — two give `ambiguous: multiple remote-control servers match name`. Unregistering a task does **not** kill its running process, so after re-registering, kill any untracked server first or the task sits at `Ready` while an orphan keeps serving. **Ownership check: the server's parent must be `svchost.exe`** (Task Scheduler); a `powershell.exe` parent means it's an orphan.
+- **Auth: full-scope OAuth** (`claude auth login`). ⚠ A `claude setup-token` token is **inference-only and is rejected** for Remote Control.
+- ⚠ **If `gf-vps` dies while you are away, only SSH can restart it** — that is why port 22 is open to any IP (`SSH-Any-In (travel)`) and why **Blink Shell → `ssh Administrator@94.72.121.4` → `claude`** stays the break-glass path.
+
+⚠ **Security:** this is a permanent agent with admin on the live game server, drivable by anyone holding the Claude account. **The Claude account is now equivalent to the SSH key** — 2FA on it carries the same weight.
+
+**Authoring → Claude Code on the web.** Cloud sessions (Anthropic-managed Ubuntu VM on the GitHub repo) suit authoring: GSC loads as loose rawfiles, so it needs no build and no game install, and it keeps dev work off the box's **4 shared vCPUs** (which already log multi-second `GF_HITCH` stalls from steal time alone). ⚠ **Every cloud session's first move is `git checkout main`** — the GitHub default branch is `release`, so a fresh clone lands on the stripped public tree with neither the real source nor `.claude/CLAUDE.md`. ⚠ A cloud session only sees what is **pushed**.
+
+**What nothing remote can do:** build `mod.ff`. It needs Windows plus the BO1 linker and `zone_source` tree on the dev box's `S:\` drive — ⚠ **`mod.ff` is a desktop-only artifact**, so menu/`.str`/`.csv`/FX work waits until you are home. Nor can anything test in-game.
+
+### Dead ends — all four were tested live. Do not re-run this hunt.
+
+| Path | Why it fails |
+|---|---|
+| **Cloud session → SSH to the VPS** | The sandbox egresses through an **HTTP/HTTPS-only proxy**; its allowlist takes **domains, not `IP:port`**, and **raw TCP never passes**. Architectural — **no firewall change or network-access setting fixes it** (opening 22 to any IP did nothing for this). ⚠ The published `160.79.104.0/21` looks like the answer and is not: it is documented for the **API service's** outbound calls, never for sandboxes, and a **shared** egress range is not an identity — allowlisting it would admit everything else exiting there. There is also **no secrets store** (env vars/setup scripts are plaintext, visible to anyone who can edit the environment, ~7-day cache), so a VPS key cannot live there. |
+| **"SSH host" in the app's environment picker** | A real feature (config keys `sshHost` / `sshPort` / `sshIdentityFile` / `startDirectory`) and it **does** run the session on the VPS — but it is **brokered by the desktop app**, so the host **does not exist for the iPad** ("no sessions found"). Fine at the desk, useless for travel. |
+| **`--remote-control` flag under a scheduled task** | Needs a real TTY. Registered nothing; process exited unprompted. Use the **`rc` subcommand** (above) instead. |
+| **Remote Control on a laptop** | Dies when the laptop sleeps. The 24/7 VPS is what makes Remote Control viable at all — that reframing is the whole trick. |
+
+> ⚠ There is no Anthropic product called "Claude Code Remote". The two real things are **Claude Code on the web** (cloud VM) and **Remote Control** (`claude rc`, a process on *your* machine steered from claude.ai / the mobile app).
+
+> ⚠ **Not** the same thing: **Remote Control** (`claude remote-control`) exposes a *local* session on your laptop to the iPad. It dies when the laptop sleeps, so it is useless for travel. There is no Anthropic product called "Claude Code Remote".
 
 ---
 

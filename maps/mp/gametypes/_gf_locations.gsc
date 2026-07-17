@@ -774,7 +774,7 @@ gf_getCustomSpawnPoint( team )
     // round-robin cursor could wrap onto point 0 during round-start churn (overflow
     // spawns diverted to spectator, team-move respawns) — where the round's first
     // spawner is still standing frozen in prematch — and telefrag them. Scan forward
-    // for the first free point; fall back to the raw cursor point if all are occupied.
+    // for the first free point.
     for ( offset = 0; offset < spawns.size; offset++ )
     {
         candidate = spawns[ ( start + offset ) % spawns.size ];
@@ -782,7 +782,12 @@ gf_getCustomSpawnPoint( team )
             return candidate;
     }
 
-    return spawns[ start % spawns.size ];
+    // Every curated point is occupied — possible now that a small-mode side can hold up to 6
+    // players on 5 curated points (team size 5-6 / a 4v4-human + late-seat round). Returning
+    // undefined sends the caller (gf.gsc onSpawnPlayer) down its stock mp_tdm_spawn_<team>_start
+    // fallback, whose selectors are telefrag-aware — never spawn ONTO an occupied curated point,
+    // which would kill the frozen occupant (the old raw-cursor fallback did exactly that).
+    return undefined;
 }
 
 gf_normalizeCustomSpawnLocations()

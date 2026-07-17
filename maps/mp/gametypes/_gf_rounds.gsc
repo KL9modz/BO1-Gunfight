@@ -1187,20 +1187,43 @@ gf_autoJoinBalance()
         return;
     }
 
-    ha = 0;
-    hx = 0;
-    players = level.players;
-    for ( i = 0; i < players.size; i++ )
+    ha = gf_countTeamHumans( "allies", self );
+    hx = gf_countTeamHumans( "axis",   self );
+
+    // An ALIVE player picking Auto Assign from the menu: stock menuAutoAssign would run its racy
+    // suicide switch (the wrong-team/1hp bug) — route through the sequenced move instead. The
+    // pick is the lighter HUMAN side; already there (or tied) means nothing to do.
+    if ( self.sessionstate == "playing" )
     {
-        p = players[i];
-        if ( !isDefined( p ) || p == self || p istestclient() || p isdemoclient() )
-            continue;
-        if ( !isDefined( p.pers["team"] ) )
-            continue;
-        if ( p.pers["team"] == "allies" )
-            ha++;
-        else if ( p.pers["team"] == "axis" )
-            hx++;
+        want = "axis";
+        if ( hx > ha )
+            want = "allies";
+        if ( ha == hx || ( isDefined( self.pers["team"] ) && self.pers["team"] == want ) )
+            return;
+        if ( getDvarInt( "gf_team_switch" ) == 0 )
+            return;
+        if ( gf_teamLockDenies( self, want ) )
+            return;
+        restore = ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
+                  || ( isDefined( level.inGracePeriod ) && level.inGracePeriod );
+        self thread gf_seqTeamMove( want, restore );
+        return;
+    }
+
+    // Team-size lock: both sides full of humans -> spectate + queue (join order); one side full
+    // -> the open side is the only legal seat, so take it regardless of balance.
+    if ( gf_teamLockOn() )
+    {
+        aFull = gf_teamLockDenies( self, "allies" );
+        xFull = gf_teamLockDenies( self, "axis" );
+        if ( aFull && xFull )
+        {
+            self gf_lockQueueMark();
+            self gf_quietSetTeam( "spectator" );
+            return;
+        }
+        if ( aFull ) { self gf_seatJoinTeam( "axis" );   return; }
+        if ( xFull ) { self gf_seatJoinTeam( "allies" ); return; }
     }
 
     diff = ha - hx;
@@ -1219,68 +1242,278 @@ gf_autoJoinBalance()
 }
 
 // Apply a planned team to self during prematch. Mirrors the bridge's gf_applyTeamMove but is
-// self-contained (the bridge is stripped from public builds). During prematch the stock switch is
-// the harmless frozen warmup; a not-yet-spawned player gets a quiet pers reassign.
+// self-contained (the bridge is stripped from public builds). A "playing" (prematch-frozen)
+// player takes the SEQUENCED move (life restored, respawned); a not-yet-spawned player gets a
+// quiet pers reassign.
 gf_planApplyMove( team )
 {
     if ( self.sessionstate == "playing" )
-    {
-        if      ( team == "allies" ) self [[level.allies]]();
-        else if ( team == "axis"   ) self [[level.axis]]();
-        else                         self [[level.spectator]]();
-
-        // The stock switch above suicide()s a "playing" (prematch-frozen, ALIVE) player and does
-        // NOT restore its life, so the re-seat can leave a HUMAN DEAD into round 1 — see
-        // gf_reseatRespawn. Only for a real team (spectator moves want no respawn).
-        if ( team != "spectator" )
-            self thread gf_reseatRespawn();
-    }
+        self thread gf_seqTeamMove( team, true );
     else
-    {
-        self.pers["team"]   = team;
-        self.team           = team;
-        self.pers["class"]  = undefined;
-        self.class          = undefined;
-        self.pers["weapon"] = undefined;
-        if ( team == "spectator" )
-            self.sessionteam = "spectator";
-        else
-            self.sessionteam = team;
-    }
+        self gf_quietSetTeam( team );
 }
 
-// Recover a player the stock team switch left dead during prematch. menuAllies/menuAxis suicide() a
-// "playing" (prematch-frozen, alive) player to move them but never restore pers["lives"]; once BOTH
-// teams have existed this prematch, maySpawn's `!pers["lives"] && gameHasStarted` gate then DENIES the
-// switch's auto-respawn and spawnClient bounces the player to SPECTATOR with no retry — so a re-seated
-// human sits DEAD through round 1 (it self-heals round 2, where map_restart resets lives). This is the
-// root cause of "players sometimes start the first round dead" after a lobby->match team transfer.
-// Give the life back so the respawn is admitted, and re-drive spawnClient if the deny already bounced
-// them to spectator. Threaded + brief because the suicide's kill callback (which decrements lives) and
-// beginClassChoice's respawn both settle asynchronously, so we can't reliably restore in one synchronous
-// write. Prematch warmup only — no real round life has been spent, and map_restart resets lives anyway.
-gf_reseatRespawn()
+// The quiet persistent-state half of a team change (no suicide, no respawn, no menus): the next
+// spawn reads pers["team"] and the player simply spawns on the new side. Only ever safe on a
+// NOT-"playing" player (a live body can't change teams without a respawn). Clearing
+// pers["savedmodel"] matters: a cached old-side model would render the player in the WRONG TEAM's
+// skin after the move. Mirrors _gf_bridge::gf_forceTeamQuiet / _bot::gf_botQuietSetTeam.
+gf_quietSetTeam( team )
+{
+    self.pers["team"]       = team;
+    self.team               = team;
+    self.pers["class"]      = undefined;
+    self.class              = undefined;
+    self.pers["weapon"]     = undefined;
+    self.pers["savedmodel"] = undefined;
+    self.sessionteam        = team;
+}
+
+// ─── Sequenced team move — the ONLY way to move a "playing" player ─────────
+// Stock menuAllies/menuAxis suicide() a playing player and drive the respawn in the SAME frame,
+// while the suicide's kill callback settles asynchronously over the next frames. Racing those two
+// (as the old stock-switch + gf_reseatRespawn recovery pair did) is the root cause of the rare
+// "spawned at the enemy spawns / spawned with 1 HP" bug seen after team switches/moves: the new
+// spawn could commit while team state was half-flipped, and the suicide's death could land AFTER
+// the respawn. This primitive strictly SEQUENCES it: suicide -> wait for the death to fully settle
+// -> quiet pers reassign -> only then drive the respawn.
+//
+// restoreLife = true : give the life back and respawn (prematch/grace warmup moves, admin force
+//                      moves — the respawn is admitted by maySpawn's late-spawn rules mid-round).
+// restoreLife = false: die and sit out the round (a mid-round self-switch costs your life); the
+//                      next round's map_restart resets lives so they spawn normally on the new side.
+gf_seqTeamMove( team, restoreLife )
 {
     self endon( "disconnect" );
-    self notify( "gf_reseatRespawn" );   // collapse to one live copy per player
-    self endon( "gf_reseatRespawn" );
-    level endon( "game_ended" );
+    self notify( "gf_seqTeamMove" );     // collapse to one live copy per player
+    self endon( "gf_seqTeamMove" );
 
-    for ( i = 0; i < 20; i++ )   // ~1s, covering the switch's async settle
+    if ( self.sessionstate == "playing" )
+    {
+        // Stock's switch flags: Callback_PlayerKilled reads switching_teams so the death is
+        // scored as a team change, not a combat death.
+        self.switching_teams = true;
+        self.joining_team    = team;
+        self.leaving_team    = self.pers["team"];
+        self suicide();
+
+        // Wait for the async death to settle BEFORE touching team state — the entire point of
+        // this primitive. Bounded ~2s; on fall-through the quiet reassign below is still safe
+        // (nothing re-drives a spawn until we do).
+        for ( i = 0; i < 40; i++ )
+        {
+            if ( self.sessionstate != "playing" && !isAlive( self ) )
+                break;
+            wait 0.05;
+        }
+    }
+
+    if ( team == "spectator" )
+    {
+        self gf_quietSetTeam( "spectator" );
+        self maps\mp\gametypes\_globallogic_ui::updateObjectiveText();
+        self setclientdvar( "g_scriptMainMenu", game["menu_team"] );
+        self [[level.spawnSpectator]]();
+        self notify( "joined_spectators" );
+        return;
+    }
+
+    if ( isDefined( restoreLife ) && restoreLife )
+        self.pers["lives"] = level.numLives;   // clear maySpawn gate A (the suicide consumed the life)
+
+    self setclientdvar( "g_scriptMainMenu", game["menu_class_" + team] );
+    self gf_seatJoinTeam( team );              // quiet seat + beginClassChoice (maySpawn decides the spawn)
+
+    if ( !isDefined( restoreLife ) || !restoreLife )
+        return;                                // mid-round self-switch: sits out this round by design
+
+    // Respawn recovery (absorbs the old gf_reseatRespawn): maySpawn's deny path bounces to
+    // SPECTATOR with no retry, and during the prematch warmup the deny reasons are transient
+    // (async lives decrement racing the restore above). Keep restoring + re-driving while the
+    // prematch lasts; past prematch the single beginClassChoice attempt above is the whole story
+    // (a denied mid-round late spawn deliberately stays denied — e.g. team wiped / overtime).
+    for ( i = 0; i < 20; i++ )
     {
         wait 0.05;
         if ( !( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod ) )
-            return;                                    // out of the safe warmup window
+            return;
         if ( self.sessionstate == "playing" && self.health > 0 )
-            return;                                    // respawned cleanly — done
-        // Restore the life the switch's suicide consumed (clears maySpawn gate A). Leave hasSpawned
-        // alone: the player already spawned this prematch, which satisfies maySpawn gate B — forcing
-        // it false would re-trip B whenever grace has already closed.
+            return;                            // respawned cleanly — done
         self.pers["lives"] = level.numLives;
         if ( self.sessionstate != "playing" && game["state"] == "playing"
              && maps\mp\gametypes\_globallogic_utils::isValidClass( self.class ) )
             self thread [[level.spawnClient]]();
     }
+}
+
+// ─── Player-driven team choice (level.allies/axis/spectator wrappers) ──────
+// Installed every round in gf.gsc onStartGameType next to the autoassign override (SetupCallbacks
+// has just reset the stock handlers, so the saved level.gf_stock* capture REAL stock — no
+// recursion). Bots and the democlient pass straight through to stock. For humans these own the
+// three things stock can't express: the rcon switch kill-switch (gf_team_switch 0), the team-size
+// lock (gf_team_lock: a side already holding gf_fill_n humans refuses the join; locked out of BOTH
+// sides queues you, join-order, for the next open seat — the boundary reconciler seats the queue),
+// and SAFE immediate switching via gf_seqTeamMove (an ALIVE mid-round switcher dies and sits out
+// the round; during the prematch/grace warmup the move is free).
+gf_menuAllies()    { self gf_menuTeamChoice( "allies" );    }
+gf_menuAxis()      { self gf_menuTeamChoice( "axis" );      }
+gf_menuSpectator() { self gf_menuTeamChoice( "spectator" ); }
+
+gf_menuTeamChoice( team )
+{
+    stockFn = level.gf_stockSpectator;
+    if ( team == "allies" )
+        stockFn = level.gf_stockAllies;
+    else if ( team == "axis" )
+        stockFn = level.gf_stockAxis;
+
+    if ( self istestclient() || self isdemoclient() )
+    {
+        self [[stockFn]]();
+        return;
+    }
+
+    // Fully qualified: closeMenus is a _globallogic_ui helper, NOT a builtin, and this file does not
+    // #include that script (T5 has no transitive includes) — a bare call is an unknown function.
+    // Same style as the updateObjectiveText / beginClassChoice / preventTeamSwitchExploit calls above.
+    self maps\mp\gametypes\_globallogic_ui::closeMenus();
+
+    if ( isDefined( self.pers["team"] ) && self.pers["team"] == team )
+    {
+        self [[stockFn]]();                    // same team: stock just re-opens class choice
+        return;
+    }
+
+    // Stock's own join gate, kept (native-first): it honors g_allow_spectator and an admin's
+    // g_allow_teamchange 0. Fully qualified — canJoinTeam is a _globallogic_ui helper, not a builtin.
+    // ⚠ Its FOURTH check (level.teamchange_keepbalanced) is a SECOND balance policy that would refuse
+    // any join putting a team 2+ ahead — which contradicts this mod's rule that team choice is free
+    // and the round-boundary balancer corrects it. gf.gsc zeroes that flag every round so GF's
+    // balancer is the single owner; see the note there before re-enabling it.
+    if ( !self maps\mp\gametypes\_globallogic_ui::canJoinTeam( team ) )
+    {
+        self iprintln( &"PATCH_MP_CANNOT_JOIN_TEAM" );
+        return;
+    }
+
+    if ( team != "spectator" )
+    {
+        // rcon kill-switch: players stay put (admin pteam/pteamforce route around these wrappers)
+        if ( getDvarInt( "gf_team_switch" ) == 0 )
+        {
+            self iprintln( "^3Team switching is disabled on this server" );
+            return;
+        }
+        if ( gf_teamLockDenies( self, team ) )
+        {
+            other = "axis";
+            if ( team == "axis" )
+                other = "allies";
+            if ( gf_teamLockDenies( self, other ) )
+            {
+                self gf_lockQueueMark();
+                self iprintln( "^3Teams are full - you are queued for the next open seat" );
+            }
+            else
+                self iprintln( "^3That team is full" );
+            return;
+        }
+    }
+
+    self.pers["gf_seatQueued"] = undefined;    // moving under their own power clears any queued mark
+
+    if ( self.sessionstate == "playing" )
+    {
+        // Alive: sequenced switch. Free during the prematch/grace warmup (life restored +
+        // respawned); mid-round it costs the round — die, sit out, spawn next round.
+        restore = ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
+                  || ( isDefined( level.inGracePeriod ) && level.inGracePeriod );
+        self thread gf_seqTeamMove( team, restore );
+        return;
+    }
+
+    // Dead or spectating: quiet seat now. A spectator joining a live round still holds their
+    // life, so the spawn attempt late-spawns them in (maySpawn admits while their team has >=1
+    // alive and it isn't overtime); a dead player seats for the next round.
+    if ( team == "spectator" )
+    {
+        self gf_quietSetTeam( "spectator" );
+        self maps\mp\gametypes\_globallogic_ui::updateObjectiveText();
+        self setclientdvar( "g_scriptMainMenu", game["menu_team"] );
+        self [[level.spawnSpectator]]();
+        self notify( "joined_spectators" );
+        return;
+    }
+    self setclientdvar( "g_scriptMainMenu", game["menu_class_" + team] );
+    self gf_seatJoinTeam( team );
+}
+
+// ─── Team-size lock helpers ─────────────────────────────────────────────────
+// gf_fill_n is the per-team TARGET size; gf_team_lock 1 makes it a hard HUMAN cap: a side already
+// holding that many humans refuses new humans (they spectate, queued in join order, and the
+// boundary reconciler auto-seats them the moment a seat opens). Bots never count against the lock
+// (a joining human always displaces a bot instead of spectating). Lock is inert at gf_fill_n 0.
+
+gf_teamTargetSize()
+{
+    n = getDvarInt( "gf_fill_n" );
+    if ( n < 0 ) n = 0;
+    if ( n > 6 ) n = 6;
+    return n;
+}
+
+gf_teamLockOn()
+{
+    return ( getDvarInt( "gf_team_lock" ) == 1 && gf_teamTargetSize() > 0 );
+}
+
+// Humans currently seated on `team`, excluding `exclude` (pass undefined to count everyone).
+gf_countTeamHumans( team, exclude )
+{
+    count = 0;
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( !isDefined( p ) || p istestclient() || p isdemoclient() )
+            continue;
+        if ( isDefined( exclude ) && p == exclude )
+            continue;
+        if ( isDefined( p.pers["team"] ) && p.pers["team"] == team )
+            count++;
+    }
+    return count;
+}
+
+gf_teamLockDenies( who, team )
+{
+    if ( !gf_teamLockOn() )
+        return false;
+    return ( gf_countTeamHumans( team, who ) >= gf_teamTargetSize() );
+}
+
+// Monotonic per-match join sequence (game[] survives map_restart(true); the lobby's false-restart
+// wipes it, and everyone re-stamps in reconnect order — acceptable drift). "Most recent joiner"
+// balance picks and the lock queue's seat order both key off this.
+gf_joinSeqOf()
+{
+    if ( !isDefined( self.pers["gf_joinSeq"] ) )
+    {
+        if ( !isDefined( game["gf_joinSeq"] ) )
+            game["gf_joinSeq"] = 0;
+        game["gf_joinSeq"]++;
+        self.pers["gf_joinSeq"] = game["gf_joinSeq"];
+    }
+    return self.pers["gf_joinSeq"];
+}
+
+// Queue a human locked out of both sides. The boundary reconciler seats queued players in join
+// order whenever lock capacity opens; the mark clears when they get seated (or pick a team/
+// spectator themselves).
+gf_lockQueueMark()
+{
+    if ( !isDefined( self.pers["gf_seatQueued"] ) )
+        self.pers["gf_seatQueued"] = self gf_joinSeqOf();
 }
 // #strip-end
 
@@ -1640,14 +1873,15 @@ gf_hideLobbyHUD()
 // read level.gf_largeMode.
 //
 // scr_<gametype>_teamspawnmode: auto (default) | large | small. "auto" goes
-// large once the LARGER team's roster exceeds the health-panel skull cap
-// (gf_hudSkullCap, 4) -- i.e. the exact point the panel swaps its 4 skulls for the
-// "alive / total" readout -- so the large-map spawns and the readout HUD share one
-// switch point: <=4v4 stays small + skulls; any team of 5+ goes large + readout.
-// The split is hard-wired to the skull cap (see gf_autoLargeFromCounts); a forced
-// large/small pins the mode for admins/RCON/testing. (The old total-count dvar
-// scr_gf_largemode_minplayers is RETIRED -- no longer read, so any stale cfg value
-// is inert.)
+// large once 9 or more HUMANS are seated on teams (i.e. a 5v4 human split or
+// bigger) -- bots NEVER trigger it, so a bot-padded 6v6 stays on the tight
+// curated spawns while a genuinely big human lobby opens up to the full map.
+// A forced large/small pins the mode for admins/RCON/testing. (The old
+// per-team>4 body-count trigger -- which coupled the spawn mode to the health
+// panel's skull cap and let bot fill flip the map open -- is RETIRED; the HUD's
+// skulls-vs-"Alive: N" readout still switches on per-team body count > 4, in
+// _gf_hud, but that is now a pure HUD decision. The old total-count dvar
+// scr_gf_largemode_minplayers stays retired/inert.)
 //
 // onStartGameType (where this runs) snapshots the roster BEFORE bots/late
 // joiners connect — _bot::init() is threaded at the end of onStartGameType — so
@@ -1683,55 +1917,54 @@ gf_resolveTeamMode()
         return;
     }
 
-    // level.playerCount is engine-maintained (_globallogic::updateTeamStatus) and initialized
-    // in _globallogic::init(), so it's safe to read here. This is only the first-setup fallback;
-    // once a round activates, gf_updateAutoTeamMode persists the decision in game[].
-    level.gf_largeMode = gf_autoLargeFromCounts( level.playerCount["allies"], level.playerCount["axis"] );
+    // First-setup fallback only (e.g. a populated server where players are already connected
+    // at map load); once a round activates, gf_updateAutoTeamMode persists the decision in game[].
+    level.gf_largeMode = gf_autoLargeFromHumans( gf_countSeatedHumans() );
 }
 
-// Captures the live team sizes once the round is active and everyone (incl.
-// late-added bots) has spawned, persisting the auto decision in game[] for the
-// next round's onStartGameType setup. No-op when the mode is force-pinned.
+// Captures the live HUMAN count once the round is active and everyone has spawned,
+// persisting the auto decision in game[] for the next round's onStartGameType setup.
+// No-op when the mode is force-pinned.
 gf_updateAutoTeamMode()
 {
     if ( GetDvar( "scr_" + level.gameType + "_teamspawnmode" ) != "auto" )
         return;
 
-    game["gf_autoLargeMode"] = gf_autoLargeFromCounts( level.playerCount["allies"], level.playerCount["axis"] );
+    game["gf_autoLargeMode"] = gf_autoLargeFromHumans( gf_countSeatedHumans() );
 }
 
-// The health panel (hud_gf_health.menu) draws up to gf_hudSkullCap() skulls per team
-// and swaps to an "alive / total" readout when a team has MORE than that (menu gate:
-// cnt > 4). Auto team-size mode keys off THIS cap so the readout and the large-map
-// spawns share one switch point. Mirror of the menu constant -- if the menu skull
-// count ever changes, update this (the menu is mod.ff-rebuild-gated).
-gf_hudSkullCap() { return 4; }
-
-// Auto-mode large/small from the per-team roster sizes: large once the LARGER team has
-// MORE players than the panel can draw as skulls (gf_hudSkullCap, 4) -- exactly when
-// that team's panel switches to the "alive / total" readout. So <=4v4 -> small + skulls;
-// any team of 5+ -> large + readout. Uses the larger team (not the total) so lopsided
-// rosters stay correct (2v6 -> large, since the 6-man team needs the readout).
-//
-// The split is HARD-WIRED to the skull cap on purpose. The menu's skull->readout gate is
-// a fixed, rebuild-gated constant, so a tunable spawn threshold could only ever DEcouple
-// the two -- the exact thing this coupling exists to prevent -- and a stale value under a
-// silently-changed meaning was a live footgun. Admins pin the spatial mode with
-// scr_<gametype>_teamspawnmode = large | small instead. (The old scr_gf_largemode_minplayers
-// total-count dvar is no longer read.)
-//
-// TIMING CAVEAT: spawn mode is decided once per round and applied the NEXT round (persisted
-// in game["gf_autoLargeMode"], snapshot at round activation -- a live count is unreliable
-// inside onStartGameType because bots/late joiners connect after it). The HUD readout is
-// LIVE. So the two share a THRESHOLD, not a clock: a roster change crossing a team 4<->5
-// (a mid-round join, bot backfill, or round 1 of a bot-filled match) can show the readout
-// one round before the spawns switch to match. It self-corrects the following round.
-gf_autoLargeFromCounts( alliesCount, axisCount )
+// HUMANS seated on a real team (spectators don't play, bots don't count). The demo client is
+// neither a human nor a bot (istestclient() false!) — exclude it explicitly.
+gf_countSeatedHumans()
 {
-    larger = alliesCount;
-    if ( axisCount > larger )
-        larger = axisCount;
-    return ( larger > gf_hudSkullCap() );
+    count = 0;
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( !isDefined( p ) || p istestclient() || p isdemoclient() )
+            continue;
+        if ( !isDefined( p.pers["team"] ) )
+            continue;
+        if ( p.pers["team"] == "allies" || p.pers["team"] == "axis" )
+            count++;
+    }
+    return count;
+}
+
+// Auto-mode large/small: large once 9+ HUMANS are seated (a 5v4 human split or more). Humans
+// only, by design — bots pad team SIZE, and a bot-padded 6v6 should keep the tight curated
+// wager spawns; only a genuinely large human lobby opens the map up. (The HUD's skulls-vs-
+// "Alive: N" readout is a separate, per-team BODY-count decision in _gf_hud — the two no
+// longer share a switch point.)
+//
+// TIMING CAVEAT (unchanged): spawn mode is decided once per round and applied the NEXT round
+// (persisted in game["gf_autoLargeMode"], snapshot at round activation -- a live count is
+// unreliable inside onStartGameType because bots/late joiners connect after it). So the 9th
+// human's join shows up in the spawns one round later. Self-corrects the following round.
+gf_autoLargeFromHumans( seatedHumans )
+{
+    return ( seatedHumans >= 9 );
 }
 
 // ─── Player Lifecycle ──────────────────────────────────────────────────────

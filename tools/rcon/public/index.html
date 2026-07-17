@@ -162,10 +162,34 @@
       <button class="b-gh b-sm ctrl" onclick="botTeam('add','axis')">＋</button>
       <button class="b-gh b-sm ctrl" onclick="botTeam('kick','axis')">－</button>
     </div>
-    <div class="srow" data-tip="gf_fill_n — ROUND-BOUNDARY FILL: MINIMUM team size (a floor)&#10;NOT a hard target. Each side is padded to max(bigger human team, N) at every ROUND BOUNDARY, so HUMANS define the size and bots only top up: a full human lobby runs bot-free (4 humans = 2v2, 0 bots; 8 = 4v4, 0 bots), an odd split rounds UP to an even team (3 humans = 2v2 with 1 bot; 5 = 3v3), and a sparse lobby fills to this floor (1 human, N=2 = 2v2 with 3 bots). Teams are always even. Mid-round joins/leaves (and this setting) take effect at the next round start — bots never move mid-round. Humans are NEVER auto-moved. Mid-match human joiners are auto-seated on the fewer-HUMAN side when teams are lopsided. Displaced bots park in spectator for reuse (kicked under slot pressure). Survives map restart AND the lobby fast-restart.&#10;0 = OFF (manual bot control sticks)."><span class="slbl">Fill (min size)</span>
-      <input id="vFillN" class="num ctrl" type="number" value="0" min="0" max="6">
+    <div class="srow" data-dvar="gf_fill_n" data-tip="gf_fill_n — TEAM SIZE (per-team target)&#10;At every round boundary the reconciler (1) evens the HUMAN split to off-by-1 (most recent joiner moves — Auto-Balance toggle below), then (2) pads BOTH sides with bots to max(bigger human side, N): humans define the size, bots absorb ALL variance, and enough humans means ZERO bots (4 humans + N=2 = 2v2 bot-free; 7 humans = 4v3 + 1 bot = 4v4; 9+ humans also flips LARGE map mode next round). A sparse lobby fills to N (1 human, N=2 = 2v2 with 3 bots). Bots only ever sit on the side with fewer humans, and default to the hardest difficulty. Mid-round changes land at the next round start. With Lock Team Size ON this is also the hard HUMAN cap per side. Survives map restart AND the lobby fast-restart.&#10;0 = NO bot fill (human balancing still runs; manual bot control sticks)."><span class="slbl">Team Size</span>
+      <input id="vFillN" class="num ctrl" type="number" value="2" min="0" max="6">
       <button class="b-ac b-sm ctrl" onclick="applyFillN()">Apply</button>
       <span class="shint" id="fillReadout">off</span></div>
+    <div class="srow" data-dvar="gf_team_lock" data-tip="gf_team_lock&#10;ON = Team Size becomes a hard HUMAN cap per side: a joiner who finds both sides full must spectate, queued in JOIN ORDER, and is auto-seated at the next round start once a seat opens (someone leaves). Bots never count against the lock — a joining human always displaces a bot instead of spectating. Inert while Team Size is 0.&#10;Bridge: teamlock_0 / teamlock_1 (applies immediately).">
+      <span class="slbl">Lock Team Size</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbTeamLock" onchange="bridge('teamlock_'+(this.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">immediate</span>
+    </div>
+    <div class="srow" data-dvar="gf_team_balance" data-tip="gf_team_balance&#10;ON (default) = at every pre-round boundary the HUMAN split is evened to off-by-1 by force-moving the MOST RECENT JOINER from the bigger side (bots absorb the remainder). Moves land race-free: dead players re-seat quietly, a prematch-frozen player is respawned on the new side, a killcam survivor moves in their next pre-spawn window.&#10;OFF = humans are never auto-moved (bots still even the team SIZE) — use for arranged/custom teams.&#10;Bridge: balance_0 / balance_1.">
+      <span class="slbl">Auto-Balance Humans</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbTeamBal" checked onchange="bridge('balance_'+(this.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">immediate</span>
+    </div>
+    <div class="srow" data-dvar="gf_team_switch" data-tip="gf_team_switch&#10;ON (default) = players may switch teams themselves, immediately: dead/spectating players re-seat at once (and can late-spawn into a live round); an ALIVE mid-round switcher DIES and sits out the round (their team plays a player down). During the pre-round countdown a switch is free.&#10;OFF = the team menu refuses self-switching (admin pteam/pteamforce moves still work).&#10;Bridge: teamswitch_0 / teamswitch_1.">
+      <span class="slbl">Player Team Switching</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbTeamSw" checked onchange="bridge('teamswitch_'+(this.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">immediate</span>
+    </div>
+    <div class="srow" data-dvar="scr_gf_latespawn" data-tip="scr_gf_latespawn&#10;ON (default) = a player or bot who joins (or is force-moved) while a round is LIVE spawns straight into it. Two ways in, and both keep the round's team SIZE unchanged:&#10;  1. FILL A GAP - the spawn never leaves their team bigger than the enemy's (3v2 becomes 3v3 after someone leaves). Open to anyone, bots included.&#10;  2. TAKE A BOT'S SPOT - HUMANS ONLY. A human never waits for a seat a bot is keeping warm: they spawn in and that bot is benched to spectator for reuse (works during the pre-round countdown too - joining a 2-bot side mid-countdown replaces a bot instead of stacking to 3). A bot never displaces anyone. A team full of HUMANS has no spot to take, so that joiner waits for the next round.&#10;Their team must also still have at least 1 player alive; never during overtime; an eliminated player never respawns (FIRST spawns only).&#10;The gap rule is what stops the bot fill's own staggered adds from inflating a live round.&#10;OFF = mid-round joiners always spectate until the next round.&#10;Bridge: latespawn_0 / latespawn_1.">
+      <span class="slbl">Mid-Round Late Spawn</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbLateSpawn" checked onchange="bridge('latespawn_'+(this.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">immediate</span>
+    </div>
     <div class="sgroup">Difficulty <span style="font-weight:400;text-transform:none;letter-spacing:0">(GSC bridge)</span></div>
     <div class="drow" data-tip="Bridge: botdiff_easy / botdiff_normal / botdiff_hard / botdiff_fu&#10;Sets bot reaction speed and accuracy via _bot::bot_set_difficulty()">
       <button class="db ctrl" id="d-easy"   onclick="botDiff('easy')">EASY</button>

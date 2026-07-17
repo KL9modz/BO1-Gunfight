@@ -18,6 +18,8 @@ adversarially-reviewed analysis). Every apply-to-production command below was ch
 |---|---|---|
 | RCON tool hardening (`tools/rcon/server.js`) | ✅ done | committed `af1707b`: CORS wildcard dropped, loopback Host/Origin guard, body cap, savecfg path pinned + sanitized. Panel password un-hardcoded. |
 | **P0.2 RDP → scoped to admin IP** (`76.167.246.191`) | ✅ done | rule `RDP-AdminOnly-In`; broad built-in allows disabled. Used a **15-min scheduled auto-rollback task** as the safety net (re-enables broad RDP if the scoped rule is wrong) — see pattern below. |
+| **SSH (22) → OPEN to any IP** (deliberate) | ✅ done | Added **after** the 2026-06-29 audit (for the git-pull deploy pipeline), so it is absent from the baseline table below. Now **intentionally internet-open** — rule `SSH-Any-In (travel)`, **additive** (the older `OpenSSH home` / `OpenSSH (scoped to home IP)` rules remain, so revert = `Disable-NetFirewallRule -DisplayName 'SSH-Any-In (travel)'`). This is the **break-glass path**, not the daily one: ops-from-any-device runs through the `gf-vps` Remote Control session (task `GF-ClaudeRC`, outbound-only — see `docs/DEV.md` *Working remotely*), but if that server dies while you are away **only SSH can restart it**. ⚠ A cloud Claude session **cannot** reach the box regardless of this rule — its sandbox proxy is HTTP/HTTPS-only and raw TCP never passes, so opening 22 did nothing for that path. ⚠ Accepted trade: public SSH on an AutoAdminLogon `Administrator` box, mitigated **solely** by key-only auth — see the row below, which is what makes this survivable. |
+| **SSH key-only enforcement — needs TWO directives** | ✅ done | ⚠ **`PasswordAuthentication no` is NOT sufficient.** `KbdInteractiveAuthentication` defaults to **yes** and offers its **own** password path on Windows OpenSSH — the box was in exactly this state (password brute-force against `Administrator` would have been reachable the moment 22 opened). Both are now `no`. ⚠ **Placement matters:** `sshd_config` ends with a `Match Group administrators` block, so a directive appended at the end lands **inside** it and does nothing globally — both live in the **global** section, next to each other. ⚠ **Verify on the wire, not from the file or even `sshd -T`:** `ssh -v -o PubkeyAuthentication=no Administrator@94.72.121.4` must answer `Authentications that can continue: publickey` and nothing else. Backups: `sshd_config.bak-kbd*`. ⚠ For **admin** accounts Windows OpenSSH ignores `~/.ssh/authorized_keys` and reads only `C:\ProgramData\ssh\administrators_authorized_keys` (strict ACLs: Administrators + SYSTEM only, or sshd silently rejects it). |
 | **P1.1 WinRM 5986 → closed** | ✅ done | service stopped+disabled, `WinRM-HTTPS-Block-In` rule, built-in WinRM allows disabled. Verified externally OPEN→closed. Leftover `0.0.0.0:5986` http.sys sslcert is inert (optional `netsh http delete sslcert ipport=0.0.0.0:5986`). |
 | P1.2 NLA | ✅ done | `UserAuthentication=1`. `SecurityLayer` was already `2` (TLS-only) and working — left as-is. |
 | P1.3 Account lockout | ✅ done | threshold 10 / 15 / 15. Built-in Administrator exempt on 2019 (auto-logon safe). |
@@ -47,7 +49,7 @@ RDP session open as a live canary while changing remote-access settings.
 ## What the audit measured (baseline, 2026-06-29)
 | Area | Finding |
 |---|---|
-| Open ports on `94.72.121.4` | 80, 443, **3389 (RDP)**, **5986 (WinRM-HTTPS)** all internet-open. 3000 (RCON tool) correctly closed. |
+| Open ports on `94.72.121.4` | 80, 443, **3389 (RDP)**, **5986 (WinRM-HTTPS)** all internet-open. 3000 (RCON tool) correctly closed. ⚠ **No SSH yet at audit time** — 22 was opened later for the git-pull deploy pipeline and is scoped to the admin IP; see the as-applied table above. This row is a dated snapshot, not current state. |
 | Web server | IIS 10. HTTP **not** redirected to HTTPS; **no HSTS**; **zero** security headers; `Server` header leaks IIS. |
 | TLS | Cert good (Let's Encrypt, `gunfight.us`+`www`, exp **2026-09-27**). **TLS 1.0 + 1.1 accepted**; **TLS 1.3 not offered**. Renewal automation **unconfirmed**. |
 | DNS (GoDaddy) | No CAA, no DNSSEC, no SPF/DMARC/null-MX. `www` is a 2nd A record. |
@@ -330,8 +332,13 @@ Only add the null-MX if no other MX exists (RFC 7505). If you ever add a real se
 ## P3 — Optional / defense-in-depth
 - **Contabo Cloud Firewall** — replicate the 80/443/28960-open + 3389/5986-scoped policy at the
   hypervisor (blocks packets before they reach Windows). Apply via the Contabo panel, not PowerShell.
-- **RDP behind a VPN/Tailscale/Cloudflare Tunnel** — removes the public 3389 allow entirely and
-  fixes dynamic-IP churn. The clean long-term answer to P0.2.
+- **RDP *and SSH* behind a VPN/Tailscale/Cloudflare Tunnel** — removes the public 3389 **and 22**
+  allows entirely and fixes dynamic-IP churn. The clean long-term answer to P0.2, and the only way to
+  reach the box from a network that isn't the admin IP (travel). **Deliberately not done:** remote/iPad
+  dev goes through Claude Code on the **web**, which needs no VPS access at all (→ `docs/DEV.md`
+  *Working remotely*), so this is break-glass-only and hasn't earned the risk of a remote firewall
+  change. If it is ever done, use the auto-rollback scheduled-task pattern above and confirm the VNC
+  console first.
 - **Cloudflare in front of the web origin** — free edge TLS/WAF/HSTS/DDoS and hides the *web* IP
   (note the *game* IP is public by necessity). Trade-off: NS migration off GoDaddy; disable GoDaddy
   DNSSEC before the NS cutover.
