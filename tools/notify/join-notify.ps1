@@ -31,6 +31,9 @@ $script:IgnoreFile = Join-Path $PSScriptRoot '..\ignore.local.json'
 # Get-GfMapName: shared map id -> display name, so an alert says "Nuketown", not "mp_nuked".
 . (Join-Path $PSScriptRoot '..\map_names.ps1')
 
+# Send-GfNtfy: the shared ntfy sender (JSON publish, unicode-safe titles).
+. (Join-Path $PSScriptRoot '..\ntfy.ps1')
+
 function Write-Log($msg) {
   Write-Host ("[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $msg)
 }
@@ -161,40 +164,16 @@ function P-Key($p) {
 }
 
 # ── ntfy push ─────────────────────────────────────────────────────────────────
-# Sent as ntfy's JSON publish format: the topic travels in the BODY and the server URL is the
-# bare root, so title/message/tags are all fields of one UTF-8 JSON document.
-#
-# This replaced the X-Title/Priority/Tags HEADER form for one reason: HTTP header values are
-# ASCII, and the title now carries a country flag emoji (a 4-byte code point built from a
-# surrogate pair). A header cannot survive that. The old header form is also why the player
-# name was pinned to the body - with JSON, every field is unicode-safe and that constraint is
-# gone. Do NOT move a title back into a header.
-#
-# `priority` is a NUMBER in JSON (the header form accepted the names). Call sites keep passing
-# the names and this maps them, so a bad/unknown name degrades to normal rather than throwing.
-$script:NtfyPriority = @{ min = 1; low = 2; default = 3; high = 4; max = 5 }
-
+# The transport lives in the shared tools\ntfy.ps1 (dot-sourced at the top) - see that file for
+# why it is JSON publish and not the X-Title header form. This thin wrapper survives only to keep
+# this script's own (cfg, title, message, priority, tags) call shape and to LOG a failure; the
+# shared sender deliberately returns $false instead of throwing, so nothing here can be taken
+# down by a push.
 function Send-Ntfy($cfg, $title, $message, $priority, $tags) {
-  if (-not $cfg.ntfyTopic) { Write-Log '[ntfy] no topic configured - cannot send'; return $false }
-  $prio = 3
-  if ($script:NtfyPriority.ContainsKey([string]$priority)) { $prio = $script:NtfyPriority[[string]$priority] }
-  # [string[]] forces a JSON array even for a single tag (ConvertTo-Json unwraps a lone element).
-  $payload = [ordered]@{
-    topic    = [string]$cfg.ntfyTopic
-    title    = [string]$title
-    message  = [string]$message
-    priority = $prio
-    tags     = [string[]]@($tags)
-  }
-  $headers = @{}
-  if ($cfg.ntfyToken) { $headers['Authorization'] = "Bearer $($cfg.ntfyToken)" }
-  try {
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $payload -Compress -Depth 4))
-    Invoke-RestMethod -Uri $cfg.ntfyServer -Method Post -Body $bytes -Headers $headers `
-      -ContentType 'application/json; charset=utf-8' -TimeoutSec 15 | Out-Null
-    return $true
-  }
-  catch { Write-Log "[ntfy] error: $($_.Exception.Message)"; return $false }
+  $ok = Send-GfNtfy -Config $cfg -Title ([string]$title) -Message ([string]$message) `
+                    -Priority ([string]$priority) -Tags ([string[]]@($tags))
+  if (-not $ok) { Write-Log "[ntfy] send failed: $($script:GfNtfyLastError)" }
+  return $ok
 }
 
 # 👤 one player, 👥 more than one. ntfy renders an emoji-shortcode tag immediately BEFORE the

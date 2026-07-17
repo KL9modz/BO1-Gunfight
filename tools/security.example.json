@@ -1,0 +1,13 @@
+{
+  "_comment": "Copy to security.local.json (gitignored, box-local) to PIN what GF-SecurityWatch trusts. Optional: with no file the watcher adopts whatever it sees on its first run (trust-on-first-use) and logs what it learned. Pinning removes the assumption that the box was clean at install time.",
+
+  "_sshKeyFingerprints": "SSH logins carrying a fingerprint NOT in this list raise a max-priority alert. This is the highest-signal detector on the box: ~96 successful logins/day all carry one fingerprint, so anything else is a key that is not yours. Read the live one with: Get-WinEvent -LogName OpenSSH/Operational | ? Message -match 'Accepted publickey' | select -First 1 -Expand Message",
+  "sshKeyFingerprints": [
+    "SHA256:REPLACE-ME-with-your-key-fingerprint"
+  ],
+
+  "_sshUsers": "SSH logins by a user not listed here also alert. Leave as-is unless you add a second account.",
+  "sshUsers": [
+    "Administrator"
+  ]
+}

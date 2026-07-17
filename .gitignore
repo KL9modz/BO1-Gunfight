@@ -41,6 +41,14 @@ tools/rcon/.dvarcache.json
 # 2-letter country code derived from it is ever published. Regenerated on demand.
 tools/rcon/.geocache.json
 
+# Security watcher — what it TRUSTS (ssh key fingerprints, users). Box-identifying, and this
+# repo is public. Optional file; template is .example
+tools/security.local.json
+
+# Security watcher — box-local bookmarks + the learned baseline (event RecordIds, authorized_keys
+# hash, firewall posture). Regenerated on demand; deleting it re-runs trust-on-first-use.
+tools/vps_services/security_state.json
+
 # Watchdog — box-local alert-state (down/recovered transitions), regenerated on demand
 tools/vps_services/watchdog_state.json
 

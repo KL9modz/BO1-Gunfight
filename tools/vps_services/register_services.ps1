@@ -15,6 +15,10 @@
 #   GF-Watchdog      tools\vps_services\watchdog.ps1        periodic health check + auto-restart
 #                                                            + ntfy alert for all of the above
 #                                                            (see watchdog.ps1 header)
+#   GF-SecurityWatch tools\vps_services\security_watch.ps1  periodic SECURITY watch: unknown ssh
+#                                                            key, authorized_keys change, RDP
+#                                                            login, account/group management,
+#                                                            firewall posture (see its header)
 #
 # All run as SYSTEM (no stored password, survive reboot). Each helper resolves its
 # own files by paths relative to its script location, so SYSTEM finds them fine.
@@ -60,6 +64,15 @@ $services = @(
        Script = Join-Path $toolsRoot 'vps_services\watchdog.ps1'
        Args = ''
        RequiresConfig = ''
+       Periodic = $true }
+    @{ Name = 'GF-SecurityWatch'
+       Script = Join-Path $toolsRoot 'vps_services\security_watch.ps1'
+       # Periodic for the same reason as the watchdog: short-lived, fresh each run, bookmarked
+       # by event RecordId so a missed run loses nothing (it just reads further back next time).
+       # Needs the notify config for its topic, same as GF-JoinNotify - with no topic it would
+       # detect into the void.
+       Args = ''
+       RequiresConfig = (Join-Path $toolsRoot 'notify\config.json')
        Periodic = $true }
 )
 

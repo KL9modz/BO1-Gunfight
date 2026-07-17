@@ -493,8 +493,15 @@ function Deploy-Mod {
     #   watchdog_state.json      - watchdog's down/last-alert memory
     #   watchdog_maintenance.json- the deploy maintenance marker written just below in Restart-Server
     #   ignore.local.json        - players muted from the activity feed + ntfy (holds GUIDs, so untracked)
+    #   security.local.json      - what GF-SecurityWatch TRUSTS (ssh key fingerprints). Deleting it would
+    #                              silently drop the box back to trust-on-first-use, which re-adopts
+    #                              whatever key is in use as "known" - i.e. a deploy would disarm the
+    #                              highest-signal detector on the box without a word.
+    #   security_state.json      - its event bookmarks + learned baseline. Purging it replays history and
+    #                              re-adopts the current authorized_keys/firewall as the baseline.
     $xf = @("config.json", "secrets.local.json", "prefs.local.json", "ignore.local.json", "console_mp.log*",
-            ".dvarcache.json", ".geocache.json", "watchdog_state.json", "watchdog_maintenance.json")
+            ".dvarcache.json", ".geocache.json", "watchdog_state.json", "watchdog_maintenance.json",
+            "security.local.json", "security_state.json")
     Invoke-Robocopy -Source $RepoRoot -Destination $ModDest -ExtraArgs (@("/XD") + $xd + @("/XF") + $xf)
     Write-Host "Mod tree + mod.ff deployed$(if ($DryRun) { ' (dry run - nothing changed)' }) to $ModDest"
 
