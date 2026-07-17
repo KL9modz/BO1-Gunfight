@@ -2081,6 +2081,13 @@ gf_playerSpawnedCB()
         // #strip-end
         self gf_applyFlinchClient();
         self gf_applySprintUnlimitedClient();
+
+        // Start this player's ambient bed at the round start rather than at spawn+15 — see
+        // gf_initRoundMusic. Humans only: a bot has no client to push a music state to. Must be
+        // armed from here (playerSpawnedCB), not onSpawnPlayer, because the engine calls only ONE
+        // of onSpawnPlayer/onSpawnPlayerUnified (_globallogic_spawn.gsc:157-165) but always calls
+        // this one — and because it still runs before stock latches pers["music"].spawn.
+        self gf_armRoundUnderscore();
     }
     self thread gf_onSpawned();
 
@@ -2142,6 +2149,135 @@ gf_applyRoundVision()
     level waittill( "prematch_over" );
 
     visionSetNaked( gf_visionSetForKey( gf_roundVisionKey() ), 3.0 );
+}
+
+// ─── Round Ambient Music (the UNDERSCORE bed) ──────────────────────────────
+
+// The round's ambient bed is stock's UNDERSCORE music state (sound alias mus_underscore ->
+// mus\mp\underscores\*). Stock starts it from sndStartMusicSystem (_globallogic_spawn.gsc:739),
+// threaded on each player's FIRST spawn of the round (:97, gated on !hasSpawned — which
+// Callback_PlayerConnect re-clears on every map_restart, so it re-arms EVERY round). All it does is
+// a bare `wait 15` -> UNDERSCORE.
+//
+// That 15s is anchored to the SPAWN, and the spawn happens at the START of the prematch countdown,
+// so the bed never actually lands on the round:
+//   - rounds 2+ (7s countdown):  spawn at T-7  -> bed at T+8, i.e. 8s INTO a 42s round, with the
+//     opening fight running under nothing once ROUND_END's jingle has gone.
+//   - round 1   (20s countdown): spawn at T-20 -> bed at T-5, i.e. 5s BEFORE the round starts.
+//
+// We own it instead, with ONE per-player rule:
+//
+//     the bed starts at   max( prematch_over, own_spawn + cue_floor )
+//
+// where cue_floor is the room that player's own spawn cue needs. That single rule gives the right
+// answer in every case:
+//   - round 1, on time        spawn T-20, floor 20  -> T+0       (bed lands on the round start)
+//   - rounds 2+, on time      no cue,     floor 0   -> T+0       (bed lands on the round start)
+//   - round 1, late joiner    spawn T-3,  floor 20  -> T+17      (their cue is not clipped)
+//   - mid-round joiner        SPAWN_SHORT, floor 15 -> spawn+15  (their sting is not clipped)
+//
+// ⚠ The PER-PLAYER anchor is the whole safety argument, not a style choice. MP music is ONE shared
+// client channel (_music::setMusicState -> a single musicCmd client-system state), so a push
+// REPLACES whatever that player is still hearing rather than layering under it. A level-wide push
+// (everyone at prematch_over, or any global timer) synchronizes the hand-off to one wall-clock
+// moment and guillotines whoever spawned late — a level.nextMusicState + prematch_over version was
+// written and reverted for exactly that. The max() keeps the floor per-player, which is what makes
+// owning the start point safe. ([[intro-sting-killed-by-underscore-shared-channel]])
+//
+// Called from onStartGameType. level.* is wiped by map_restart, so this re-runs every round.
+gf_initRoundMusic()
+{
+    // Suppress stock's own UNDERSCORE push. BOTH branches of sndStartMusicSystem are gated on
+    // !isdefined( level.nextMusicState ), and its VALUE is never read anywhere — it is purely a
+    // "someone else owns the music" flag, and nothing in the stock MP tree ever sets it. Without
+    // this, stock's wait-15 push lands ON TOP of ours and restarts the bed mid-round.
+    level.nextMusicState = "UNDERSCORE";
+}
+
+// Seconds of room this player's own spawn cue needs before the bed may replace it.
+//
+// Read from gf_playerSpawnedCB, which the engine calls at _globallogic_spawn.gsc:169 — BEFORE the
+// cue blocks at :199 (prematch) and :245 (live round) latch pers["music"].spawn = true. So this
+// sees what the player is ABOUT to be given, not what they were given:
+//   - prematch + not cued yet   -> the long match-start cue (mus\mp\spawn\long\*, e.g.
+//     Chopperintro_spawn_long_a.wav — picked per FACTION by the _teamset_* scripts). Round 1 only.
+//   - live round + not cued yet -> SPAWN_SHORT, a genuine short sting
+//     (mus\mp\spawn_short\short\*_sting_a.wav, randomized). A mid-round joiner.
+//   - already cued              -> nothing plays this round. pers[] survives map_restart, so .spawn
+//     stays latched from round 1 and rounds 2+ run silent up to the bed.
+gf_spawnCueFloor()
+{
+    if ( isDefined( self.pers["music"] ) && isDefined( self.pers["music"].spawn ) && self.pers["music"].spawn )
+        return 0;
+
+    if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
+    {
+        // Long match-start cue. Stock allows it 15s. Its real length is UNMEASURED — the wav ships
+        // only inside the game's fastfiles, never in raw/ — so this is sized to the round-1
+        // countdown (scr_gf_match_prematch_seconds, 20): the most room we can hand it without
+        // pushing the bed past the round start. Note this floor only ever BINDS for a round-1 late
+        // joiner; for an on-time player prematch_over is the later anchor and wins regardless.
+        return 20;
+    }
+
+    return 15;   // SPAWN_SHORT sting — keep stock's own allowance.
+}
+
+// Arm this player's bed for the round. Once per player per round: self.* survives map_restart (only
+// pers[]/game[] are guaranteed to persist, but nothing CLEARS our own vars either), so the guard is
+// the round generation token, not a bool — level.gf_roundGen is re-stamped every onStartGameType.
+gf_armRoundUnderscore()
+{
+    if ( isDefined( self.gf_underscoreGen ) && self.gf_underscoreGen == level.gf_roundGen )
+        return;
+
+    cueFloor = self gf_spawnCueFloor();
+    self.gf_underscoreGen = level.gf_roundGen;
+    self thread gf_playerUnderscore( cueFloor );
+}
+
+gf_playerUnderscore( cueFloor )
+{
+    self endon( "disconnect" );
+
+    // ⚠ endon("game_ended") is CORRECT here even though that notify fires at every ROUND end, not at
+    // match end ([[game-ended-fires-every-round-end]]) — dying at the round end is exactly the
+    // intent. A joiner late enough that spawn+cueFloor would land past the round end must NOT start
+    // the bed on top of ROUND_END during the killcam; the next round re-arms them from scratch.
+    level endon( "game_ended" );
+
+    myGen = level.gf_roundGen;
+
+    // max( prematch_over, spawn + cueFloor ), expressed as two sequential waits — the later anchor
+    // wins on its own, with no arithmetic across two different clocks.
+    if ( cueFloor > 0 )
+        wait( cueFloor );
+
+    // ⚠ Gate the waittill on the flag — never waittill unconditionally. For a mid-round joiner
+    // prematch_over ALREADY fired, and the waittill would park forever (until game_ended). The read
+    // is race-free in the safe direction: stock clears inPrematchPeriod (_globallogic.gsc:1539)
+    // BEFORE it fires the notify (:1507), so a thread that still sees the flag set is guaranteed to
+    // register its waittill ahead of the notify.
+    if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
+        level waittill( "prematch_over" );
+
+    // A lobby map_restart(false) does NOT fire game_ended and threads survive it, so a stale thread
+    // from the pre-restart round can wake here alongside the real one.
+    if ( gf_roundGenChanged( myGen ) )
+        return;
+
+    // Mirror stock's own hand-off (_globallogic_spawn.gsc:769-770): stamp currentState BEFORE the
+    // threaded push, so set_music_on_player's previousState bookkeeping matches stock's. The `true`
+    // is save_state — it parks UNDERSCORE as this player's returnState, so transient states
+    // (LAST_STAND and friends) fall back to the bed rather than to SILENT.
+    // Stock creates pers["music"] in Callback_PlayerConnect and asserts it unguarded, but our push
+    // lands much later in the spawn than stock's does — guard rather than risk a throw on a client
+    // whose connect callback state is not what we assume.
+    if ( !isDefined( self.pers["music"] ) )
+        return;
+
+    self.pers["music"].currentState = "UNDERSCORE";
+    self thread maps\mp\gametypes\_globallogic_audio::set_music_on_player( "UNDERSCORE", true );
 }
 
 // The vision key in force this round. The public build has exactly one answer — the Gunfight default.

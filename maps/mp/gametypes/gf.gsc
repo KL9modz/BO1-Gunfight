@@ -554,6 +554,12 @@ onStartGameType()
     // deferred to prematch_over — the stock countdown stomps vision after this callback returns.
     gf_initRoundVision();
 
+    // Gunfight owns the round's ambient bed (the UNDERSCORE music state). Stock anchors it to each
+    // player's SPAWN (a bare wait 15), which on our countdowns puts it 8s into the round or 5s
+    // before it — never on the round start. This suppresses stock's push; the per-player start point
+    // is armed from gf_playerSpawnedCB. Re-run every round: level.nextMusicState is level state.
+    gf_initRoundMusic();
+
     // Match-end banner subtitle. Stock's getEndReasonText() OVERWRITES the reason we hand endGame
     // on the match-end path only (_globallogic.gsc: `if (!isOneRound()) endReasonText =
     // getEndReasonText();`, after startNextRound returns false), so the last banner of a match is
