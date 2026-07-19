@@ -70,6 +70,19 @@
   .wpn-row.zero{opacity:.5}
   .wpn-row.zero > b{color:var(--bad)}
   .wpn-atts{font-size:10.5px;color:var(--muted);padding-left:10px;margin-top:1px;line-height:1.4}
+  /* perk box */
+  .perkbox .perkhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .perkbox .ptoggle{display:flex;align-items:center;gap:6px;cursor:pointer;flex:1 1 auto;min-width:150px}
+  .perkbox .ptoggle label{margin:0;cursor:pointer;flex:none}
+  .perkbox .pcount{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .perkbox .perkhead button{flex:0 0 auto;white-space:nowrap}
+  .perkbox .pcaret{color:var(--accent);font-size:10px;width:10px;flex:none}
+  .perkbox .perkgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:2px 10px;margin-top:7px}
+  .perkbox.collapsed .perkgrid{display:none}
+  .perk-lab{display:flex;align-items:center;gap:5px;font-size:11px;color:#c3cad4;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .perk-lab .pname{overflow:hidden;text-overflow:ellipsis}
+  .perk-lab .pbadge{font-size:8.5px;letter-spacing:.4px;color:#1a1206;background:var(--accent2);border-radius:3px;padding:0 4px;text-transform:uppercase;flex:none}
+  .perk-lab[data-base] input:not(:checked) ~ .pname{color:var(--bad);text-decoration:line-through}
 </style>
 </head>
 <body>
@@ -328,32 +341,6 @@ function setStatus(txt, cls){ statusEl.textContent = txt; statusEl.className = c
 let PERKS = [], BASE_PERKS = [], PACKAGES = {}, MAX_ADDS = 8;
 const perkByToken = () => Object.fromEntries(PERKS.map(p => [p.t, p]));
 
-function perkLabel(p){
-  return p.n + (p.d ? " — " + p.d : "");
-}
-
-// One perk <select>. tokens = which perks may be chosen (all of them for an "add" picker, just
-// the base set for a "remove" picker — you can only take away what every player actually has).
-function perkOptionsHTML(tokens, selected){
-  const map = perkByToken();
-  const groups = {};
-  for (const t of tokens){
-    const p = map[t]; if (!p) continue;
-    (groups[p.g] = groups[p.g] || []).push(p);
-  }
-  let html = `<option value=""${selected ? "" : " selected"}>— none —</option>`;
-  for (const g of Object.keys(groups)){
-    html += `<optgroup label="${g}">`;
-    for (const p of groups[g]){
-      const sel = p.t === selected ? " selected" : "";
-      const w   = p.warn ? " ⚠" : "";
-      html += `<option value="${p.t}"${sel} title="${(p.warn || p.d || p.t).replace(/"/g,"&quot;")}">${perkLabel(p)}${w}</option>`;
-    }
-    html += `</optgroup>`;
-  }
-  return html;
-}
-
 // "a,-b" -> { adds:[a], rems:[b] }
 function splitPerks(str){
   const adds = [], rems = [];
@@ -367,21 +354,33 @@ function joinPerks(adds, rems){
   return adds.filter(Boolean).concat(rems.filter(Boolean).map(t => "-" + t)).join(",");
 }
 
+const isBasePerk = t => BASE_PERKS.includes(t);
+
+// One unified checkbox grid now drives both adds and removals: base perks render pre-checked, so
+// UNCHECKING one emits a "-token" removal; every other perk renders unchecked, so CHECKING one
+// emits a positive add. Walking PERKS in catalog order keeps the pool line stable regardless of
+// click order — and GSC fills the 3 HUD slots by walking this same list, so order decides which
+// perks show. Catalog order is Perk 1 -> Perk 2 -> Perk 3, matching create-a-class.
 function collect(){
-  return data.map((_, i) => ({
-    primary:   ctrls[i].primary.get(),
-    secondary: ctrls[i].secondary.get(),
-    equip:     ctrls[i].equip.value,
-    lethal:    ctrls[i].lethal.value,
-    tactical:  ctrls[i].tactical.value,
-    camo:      parseInt(ctrls[i].camo.value, 10),
-    camoSec:   parseInt(ctrls[i].camoSec.value, 10),
-    // Adds keep PERKS catalog order, so the pool line is stable regardless of click order —
-    // and because GSC fills the 3 HUD slots by walking this list, order is what decides which
-    // perks are shown. Catalog order is Perk 1 -> Perk 2 -> Perk 3, matching create-a-class.
-    perks:     joinPerks(PERKS.map(p => p.t).filter(t => ctrls[i].addBoxes[t] && ctrls[i].addBoxes[t].checked),
-                         [ctrls[i].rem0.value, ctrls[i].rem1.value])
-  }));
+  return data.map((_, i) => {
+    const adds = [], rems = [];
+    for (const p of PERKS){
+      const cb = ctrls[i].addBoxes[p.t];
+      if (!cb) continue;
+      if (isBasePerk(p.t)){ if (!cb.checked) rems.push(p.t); }   // base perk turned off -> remove
+      else               { if ( cb.checked) adds.push(p.t); }    // extra perk turned on  -> add
+    }
+    return {
+      primary:   ctrls[i].primary.get(),
+      secondary: ctrls[i].secondary.get(),
+      equip:     ctrls[i].equip.value,
+      lethal:    ctrls[i].lethal.value,
+      tactical:  ctrls[i].tactical.value,
+      camo:      parseInt(ctrls[i].camo.value, 10),
+      camoSec:   parseInt(ctrls[i].camoSec.value, 10),
+      perks:     joinPerks(adds, rems)
+    };
+  });
 }
 
 // ── Distribution panel ──
@@ -492,9 +491,15 @@ function refreshDirty(){
         if (usedIcons.has(icon)) continue;
         usedIcons.add(icon); shown.push(p.n);
       }
-    ctrls[i].pcount.textContent = adds.length
-      ? `${adds.length}/${MAX_ADDS} · shown on HUD: ${shown.join(", ") || "—"}`
-      : "none (base perk set only)";
+    const rems = splitPerks(lo.perks).rems;
+    if (!adds.length && !rems.length){
+      ctrls[i].pcount.textContent = "base perk set only";
+    } else {
+      const bits = [];
+      if (adds.length) bits.push(`+${adds.length}`);
+      if (rems.length) bits.push(`−${rems.length} base`);
+      ctrls[i].pcount.textContent = `${bits.join("  ")} · HUD: ${shown.join(", ") || "—"}`;
+    }
   });
   renderStats(now);
   setStatus(dirty ? "unsaved changes" : "up to date", dirty ? "" : "ok");
@@ -529,53 +534,50 @@ function buildCard(lo, i){
     c[key] = sel;
   }
 
-  // Removals: base perks only — UnSetPerk on a perk nobody has is a no-op, so there is nothing
-  // else worth offering here.
-  const sp = splitPerks(lo.perks);
-  for (const [label,val,key] of [["Remove base 1", sp.rems[0]||"", "rem0"],
-                                 ["Remove base 2", sp.rems[1]||"", "rem1"]]){
-    s = document.createElement("div"); s.className="slot";
-    const sel = document.createElement("select");
-    sel.innerHTML = perkOptionsHTML(BASE_PERKS, val);
-    sel.addEventListener("change", refreshDirty);
-    s.innerHTML = `<label>${label}</label>`;
-    s.appendChild(sel); slots.appendChild(s);
-    c[key] = sel;
-  }
   card.appendChild(slots);
 
-  // Added perks: a checkbox grid, because a loadout can now carry up to MAX_ADDS of them (the
-  // sniper/heavy package alone is 8). Only 3 ever reach the overview — base perks are preferred
-  // over Pros and no icon repeats — so the rest are deliberate silent buffs.
+  // Perks: ONE collapsible checkbox grid drives everything. Base (global) perks render PRE-CHECKED
+  // and badged "base" — unchecking one emits a "-token" removal; every other perk renders unchecked,
+  // so checking one is a positive add. A loadout can carry up to MAX_ADDS adds (the sniper/heavy
+  // package alone is 8); only 3 ever reach the overview (base preferred over Pros, no icon twice),
+  // the rest are deliberate silent buffs. Collapsed by default to keep the 54 cards compact.
+  const sp = splitPerks(lo.perks);
   const pbox = document.createElement("div");
-  pbox.className = "perkbox";
+  pbox.className = "perkbox collapsed";
   pbox.style.cssText = "margin-top:6px;padding:6px 8px;background:#161a20;border:1px solid #262c35;border-radius:4px";
 
   const phead = document.createElement("div");
-  phead.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:5px";
-  phead.innerHTML = `<label style="margin:0">Add perks</label><span class="pcount" style="color:#8a93a0;font-size:11px"></span>`;
+  phead.className = "perkhead";
+  const ptoggle = document.createElement("div");
+  ptoggle.className = "ptoggle";
+  ptoggle.innerHTML = `<span class="pcaret">&#9656;</span><label>Perks</label><span class="pcount" style="color:#8a93a0;font-size:11px"></span>`;
   const pkgBtn = document.createElement("button");
   pkgBtn.type = "button"; pkgBtn.textContent = PACKAGES.sniper_heavy.label;
-  pkgBtn.style.cssText = "margin-left:auto;font-size:11px;padding:2px 8px;cursor:pointer";
+  pkgBtn.style.cssText = "font-size:11px;padding:2px 8px;cursor:pointer";
   const clrBtn = document.createElement("button");
-  clrBtn.type = "button"; clrBtn.textContent = "Clear";
+  clrBtn.type = "button"; clrBtn.textContent = "Reset to base";
   clrBtn.style.cssText = "font-size:11px;padding:2px 8px;cursor:pointer";
-  phead.appendChild(pkgBtn); phead.appendChild(clrBtn);
+  phead.appendChild(ptoggle); phead.appendChild(pkgBtn); phead.appendChild(clrBtn);
   pbox.appendChild(phead);
 
   const grid = document.createElement("div");
-  grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:2px 10px";
+  grid.className = "perkgrid";
   const boxes = {};
   for (const p of PERKS){
+    const base = isBasePerk(p.t);
     const lab = document.createElement("label");
-    lab.style.cssText = "display:flex;align-items:center;gap:5px;font-size:11px;color:#c3cad4;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+    lab.className = "perk-lab";
+    if (base) lab.dataset.base = "1";
     lab.title = p.warn || p.d || p.t;
     const cb = document.createElement("input");
     cb.type = "checkbox"; cb.value = p.t;
-    cb.checked = sp.adds.includes(p.t);
+    // Base perk: checked unless this loadout explicitly removed it. Extra perk: checked if added.
+    cb.checked = base ? !sp.rems.includes(p.t) : sp.adds.includes(p.t);
     cb.addEventListener("change", refreshDirty);
-    lab.appendChild(cb);
-    lab.appendChild(document.createTextNode(p.n + (p.warn ? " ⚠" : "")));
+    const nm = document.createElement("span");
+    nm.className = "pname"; nm.textContent = p.n + (p.warn ? " ⚠" : "");
+    lab.appendChild(cb); lab.appendChild(nm);
+    if (base){ const bd = document.createElement("span"); bd.className = "pbadge"; bd.textContent = "base"; lab.appendChild(bd); }
     grid.appendChild(lab);
     boxes[p.t] = cb;
   }
@@ -583,13 +585,20 @@ function buildCard(lo, i){
   card.appendChild(pbox);
 
   c.addBoxes = boxes;
-  c.pcount   = phead.querySelector(".pcount");
+  c.pcount   = ptoggle.querySelector(".pcount");
+  ptoggle.addEventListener("click", () => {
+    const collapsed = pbox.classList.toggle("collapsed");
+    ptoggle.querySelector(".pcaret").innerHTML = collapsed ? "&#9656;" : "&#9662;";
+  });
+  // Package: apply the sniper/heavy ADD perks; base perks are untouched (they stay whatever they are).
   pkgBtn.addEventListener("click", () => {
-    for (const t in boxes) boxes[t].checked = PACKAGES.sniper_heavy.perks.includes(t);
+    for (const t in boxes)
+      if (!isBasePerk(t)) boxes[t].checked = PACKAGES.sniper_heavy.perks.includes(t);
     refreshDirty();
   });
+  // Reset to base = the default global set: base perks on, everything else off (no adds, no removals).
   clrBtn.addEventListener("click", () => {
-    for (const t in boxes) boxes[t].checked = false;
+    for (const t in boxes) boxes[t].checked = isBasePerk(t);
     refreshDirty();
   });
 

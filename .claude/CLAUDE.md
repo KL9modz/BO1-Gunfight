@@ -29,6 +29,20 @@ wins** takes the match.
   gate now parks any over-size bot at its spawn attempt and prints `GF_FILLGUARD: parked bot <name> …`.
   **Next occurrence: read that console line** — it names the bot and round; work backward from what
   touched that bot's pers["team"] between the boundary pass and the spawn wave.
+  **Same untraced path also strands HUMANS (reported live on the VPS 2026-07-19):** a mid-round joiner
+  takes a bot's spot, plays the round, then the NEXT round starts with their `pers["team"] ==
+  "spectator"` — on a ranked server that hits `_globallogic_player.gsc:365` (team menu, no autoassign),
+  i.e. "forced to choose a team first". At defaults NO mod path spectates a human (every spectator write
+  is `istestclient()`-gated; `gf_team_lock` off), so this is the bot mis-seater catching a human.
+  **Contained diagnostically, not yet fixed:** `_bot::gf_teamWatchHumans` (run at the top of every
+  `gf_boundaryPass`) prints `GF_TEAMWATCH: human <name> in spectator at boundary - reason UNTRACED
+  (round R …)` — `reason UNTRACED` = the mis-seat (vs `user-choice`/`lock-queue`, tagged via
+  `pers["gf_specReason"]` in `gf_menuTeamChoice`). It manifests during the re-begin AFTER a boundary, so
+  the line lands at the NEXT boundary and repeats while they stay stuck. **Next occurrence: correlate the
+  GF_TEAMWATCH round with the GF_FILLGUARD round** — same untraced writer, now caught touching a human.
+  A boundary-time reclaim (re-seat the `UNTRACED` human on the lighter side) is the obvious containment
+  but is unshipped pending a VPS test + breadcrumbing every intentional-spectate site (user menu done;
+  the bridge admin-spectator path is not).
 - **RESOLVED — the `MAX_PACKET_USERCMDS` killcam spam is a CLIENT-side `cl_maxpackets` limit, self-fixable,
   cosmetic.** Proven live 2026-07-15: a client running `com_maxfps 237` / `cl_maxpackets 30` (stock) spat
   ~37 lines per round-end killcam; setting **`cl_maxpackets 100` on that client killed the spam outright**,

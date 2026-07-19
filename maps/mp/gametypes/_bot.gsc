@@ -420,6 +420,8 @@ gf_boundaryPass()
 	gf_clearAllParkPending();            // recompute deferred parks fresh from THIS roster
 	gf_clearAllMovePending();            // ...and stale deferred human moves (recomputed below)
 
+	gf_teamWatchHumans();                // diagnostic: log any human stranded in spectator (untraced mis-seat)
+
 	c  = gf_reconcileCount();
 	hA = c["allies_human"];
 	hX = c["axis_human"];
@@ -673,6 +675,41 @@ gf_clearAllParkPending()
 		p = players[i];
 		if(isDefined(p) && p istestclient() && isDefined(p.pers["gf_parkPending"]))
 			p.pers["gf_parkPending"] = undefined;
+	}
+}
+
+// DIAGNOSTIC (log-only, changes NO team state). A human should never be sitting in SPECTATOR at a
+// round boundary unless they chose it (pers["gf_specReason"] == "user") or the team-size lock queued
+// them (pers["gf_seatQueued"]). Any OTHER human-in-spectator is the untraced mis-seater — the same
+// path GF_FILLGUARD contains for BOTS, here stranding a mid-round joiner who took a bot's spot and is
+// then "forced to choose a team" the next round (pers["team"] == "spectator" -> the team menu on a
+// ranked server, _globallogic_player.gsc:365). It manifests during the re-begin AFTER a boundary, so
+// this fires at the NEXT boundary and keeps firing while they stay stuck — name + round so it can be
+// correlated with the GF_FILLGUARD line from the same rounds. reason "UNTRACED" is the smoking gun.
+gf_teamWatchHumans()
+{
+	players = level.players;
+	for(i = 0; i < players.size; i++)
+	{
+		p = players[i];
+		if(!isDefined(p) || p istestclient() || p isdemoclient())
+			continue;
+		if(!(isDefined(p.pers["team"]) && p.pers["team"] == "spectator"))
+			continue;
+
+		reason = "UNTRACED";
+		if(isDefined(p.pers["gf_specReason"]) && p.pers["gf_specReason"] == "user")
+			reason = "user-choice";
+		else if(isDefined(p.pers["gf_seatQueued"]))
+			reason = "lock-queue";
+
+		state = "?";
+		if(isDefined(p.sessionstate))
+			state = p.sessionstate;
+
+		PrintLn("GF_TEAMWATCH: human " + p.name + " in spectator at boundary - reason " + reason
+			+ " (round " + game["roundsplayed"] + ", state " + state
+			+ ", lock " + getDvarInt("gf_team_lock") + ")");
 	}
 }
 

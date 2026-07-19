@@ -1145,6 +1145,7 @@ gf_autoassignPlanned()
 // autoassign (gf_autoJoinBalance).
 gf_seatJoinTeam( want )
 {
+    self.pers["gf_specReason"] = undefined;    // seated on a real team: drop any spectate breadcrumb
     self.pers["team"]       = want;
     self.team               = want;
     self.pers["class"]      = undefined;
@@ -1421,6 +1422,12 @@ gf_menuTeamChoice( team )
     }
 
     self.pers["gf_seatQueued"] = undefined;    // moving under their own power clears any queued mark
+
+    // Breadcrumb for the GF_TEAMWATCH boundary diagnostic (_bot::gf_teamWatchHumans): tag an
+    // INTENTIONAL spectate so the log can tell a human who chose spectator from one the untraced
+    // mis-seater stranded there ("took a bot's spot, then next round forced to pick a team").
+    if ( team == "spectator" )
+        self.pers["gf_specReason"] = "user";
 
     if ( self.sessionstate == "playing" )
     {
