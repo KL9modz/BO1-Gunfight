@@ -41,7 +41,16 @@ $script:StrippedDvars = @(
     "gf_vis_vision", "gf_vis_ambient", "gf_vis_gridint", "gf_vis_gridcon", "gf_vis_hdr", "gf_vis_fog",
     # debug
     "gf_debug_spawns", "gf_debug_hud_pool", "gf_debug_elem_probe",
-    "gf_hitch_pct", "gf_hitch_debug", "gf_force_loadout", "gf_force_camo"
+    "gf_hitch_pct", "gf_hitch_debug", "gf_force_loadout", "gf_force_camo",
+    # Team-write tracer. Its seed is inside gf.gsc's stripped debug block and its only reader is
+    # _gf_debug.gsc (a wholly dropped file), so it must not appear in the public build.
+    # NOTE: gf_debug_popup is deliberately NOT listed — its reader (the GF_POPUP gate in
+    # _gf_rounds.gsc) ships PUBLIC, sitting on the score path. Unseeded there, getDvarInt returns 0
+    # and the logging stays off, which is the intended public behavior.
+    "gf_trace_teams",
+    # Previously unguarded: only readers are in dropped files today, so nothing leaked, but the
+    # checker was not actually covering them.
+    "gf_debug_spawnyaw", "gf_endgap_ms", "gf_endprobe_t0", "gf_endprobe_last"
 )
 
 # Remove every "// #strip-begin ... // #strip-end" region (dev wiring) inclusive.

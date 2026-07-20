@@ -422,6 +422,11 @@ gf_boundaryPass()
 
 	gf_teamWatchHumans();                // diagnostic: log any human stranded in spectator (untraced mis-seat)
 
+	// Checkpoint 1 of 3. Sampling BEFORE the pass plans anything is what makes the pass's own moves
+	// distinguishable from whatever happened during the round — anything reported here changed teams
+	// between the last spawn wave and this boundary, i.e. with no reconciler involvement at all.
+	maps\mp\gametypes\_gf_debug::gf_teamTrace("boundary-in");
+
 	c  = gf_reconcileCount();
 	hA = c["allies_human"];
 	hX = c["axis_human"];
@@ -540,6 +545,11 @@ gf_boundaryPass()
 				kick(b getEntityNumber(), "EXE_PLAYERKICKED");
 		}
 	}
+
+	// Checkpoint 2 of 3. Every move this pass made is stamped, so a clean run reports nothing here.
+	// Anything UNTRACED at this checkpoint was written DURING the pass by something that is not the
+	// reconciler — which is the narrowest, most damning interval the tracer can report.
+	maps\mp\gametypes\_gf_debug::gf_teamTrace("boundary-out");
 }
 
 // Quiet team placement for a NOT-"playing" bot: the persistent-state half of the stock
@@ -551,6 +561,7 @@ gf_boundaryPass()
 // exactly there and suicided bots mid-spawn).
 gf_botQuietSetTeam(team)
 {
+	self maps\mp\gametypes\_gf_rounds::gf_stampTeamWriter("botquiet", team);
 	self.pers["team"]       = team;
 	self.team               = team;
 	self.pers["class"]      = undefined;
@@ -707,9 +718,9 @@ gf_teamWatchHumans()
 		if(isDefined(p.sessionstate))
 			state = p.sessionstate;
 
-		PrintLn("GF_TEAMWATCH: human " + p.name + " in spectator at boundary - reason " + reason
+		logPrint("GF_TEAMWATCH: human " + p.name + " in spectator at boundary - reason " + reason
 			+ " (round " + game["roundsplayed"] + ", state " + state
-			+ ", lock " + getDvarInt("gf_team_lock") + ")");
+			+ ", lock " + getDvarInt("gf_team_lock") + ")\n");
 	}
 }
 
@@ -891,12 +902,12 @@ gf_humanPlanMove( p, team )
 // run; manual bot control sticks). Humans above the target grow the team naturally — see
 // gf_teamSizeTarget(): the padded size is max(bigger human side, this). With gf_team_lock 1 this
 // same number becomes the hard HUMAN cap per side (_gf_rounds::gf_teamLockDenies).
+// Thin alias for _gf_rounds::gf_teamTargetSize() — the canonical gf_fill_n read (default 2,
+// clamp 0-6). Kept as a name because the reconciler and the bridge (_gf_bridge:337) both call
+// gf_fillTarget(); the clamp itself must exist in exactly one place.
 gf_fillTarget()
 {
-	n = getDvarInt("gf_fill_n");
-	if(n < 0) n = 0;
-	if(n > 6) n = 6;
-	return n;
+	return maps\mp\gametypes\_gf_rounds::gf_teamTargetSize();
 }
 
 // The per-team size the reconciler pads BOTH sides to (so teams stay EVEN): max(bigger human side,
@@ -1151,58 +1162,6 @@ bot_give_loadout()
 bot_damage_callback( eAttacker, iDamage, sMeansOfDeath, sWeapon, eInflictor, sHitLoc )
 {
 	self maps\mp\bots\_bot_script::bot_damage_callback( eAttacker, iDamage, sMeansOfDeath, sWeapon, eInflictor, sHitLoc );
-}
-
-/*
-	Bot is idle
-*/
-bot_is_idle()
-{
-	if ( !IsDefined( self ) )
-	{
-		return false;
-	}
-
-	if ( !IsAlive( self ) )
-	{
-		return false;
-	}
-
-	if ( !self is_bot() )
-	{
-		return false;
-	}
-
-	if ( self inLastStand() )
-	{
-		return false;
-	}
-
-	if ( self HasScriptGoal() )
-	{
-		return false;
-	}
-
-	if ( IsDefined( self GetThreat() ) )
-	{
-		return false;
-	}
-	
-	if ( self IsRemoteControlling() || self.bot_lock_goal )
-	{
-		return false;
-	}
-	
-	if(self UseButtonPressed())
-		return false;
-		
-	if(self isPlanting())
-		return false;
-			
-	if(self isDefusing())
-		return false;
-
-	return true;
 }
 
 /*

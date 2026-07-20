@@ -1295,6 +1295,7 @@ gf_applyTeamMove( team )
 // (from gf_applyTeamMove's else branch), so touching self.team here can't disturb a live combatant.
 gf_forceTeamQuiet( team )
 {
+    self maps\mp\gametypes\_gf_rounds::gf_stampTeamWriter( "bridge", team );
     self.pers["team"]       = team;
     self.team               = team;
     self.pers["class"]      = undefined;
@@ -1477,7 +1478,7 @@ gf_bridgeKickAllBots()
     if ( n != 1 )
         msg += "s";
     // Fill owns bot counts at every round boundary, so with it on this lasts at most one round.
-    if ( getDvarInt( "gf_fill_n" ) > 0 )
+    if ( maps\mp\gametypes\_bot::gf_fillTarget() > 0 )
         msg += " ^7(fill is ON - they come back next round; set Fill to 0 to keep them out)";
     gf_bridgeNotify( msg );
 }

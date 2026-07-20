@@ -513,6 +513,14 @@ onStartGameType()
     if ( getDvar( "gf_debug_hud_pool" ) == "" )  setDvar( "gf_debug_hud_pool", "0" );
     if ( getDvar( "gf_debug_elem_probe" ) == "" ) setDvar( "gf_debug_elem_probe", "0" );
     if ( getDvar( "gf_debug_spawnyaw" ) == "" )  setDvar( "gf_debug_spawnyaw", "0" );
+    // Team-write tracer (GF_TEAMTRACE). Seeded to 1 = ON, unlike every other debug dvar here: it
+    // exists to catch the untraced mis-seater, which is rare and unreproducible on demand, so a
+    // default of 0 guarantees it is off for the one occurrence that mattered. Costs one roster diff
+    // at 3 checkpoints/round. 2 = also log attributed moves (full history), 0 = silence.
+    if ( getDvar( "gf_trace_teams" ) == "" )     setDvar( "gf_trace_teams", "1" );
+    // Per-death score-share logging. Default 0 — highest-volume line in the mod, and games_mp.log
+    // has no rotation on the VPS.
+    if ( getDvar( "gf_debug_popup" ) == "" )     setDvar( "gf_debug_popup", "0" );
     if ( getDvar( "gf_force_loadout" ) == "" )    setDvar( "gf_force_loadout", "-1" );   // loadout test aids (read in _gf_loadouts.gsc)
     if ( getDvar( "gf_force_camo" ) == "" )       setDvar( "gf_force_camo", "-1" );
 
@@ -647,8 +655,9 @@ onStartGameType()
     maps\mp\gametypes\_rank::registerScoreInfo( "loss",     2.5  );   // stock 0.5
     maps\mp\gametypes\_rank::registerScoreInfo( "tie",      3.75 );   // stock 0.75
     maps\mp\gametypes\_rank::registerScoreInfo( "kill",     500 );    // stock 100 — fires from _globallogic_player::Callback_PlayerKilled -> giveKillStats (NOT via our onPlayerKilled hook)
-    maps\mp\gametypes\_rank::registerScoreInfo( "headshot", 500 );    // stock 100 — stacks on top of "kill"
-    maps\mp\gametypes\_rank::registerScoreInfo( "assist",    100 );   // stock 20 — the only assist tier we award (gf_onPlayerKilled pays every damager the flat tier)
+    maps\mp\gametypes\_rank::registerScoreInfo( "headshot", 150 );    // stock 100 — stacks on top of "kill"
+    maps\mp\gametypes\_rank::registerScoreInfo( "assist",    200 );   // stock 20 — the only assist tier we award (gf_onPlayerKilled pays every damager the flat tier)
+    maps\mp\gametypes\_rank::registerScoreInfo( "capture",   500 );   // stock 300 — OT flag capture; paid via a DIRECT giveRankXP in gf_awardOvertimeCapture (stock's capture score path is dead under overridePlayerScore)
     maps\mp\gametypes\_rank::registerScoreInfo( "assist_25", 200 );   // stock 40 — tiers below are registered for completeness only; stock's
     maps\mp\gametypes\_rank::registerScoreInfo( "assist_50", 300 );   // stock 60   giveAssist() routes through givePlayerScore, which overridePlayerScore
     maps\mp\gametypes\_rank::registerScoreInfo( "assist_75", 400 );   // stock 80   kills, so nothing in this mode can actually fire them.
@@ -851,8 +860,12 @@ gf_warnIfCheatsOnDedicated()
     if ( !cheatsOn )
         return;
 
+    // Deliberately BOTH streams, and the only place in the mod that is. This is an operator ALARM,
+    // not a diagnostic: the red println is meant to be seen by a human watching the console at boot,
+    // where games_mp.log would not be. Its logPrint twin is what keeps it greppable with every other
+    // GF_* line, so the "one stream" rule is already satisfied — do not delete either half.
     println( "^1[GF] SECURITY: sv_cheats is 1 on a DEDICATED server. Cheat commands (noclip/god/give) are reachable from any player console. Set sv_cheats 0 in dedicated.cfg." );
-    logPrint( "GF_SECURITY sv_cheats=1 on dedicated server\n" );
+    logPrint( "GF_SECURITY: sv_cheats=1 on dedicated server\n" );   // colon matches every other GF_* tag
 }
 
 // ─── Spawn Pipeline ────────────────────────────────────────────────────────
@@ -916,6 +929,14 @@ onSpawnPlayer( teamOverride )
             // #strip-end
             return;
         }
+
+        // #strip-begin - curated-spawn fallback diagnostic (dev/main only; stripped from public release)
+        // Small mode just failed to deliver a curated point and is about to degrade to the stock
+        // start spawns below. Log-only, changes nothing — see _gf_debug::gf_logCuratedSpawnMiss for
+        // why forcing the curated point is the wrong fix. Called BEFORE the fallback spawn so the
+        // line lands even if the spawn below throws.
+        self maps\mp\gametypes\_gf_debug::gf_logCuratedSpawnMiss( spawnTeam );
+        // #strip-end
     }
 
     // Always use team-specific start spawns. Gunfight has fixed sides per round
@@ -987,6 +1008,15 @@ onSpawnPlayerUnified()
 // falls straight through to its own grace/lives logic.
 gf_lobbyMaySpawn()
 {
+    // Checkpoint 3 of 3 (see _gf_debug::gf_teamTrace). THE decisive one: both open bugs manifest
+    // during the re-begin AFTER a boundary, so the mis-seat lands in the boundary-out -> pre-spawn
+    // interval and this is the checkpoint that closes it. Runs before every gate below, so a client
+    // that gets DENIED a spawn is still sampled — the mis-seat is in pers["team"] either way.
+    //
+    // Deliberately at the top and unconditional: this hook is the one door every client passes
+    // through, which is the same property the fill-discipline gate relies on.
+    maps\mp\gametypes\_gf_debug::gf_teamTrace( "pre-spawn" );
+
     if ( isDefined( level.gf_lobbyRestartHold ) && level.gf_lobbyRestartHold )
         return false;
 
@@ -1000,6 +1030,7 @@ gf_lobbyMaySpawn()
     if ( isDefined( self.pers["gf_parkPending"] ) && self.pers["gf_parkPending"] )
     {
         self.pers["gf_parkPending"] = undefined;
+        self gf_stampTeamWriter( "parkpending", "spectator" );
         self.pers["team"]           = "spectator";
         self.team                   = "spectator";
         self.sessionteam            = "spectator";
@@ -1019,6 +1050,7 @@ gf_lobbyMaySpawn()
         self.pers["gf_movePending"] = undefined;
         if ( team == "allies" || team == "axis" )
         {
+            self gf_stampTeamWriter( "movepending", team );
             self.pers["team"]       = team;
             self.team               = team;
             self.sessionteam        = team;
@@ -1054,8 +1086,9 @@ gf_lobbyMaySpawn()
         {
             if ( self istestclient() )
             {
-                PrintLn( "GF_FILLGUARD: parked bot " + self.name + " - " + self.pers["team"]
-                    + " already at size " + sizeT + " (round " + game["roundsplayed"] + ")" );
+                logPrint( "GF_FILLGUARD: parked bot " + self.name + " - " + self.pers["team"]
+                    + " already at size " + sizeT + " (round " + game["roundsplayed"] + ")\n" );
+                self gf_stampTeamWriter( "fillguard", "spectator" );
                 self.pers["team"] = "spectator";
                 self.team         = "spectator";
                 self.sessionteam  = "spectator";
@@ -1137,9 +1170,7 @@ gf_lateSpawnAllowed()
 // gf_displaceBotForHuman, so they can never disagree on what "over size" means.
 gf_targetRoundSize()
 {
-    fillN = getDvarInt( "gf_fill_n" );
-    if ( fillN < 0 ) fillN = 0;
-    if ( fillN > 6 ) fillN = 6;
+    fillN = maps\mp\gametypes\_gf_rounds::gf_teamTargetSize();   // canonical read: default 2, clamp 0-6
     if ( fillN == 0 )
         return 0;
 

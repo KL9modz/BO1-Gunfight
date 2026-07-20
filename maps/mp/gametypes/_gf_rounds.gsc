@@ -52,6 +52,58 @@ gf_cfgFloat( dvar, def, lo, hi )
     return clamped;
 }
 
+// Integer sibling of gf_cfgFloat: default-if-empty, clamp to [lo,hi], persist the clamp back.
+// Deliberately does NOT route through getValueInRange (that returns a float) — the clamp is
+// inline so the return is always a true int.
+//
+// ⚠ Lives OUTSIDE every strip region on purpose. Its callers (gf_teamTargetSize here,
+// _bot::gf_fillTarget, gf.gsc::gf_targetRoundSize) are all dev-only and stripped from the
+// public build; a stripped caller may call kept code, never the reverse.
+gf_cfgInt( dvar, def, lo, hi )
+{
+    if ( GetDvar( dvar ) == "" )
+        setDvar( dvar, def );
+
+    v = GetDvarInt( dvar );
+    clamped = v;
+    if ( clamped < lo ) clamped = lo;
+    if ( clamped > hi ) clamped = hi;
+    if ( clamped != v )
+        setDvar( dvar, clamped );   // persist the clamped value back, as gf_cfgFloat does
+    return clamped;
+}
+
+// ─── Team-write breadcrumb (feeds _gf_debug::gf_teamTrace) ────────────────────────────────────
+//
+// Stamps WHO moved this player and to WHERE. GSC cannot hook a field write, so the only way to
+// identify the untraced mis-seater (see CLAUDE.md: a bot seated on the enemy side, a human stranded
+// in spectator, both after a boundary, by a path the reconciler provably did not plan) is by
+// difference: every SANCTIONED writer of pers["team"] stamps itself here, and gf_teamTrace samples
+// the roster at checkpoints and reports any change that carries no matching fresh stamp.
+//
+// The stamp is deliberately three plain fields and no logic — it sits on the hot path of every
+// legitimate team move, and a diagnostic that perturbs the thing it measures is worthless.
+//
+// ⚠ Lives OUTSIDE every strip region, for the gf_cfgInt reason above: most callers are dev-only and
+// stripped, but _gf_rounds.gsc:~2070 (the scr_team_maxsize overflow → spectator) SHIPS PUBLIC, and
+// a kept call into a stripped function is an `unknown function` that fails the whole server. In the
+// public build nothing reads these fields — the writes are inert, which is the intended cost.
+//
+// ⚠ Stamp BEFORE the write, never after: the sampler compares the stamped target against the team
+// it observes, so a stamp that lands after an intervening yield describes the wrong transition.
+gf_stampTeamWriter( who, team )
+{
+    self.pers["gf_teamWriter"]     = who;
+    self.pers["gf_teamWriterTo"]   = team;
+    // Round generation, NOT gettime(): the whole point is to tell "moved by a known writer THIS
+    // round" from "a stale stamp left over from an earlier round, with the real move untraced".
+    // level.gf_roundGen is monotonic across map_restart, which is exactly the scope wanted.
+    if ( isDefined( level.gf_roundGen ) )
+        self.pers["gf_teamWriterGen"] = level.gf_roundGen;
+    else
+        self.pers["gf_teamWriterGen"] = 0;
+}
+
 // Flinch (damage view-kick) scale. scr_gf_flinch is a MULTIPLIER of the stock
 // bg_viewKickScale (0.2): 1 = stock flinch, 0 = no flinch, >1 = more. Called each
 // round from onStartGameType (so an RCON change persists across map_restart) and
@@ -1146,6 +1198,7 @@ gf_autoassignPlanned()
 gf_seatJoinTeam( want )
 {
     self.pers["gf_specReason"] = undefined;    // seated on a real team: drop any spectate breadcrumb
+    self gf_stampTeamWriter( "seatjoin", want );
     self.pers["team"]       = want;
     self.team               = want;
     self.pers["class"]      = undefined;
@@ -1261,6 +1314,7 @@ gf_planApplyMove( team )
 // skin after the move. Mirrors _gf_bridge::gf_forceTeamQuiet / _bot::gf_botQuietSetTeam.
 gf_quietSetTeam( team )
 {
+    self gf_stampTeamWriter( "quietset", team );
     self.pers["team"]       = team;
     self.team               = team;
     self.pers["class"]      = undefined;
@@ -1461,12 +1515,14 @@ gf_menuTeamChoice( team )
 // boundary reconciler auto-seats them the moment a seat opens). Bots never count against the lock
 // (a joining human always displaces a bot instead of spectating). Lock is inert at gf_fill_n 0.
 
+// ⚠ THE canonical read of gf_fill_n — the single place the 0-6 clamp and the default 2 exist.
+// _bot::gf_fillTarget() and gf.gsc::gf_targetRoundSize() both delegate here, so the lock gate and
+// the fill reconciler can never disagree about the target size. Do NOT re-inline getDvarInt(
+// "gf_fill_n" ) anywhere: it was hand-clamped in three files, and a bounds change had to land in
+// all three or they silently diverged.
 gf_teamTargetSize()
 {
-    n = getDvarInt( "gf_fill_n" );
-    if ( n < 0 ) n = 0;
-    if ( n > 6 ) n = 6;
-    return n;
+    return gf_cfgInt( "gf_fill_n", 2, 0, 6 );
 }
 
 gf_teamLockOn()
@@ -2044,6 +2100,9 @@ gf_playerSpawnedCB()
             }
             if ( count >= maxTeam )
             {
+                // Stamped like every other sanctioned writer, but note this one SHIPS PUBLIC — it is
+                // the reason gf_stampTeamWriter must live outside the strip regions.
+                self gf_stampTeamWriter( "maxsize", "spectator" );
                 self.pers["team"] = "spectator";
                 self [[level.spawnSpectator]]( self.origin, self.angles );
                 return;
@@ -3971,7 +4030,16 @@ gf_onPlayerKilled( eInflictor, attacker, iDamage, sMeansOfDeath, sWeapon, vDir, 
             if ( popup > cap )
                 popup = cap;
 
-            logPrint( "GF_POPUP: " + self.name + " died, " + damager.name + " share " + popup + "\n" );
+            // Gated: this fires once per damager per death — the single highest-volume line the mod
+            // emits (thousands per log) and, unlike every other diagnostic here, it also ships in the
+            // PUBLIC build, where a server owner gets the noise with no way to read it. games_mp.log
+            // has NO rotation on the VPS (nothing in watchdog/status_service/deploy truncates it, and
+            // deploy /XF-excludes it), so unbounded per-death logging is a real disk cost, not a
+            // stylistic one. Default OFF; set gf_debug_popup 1 to bring it back for a scoring
+            // investigation. Kept as a plain getDvarInt rather than a strip region because the score
+            // path around it ships public and must stay compile-identical in both builds.
+            if ( getDvarInt( "gf_debug_popup" ) == 1 )
+                logPrint( "GF_POPUP: " + self.name + " died, " + damager.name + " share " + popup + "\n" );
 
             // Text popups instead of damage numbers: killer sees "Elimination"
             // (priority 2), every other damager sees "Assist" (priority 1).
@@ -4128,6 +4196,11 @@ gf_awardOvertimeCapture()
 
     self.pers["captures"]++;
     self.captures = self.pers["captures"];
+
+    // Capture XP. Like assists, this MUST go straight to _rank::giveRankXP — the stock
+    // capture score path (givePlayerScore) returns on its first line under
+    // level.overridePlayerScore, so it awards nothing. Server-side and free.
+    self thread maps\mp\gametypes\_rank::giveRankXP( "capture" );
 }
 
 gf_initDamageScore()

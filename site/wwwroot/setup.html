@@ -122,6 +122,26 @@
       <pre class="cmd"><code>bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"</code></pre>
       <p>Now you can <strong>ADS without releasing Sprint.</strong> What it does: aiming (<code>+speed_throw</code>) also clears the sprint input (<code>-breath_sprint</code>) so the engine stops blocking your aim. The trailing <code>-sprint</code> is a required no-op &mdash; it absorbs the key event so the sprint release actually fires.</p>
       <p>The game sometimes strips custom <code>MOUSE2</code> binds on restart. If ADS goes dead, just <strong>re-paste the line</strong>.</p>
+
+      <h3 id="console-cmds">Recommended console commands</h3>
+      <p>An <strong>alternate way to apply your settings</strong> &mdash; most of these have an in-game menu equivalent (Graphics / Game tabs), but a few have no menu entry at all. Open the console (<code>~</code>) and paste the block. <code>seta</code> both applies a setting <strong>and saves it</strong>, so you only paste once and it sticks across restarts.</p>
+      <pre class="cmd"><code>seta com_maxfps          "144"     // frame cap (also Options -&gt; Game -&gt; Max FPS)
+seta r_displayRefresh    "144 Hz"  // Match your monitors output Hz
+seta cl_maxpackets       "100"     // stock 30; lowers input latency
+seta com_reduceSleep     "1"       // Options -&gt; Game -&gt; Reduce engine sleeps
+seta r_aaSamples         "8"       // anti-aliasing (8x)
+seta r_texFilterAnisoMax "16"      // anisotropic filtering (max)
+seta r_picmip            "0"       // texture quality: Extra
+seta sm_enable           "1"       // shadows on
+seta cg_fov              "65"      // base FOV (true FOV = cg_fov x cg_fovScale)
+seta cg_fovScale         "1.30"    // 65 x 1.30 = ~85 total; also drives ADS sensitivity
+seta gpad_enabled        "1"       // controller support</code></pre>
+
+      <p><strong>Or apply all of them at once.</strong> Paste this single line into the console and hit <strong>Enter</strong>:</p>
+      <div class="copybox">
+        <button type="button" class="btn btn-ghost copy-btn" data-copy-target="oneliner">Copy</button>
+        <pre class="oneline" id="oneliner"><code>seta com_maxfps 144;seta r_displayRefresh "144 Hz";seta cl_maxpackets 100;seta com_reduceSleep 1;seta r_aaSamples 8;seta r_texFilterAnisoMax 16;seta r_picmip 0;seta sm_enable 1;seta cg_fov 65;seta cg_fovScale 1.30;seta gpad_enabled 1</code></pre>
+      </div>
     </section>
 
     <!-- 3. JOIN -->
@@ -171,5 +191,6 @@
       This mod is not endorsed by or affiliated with the copyright holders of the base game in any form.</p>
 
   </main>
+  <script src="setup.js"></script>
 </body>
 </html>

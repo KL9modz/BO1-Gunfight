@@ -734,15 +734,32 @@ gf_ot( origin, yaw )
 
 gf_getCustomSpawnPoint( team )
 {
+    // Returning undefined silently degrades small mode to stock start spawns, so stamp WHY on the
+    // way out — the caller (gf.gsc onSpawnPlayer) can't otherwise tell "this map has no curated
+    // data" (the supported opt-out) from "every curated point was occupied" (a capacity gap) from
+    // "the round's set is malformed" (a real bug). Read by _gf_debug::gf_logCuratedSpawnMiss.
+    // Kept OUTSIDE the strip regions: it is a bare level write that costs nothing and the public
+    // build simply never reads it.
+    level.gf_customSpawnMiss = undefined;
+
     if ( !isDefined( level.gf_customSpawns ) )
+    {
+        level.gf_customSpawnMiss = "nodata";
         return undefined;
+    }
 
     if ( !isDefined( level.gf_customSpawns["sets"] ) )
+    {
+        level.gf_customSpawnMiss = "nodata";
         return undefined;
+    }
 
     sets = level.gf_customSpawns["sets"];
     if ( sets.size <= 0 )
+    {
+        level.gf_customSpawnMiss = "nodata";
         return undefined;
+    }
 
     roundKey = 0;
     if ( isDefined( game["roundsplayed"] ) )
@@ -763,7 +780,12 @@ gf_getCustomSpawnPoint( team )
     set = sets[setIndex];
 
     if ( !isDefined( set[team] ) || set[team].size <= 0 )
+    {
+        // The map is listed but this round's set has no points for this team — malformed data,
+        // not an opt-out. Distinct reason so the log separates it from the whole-map case.
+        level.gf_customSpawnMiss = "noteam";
         return undefined;
+    }
 
     spawns = set[team];
     start = level.gf_customSpawnCursor[team];
@@ -787,6 +809,10 @@ gf_getCustomSpawnPoint( team )
     // undefined sends the caller (gf.gsc onSpawnPlayer) down its stock mp_tdm_spawn_<team>_start
     // fallback, whose selectors are telefrag-aware — never spawn ONTO an occupied curated point,
     // which would kill the frozen occupant (the old raw-cursor fallback did exactly that).
+    // "full" is the one cause worth acting on: it means small mode HAS the data and still couldn't
+    // deliver it, i.e. the side outgrew its curated point count. The fix is capacity (a 6th point,
+    // or a smaller team size), never forcing the spawn.
+    level.gf_customSpawnMiss = "full:" + spawns.size;
     return undefined;
 }
 

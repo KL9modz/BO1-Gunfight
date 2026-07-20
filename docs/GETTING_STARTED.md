@@ -7,6 +7,7 @@ Everything a new player needs: install Plutonium and Black Ops 1, dial in the re
 ## Contents
 - [1. Install Black Ops 1 + Plutonium](#1-install-black-ops-1--plutonium)
 - [2. Recommended settings](#2-recommended-settings)
+  - [Recommended console commands](#recommended-console-commands)
 - [3. Find & join Gunfight](#3-find--join-gunfight)
 - [4. Troubleshooting](#4-troubleshooting)
 
@@ -102,6 +103,30 @@ bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"
 Now you can **ADS without releasing Sprint.** What it does: aiming (`+speed_throw`) also clears the sprint input (`-breath_sprint`) so the engine stops blocking your aim. The trailing `-sprint` is a required no-op - it absorbs the key event so the sprint release actually fires.
 
 The game sometimes strips custom `MOUSE2` binds on restart. If ADS goes dead, just **re-paste the line**.
+
+### Recommended console commands
+
+An **alternate way to apply your settings** - most of these have an in-game menu equivalent (Graphics / Game tabs), but a few have no menu entry at all. Open the console (**`~`**) and paste the block. `seta` both applies a setting **and saves it**, so you only paste once and it sticks across restarts.
+
+```
+seta com_maxfps          "144"     // frame cap (also Options -> Game -> Max FPS)
+seta r_displayRefresh    "144 Hz"  // Match your monitors output Hz
+seta cl_maxpackets       "100"     // stock 30; lowers input latency
+seta com_reduceSleep     "1"       // Options -> Game -> Reduce engine sleeps
+seta r_aaSamples         "8"       // anti-aliasing (8x)
+seta r_texFilterAnisoMax "16"      // anisotropic filtering (max)
+seta r_picmip            "0"       // texture quality: Extra
+seta sm_enable           "1"       // shadows on
+seta cg_fov              "65"      // base FOV (true FOV = cg_fov x cg_fovScale)
+seta cg_fovScale         "1.30"    // 65 x 1.30 = ~85 total; also drives ADS sensitivity
+seta gpad_enabled        "1"       // controller support
+```
+
+**Or apply all of them at once** - paste this single line into the console and hit **Enter**:
+
+```
+seta com_maxfps 144;seta r_displayRefresh "144 Hz";seta cl_maxpackets 100;seta com_reduceSleep 1;seta r_aaSamples 8;seta r_texFilterAnisoMax 16;seta r_picmip 0;seta sm_enable 1;seta cg_fov 65;seta cg_fovScale 1.30;seta gpad_enabled 1
+```
 
 ---
 

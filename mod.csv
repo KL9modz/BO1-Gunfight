@@ -7,6 +7,13 @@ menufile,ui_mp/mod.txt
 menufile,ui_mp/mod_ingame.txt
 rawfile,maps/mp/gametypes/_gametypes.txt
 rawfile,maps/mp/gametypes/gf.txt
+# CLIENT script override: stock mp_silo.csc minus the `level thread rocket_manager()` call,
+# killing Silo's ambient background missile launches (client-side only -- no server lever
+# exists; see memory silo-background-missiles-are-client-side). A .csc MUST be baked into
+# mod.ff to reach clients (the no-GSC-in-the-zone rule below is about SERVER .gsc, which
+# loose-loads; clients never loose-load anything). UNVERIFIED whether the mod.ff copy beats
+# the map zone's own copy at compile time -- if the map .ff wins this is a harmless no-op.
+rawfile,clientscripts/mp/mp_silo.csc
 fx,misc/fx_ui_flagbase_gf_white
 # NOTE: the "Connection Interrupted" PLUG ICON is NOT hidden, and cannot be from here.
 # Blanking CGAME_CONNECTIONINTERUPTED (localizedstrings/cgame.str) kills only the TEXT. The

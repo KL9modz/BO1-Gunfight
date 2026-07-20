@@ -717,3 +717,192 @@ gf_probeSpawnYaw( intendedYaw, source )
               + " org=" + int( org[0] ) + "," + int( org[1] ) + "," + int( org[2] )
               + flag + "\n" );
 }
+
+// SMALL-MODE CURATED-SPAWN FALLBACK DIAGNOSTIC. gf_getCustomSpawnPoint returning undefined sends the
+// spawner down gf.gsc's stock mp_tdm_spawn_<team>_start path — correct side, but not the fight-facing
+// curated point small mode exists to deliver. That degradation was completely silent: nothing in any
+// log distinguished a curated spawn from a fallback one, so it could only be caught by eye, in play.
+//
+// This is log-only and changes NO spawn behavior, deliberately. "Always use the curated point" is the
+// WRONG fix for the common cause — every point occupied — because forcing it means spawning onto an
+// occupied point, which telefrags the frozen occupant (exactly the bug the telefrag scan in
+// _gf_locations was written to kill). The lever is capacity, and this line is what tells you whether
+// you need it.
+//
+// logPrint, like every other GF_* diagnostic → games_mp.log (in the MOD folder,
+// mods/mp_gunfight/games_mp.log, NOT main/ and NOT logs/). Grep GF_SPAWNMISS there.
+//
+// ⚠ An earlier version of this comment claimed "logPrint/logString output does not reach
+// games_mp.log on this server" and used PrintLn on that basis. That is FALSE for logPrint and was a
+// conflation with logString: logPrint output is provably in the log (GF_POPUP alone numbers in the
+// thousands), while logString genuinely lands nowhere — that is the real, narrower finding
+// ([[xp-scrxpscale-readonly-and-dead-score-path]]). The three destinations are:
+//   println()   → console_mp.log   (engine console; GSC compile/runtime errors surface here)
+//   logPrint()  → games_mp.log     (the g_log — where every GF_* diagnostic belongs)
+//   logString() → nowhere
+// Splitting diagnostics across two files makes them uncorrelatable, which defeats the point of
+// having them; one stream is the rule.
+//
+// No dvar gate — these are rare by construction (see the once-per-match suppression below), and a
+// gated diagnostic is off on the one run that needed it.
+gf_logCuratedSpawnMiss( team )
+{
+    if ( !isDefined( level.gf_customSpawnMiss ) )
+        return;
+
+    reason = level.gf_customSpawnMiss;
+
+    round = 0;
+    if ( isDefined( game["roundsplayed"] ) )
+        round = game["roundsplayed"] + 1;
+
+    // "nodata" = the map is not in _gf_locations. That is the SUPPORTED opt-out (Firing Range is
+    // deliberately on big-map defaults), not a fault, and it is true for every spawn of every round —
+    // so it prints ONCE PER MATCH. game[] survives map_restart(true) between rounds, which is exactly
+    // the scope wanted here; a level[] flag would re-arm every round and spam.
+    if ( reason == "nodata" )
+    {
+        if ( isDefined( game["gf_spawnMissLogged"] ) )
+            return;
+
+        game["gf_spawnMissLogged"] = true;
+        logPrint( "GF_SPAWNMISS: map " + getDvar( "mapname" ) + " has NO curated spawn data - small mode is"
+                  + " using stock start spawns for this whole match (expected if unlisted in"
+                  + " _gf_locations)\n" );
+        return;
+    }
+
+    // The remaining causes mean small mode HAS data for this map and still failed to hand it out.
+    // Loud, every occurrence, named — these are the ones worth acting on.
+    kind = "human";
+    if ( self istestclient() )
+        kind = "bot";
+
+    logPrint( "GF_SPAWNMISS: " + kind + " " + self.name + " fell back to start spawns - team " + team
+              + " reason " + reason + " (map " + getDvar( "mapname" ) + " round " + round + ")\n" );
+}
+
+// ─── TEAM-WRITE TRACER (GF_TEAMTRACE) ─────────────────────────────────────────────────────────
+//
+// Identifies the untraced mis-seater behind BOTH open team bugs (CLAUDE.md "Open bugs"): a bot that
+// starts a round seated on the ENEMY side, and a human who starts a round stranded in spectator.
+// Both are the same statement — something writes pers["team"] and we do not know what — and both
+// have resisted code reading, because the reconciler provably plans zero moves for the states that
+// produce them.
+//
+// GSC cannot hook a field write, so this catches it by DIFFERENCE. Every sanctioned writer stamps a
+// one-shot token (_gf_rounds::gf_stampTeamWriter) naming itself and its target team. This sampler
+// walks the roster at checkpoints and compares each player's pers["team"] against the team it last
+// observed:
+//   changed, and a token matches the NEW team  -> attributed. Token is CONSUMED, logged only at
+//                                                 verbosity 2.
+//   changed, and no matching token             -> UNTRACED. This is the bug, caught in the act,
+//                                                 with the checkpoint interval it happened in.
+//
+// ⚠ The token is deliberately SINGLE-USE. If it were merely "matches the current team" and left in
+// place, a stock autoassign moving a player back onto a team a sanctioned writer had moved them to
+// earlier would be silently absolved forever. Consuming it means the second, unstamped move to that
+// same team is still caught — which is exactly the repeat-offender shape both bugs exhibit.
+//
+// ⚠ This is what supersedes GF_TEAMWATCH's "reason UNTRACED". That line tells you a mis-seat has
+// already happened; this one tells you WHICH INTERVAL it happened in, which is the thing you need to
+// work backward from. Keep both — TEAMWATCH catches a stuck state this sampler would miss if the
+// player was already wrong before the first checkpoint of the match.
+//
+// Cost: one pass over <=14 clients at 3 checkpoints per round, no yields, no entity work, no HUD.
+// It cannot perturb what it measures. Default ON (1) — a diagnostic gated off by default is off on
+// the one run that needed it. Set gf_trace_teams 2 for the full move history, 0 to silence.
+gf_teamTrace( checkpoint )
+{
+    mode = getDvarInt( "gf_trace_teams" );
+    if ( mode <= 0 )
+        return;
+
+    round = 0;
+    if ( isDefined( game["roundsplayed"] ) )
+        round = game["roundsplayed"] + 1;
+
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( !isDefined( p ) )
+            continue;
+
+        // A demo client is neither human nor bot and stock parks it teamless (pers["team"] == ""),
+        // which would read as a phantom transition on every checkpoint. Excluded outright — the
+        // real-bot test is istestclient() && !isdemoclient() (CLAUDE.md, T5 gotchas).
+        if ( p isdemoclient() )
+            continue;
+
+        now = "none";
+        if ( isDefined( p.pers["team"] ) && p.pers["team"] != "" )
+            now = p.pers["team"];
+
+        // First observation of this client: seed the baseline, report nothing. A "transition" from
+        // nothing to their initial team is the connect, not a mis-seat.
+        if ( !isDefined( p.pers["gf_traceTeam"] ) )
+        {
+            p.pers["gf_traceTeam"] = now;
+            continue;
+        }
+
+        was = p.pers["gf_traceTeam"];
+        if ( was == now )
+            continue;
+
+        p.pers["gf_traceTeam"] = now;      // re-baseline before any logging, so one move logs once
+
+        kind = "human";
+        if ( p istestclient() )
+            kind = "bot";
+
+        writer = "NONE";
+        if ( isDefined( p.pers["gf_teamWriter"] ) )
+            writer = p.pers["gf_teamWriter"];
+
+        attributed = ( isDefined( p.pers["gf_teamWriterTo"] ) && p.pers["gf_teamWriterTo"] == now );
+
+        // Staleness in ms: level.gf_roundGen is a gettime() stamp (monotonic across map_restart),
+        // NOT an incrementing counter — so this is a real age, and a large one on an "attributed"
+        // move is itself suspicious (a token from rounds ago that happens to match).
+        age = -1;
+        if ( isDefined( p.pers["gf_teamWriterGen"] ) && isDefined( level.gf_roundGen ) )
+            age = level.gf_roundGen - p.pers["gf_teamWriterGen"];
+
+        if ( attributed )
+        {
+            // Consume the token — see the single-use note above.
+            p.pers["gf_teamWriter"]    = undefined;
+            p.pers["gf_teamWriterTo"]  = undefined;
+            p.pers["gf_teamWriterGen"] = undefined;
+
+            if ( mode >= 2 )
+                logPrint( "GF_TEAMTRACE: " + kind + " " + p.name + " " + was + " -> " + now
+                          + " by " + writer + " (age " + age + "ms, at " + checkpoint
+                          + ", round " + round + ")\n" );
+            continue;
+        }
+
+        logPrint( "GF_TEAMTRACE: UNTRACED " + kind + " " + p.name + " " + was + " -> " + now
+                  + " - last stamp " + writer + " -> "
+                  + gf_traceStampTarget( p ) + " (age " + age + "ms), at " + checkpoint
+                  + ", round " + round + ", state " + gf_traceState( p ) + "\n" );
+    }
+}
+
+// Small readers kept separate so the log line above stays one expression. A missing stamp target
+// prints "-" rather than crashing on an undefined concat.
+gf_traceStampTarget( p )
+{
+    if ( isDefined( p.pers["gf_teamWriterTo"] ) )
+        return p.pers["gf_teamWriterTo"];
+    return "-";
+}
+
+gf_traceState( p )
+{
+    if ( isDefined( p.sessionstate ) )
+        return p.sessionstate;
+    return "?";
+}

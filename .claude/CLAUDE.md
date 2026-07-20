@@ -27,8 +27,9 @@ wins** takes the match.
   (parked bots never get it), and `teamWatch` only re-fires if `pers["team"]` goes undefined (nothing
   does) — so the seater is an untraced path. **Contained structurally:** the maySpawn fill-discipline
   gate now parks any over-size bot at its spawn attempt and prints `GF_FILLGUARD: parked bot <name> …`.
-  **Next occurrence: read that console line** — it names the bot and round; work backward from what
-  touched that bot's pers["team"] between the boundary pass and the spawn wave.
+  **Next occurrence: read `GF_TEAMTRACE` first** (see *Diagnostics* below) — it is built to answer
+  exactly this and names the checkpoint interval the mis-seat happened in; `GF_FILLGUARD` then names
+  the bot and round. Both are `logPrint` → **`mods/mp_gunfight/games_mp.log`**, not console_mp.log.
   **Same untraced path also strands HUMANS (reported live on the VPS 2026-07-19):** a mid-round joiner
   takes a bot's spot, plays the round, then the NEXT round starts with their `pers["team"] ==
   "spectator"` — on a ranked server that hits `_globallogic_player.gsc:365` (team menu, no autoassign),
@@ -38,8 +39,10 @@ wins** takes the match.
   `gf_boundaryPass`) prints `GF_TEAMWATCH: human <name> in spectator at boundary - reason UNTRACED
   (round R …)` — `reason UNTRACED` = the mis-seat (vs `user-choice`/`lock-queue`, tagged via
   `pers["gf_specReason"]` in `gf_menuTeamChoice`). It manifests during the re-begin AFTER a boundary, so
-  the line lands at the NEXT boundary and repeats while they stay stuck. **Next occurrence: correlate the
-  GF_TEAMWATCH round with the GF_FILLGUARD round** — same untraced writer, now caught touching a human.
+  the line lands at the NEXT boundary and repeats while they stay stuck. **Next occurrence: read
+  `GF_TEAMTRACE` (below), then correlate the GF_TEAMWATCH round with the GF_FILLGUARD round** — same
+  untraced writer, now caught touching a human. TEAMWATCH reports that a human is *already* stranded;
+  GF_TEAMTRACE reports the interval the strand *happened in*, which is what you work backward from.
   A boundary-time reclaim (re-seat the `UNTRACED` human on the lighter side) is the obvious containment
   but is unshipped pending a VPS test + breadcrumbing every intentional-spectate site (user menu done;
   the bridge admin-spectator path is not).
@@ -214,6 +217,44 @@ external references we use are the official engine sources (see **Resources**).
   rejected — see *XP* below; it is harmless but it is **not** a local-only quirk.)
 - **Test panel/bridge/telemetry changes against a DEDICATED server, not a listen host** — a listen
   server masks RCON queue saturation and the "Unknown cmd" dvar-probe spam that only bite on the VPS.
+
+### Diagnostics — where the logs go, and what to read
+**There are two log files and only one is ours.** Get this wrong and you will grep an empty file and
+conclude a diagnostic never fired:
+
+| GSC call | Lands in | Use for |
+|---|---|---|
+| `logPrint()` | **`mods/mp_gunfight/games_mp.log`** | **every `GF_*` diagnostic** — this is the one stream |
+| `println()` | `mods/mp_gunfight/console_mp.log` | engine console; GSC **compile/runtime errors** surface here |
+| `logString()` | **nowhere** | never use ([[xp-scrxpscale-readonly-and-dead-score-path]]) |
+
+⚠ Both live in the **mod folder**, never `storage/t5/main/` and never `storage/t5/mods/mp_gunfight/logs/`
+(that `g_log` path is a decoy — it exists and is empty of `GF_` lines). ⚠ **One stream is the rule:**
+diagnostics split across two files cannot be correlated by timestamp, which defeats having them. The
+sole deliberate exception is the `GF_SECURITY` boot alarm, which writes **both** (red console warning
+for a human watching the console + a `logPrint` twin so it still greps with everything else).
+⚠ **`games_mp.log` has NO rotation on the VPS** — nothing in `watchdog.ps1` / `status_service.ps1` /
+`deploy.ps1` truncates it (deploy `/XF`-excludes it). Growth is bounded only by the engine's own
+`.000`–`.00N` roll, so a per-event log on a hot path is a real disk cost. That is why the per-death
+`GF_POPUP` line is dvar-gated OFF.
+
+**`GF_TEAMTRACE` — the team-write tracer** (`_gf_debug::gf_teamTrace`, dvar `gf_trace_teams`, default
+**1 = on**; `2` = also log attributed moves, `0` = off). Built to identify the untraced mis-seater
+behind both open team bugs. GSC cannot hook a field write, so it works by **difference**: every
+sanctioned writer of `pers["team"]` stamps a **single-use token** naming itself and its target
+(`_gf_rounds::gf_stampTeamWriter` — 8 sites: `seatjoin`, `quietset`, `maxsize`, `botquiet`, `bridge`,
+`parkpending`, `movepending`, `fillguard`), and the sampler walks the roster at **three checkpoints**
+— `boundary-in`, `boundary-out`, `pre-spawn` — reporting any team change with no matching token as
+`GF_TEAMTRACE: UNTRACED …`. ⚠ The token is **consumed on match** deliberately: left in place, a stock
+autoassign moving someone back onto a team a sanctioned writer used earlier would be absolved forever.
+⚠ `gf_stampTeamWriter` **lives outside every strip region** — the `scr_team_maxsize` writer ships
+public, and a kept call into stripped code is an `unknown function` that fails the whole server.
+⚠ Keep `GF_TEAMWATCH` too: it catches a player who was *already* wrong before the match's first
+checkpoint, which the sampler cannot see.
+
+**Dev-only dvars:** `gf_trace_teams`, `gf_debug_popup` (per-death score share, default 0),
+`gf_debug_spawns`, `gf_debug_hud_pool`, `gf_debug_elem_probe`, `gf_debug_spawnyaw`, `gf_hitch_pct`
+(threshold %, code-default 25), `gf_hitch_debug`, `gf_endgap_ms`, `gf_force_loadout`, `gf_force_camo`.
 
 ### Companion docs (NOT auto-loaded — open them for depth)
 | Doc | Owns |

@@ -479,31 +479,6 @@ gf_load( pri, sec, equip, lethal, tactical, camo, camoSec, perks )
     return load;
 }
 
-// Is token in this list? (GSC has no array search builtin.)
-gf_listHas( list, token )
-{
-    for ( i = 0; i < list.size; i++ )
-    {
-        if ( list[i] == token )
-            return true;
-    }
-    return false;
-}
-
-// Resolve a specialty token -> { n:displayName, p:iconParent }. An unknown token degrades to
-// its own name + itself (gf_getPerkShader then falls back to "white"), so a typo shows up as a
-// blank icon rather than crashing — but it is still a no-op perk, so prefer the editor's picker.
-gf_perkInfo( token )
-{
-    if ( isDefined( level.gf_perkDB ) && isDefined( level.gf_perkDB[ token ] ) )
-        return level.gf_perkDB[ token ];
-
-    info = [];
-    info["n"] = token;
-    info["p"] = token;
-    return info;
-}
-
 // One perk row: token -> display name + the perk whose ICON to use. For a base perk the icon
 // parent is itself; for a Pro ability it is the parent perk (Pros are not create-a-class items
 // and have no art of their own — see gf_load).
