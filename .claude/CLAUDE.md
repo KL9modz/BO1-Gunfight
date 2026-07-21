@@ -35,17 +35,25 @@ wins** takes the match.
   "spectator"` — on a ranked server that hits `_globallogic_player.gsc:365` (team menu, no autoassign),
   i.e. "forced to choose a team first". At defaults NO mod path spectates a human (every spectator write
   is `istestclient()`-gated; `gf_team_lock` off), so this is the bot mis-seater catching a human.
-  **Contained diagnostically, not yet fixed:** `_bot::gf_teamWatchHumans` (run at the top of every
-  `gf_boundaryPass`) prints `GF_TEAMWATCH: human <name> in spectator at boundary - reason UNTRACED
-  (round R …)` — `reason UNTRACED` = the mis-seat (vs `user-choice`/`lock-queue`, tagged via
-  `pers["gf_specReason"]` in `gf_menuTeamChoice`). It manifests during the re-begin AFTER a boundary, so
-  the line lands at the NEXT boundary and repeats while they stay stuck. **Next occurrence: read
-  `GF_TEAMTRACE` (below), then correlate the GF_TEAMWATCH round with the GF_FILLGUARD round** — same
-  untraced writer, now caught touching a human. TEAMWATCH reports that a human is *already* stranded;
-  GF_TEAMTRACE reports the interval the strand *happened in*, which is what you work backward from.
-  A boundary-time reclaim (re-seat the `UNTRACED` human on the lighter side) is the obvious containment
-  but is unshipped pending a VPS test + breadcrumbing every intentional-spectate site (user menu done;
-  the bridge admin-spectator path is not).
+  **Contained diagnostically AND now auto-repaired (root still untraced):** `_bot::gf_teamWatchHumans`
+  (top of every `gf_boundaryPass`) prints `GF_TEAMWATCH: human <name> in spectator at boundary - reason
+  UNTRACED (round R …)` — `reason UNTRACED` = the mis-seat, vs the intentional-spectate breadcrumbs
+  (`user`/`moved`/`maxsize`/`lock-queue`, classified by `_bot::gf_specReasonTag` from
+  `pers["gf_specReason"]` + `pers["gf_seatQueued"]`). Immediately after the log, **`_bot::gf_reclaimStrandedHumans`
+  re-seats any UNTRACED-stranded human onto the lighter side** (quiet reassign — a stranded human is a
+  spectator, never "playing"), BEFORE the balance/fill stages so they're counted, printing `GF_RECLAIM:
+  re-seated stranded human <name> to <side>`. Gated by **`gf_team_reclaim`** (default 1; bridge
+  `reclaim_<0|1>`). ⚠ It is a **containment, not a root fix**: the strand happens during the re-begin
+  AFTER a boundary, so it's caught at the NEXT boundary — the player still sees the menu for **that one
+  round**, then is auto-seated (repeats if the untraced writer re-strands them). **Next occurrence: read
+  `GF_TEAMTRACE` (below), then correlate the GF_TEAMWATCH/GF_RECLAIM round with the GF_FILLGUARD round** —
+  same untraced writer, now caught touching a human; TEAMWATCH reports the human is *already* stranded,
+  GF_TEAMTRACE reports the interval the strand *happened in*, which is what you work backward from to kill
+  the root. **Breadcrumb sites** (so the reclaim never grabs an intentional spectator): `gf_menuTeamChoice`
+  → `user`; `gf_seqTeamMove`'s spectator branch → `moved` (covers the bridge admin force-to-spectator,
+  which routes through it); the `scr_team_maxsize` overflow → `maxsize`; the lock queue via
+  `gf_lockQueueMark` → `gf_seatQueued`. ⚠ Still **UNVALIDATED against a live repro** — the reclaim fired
+  correctly in review but the bug is rare/unreproducible on demand; watch for `GF_RECLAIM` on the VPS.
 - **RESOLVED — the `MAX_PACKET_USERCMDS` killcam spam is a CLIENT-side `cl_maxpackets` limit, self-fixable,
   cosmetic.** Proven live 2026-07-15: a client running `com_maxfps 237` / `cl_maxpackets 30` (stock) spat
   ~37 lines per round-end killcam; setting **`cl_maxpackets 100` on that client killed the spam outright**,
@@ -589,7 +597,9 @@ killstreak names — those fire the "called-in" announcer + holster-lock), the `
 **One round-boundary TEAM reconciler** (`gf_reconcilerInit` in `_bot.gsc`, dev-only) is the single
 authority over next-round team composition; BotWarfare's own managers (`addBots`/`teamBots`/
 `doNonDediBots`) are **deleted**. **`gf_fill_n` is the per-team TARGET size** (default **2**, clamp 0-6).
-Each `gf_boundaryPass` runs three stages:
+Each `gf_boundaryPass` opens with two log-then-repair diagnostics — `gf_teamWatchHumans` (logs any
+human stranded in spectator) then **`gf_reclaimStrandedHumans`** (re-seats an UNTRACED-stranded human
+onto the lighter side, `gf_team_reclaim` 1; see the open-bug note) — and then runs three stages:
 1. **Seat the lock queue** — spectating humans the team-size lock turned away, seated in **join order**
    (`pers["gf_seatQueued"]` = join seq) whenever a seat opens; quiet reassign (they're spectators).
 2. **Even the HUMAN split to off-by-1** (`gf_team_balance` 1, default) — the **most recent joiner**
@@ -1025,7 +1035,7 @@ bot-difficulty preset, so the panel's Difficulty row stays lit on the current va
 prematch (`pers["gf_pendingTeam"]`, applied on `spawned_player`); `pteamforce_` applies now via the
 **sequenced move** (`_gf_rounds::gf_seqTeamMove` — an alive player **dies + late-spawns** onto the new
 team when the round admits it; never the racy stock switch). Team-system toggles: `balance_`/
-`teamlock_`/`teamswitch_`/`latespawn_<0|1>`. Verbs cover bots, balance-teams,
+`teamlock_`/`teamswitch_`/`latespawn_`/`reclaim_<0|1>`. Verbs cover bots, balance-teams,
 match-control (`lobbystart`, endround, the two restarts, pause/resume), gameplay toggles, and fun/visual
 commands. **`roundrestart`** replays the round with no score/loadout-rotation/side-switch by ending it as
 a `"tie"` through `gf_endRound` with `game["roundsplayed"]` pre-decremented (endGame's `++` nets it back)
@@ -1130,6 +1140,7 @@ tables → `docs/REFERENCE.md`.
 | `gf_team_lock` | 0 | 1 = `gf_fill_n` is a hard human cap per side; overflow joiners spectate, queued in join order, auto-seated when a seat opens. Bots never count against it. Bridge: `teamlock_<0\|1>`. |
 | `gf_team_switch` | 1 | Players may switch teams themselves, immediately (alive mid-round = die + sit out the round; prematch/grace = free). 0 = self-switching refused; admin moves still work. Bridge: `teamswitch_<0\|1>`. |
 | `scr_gf_latespawn` | 1 | A joiner/mover makes their FIRST spawn into a live round while their team has ≥1 alive — never in OT, never a respawn. Two ways in, both size-preserving: it **fills a gap** (team stays no bigger than the enemy's, by roster — anyone, bots included), or a **HUMAN takes a bot's spot** (that bot is removed; a bot never displaces anyone; a team full of humans makes the joiner wait for the boundary). 0 = always spectate until next round. Bridge: `latespawn_<0\|1>`. |
+| `gf_team_reclaim` | 1 | Boundary-time **containment** for the untraced human mis-seat: re-seat a human stranded in spectator with **reason UNTRACED** (not a `user`/`moved`/`maxsize` spectate, not lock-queued) onto the lighter HUMAN side, so the NEXT round starts them ON a team instead of the ranked team/class menu. Runs before the balance/fill stages (bots absorb the size); prints `GF_RECLAIM`. Catches the strand one round late (the menu still shows for that round), so it contains, not cures. 0 = leave stranded humans (diagnostic-only). Bridge: `reclaim_<0\|1>`. |
 | `gf_fill_kick_floor` | 2 | Client slots kept free for humans; a parked bot is kicked once total ≥ `sv_maxclients − this`. |
 | `bot_difficulty` | normal (engine); cfg ships **fu** | BotWarfare AI difficulty. ⚠ A **REAL ENGINE dvar** (BO1 Combat Training), registered at process start: default `normal`, enum domain easy/normal/hard/fu (live rcon read 2026-07-17) — so it is **never empty and a GSC seed-if-empty can never fire** (the one gf.gsc carried was dead code, removed; the VPS's old "fu" was a live panel click that a restart silently reverted). The GF default fu is owned by `dedicated.cfg` (VPS + example). `_bot::diffBots` re-applies the `sv_bot*` preset from it every 1.5s, so cfg / panel `botdiff_*` changes land within a tick. |
 

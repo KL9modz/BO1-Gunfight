@@ -479,6 +479,8 @@ onStartGameType()
         setDvar( "gf_team_switch", "1" );         // 1 = players may switch teams themselves (immediately; alive mid-round = die + sit out); 0 = self-switching disabled
     if ( getDvar( "scr_gf_latespawn" ) == "" )
         setDvar( "scr_gf_latespawn", "1" );       // 1 = a joiner/mover may spawn INTO a live round while their team has >=1 alive (never in OT); 0 = spectate until next round
+    if ( getDvar( "gf_team_reclaim" ) == "" )
+        setDvar( "gf_team_reclaim", "1" );        // 1 = at each boundary, re-seat a human the untraced mis-seater stranded in spectator (reason UNTRACED) onto the lighter side, so they aren't forced to the ranked team/class menu; 0 = leave them (diagnostic-only)
     if ( getDvar( "gf_teamplan" ) == "" )
         setDvar( "gf_teamplan", "" );             // lobby->match transfer: "<guid>:<a|x|s>,..." snapshot written pre-restart, re-applied post-restart (survives map_restart(false))
     // #strip-end

@@ -421,6 +421,7 @@ gf_boundaryPass()
 	gf_clearAllMovePending();            // ...and stale deferred human moves (recomputed below)
 
 	gf_teamWatchHumans();                // diagnostic: log any human stranded in spectator (untraced mis-seat)
+	gf_reclaimStrandedHumans();          // containment: re-seat an UNTRACED-stranded human onto the lighter side (before the stages count)
 
 	// Checkpoint 1 of 3. Sampling BEFORE the pass plans anything is what makes the pass's own moves
 	// distinguishable from whatever happened during the round — anything reported here changed teams
@@ -708,11 +709,7 @@ gf_teamWatchHumans()
 		if(!(isDefined(p.pers["team"]) && p.pers["team"] == "spectator"))
 			continue;
 
-		reason = "UNTRACED";
-		if(isDefined(p.pers["gf_specReason"]) && p.pers["gf_specReason"] == "user")
-			reason = "user-choice";
-		else if(isDefined(p.pers["gf_seatQueued"]))
-			reason = "lock-queue";
+		reason = gf_specReasonTag(p);
 
 		state = "?";
 		if(isDefined(p.sessionstate))
@@ -721,6 +718,77 @@ gf_teamWatchHumans()
 		logPrint("GF_TEAMWATCH: human " + p.name + " in spectator at boundary - reason " + reason
 			+ " (round " + game["roundsplayed"] + ", state " + state
 			+ ", lock " + getDvarInt("gf_team_lock") + ")\n");
+	}
+}
+
+// Classify WHY a human is in spectator, so both the diagnostic (gf_teamWatchHumans) and the
+// containment (gf_reclaimStrandedHumans) agree on what is intentional. Any explicit breadcrumb is
+// an intentional spectate — "user" (self-chose in the team menu), "moved" (a sanctioned seqTeamMove,
+// incl. the bridge admin force), "maxsize" (scr_team_maxsize capacity overflow); a lock-queued
+// joiner carries gf_seatQueued. Everything else is the untraced mis-seater — the one reason the
+// reclaim acts on. Breadcrumb sites: _gf_rounds::gf_menuTeamChoice / gf_seqTeamMove / the maxsize
+// overflow; the lock queue via _gf_rounds::gf_lockQueueMark.
+gf_specReasonTag(p)
+{
+	if(isDefined(p.pers["gf_specReason"]))
+		return p.pers["gf_specReason"];
+	if(isDefined(p.pers["gf_seatQueued"]))
+		return "lock-queue";
+	return "UNTRACED";
+}
+
+// CONTAINMENT for the untraced human mis-seat (the "moved to the other team -> forced to choose a
+// team/class" report). The companion to gf_teamWatchHumans: for every human stranded in SPECTATOR
+// with reason UNTRACED (NOT a self/admin/maxsize spectate, NOT lock-queued), re-seat them on the
+// lighter HUMAN side so the NEXT round starts them ON a team instead of dumping them at the ranked
+// team menu (_globallogic_player.gsc:365). Runs at the TOP of gf_boundaryPass, BEFORE the balance/
+// fill stages, so the reseated human is counted by them (bots absorb the size, and the maySpawn
+// seat-priority gate displaces a bot if the side is full). Quiet reassign is the correct primitive
+// (a stranded human is a spectator, never "playing"); gf_quietSetTeam stamps its own "quietset"
+// token so the sampler attributes the move instead of re-flagging it UNTRACED, and the GF_RECLAIM
+// logPrint is the explicit audit trail. Gated by gf_team_reclaim (default 1).
+//
+// ⚠ This is a CONTAINMENT, not a root fix: the strand happens during the re-begin AFTER a boundary,
+// so it is caught at the NEXT boundary — the player still sees the menu for that one round, then is
+// auto-seated. Killing the root (which sanctioned/stock path writes spectator on a human with no
+// token) still needs the GF_TEAMTRACE/GF_TEAMWATCH correlation from a live repro.
+gf_reclaimStrandedHumans()
+{
+	if(getDvarInt("gf_team_reclaim") == 0)
+		return;
+
+	c  = gf_reconcileCount();
+	hA = c["allies_human"];
+	hX = c["axis_human"];
+
+	players = level.players;
+	for(i = 0; i < players.size; i++)
+	{
+		p = players[i];
+		if(!isDefined(p) || p istestclient() || p isdemoclient())
+			continue;
+		if(!(isDefined(p.pers["team"]) && p.pers["team"] == "spectator"))
+			continue;
+		if(gf_specReasonTag(p) != "UNTRACED")
+			continue;                        // intentional spectate — leave it
+
+		want = "axis";
+		if(hA <= hX)
+			want = "allies";
+
+		// gf_quietSetTeam stamps its own "quietset" writer token, so the pre-spawn/boundary-in
+		// sampler attributes this move (not a fresh UNTRACED write); the GF_RECLAIM line below is
+		// the explicit audit trail. Quiet reassign is safe — a stranded human is never "playing".
+		p maps\mp\gametypes\_gf_rounds::gf_quietSetTeam(want);
+		p.pers["gf_seatQueued"] = undefined; // seated now; drop any stale queue mark
+		p iprintln("^2A team seat opened - you are in next round");
+		logPrint("GF_RECLAIM: re-seated stranded human " + p.name + " to " + want
+			+ " (round " + game["roundsplayed"] + ")\n");
+
+		if(want == "allies")
+			hA++;
+		else
+			hX++;
 	}
 }
 

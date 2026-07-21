@@ -1365,6 +1365,12 @@ gf_seqTeamMove( team, restoreLife )
 
     if ( team == "spectator" )
     {
+        // Breadcrumb this as an INTENTIONAL spectate so the boundary reclaim
+        // (_bot::gf_reclaimStrandedHumans) never yanks a self/admin-benched human back onto a team.
+        // Set only if unset so gf_menuTeamChoice's more specific "user" tag wins; the bridge admin
+        // path (gf_applyTeamMove -> here) lands "moved". Inert in the public build (nothing reads it).
+        if ( !isDefined( self.pers["gf_specReason"] ) )
+            self.pers["gf_specReason"] = "moved";
         self gf_quietSetTeam( "spectator" );
         self maps\mp\gametypes\_globallogic_ui::updateObjectiveText();
         self setclientdvar( "g_scriptMainMenu", game["menu_team"] );
@@ -2103,6 +2109,7 @@ gf_playerSpawnedCB()
                 // Stamped like every other sanctioned writer, but note this one SHIPS PUBLIC — it is
                 // the reason gf_stampTeamWriter must live outside the strip regions.
                 self gf_stampTeamWriter( "maxsize", "spectator" );
+                self.pers["gf_specReason"] = "maxsize";   // intentional (capacity) spectate — exclude from the boundary reclaim (_bot::gf_reclaimStrandedHumans)
                 self.pers["team"] = "spectator";
                 self [[level.spawnSpectator]]( self.origin, self.angles );
                 return;

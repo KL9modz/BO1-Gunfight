@@ -46,6 +46,7 @@
 //   teamlock_<0|1>     - gf_fill_n becomes a hard HUMAN cap per side; overflow spectates, queued (gf_team_lock, default 0)
 //   teamswitch_<0|1>   - players may switch teams themselves (gf_team_switch, default 1; admin moves unaffected)
 //   latespawn_<0|1>    - joiners/movers may spawn INTO a live round while their team has >=1 alive (scr_gf_latespawn, default 1)
+//   reclaim_<0|1>      - re-seat a human the untraced mis-seater stranded in spectator, onto the lighter side (gf_team_reclaim, default 1)
 //   svset_<dvar>=<val> - set a CHEAT-PROTECTED server dvar (bot tuning, timescale, jump/fall) from GSC,
 //                        which is not cheat-gated — so it works on the dedicated VPS with sv_cheats 0.
 //                        Also mirrors the value into gf_<dvar> so it can persist via dedicated.cfg.
@@ -459,6 +460,7 @@ gf_bridgeDispatch( cmd )
     if ( isSubStr( cmd, "teamlock_"   ) ) { gf_bridgeTeamToggle( "gf_team_lock",     getSubStr( cmd, 9,  cmd.size ), "Team-size lock" );         return; }
     if ( isSubStr( cmd, "teamswitch_" ) ) { gf_bridgeTeamToggle( "gf_team_switch",   getSubStr( cmd, 11, cmd.size ), "Player team switching" );  return; }
     if ( isSubStr( cmd, "latespawn_"  ) ) { gf_bridgeTeamToggle( "scr_gf_latespawn", getSubStr( cmd, 10, cmd.size ), "Mid-round late spawn" );   return; }
+    if ( isSubStr( cmd, "reclaim_"    ) ) { gf_bridgeTeamToggle( "gf_team_reclaim",  getSubStr( cmd, 8,  cmd.size ), "Stranded-human reclaim" ); return; }
 
     // Cheat-protected SERVER dvars, written from GSC so they work with sv_cheats 0 (the only
     // correct value on a dedicated server). Format: svset_<dvar>=<value>. See gf_bridgeServerDvarSet.
