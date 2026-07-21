@@ -2014,22 +2014,34 @@ const SRV_SECTIONS = [
     { n:'scr_disable_cac',        lbl:'Disable Class Select', type:'tog', def:'1', tip:'scr_disable_cac\nDisable Create-a-Class; players auto-spawn with the default class.' },
     { n:'scr_disable_weapondrop', lbl:'Disable Weapon Drop',  type:'tog', def:'1', tip:'scr_disable_weapondrop\n1 = weapons do not drop on death.' },
   ]},
-  // BOT TUNING — the sv_bot* sliders are CHEAT-PROTECTED: the engine refuses a raw rcon `set`
-  // ("Error: sv_botFov is cheat protected") whenever sv_cheats is 0, which is the only correct value
-  // on a dedicated server. They used to appear to work here purely because the mod was force-setting
-  // sv_cheats 1 on EVERY server (a broken `dedicated` guard in gf.gsc — since fixed).
+  // BOT TUNING — these are OVERRIDES ON TOP OF the Difficulty preset, not independent settings.
+  // _bot.gsc's diffBots() loop re-applies bot_set_difficulty() every 1.5s, which rewrites the WHOLE
+  // sv_bot* set — so before 2026-07-11 every slider here was silently reverted within a second and a
+  // half (the real reason they "did nothing"). diffBots now calls gf_bridgeApplyServerDvars() right
+  // after the preset, in the SAME frame, so Difficulty = baseline and a tuned slider sticks.
   //
-  // svset:true routes them through the GSC bridge instead. GSC setDvar is NOT cheat-gated (verified:
-  // rcon `set bg_viewKickScale 0.9` refused while the bridge wrote the same dvar in the same round),
-  // and these are SERVER dvars read by the bot AI — no client replication involved — so this works
-  // on the VPS with cheats off. The bridge also mirrors each into a plain gf_<dvar> that 💾 Save can
-  // persist to dedicated.cfg; the real dvar can't be, since the cfg is cheat-gated too.
+  // ⚠ Only the dvars in _gf_bridge::gf_bridgeServerDvarList() (the svset:true rows below) are
+  // overridable at all — it is both the allowlist and the mirror list. Any OTHER sv_bot* the preset
+  // writes is clobbered within 1.5s no matter how it is set, which is why the plain
+  // `sv_botAllowGrenades` toggle below is dead: the working control is `bots_play_nade 0`, and it can
+  // only force grenades off, never on.
   //
-  // ⚠ These are OVERRIDES ON TOP OF the Difficulty preset, not independent settings. _bot.gsc's
-  // diffBots() loop re-applies bot_set_difficulty() every 1.5s, which rewrites the WHOLE sv_bot*
-  // set — so before 2026-07-11 every slider here was silently reverted within a second and a half
-  // (the real reason they "did nothing"; the cheat gate was a red herring). diffBots now re-applies
-  // these overrides right after the preset, so Difficulty = baseline and a tuned slider sticks.
+  // svset:true routes a row through the GSC bridge, which sets the real dvar AND mirrors it into a
+  // plain gf_<dvar> that 💾 Save persists to dedicated.cfg. The mirror is what makes a value survive a
+  // restart — gf_bridgeApplyServerDvars() copies it back every round and every diffBots tick.
+  // ⚠ To CLEAR an override and hand the dvar back to the Difficulty preset, BLANK THE MIRROR:
+  // `set gf_sv_botYawSpeedAds ""` (an empty mirror is skipped). ↺ Reset to default does NOT do that —
+  // it pushes the engine default through the row's own transport, pinning it as a permanent override
+  // like any other value.
+  //
+  // ⚠ CORRECTED 2026-07-20 — this block used to claim the engine refuses a raw rcon `set sv_bot*`
+  // whenever sv_cheats is 0. IT DOES NOT. Proven live against a dedicated server (`dedicated` =
+  // "dedicated internet server", sv_cheats 0) with a same-packet set+read, which leaves no room for a
+  // diffBots tick to be mistaken for a refusal: `set sv_botYawSpeedAds 9` read back 9, and so did the
+  // control `set jump_height 50` (a canonical cheat-protected dvar). Cheat protection is a
+  // CLIENT-side check — see the header on _gf_bridge::gf_bridgeServerDvarSet. svset survives for the
+  // LISTEN/dev host and for the gf_* mirror's cfg-persistence, NOT because rcon can't reach these.
+  // (The per-row "Cheat-protected" tips below are left over from the same misconception.)
   { title: 'BOT TUNING', eff: 'live', per: 'dvar', vars: [
     { n:'sv_botFov',             lbl:'Bot FOV (deg)',         type:'num', def:'65',   svset:true, tip:'sv_botFov\nField of view bots use to acquire targets. Higher = they see you sooner.\nCheat-protected — set via the GSC bridge, so it works on the dedicated VPS with sv_cheats 0.' },
     { n:'sv_botMinReactionTime', lbl:'Reaction Min (ms)',     type:'num', def:'500',  svset:true, tip:'sv_botMinReactionTime\nFastest reaction time on spotting a target. Lower = harder bots.\nCheat-protected — set via the GSC bridge.' },
@@ -2039,7 +2051,8 @@ const SRV_SECTIONS = [
     { n:'sv_botStrafeChance',    lbl:'Strafe Chance (0–1)',   type:'flt', def:'0.1',  svset:true, tip:'sv_botStrafeChance\nProbability a bot strafes during a fight.\nCheat-protected — set via the GSC bridge.' },
     { n:'sv_botSprintDistance',  lbl:'Sprint Distance',       type:'num', def:'512',  svset:true, tip:'sv_botSprintDistance\nRange beyond which bots sprint toward targets/objectives.\nCheat-protected — set via the GSC bridge.' },
     { n:'sv_botMeleeDist',       lbl:'Melee Distance',        type:'num', def:'80',   svset:true, tip:'sv_botMeleeDist\nRange at which bots attempt a melee.\nCheat-protected — set via the GSC bridge.' },
-    { n:'sv_botYawSpeed',        lbl:'Aim Turn Speed',        type:'num', def:'4',    svset:true, tip:'sv_botYawSpeed\nAim turn speed. Higher = snappier.\nCheat-protected — set via the GSC bridge.' },
+    { n:'sv_botYawSpeed',        lbl:'Turn Speed (hip)',      type:'num', def:'4',    svset:true, tip:'sv_botYawSpeed\nAim turn speed while NOT aiming down sights. Higher = snappier.\nThis is only half the aim behaviour — bots hold ADS in 3-5s windows at every difficulty, so most in-fight tracking runs on Turn Speed (ADS) below.\nDifficulty preset: fu 14 / hard 8 / normal 4 / easy 2. Engine default 4.' },
+    { n:'sv_botYawSpeedAds',     lbl:'Turn Speed (ADS)',      type:'num', def:'5',    svset:true, tip:'sv_botYawSpeedAds\nAim turn speed while aiming down sights — the dominant tracking knob, since sv_botMin/MaxAdsTime is 3000/5000 on every difficulty.\nLower this to soften how hard bots track you WITHOUT changing Difficulty.\nDifficulty preset: fu 14 / hard 10 / normal 5 / easy 2.5. Engine default 5.' },
     { n:'sv_botAllowGrenades',   lbl:'Bots Throw Grenades',   type:'tog', def:'1',    tip:'sv_botAllowGrenades\nAllow bots to throw lethal grenades.' },
     { n:'sv_randomizeBotNames',  lbl:'Randomize Bot Names',   type:'tog', def:'1',    tip:'sv_randomizeBotNames\nGive bots random player-style names.' },
     { n:'sv_botUseFriendNames',  lbl:'Bots Use Friend Names', type:'tog', def:'1',    tip:'sv_botUseFriendNames\nBots borrow names from your friends list.' },

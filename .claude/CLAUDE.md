@@ -706,7 +706,12 @@ lobby→match transfer plan (`gf_autoassignPlanned` fallbacks reach saved *real*
 `gf_round_over` +0.5s (inside the killcam), the match-start gate release (pre-spawn; the Auto/Manual
 lobby-release instead kicks all bots pre-restart when fill > 0), and one roster-settle pass after init
 (these now run **even at fill 0** — balancing/queue are fill-independent). Bot placement is the quiet
-`gf_botQuietSetTeam`; surplus alive bots defer via `pers["gf_parkPending"]` → `gf_lobbyMaySpawn`; adds
+`gf_botQuietSetTeam` (⚠ seating on a real team **restores `pers["lives"]`** — a suicide-parked bot
+redeployed the same round otherwise sits DEAD all round, maySpawn gate A;
+[[prematch-parkpending-defers-a-round-and-lifeless-redeploy]]); surplus alive bots: **prematch-frozen →
+immediate sequenced suicide-park** (a `parkPending` there would defer past the whole round AND make the
+displacer count the bot as retired — the Berlin Wall 2v3), mid-round survivors defer via
+`pers["gf_parkPending"]` → `gf_lobbyMaySpawn`; adds
 are staggered + generation-stamped (`level.gf_fillGen`) with `.gf_fillPending` steer marks; displaced
 bots park in spectator (reserve capped at live human count; `gf_fill_kick_floor` kicks before
 `sv_maxclients`). Counts key off `level.players` + `istestclient()`, never `level.bots`. Every

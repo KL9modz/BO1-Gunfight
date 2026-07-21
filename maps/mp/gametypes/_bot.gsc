@@ -466,7 +466,8 @@ gf_boundaryPass()
 	// --- PARK first: trim each team's bot surplus (bots-only; a humans-only overflow leaves
 	// the side big — humans are NEVER moved). Parking before deploying grows the pool the
 	// deploy below reuses, so a lopsided roster fixes itself without an add+kick churn. An
-	// alive surplus bot gets the deferred mark and leaves at its next spawn instead (it still
+	// alive surplus bot: prematch-frozen -> immediate sequenced suicide-park (retired THIS
+	// round); mid-round survivor -> the deferred mark, leaves at its next spawn (it still
 	// counts on its team in `c`, which is correct: surplus and deficit are mutually exclusive
 	// on a team, so the mark never skews another team's deficit math this pass).
 	for(ti = 0; ti < 2; ti++)
@@ -570,6 +571,14 @@ gf_botQuietSetTeam(team)
 	self.pers["weapon"]     = undefined;
 	self.pers["savedmodel"] = undefined;
 	self.sessionteam        = team;
+	// Seating on a real team: restore the life. A parked bot's park may have been a SUICIDE-park
+	// (displacer / prematch surplus trim), which consumed pers["lives"]; redeploying it in the
+	// same round then hits maySpawn gate A (no lives) and it sits DEAD the whole round — the
+	// Berlin Wall "bot on my team started the match already out" (2026-07-20; AKrauss was
+	// suicide-parked by a joining human's displacement, redeployed by the gate-release pass 1s
+	// later, and never spawned). Same restore semantic as gf_seqTeamMove(restoreLife=true).
+	if(team != "spectator" && isDefined(level.numLives))
+		self.pers["lives"] = level.numLives;
 }
 
 // Add `count` fresh bots for `team`, staggered 0.5s apart (each add is a full client connect;
@@ -668,11 +677,21 @@ gf_parkBots(team, count, ceiling)
 			quiet[i] gf_botQuietSetTeam("spectator");
 		done++;
 	}
-	// Remaining surplus is alive right now -> it finishes this round (or sits out the prematch)
-	// on its old team and leaves at its next spawn.
+	// Remaining surplus is alive right now. TWO cases, and conflating them was the Berlin Wall
+	// 2v3 round (2026-07-20): a mid-round/killcam survivor defers via the mark (its next spawn is
+	// next round's pre-spawn, where the mark parks it before it plays) — but a PREMATCH-frozen bot's
+	// "next spawn" is ALSO next round, so the mark would let it play this whole round over-size,
+	// while its mark makes gf_teamRosterCount/gf_pickDisplaceableBot count it as already retired —
+	// which is why the seat-priority displacer then no-ops on the joining human ("2 bots alive, 1
+	// too many"). A frozen prematch bot is safely killable NOW: the sequenced suicide-park (the
+	// displacer's own primitive) retires it this round. Its consumed life doesn't matter — it's
+	// leaving; a later redeploy restores the life (gf_botQuietSetTeam).
 	for(i = 0; done < count && i < alive.size; i++)
 	{
-		alive[i].pers["gf_parkPending"] = true;
+		if(isDefined(level.inPrematchPeriod) && level.inPrematchPeriod)
+			alive[i] thread maps\mp\gametypes\_gf_rounds::gf_seqTeamMove("spectator", false);
+		else
+			alive[i].pers["gf_parkPending"] = true;
 		done++;
 	}
 }

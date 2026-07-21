@@ -965,6 +965,13 @@ gf_bridgeServerDvarList()
     n[ n.size ] = "sv_botSprintDistance";
     n[ n.size ] = "sv_botMeleeDist";
     n[ n.size ] = "sv_botYawSpeed";
+    // ADS turn rate is a SEPARATE engine dvar from the hip one, and it is the one that governs most
+    // in-fight tracking: bot_set_difficulty holds sv_botMin/MaxAdsTime at 3000/5000 on EVERY
+    // difficulty (3-5x the engine default of 1000), so a bot spends most of a fight aiming down
+    // sights. Overriding sv_botYawSpeed alone only softens hip-fire, which is why the panel's turn
+    // speed slider read as "does nothing" -- the snappy tracking people actually feel was still on
+    // the preset value (fu sets both to 14).
+    n[ n.size ] = "sv_botYawSpeedAds";
     n[ n.size ] = "timescale";
     return n;
 }
