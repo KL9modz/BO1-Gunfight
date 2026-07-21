@@ -1164,9 +1164,10 @@ async function bridgeSvSet(dv,id){
   const ok=await bridge(`svset_${dv}=${v}`,`${dv} = ${v}`);
   if(ok){
     _svOverrides['gf_'+dv]=v;
-    // GSC auto-switches the selector: tuning an sv_bot* override IS customizing (the write would
-    // be invisible under a stock preset). Mirror that in the highlight.
-    if(dv.indexOf('sv_bot')===0) hlBotDiff('custom');
+    // GSC auto-switches the selector: tuning a bot-difficulty override IS customizing (the write
+    // would be invisible under a stock preset). Mirror that in the highlight. Must match
+    // _gf_bridge::gf_bridgeIsBotTuning — scr_help_dist is preset-owned despite the scr_ prefix.
+    if(dv.indexOf('sv_bot')===0||dv==='scr_help_dist') hlBotDiff('custom');
     toast(dv+'='+v+' (custom difficulty)','ok'); actLog(dv+' → '+v+' (custom-difficulty override)','ok');
   }
   return ok;
@@ -2128,6 +2129,7 @@ const SRV_SECTIONS = [
     { n:'sv_botYawSpeedAds',     lbl:'Turn Speed (ADS)',      type:'num', def:'5',    svset:true, tip:'sv_botYawSpeedAds\nAim turn speed while aiming down sights — the dominant tracking knob, since sv_botMin/MaxAdsTime is 3000/5000 at every difficulty.\nLower it to soften how hard bots track you WITHOUT changing Difficulty.\nPreset: fu 14 / hard 10 / normal 5 / easy 2.5. Engine default 5.\nRight-click ↺ clears the override back to the preset.' },
     { n:'sv_botPitchUp',         lbl:'Aim Pitch Up (deg)',    type:'num', def:'-10',  svset:true, tip:'sv_botPitchUp\nUpper bound of the vertical aim envelope, degrees (negative = above the target; domain -90..0).\nReads as vertical aim SCATTER, inferred from the difficulty gradient — easier presets run far wider envelopes (sloppier vertical aim). The consumer is engine-side, so the exact mechanics are unverifiable from script.\nPreset: fu -5 / hard -5 / normal -10 / easy -20. Engine default -10.\nRight-click ↺ clears the override back to the preset.' },
     { n:'sv_botPitchDown',       lbl:'Aim Pitch Down (deg)',  type:'num', def:'20',   svset:true, tip:'sv_botPitchDown\nLower bound of the vertical aim envelope, degrees (positive = below the target; domain 0..90).\nWiden both pitch values to make bots miss high/low more; fu runs -5/10, half of normal.\nPreset: fu 10 / hard 10 / normal 20 / easy 40. Engine default 20.\nRight-click ↺ clears the override back to the preset.' },
+    { n:'scr_help_dist',         lbl:'Hearing / Help Dist',   type:'num', def:'256',  svset:true, tip:'scr_help_dist\nThe one preset dvar that is GSC-side, so its effect is READ, not inferred (_bot_script.gsc):\n• bot_listen_to_steps — the real effect: how far bots HEAR footsteps. The check squares it and multiplies by 8, so the effective radius is this x2.83 (fu 512 = ~1448 units, normal 256 = ~724). Same radius decides whether a decoy grenade fools them.\n• bot_cry_for_help — mostly inert as written: the loop finds nearby bot teammates but then calls SetAttacker on the VICTIM instead of on the teammate, so it makes the victim re-target its attacker rather than alerting the squad.\nSo treat this as bot AWARENESS/hearing range. Preset: fu 512 / hard 384 / normal 256 / easy 256.\nRight-click ↺ clears the override back to the preset.' },
     { n:'sv_botAllowGrenades',   lbl:'Bots Throw Grenades',   type:'tog', def:'1',    svset:true, tip:'sv_botAllowGrenades\nEngine-side lethal grenade throws. The preset writes 1 on fu/hard/normal and 0 on easy, so the old plain toggle here reverted within 1.5s — it now writes the gf_* override, which sticks at any difficulty.\nSeparate control: bots_play_nade 0 is an off-only master switch that ALSO stops the script-side equipment/tactical threads (read at bot spawn).\nRight-click ↺ clears the override back to the preset.' },
     { n:'sv_randomizeBotNames',  lbl:'Randomize Bot Names',   type:'tog', def:'1',    tip:'sv_randomizeBotNames\nGive bots random player-style names.' },
     { n:'sv_botUseFriendNames',  lbl:'Bots Use Friend Names', type:'tog', def:'1',    tip:'sv_botUseFriendNames\nBots borrow names from your friends list.' },

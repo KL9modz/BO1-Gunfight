@@ -949,7 +949,7 @@ gf_bridgeServerDvarSet( arg )
     // Tuning an sv_bot* override IS customizing: flip the selector so the write takes effect
     // immediately — and so the stock preset the admin may have been on stays pure for whoever
     // selects it next (overrides only ever apply under "custom").
-    if ( isSubStr( name, "sv_bot" ) )
+    if ( gf_bridgeIsBotTuning( name ) )
         setDvar( "gf_bot_difficulty", "custom" );
 
     setDvar( name, value );
@@ -977,7 +977,7 @@ gf_bridgeApplyServerDvars()
     names = gf_bridgeServerDvarList();
     for ( i = 0; i < names.size; i++ )
     {
-        if ( !custom && isSubStr( names[i], "sv_bot" ) )
+        if ( !custom && gf_bridgeIsBotTuning( names[i] ) )
             continue;
         v = getDvar( "gf_" + names[i] );
         if ( v == "" )
@@ -1013,8 +1013,26 @@ gf_bridgeServerDvarList()
     n[ n.size ] = "sv_botPitchUp";
     n[ n.size ] = "sv_botPitchDown";
     n[ n.size ] = "sv_botAllowGrenades";
+    // The one preset dvar that is GSC-side, not engine-side -- so its effect is READ, not inferred
+    // (_bot_script.gsc, two consumers):
+    //   :2736 bot_listen_to_steps -- the load-bearing one. Threshold is `dist*dist*8` compared to
+    //     DistanceSquared, i.e. an effective radius of scr_help_dist * sqrt(8) = 2.83x. fu 512 ->
+    //     bots hear footsteps out to ~1448 units (normal 256 -> ~724). Same radius decides whether
+    //     a decoy grenade fools them. This is a bot AWARENESS knob, not a "call for help" range.
+    //   :258 bot_cry_for_help -- see gf_bridgeIsBotTuning's note: mostly inert as written.
+    n[ n.size ] = "scr_help_dist";
     n[ n.size ] = "timescale";
     return n;
+}
+
+// Is this mirror part of the bot DIFFICULTY preset (so it must be gated on the custom selector),
+// or an independent server dvar that always applies (timescale)?
+// ⚠ NOT a "sv_bot" prefix test: scr_help_dist is written by bot_set_difficulty exactly like the
+// sv_bot* family, so a prefix test would leak it onto the STOCK presets and quietly break the
+// "stock runs pure designed values" guarantee this whole selector exists to provide.
+gf_bridgeIsBotTuning( name )
+{
+    return ( isSubStr( name, "sv_bot" ) || name == "scr_help_dist" );
 }
 
 gf_bridgeServerDvarAllowed( name )
