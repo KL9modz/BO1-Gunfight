@@ -1064,6 +1064,43 @@ gf_lobbyMaySpawn()
         }
     }
 
+    // Deferred ADMIN team move (bridge pteam_ "next round"). Consumed HERE — the same pre-spawn
+    // mechanism as gf_movePending above — because the old apply (a spawned_player watcher in
+    // _gf_bridge) ran DURING the re-begin spawn wave: any player's spawn could trigger it while the
+    // target's own re-begin spawnClient was mid-flight, and the seqTeamMove it called would quiet-seat
+    // + drive a SECOND spawnClient (or suicide a just-spawned player mid-pipeline) — a resurrection of
+    // the raced-switch "spawned at the enemy spawns / spawned with 1 HP" bug (live repro: KL9,
+    // mp_cairo 2026-07-20, panel ⏭ next-round move -> 1 HP at round start). Pre-spawn, the flip
+    // precedes the ONE spawn, so there is nothing to race. Consumed AFTER gf_movePending so a
+    // same-round balancer move loses to admin intent. "spectator" parks like gf_parkPending (spawn
+    // denied, breadcrumbed "moved" so GF_TEAMWATCH/the reclaim treat it as intentional). Class is
+    // KEPT (spawnClient already validated it); an over-cap landing is bounced by the
+    // scr_team_maxsize net in gf_playerSpawnedCB.
+    if ( isDefined( self.pers["gf_pendingTeam"] ) )
+    {
+        team = self.pers["gf_pendingTeam"];
+        self.pers["gf_pendingTeam"] = undefined;
+        if ( team == "spectator" )
+        {
+            self gf_stampTeamWriter( "pteam", "spectator" );
+            self.pers["gf_specReason"] = "moved";
+            self.pers["team"]          = "spectator";
+            self.team                  = "spectator";
+            self.sessionteam           = "spectator";
+            return false;
+        }
+        if ( ( team == "allies" || team == "axis" )
+            && !( isDefined( self.pers["team"] ) && self.pers["team"] == team ) )
+        {
+            self gf_stampTeamWriter( "pteam", team );
+            self.pers["team"]       = team;
+            self.team               = team;
+            self.sessionteam        = team;
+            self.pers["weapon"]     = undefined;
+            self.pers["savedmodel"] = undefined;
+        }
+    }
+
     // FILL DISCIPLINE — the spawn-gate half of the reconciler's size policy, enforced at the one
     // door every client walks through. Team size = max(bigger human side, gf_fill_n), the exact
     // formula the boundary pass pads to (the pass only PLANS; this gate ENFORCES). Inert at

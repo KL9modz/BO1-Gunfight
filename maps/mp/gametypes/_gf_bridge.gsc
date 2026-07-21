@@ -54,10 +54,11 @@
 //   pteam_<num>_<allies|axis|spec>  - move one player to a team. Applies LIVE only during the
 //                        native prematch countdown (players frozen, round unscored); any other
 //                        time (live round / killcam / min-players hold) it's DEFERRED to the next
-//                        round via pers["gf_pendingTeam"] (survives map_restart) and applied in
-//                        that round's prematch, so a fighting player is never suicided and
-//                        friendly-fire teams are never flipped mid-round. Over-cap moves
-//                        (scr_team_maxsize) are refused with feedback.
+//                        round via pers["gf_pendingTeam"] (survives map_restart), consumed in the
+//                        target's PRE-SPAWN window (gf.gsc maySpawn hook, the gf_movePending
+//                        mechanism), so a fighting player is never suicided, friendly-fire teams
+//                        are never flipped mid-round, and nothing races the re-begin spawn wave.
+//                        Over-cap moves (scr_team_maxsize) are refused with feedback.
 //   pteamforce_<num>_<allies|axis|spec> - same, but applied IMMEDIATELY even mid-round (stock
 //                        switch -> respawns the player, costing them the round). Admin override
 //                        for the next-round defer; cap still enforced. Panel: Shift+click a move.
@@ -159,12 +160,13 @@ gf_bridgeInit()
     gf_bridgeApplyServerDvars();
 
     // Deferred team moves queued mid-round (pers["gf_pendingTeam"], the only state that survives
-    // map_restart) are applied at the START of the next round. It CANNOT be a synchronous sweep
-    // here: _spawnlogic::init empties level.players BEFORE onStartGameType, and
-    // Callback_PlayerConnect only repopulates it later (during prematch, behind the engine's
-    // per-client "begin"), so at gf_bridgeInit time level.players is empty. Instead the watcher
-    // gf_bridgeWatchPendingTeam (started once-per-match in the guarded block below) applies each
-    // pending move when that player fires "spawned_player" (frozen) in the prematch window.
+    // map_restart) are consumed in the target's PRE-SPAWN window — the gf_lobbyMaySpawn hook in
+    // gf.gsc, the same race-free mechanism as the balancer's gf_movePending (team flips BEFORE the
+    // one spawn commits). ⚠ The old apply here was a spawned_player watcher
+    // (gf_bridgeWatchPendingTeam, deleted 2026-07-20): ANY player's spawn triggered it during the
+    // re-begin wave, so it could quiet-seat the target + drive a SECOND spawnClient while the
+    // target's own re-begin spawn was mid-flight — resurrecting the raced-switch "enemy spawns /
+    // 1 HP" bug (live repro: KL9, mp_cairo). Do not bring the watcher back.
 
     level.gf_paused        = false;
     level.gf_infAmmo       = false;
@@ -184,10 +186,10 @@ gf_bridgeInit()
     // Persistent loops: exactly ONE live set at a time, re-threaded every round with a COLLAPSE
     // NOTIFY (the _bot::init "bot_reinit" idiom), NOT a game[] guard. gf_bridgeInit is re-threaded on
     // every map_restart (gf.gsc) to re-seed the dvars/flags above (level.* is wiped by map_restart);
-    // the telemetry loop, the 20 Hz command poll, and the pending-team watcher are for(;;) loops that
+    // the telemetry loop and the 20 Hz command poll are for(;;) loops that
     // survive map_restart (only endon("game_ended") = match end). A bare re-thread every round would
-    // STACK one copy per round (N pollers racing the gf_cmd read+clear, N telemetry writes, an
-    // O(players^2) pending sweep). The OLD fix was a game["gf_bridgeInit"] guard — thread once, never
+    // STACK one copy per round (N pollers racing the gf_cmd read+clear, N telemetry
+    // writes). The OLD fix was a game["gf_bridgeInit"] guard — thread once, never
     // again while game[] survives — but that was fragile the other direction: after game_ended kills
     // these threads, a match that starts on a game[]-PRESERVING path (same-map cycle / lobby
     // fast-restart) left the guard set and the loops DEAD FOR GOOD (telemetry/roster/command-poll all
@@ -197,7 +199,6 @@ gf_bridgeInit()
     // match end. Same fix _bot::init uses for "fast restart clears the bots". gf_ackSeq is re-seeded
     // per round above, so the surviving poll always reads a defined mark.
     level notify( "gf_bridge_reinit" );
-    level thread gf_bridgeWatchPendingTeam();
     level thread gf_bridgeTelemetry();
     level thread gf_bridgePoll();
 }
@@ -1199,7 +1200,8 @@ gf_allSpecialties()
 // "playing", so it's only clean while a player is frozen and the round is unscored — i.e. the
 // native prematch countdown. A move at any other time (live round, killcam, min-players hold)
 // is DEFERRED via pers["gf_pendingTeam"] (the only state that survives the between-round
-// map_restart) and applied during the NEXT round's prematch by gf_bridgeWatchPendingTeam. We do
+// map_restart), consumed in the target's PRE-SPAWN window (gf.gsc gf_lobbyMaySpawn, the
+// gf_movePending mechanism — flip before the one spawn commits, nothing to race). We do
 // NOT flip pers["team"] on a live player: gf_onPlayerDamage reads it for friendly-fire, so a
 // mid-round flip would break damage teams. scr_team_maxsize is enforced here (mirroring
 // gf_playerSpawnedCB's overflow rule) so an over-cap move is refused with feedback, not silently
@@ -1329,44 +1331,11 @@ gf_forceTeamQuiet( team )
         self.sessionteam = team;
 }
 
-// Watches "spawned_player" (fired by gf_playerSpawnedCB on every spawn) and applies any queued
-// team move once the player exists and has spawned this round. Re-threaded each round from
-// gf_bridgeInit; endon "game_ended" so it dies with the match. This is the deferred-apply engine:
-// it fires during the next round's prematch (when players spawn frozen), which is exactly the safe
-// window for the stock switch. A pending move applied this way clears its flag first, so the
-// switch's respawn (which re-fires "spawned_player") doesn't re-apply it.
-gf_bridgeWatchPendingTeam()
-{
-    level endon( "game_ended" );
-    level endon( "gf_bridge_reinit" );   // collapse to one live copy when gf_bridgeInit re-threads
-    for ( ;; )
-    {
-        level waittill( "spawned_player" );
-        gf_applyPendingTeamMoves();
-    }
-}
-
-// Apply every queued team move for players that currently exist. Called on each spawn (see
-// gf_bridgeWatchPendingTeam), so it's idempotent: a player with no pending flag is skipped, and
-// the flag is cleared before the move so it runs at most once.
-gf_applyPendingTeamMoves()
-{
-    players = level.players;
-    for ( i = 0; i < players.size; i++ )
-    {
-        p = players[i];
-        if ( !isDefined( p.pers["gf_pendingTeam"] ) )
-            continue;
-        team = p.pers["gf_pendingTeam"];
-        p.pers["gf_pendingTeam"] = undefined;   // clear first: the switch below re-fires spawned_player
-        if ( team != "allies" && team != "axis" && team != "spectator" )
-            continue;
-        // Re-check the cap at apply time (roster may have changed since the move was queued).
-        if ( team != "spectator" && gf_bridgeTeamFull( p, team ) )
-            continue;
-        p gf_applyTeamMove( team );
-    }
-}
+// (gf_bridgeWatchPendingTeam / gf_applyPendingTeamMoves are DELETED — pers["gf_pendingTeam"] is now
+// consumed in the pre-spawn maySpawn window, gf.gsc gf_lobbyMaySpawn, next to gf_movePending. The
+// spawned_player watcher raced the re-begin spawn wave: it could quiet-seat the target + drive a
+// SECOND spawnClient mid-flight of the engine's own, resurrecting the "enemy spawns / 1 HP" raced
+// switch. Do not reintroduce a spawn-time apply for team state.)
 
 // --- Per-team bot add / remove (RCON panel) ----------------------------------
 // Precise per-team bot control that reuses the existing move machinery instead of the global

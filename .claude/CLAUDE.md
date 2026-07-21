@@ -1035,8 +1035,11 @@ ack, so a reset would leave the panel un-acked → it resends the same seq → t
 `wA:wX:round:aliveA:aliveX:gametype:hold:fillN:pAllies:pAxis:parked:botDiff` — field 12 is the live
 bot-difficulty preset, so the panel's Difficulty row stays lit on the current value every tick) and **`gf_roster`**
 (`<num>,<team>,<alive>,<pending>,<bot>;…`). Command feedback is private to `gf_admin_guids`
-(`gf_bridgeNotify`); only `saymsg` broadcasts. Team moves: `pteam_<num>_<team>` defers to next-round
-prematch (`pers["gf_pendingTeam"]`, applied on `spawned_player`); `pteamforce_` applies now via the
+(`gf_bridgeNotify`); only `saymsg` broadcasts. Team moves: `pteam_<num>_<team>` defers to next round
+via `pers["gf_pendingTeam"]`, consumed in the target's **pre-spawn** maySpawn window (the
+`gf_movePending` mechanism — ⚠ the old `spawned_player` watcher raced the re-begin spawn wave and
+resurrected the "enemy spawns / 1 HP" bug; [[pteam-spawnedplayer-apply-races-respawn-1hp]]);
+`pteamforce_` applies now via the
 **sequenced move** (`_gf_rounds::gf_seqTeamMove` — an alive player **dies + late-spawns** onto the new
 team when the round admits it; never the racy stock switch). Team-system toggles: `balance_`/
 `teamlock_`/`teamswitch_`/`latespawn_`/`reclaim_<0|1>`. Verbs cover bots, balance-teams,
