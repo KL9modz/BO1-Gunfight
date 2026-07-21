@@ -715,8 +715,27 @@ gf_teamWatchHumans()
 		if(isDefined(p.sessionstate))
 			state = p.sessionstate;
 
+		// Forensics to pin the untraced writer on the next occurrence. The menu (stock
+		// _globallogic_player.gsc:365) fires on spectator + needteam-UNDEFINED — a needteam
+		// spectator would instead be autoassigned via level.autoassign (:327), so `needteam 0`
+		// on an UNTRACED line confirms the writer cleared/never-set it. The last writer stamp +
+		// its round-gen vs the current gen shows whether ANY sanctioned writer touched them
+		// recently (stale gen => the spectator write itself left NO token => truly engine/stock).
+		needteam = 0;
+		if(isDefined(p.pers["needteam"]))
+			needteam = 1;
+		lw = "none"; lwTo = "-"; lwGen = -1;
+		if(isDefined(p.pers["gf_teamWriter"]))    lw    = p.pers["gf_teamWriter"];
+		if(isDefined(p.pers["gf_teamWriterTo"]))  lwTo  = p.pers["gf_teamWriterTo"];
+		if(isDefined(p.pers["gf_teamWriterGen"])) lwGen = p.pers["gf_teamWriterGen"];
+		curGen = -1;
+		if(isDefined(level.gf_roundGen))
+			curGen = level.gf_roundGen;
+
 		logPrint("GF_TEAMWATCH: human " + p.name + " in spectator at boundary - reason " + reason
 			+ " (round " + game["roundsplayed"] + ", state " + state
+			+ ", needteam " + needteam
+			+ ", lastWriter " + lw + "->" + lwTo + " gen " + lwGen + "/" + curGen
 			+ ", lock " + getDvarInt("gf_team_lock") + ")\n");
 	}
 }

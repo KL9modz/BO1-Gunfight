@@ -54,6 +54,24 @@ wins** takes the match.
   which routes through it); the `scr_team_maxsize` overflow → `maxsize`; the lock queue via
   `gf_lockQueueMark` → `gf_seatQueued`. ⚠ Still **UNVALIDATED against a live repro** — the reclaim fired
   correctly in review but the bug is rare/unreproducible on demand; watch for `GF_RECLAIM` on the VPS.
+  **Root-cause narrowing (static analysis 2026-07-20):** the menu is stock `_globallogic_player.gsc:365` —
+  the `else if ( self.pers["team"] == "spectator" )` branch of `Callback_PlayerConnect` (which re-fires at
+  each re-begin). The **discriminator is `pers["needteam"]`**: a spectator WITH `needteam` set takes the
+  `:312` branch → `[[level.autoassign]]()` (`:327`) = the mod's `gf_autoJoinBalance`, seated, **no menu**; a
+  spectator WITHOUT it hits `:365` → forced team menu, no autoassign. So the untraced writer sets
+  `pers["team"]="spectator"` **and leaves `needteam` undefined**, and it is **NOT** any GSC path we can see:
+  stock team-autobalance is **off** (`scr_teambalance 0` in `dedicated.cfg` + engine default 0, so
+  `_teams::balanceTeams` never runs), every **mod** spectator-write is stamped (→ traced), and the three
+  `_globallogic.gsc` spectator checks (`:587/:663/:692`) are **read-only** display routing. That points at
+  an **engine/C-side write** (bot management / re-begin team assignment), which GSC cannot hook — matching
+  the long-standing suspicion. `gf_teamWatchHumans` now logs **`needteam` + the last writer stamp
+  (`who->to gen X/curGen`)** so the next occurrence proves it: `needteam 0` + a stale-gen/`none` stamp = a
+  stampless engine write. **Early-catch (unshipped) is viable but timing-racy:** the strand lands at
+  re-begin, AFTER the round-end boundary pass, and the boundary pass never runs at the start of rounds 2+
+  (triggers are round-end + match-start only), so getting them into the SAME round needs a round-start
+  listener that reseats via `gf_seatJoinTeam` and drives a late-spawn — which only works AFTER the spawn
+  wave (late-spawn requires a teammate alive), an untestable window without a live repro. Left for a real
+  `GF_TEAMWATCH`/`GF_RECLAIM` line to validate against.
 - **RESOLVED — the `MAX_PACKET_USERCMDS` killcam spam is a CLIENT-side `cl_maxpackets` limit, self-fixable,
   cosmetic.** Proven live 2026-07-15: a client running `com_maxfps 237` / `cl_maxpackets 30` (stock) spat
   ~37 lines per round-end killcam; setting **`cl_maxpackets 100` on that client killed the spam outright**,
