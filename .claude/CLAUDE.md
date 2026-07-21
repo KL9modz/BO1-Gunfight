@@ -8,9 +8,9 @@ wins** takes the match.
 > This file is the agent operating manual: goal, current architecture, the load-bearing engine
 > knowledge, and an organized TODO. It intentionally **summarizes and points** rather than duplicates —
 > exhaustive per-function / per-dvar detail lives in `docs/`, and hard-won single-incident findings
-> live in `memory/` (the `MEMORY.md` index is auto-loaded each session, so a `[[slug]]` reference is
-> enough — open the file for depth). Keep this file present-tense: update behavior in place; do not
-> append dated "FIXED …" changelog notes (that history is in `git log` and `memory/`).
+> live in `docs/notes/` (one file per finding + a `README.md` index; a `[[slug]]` reference resolves to
+> `docs/notes/<slug>.md` — open it for depth). Keep this file present-tense: update behavior in place; do
+> not append dated "FIXED …" changelog notes (that history is in `git log` and `docs/notes/`).
 
 ---
 
@@ -264,9 +264,14 @@ checkpoint, which the sampler cannot see.
 | `docs/VPS_DEPLOY.md` | 11-phase VPS provisioning + deploy runbook (FastDL, git-pull deploy). |
 | `docs/VPS_HARDENING.md` | Security runbook (RDP/WinRM/TLS/IIS `web.config`/DNS) with as-applied status. |
 | `docs/GETTING_STARTED.md` | Player-facing install / settings / ADS-fix / join guide. |
+| `docs/notes/` | Hard-won single-incident deep-dives, one file per finding + `README.md` index. Committed to the repo (so they reach the VPS), NOT auto-loaded — open the one you need. |
 
-`memory/` holds ~50 single-incident deep-dives; the `MEMORY.md` index is in context every session, so
-this file links them as `[[slug]]`.
+`docs/notes/` holds the single-incident deep-dives; a **`[[slug]]`** reference in this file resolves to
+**`docs/notes/<slug>.md`** (same slug = same filename). The `docs/notes/README.md` index groups them all.
+⚠ These were previously the laptop-only `~/.claude` memory store; they were migrated into the repo so
+VPS-Claude sees them too. When you learn a new single-incident finding, add it as a new
+`docs/notes/<slug>.md` + one index line, and `[[slug]]`-link it from here — do **not** resurrect the
+laptop memory folder as a second copy (it drifts).
 
 ### Project map
 ```
@@ -766,8 +771,8 @@ steals focus). Don't re-open it or burn a `mod.ff` probe — settled.
 
 Menu **structure** changes need a `mod.ff`
 rebuild; dvar values/positions are GSC-tunable. The loadout intro snaps (snap-in); only the loadout outro
-animates (`gf_slideLoadout`). Related: [[menu-rendered-loadout-overview]],
-[[script-hudelem-number-oversized]]. Full ui_gf_* map → `docs/REFERENCE.md`.
+animates (`gf_slideLoadout`). Related: [[menu-rendered-loadout-overview]]. Full ui_gf_* map →
+`docs/REFERENCE.md`.
 
 ### Damage scoring, friendly fire, flinch, vision
 - **Score = total damage dealt** (`gf_onPlayerDamage`), capped per hit at the victim's current HP (no
@@ -1503,9 +1508,8 @@ slot) `createServerFontString(font,scale,team)`/`createServerIcon(...)`/`createS
 `default`, `bigfixed`, `smallfixed`, `objective`, `extrabig`. **Sizing:** `"default"` at `1.4` is the
 reliable small-UI text combo; `fontScale` is a multiplier on the font's native raster, so `"bigfixed"`
 at any scale ≤1.0 renders huge/aliased. For a **pulsing** element (score popup) set `baseFontScale`/
-`maxFontScale`, not `.fontScale` (`fontPulse` resets to baseFontScale each frame —
-[[script-hudelem-number-oversized]]). Server-side text always renders above client bars regardless of
-sort.
+`maxFontScale`, not `.fontScale` (`fontPulse` resets to baseFontScale each frame). Server-side text
+always renders above client bars regardless of sort.
 
 **Transition helpers (on elements made with `createIcon`/`createBar`):** `transitionSlideIn(dur,dir)`,
 `transitionSlideOut`, `hideElem`/`showElem`, `updateBar(frac)`, `setFlashFrac(frac)`.

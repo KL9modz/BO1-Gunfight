@@ -1,0 +1,24 @@
+---
+name: vector-scale-in-common-scripts-utility
+description: "Three causes of T5 \"unknown function\" — (1) helper defined in an un-included file (vector_scale is in common_scripts\\utility not maps\\mp\\_utility); (2) calling a bare builtin with a method/entity prefix; (3) DELETING a function from a stock script you override (stock callers link at COMPILE time, even from inside a runtime guard). All blame the ENCLOSING function"
+metadata: 
+  node_type: memory
+  type: reference
+  originSessionId: 20ec0ffa-31d1-484e-9240-e627bea0d0a9
+---
+
+T5 "unknown function: @ file::func" = a call **inside** `func` couldn't be resolved, so the whole function fails to link and its callers also see it as unknown. Three distinct causes, all of which name the CALLER rather than the missing symbol:
+
+**1. Helper in an un-included file.** `vector_scale( vec, scale )` is in `common_scripts\utility.gsc` (~line 439), **not** `maps\mp\_utility`. T5 has no transitive includes, so `#include maps\mp\_utility` doesn't bring it in. Either `#include common_scripts\utility` or inline: `vec + ( f[0]*s, f[1]*s, f[2]*s )`. Failed in `gf_expBulletsPlayer`.
+
+**2. Method-vs-bare builtin mismatch.** A builtin is registered as EITHER a method (expects `self`) OR a bare function (no self). Calling it the wrong way throws "unknown function" (the VM looks for a method-builtin of that name and finds none, or vice-versa) — it is NOT just a self-binding quirk. `visionSetNaked( set, time )` is a **bare** builtin in MP (every use in `_globallogic`/`_killcam`/`_pregame` is bare with no entity; bare = global vision applied to all clients). Calling `player visionSetNaked(...)` (method form, as ZM scripts do) is "unknown function" in the MP VM. Failed in `gf_bridgeVision`; fixed by calling it bare.
+
+**3. A function deleted from a stock script you OVERRIDE.** GSC resolves symbols at **compile** time, so a stock caller links against your replacement file *unconditionally* — even from inside a runtime guard that can never be true for it. Shipping a mod `maps\mp\gametypes\_pregame.gsc` (the warmup lobby — the engine loads that exact path when `g_pregame_enabled` is set) that omitted stock's `OnPlayerClassChange()` failed the WHOLE server with `unknown function @ maps/mp/gametypes/_globallogic_ui::menuclass`, because `_globallogic_ui::menuClass` contains `if (isPregame()) self maps\mp\gametypes\_pregame::OnPlayerClassChange(response);`. The `isPregame()` guard is irrelevant — the symbol must EXIST. Fix: keep the stock file's entire public surface, stubbed if unused. **Before overriding any stock script, `grep -rn '<scriptname>::' <raw>` and keep every function that turns up.**
+
+To classify a name: `grep -rlnE '^funcname\s*\(' <raw>` — a hit = GSC-defined (needs the right include); no hit = engine builtin. Then check call form in `maps/mp/gametypes` (case-insensitive — engine is): if every MP usage is bare, call it bare; if prefixed with `self`/`player`, call it as a method.
+
+⚠ **GREP THAT LOOKUP CASE-INSENSITIVELY (`-i`).** GSC function names are case-INSENSITIVE, so a call `self CanJoinTeam(team)` binds to a definition written `canJoinTeam( team )` — a case-sensitive `^CanJoinTeam` grep returns NOTHING and you conclude "engine builtin, safe to call bare." That exact miss shipped a second compile error on 2026-07-16 (`closeMenus` AND `canJoinTeam`, both `_globallogic_ui` helpers, both bare-called from a new `_gf_rounds` team-menu wrapper). Note the compiler only reports ONE unknown function per compile, so a name-by-name hunt costs a server restart each.
+
+**Do it as a BATCH SET-DIFF instead of name-by-name:** build the set of every function defined at column 0 anywhere in `raw/` (= all script helpers; true builtins appear nowhere in `raw/`), extract every bare call in the file (strip comments; exclude `path::fn` and locals/includes), and report the intersection. Danger set = bare calls that ARE defined in `raw/`. Expect a few known false positives — builtins SHADOWED by same-named stock helpers: `spawn`, `spawnFx`, `suicide` (a vehicle helper in `_vehicles.gsc`), `timer`, `isAlive`. Prove each is a builtin by finding it in pre-existing code that already compiles. This found both 2026-07-16 bugs in one pass.
+
+⚠ Qualifying a stock helper can drag in stock POLICY. `canJoinTeam` (`_globallogic_ui.gsc:396`) also enforces `level.teamchange_keepbalanced` — it refuses any join putting a team 2+ ahead, which silently fought GF's own round-boundary balancer (two owners of one concept). `gf.gsc onStartGameType` now zeroes that flag every round. Read a stock helper's body before adopting it, not just its signature. Confirmed in this Plutonium T5 MP VM — bare: `visionSetNaked`, `playFx`/`playfx`, `bulletTrace`, `anglesToForward`, `RadiusDamage` (4-arg `(origin,range,max,min)`), `EarthQuake`, `loadfx`, `randomInt`, `getDvar`; method (self): `getEye`, `getPlayerAngles`, `hide`, `show`, `SetOrigin`, `SetPlayerAngles`, `getTime`.
