@@ -192,10 +192,11 @@
     </div>
     <div class="sgroup">Difficulty <span style="font-weight:400;text-transform:none;letter-spacing:0">(GSC bridge)</span></div>
     <div class="drow" data-tip="Bridge: botdiff_easy / botdiff_normal / botdiff_hard / botdiff_fu&#10;Sets bot reaction speed and accuracy via _bot::bot_set_difficulty()">
-      <button class="db ctrl" id="d-easy"   onclick="botDiff('easy')">EASY</button>
-      <button class="db ctrl" id="d-normal" onclick="botDiff('normal')">NORMAL</button>
-      <button class="db ctrl" id="d-hard"   onclick="botDiff('hard')">HARD</button>
-      <button class="db fu ctrl" id="d-fu"  onclick="botDiff('fu')">FU</button>
+      <!-- BO1 Combat Training names; the dvar values stay easy/normal/hard/fu (closed enum). -->
+      <button class="db ctrl" id="d-easy"   onclick="botDiff('easy')"   title="bot_difficulty easy">RECRUIT</button>
+      <button class="db ctrl" id="d-normal" onclick="botDiff('normal')" title="bot_difficulty normal">REGULAR</button>
+      <button class="db ctrl" id="d-hard"   onclick="botDiff('hard')"   title="bot_difficulty hard">HARDENED</button>
+      <button class="db fu ctrl" id="d-fu"  onclick="botDiff('fu')"     title="bot_difficulty fu">VETERAN</button>
     </div>
   </div>
 

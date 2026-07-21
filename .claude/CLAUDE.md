@@ -33,13 +33,18 @@ wins** takes the match.
   team write to a real team must leave `pers["class"]` valid** or its target blocks at the next re-begin.
   `GF_TEAMWATCH`/`GF_RECLAIM` at 0 lines proved the player was never in spectator, killing the old
   spectator-strand theory for these reports. ([[quiet-team-move-cleared-class-blocks-respawn]])
-- **Bot mis-seater — root-cause CONFIRMED as the engine, containment is the permanent answer.** The
-  2026-07-16 mystery ("parked bot seated on the enemy side next round") is the engine's **C-side
-  re-begin auto-assign of spectator test clients**: `gf_trace_teams 2` shows parked bots re-seated by a
-  stampless write at nearly **every** re-begin (`GF_TEAMTRACE: UNTRACED bot <name> spectator -> <team> -
-  last stamp NONE …, at pre-spawn`), and the maySpawn fill-discipline gate (`GF_FILLGUARD`) re-parks
-  them the same round. GSC cannot hook the engine write, so the FILLGUARD/park loop **is** the fix —
-  routine, harmless, ~2 trace+fillguard line pairs per round in the log are expected noise, not a fault.
+- **Bot mis-seater — reattributed: the "UNTRACED" writes are (mostly) unstamped STOCK menu/autoassign
+  paths, not a C-side engine writer.** The every-re-begin `GF_TEAMTRACE: UNTRACED bot <name> spectator ->
+  <team> - last stamp NONE …, at pre-spawn` noise is parked bots hitting the re-begin team menu
+  (`:365`) and **auto-responding** (test clients answer menus), landing in `gf_menuTeamChoice`'s bot
+  passthrough → **stock** handlers, which write `pers["team"]` untokened. The first UNTRACED **human**
+  capture (KL9, `mp_hanoi` 2026-07-20) was the same family: Auto Assign → `gf_autoJoinBalance`'s
+  balanced-split **stock fallback** (`menuAutoAssign`, untokened). Both are now stamped —
+  **`stockmenu`** (bot/demo menu passthrough) and **`stockauto`** (`gf_stockAutoassignStamped`, all 3
+  stock-fallback sites) — so a **remaining** UNTRACED line is the real signal that a genuine engine/
+  unknown path exists ([[untraced-writes-are-unstamped-stock-menu-paths]]). Either way the maySpawn
+  fill-discipline gate (`GF_FILLGUARD`) re-parks any mis-seat the same round — the containment stands,
+  and trace+fillguard line pairs per round are expected noise, not a fault.
 - **Humans stranded in spectator (`:365` team menu) — hypothesis only, never observed; net stays armed.**
   `GF_TEAMWATCH` has fired **0 times ever**; the reports that seeded this theory are now explained by the
   class-clear bug above. If it DOES exist: the discriminator is **`pers["needteam"]`** (a needteam
@@ -259,7 +264,8 @@ to choose a team/class" case (a transient spectator flash GF_TEAMWATCH can't cat
 on a strand still present at the NEXT boundary). Built to identify the untraced mis-seater
 behind both open team bugs. GSC cannot hook a field write, so it works by **difference**: every
 sanctioned writer of `pers["team"]` stamps a **single-use token** naming itself and its target
-(`_gf_rounds::gf_stampTeamWriter` — 8 sites: `seatjoin`, `quietset`, `maxsize`, `botquiet`, `bridge`,
+(`_gf_rounds::gf_stampTeamWriter` — 11 sites: `seatjoin`, `quietset`, `maxsize`, `botquiet`, `bridge`,
+`pteam`, `stockauto`, `stockmenu`,
 `parkpending`, `movepending`, `fillguard`), and the sampler walks the roster at **three checkpoints**
 — `boundary-in`, `boundary-out`, `pre-spawn` — reporting any team change with no matching token as
 `GF_TEAMTRACE: UNTRACED …`. ⚠ The token is **consumed on match** deliberately: left in place, a stock
@@ -743,7 +749,10 @@ try to bundle the `.iwi` → build error.
   EITHER up to 4 skulls (both teams ≤4) OR an `Alive: N` readout (either team >4). The skull/readout
   mode (`ui_gf_hp_mode`) is shared so both rows switch together — this **is** the small/large coupling
   threshold. Each skull slot is two itemDefs (alive team-colour + dead white) because forecolor RGB
-  isn't exp-drivable, only alpha.
+  isn't exp-drivable, only alpha. ⚠ `gf_getTeamHealthStats` counts spawned-this-round pers-team
+  members but must SKIP bodies on their way out (`.gf_displacePending` / `gf_parkPending`) — a
+  displaced bot's pers lies for the ~2s its suicide-park settles, and a panel seeded mid-churn showed
+  "3 players / 300" on a 2-human team ([[health-hud-counts-mid-displacement-bodies]]).
 - **Self health bar**, **loadout overview** (icons via `ui_gf_lo_*`; 3 hardcoded perk icons), and two
   separate menuDefs — **pregame lobby** (`gf_lobby_hud`) and the admin **pause banner** (`gf_pause_hud`,
   "MATCH PAUSED", gated on `ui_gf_paused`) — both gated `!BIT_IN_KILLCAM` not `BIT_HUD_VISIBLE`
@@ -1149,7 +1158,8 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_latespawn` | 1 | A joiner/mover makes their FIRST spawn into a live round while their team has ≥1 alive — never in OT, never a respawn. Two ways in, both size-preserving: it **fills a gap** (team stays no bigger than the enemy's, by roster — anyone, bots included), or a **HUMAN takes a bot's spot** (that bot is removed; a bot never displaces anyone; a team full of humans makes the joiner wait for the boundary). 0 = always spectate until next round. Bridge: `latespawn_<0\|1>`. |
 | `gf_team_reclaim` | 1 | Boundary-time **containment** for the untraced human mis-seat: re-seat a human stranded in spectator with **reason UNTRACED** (not a `user`/`moved`/`maxsize` spectate, not lock-queued) onto the lighter HUMAN side, so the NEXT round starts them ON a team instead of the ranked team/class menu. Runs before the balance/fill stages (bots absorb the size); prints `GF_RECLAIM`. Catches the strand one round late (the menu still shows for that round), so it contains, not cures. 0 = leave stranded humans (diagnostic-only). Bridge: `reclaim_<0\|1>`. |
 | `gf_fill_kick_floor` | 2 | Client slots kept free for humans; a parked bot is kicked once total ≥ `sv_maxclients − this`. |
-| `bot_difficulty` | normal (engine); cfg ships **fu** | BotWarfare AI difficulty. ⚠ A **REAL ENGINE dvar** (BO1 Combat Training), registered at process start: default `normal`, enum domain easy/normal/hard/fu (live rcon read 2026-07-17) — so it is **never empty and a GSC seed-if-empty can never fire** (the one gf.gsc carried was dead code, removed; the VPS's old "fu" was a live panel click that a restart silently reverted). The GF default fu is owned by `dedicated.cfg` (VPS + example). `_bot::diffBots` re-applies the `sv_bot*` preset from it every 1.5s, so cfg / panel `botdiff_*` changes land within a tick. |
+| `bot_difficulty` | normal (engine); cfg ships **fu** | BotWarfare AI difficulty — the **BASELINE preset** under the `gf_sv_*` override layer below. ⚠ A **REAL ENGINE dvar** (BO1 Combat Training), registered at process start: default `normal`, **CLOSED enum domain** easy/normal/hard/fu (live rcon read 2026-07-17) — never empty (a GSC seed-if-empty can never fire; the one gf.gsc carried was dead code, removed; the VPS's old "fu" was a live panel click that a restart silently reverted), and **a fifth name is domain-refused**, so a "custom difficulty" is a baseline + overrides, never a new enum value. The panel labels the four with the game's names (Recruit/Regular/Hardened/Veteran). The GF default fu is owned by `dedicated.cfg` (VPS + example). `_bot::diffBots` re-applies the `sv_bot*` preset from it every 1.5s, so cfg / panel `botdiff_*` changes land within a tick. |
+| `gf_sv_<dvar>` | "" | **Per-dvar overrides on the difficulty preset — the "custom difficulty" layer.** `diffBots` rewrites the whole `sv_bot*` family from the preset every 1.5s, then `_gf_bridge::gf_bridgeApplyServerDvars` re-applies every **non-empty** mirror on top **in the same frame** — so an override wins continuously, and empty/absent = preset value. ⚠ A raw `set sv_bot*` (rcon OR cfg) is **NOT cheat-refused** on the dedicated console (proven live 2026-07-20, same-packet set+read) — it is simply clobbered ≤1.5s later; **the mirror is the only write that sticks**. Allowlist = mirror list = `_gf_bridge::gf_bridgeServerDvarList` (13 + `timescale`): FOV, reaction/fire min+max, strafe chance, sprint/melee dist, yaw **hip + ADS** (ADS is the dominant tracking knob — `sv_botMin/MaxAdsTime` is pinned 3000/5000 at every difficulty, 3-5× the engine's 1000), pitch envelope up/down (reads as vertical aim scatter — the easy→fu gradient narrows it), and the grenade gate. Clear = set the mirror to `""` (panel ↺ on the row does this — it deliberately does **not** push a "default value", which would pin an override). Shipped tuning: `gf_sv_botYawSpeed 12` + `gf_sv_botYawSpeedAds 10` on the fu baseline (cfg-owned, VPS + example). |
 
 **Perks / RCON-managed / plumbing**
 | dvar | default | meaning |

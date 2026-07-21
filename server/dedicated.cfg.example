@@ -319,6 +319,19 @@ set scr_teambalance "0"
 // the cfg is the owner, and this line is a genuine deviation from the engine default. Gunfight ships
 // the hardest. A live RCON panel botdiff_* click still overrides until the next server restart.
 set bot_difficulty "fu"
+// CUSTOM difficulty = the baseline above + gf_sv_* per-dvar overrides (bot_difficulty is a CLOSED
+// enum -- a fifth name is domain-refused). _bot.gsc rewrites the whole sv_bot* family from the
+// preset every 1.5s, then re-applies every NON-EMPTY gf_sv_* mirror on top in the same frame, so
+// an override wins continuously and a blank one defers to the preset. A direct set sv_bot* line
+// here is legal but pointless -- the preset clobbers it within 1.5s of boot. Overridable set
+// (_gf_bridge::gf_bridgeServerDvarList): sv_botFov, sv_botMin/MaxReactionTime,
+// sv_botMin/MaxFireTime, sv_botStrafeChance, sv_botSprintDistance, sv_botMeleeDist,
+// sv_botYawSpeed, sv_botYawSpeedAds, sv_botPitchUp, sv_botPitchDown, sv_botAllowGrenades.
+// GF ships the Veteran (fu) baseline with both turn speeds softened a notch: hip 14 -> 12 and the
+// ADS rate -- the dominant tracking knob, since sv_botMin/MaxAdsTime is 3000/5000 at every
+// difficulty -- 14 -> 10.
+set gf_sv_botYawSpeed "12"
+set gf_sv_botYawSpeedAds "10"
 // scr_teamup removed: it's a CoD4/WaW dvar that does NOT exist in Black Ops (T5) — nothing reads it, and a bare RCON read of it prints "Unknown cmd".
 //set scr_teamKillPunishCount "4"                   // After how many teamkills are players punished?
 

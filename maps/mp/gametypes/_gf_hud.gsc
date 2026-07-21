@@ -540,6 +540,20 @@ gf_getTeamHealthStats( team )
         if ( !isDefined( player.pers["gf_spawnedRound"] ) || player.pers["gf_spawnedRound"] != game["roundsplayed"] )
             continue;
 
+        // A body on its way OUT of the round doesn't count either: a bot claimed by the
+        // seat-priority displacer (.gf_displacePending, cleared when its park settles or at the
+        // next boundary) or marked for a deferred park (pers["gf_parkPending"]) still carries
+        // pers["team"] + this round's spawn stamp while its sequenced suicide-park settles
+        // (~1-2s). A panel seeded in that window showed the ENEMY row as "3 players / 300 HP"
+        // on a 2-human team (live repro: KL9, mp_mountain round 1 2026-07-20 — his connect's
+        // displacement churn was still settling when his panel seeded). Both fields are
+        // reconciler concepts set only in dev builds; in the public build the reads are
+        // simply never true.
+        if ( isDefined( player.gf_displacePending ) )
+            continue;
+        if ( isDefined( player.pers["gf_parkPending"] ) && player.pers["gf_parkPending"] )
+            continue;
+
         stats.players[stats.players.size] = player;
         maxHP = player gf_getPlayerMaxHealth();
         stats.max += maxHP;

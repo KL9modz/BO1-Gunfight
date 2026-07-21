@@ -973,6 +973,13 @@ gf_bridgeServerDvarList()
     // speed slider read as "does nothing" -- the snappy tracking people actually feel was still on
     // the preset value (fu sets both to 14).
     n[ n.size ] = "sv_botYawSpeedAds";
+    // Vertical-aim envelope (PitchUp negative = above the target, PitchDown positive = below; the
+    // easy->fu gradient NARROWS it -- easy -20/40, fu -5/10 -- so it reads as aim SCATTER, not a
+    // look limit) + the engine-side grenade-throw gate, whose preset write (1 on all but easy)
+    // made the panel's old plain toggle revert within 1.5s.
+    n[ n.size ] = "sv_botPitchUp";
+    n[ n.size ] = "sv_botPitchDown";
+    n[ n.size ] = "sv_botAllowGrenades";
     n[ n.size ] = "timescale";
     return n;
 }

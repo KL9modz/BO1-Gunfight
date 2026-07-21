@@ -1174,20 +1174,34 @@ gf_autoassignPlanned()
          || self istestclient() || self isdemoclient()
          || !( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod ) )
     {
-        self [[level.gf_stockAutoassign]]();     // no plan / bot / past prematch -> stock behaviour
+        self gf_stockAutoassignStamped();        // no plan / bot / past prematch -> stock behaviour
         return;
     }
 
     want = gf_teamPlanLookup( level.gf_teamPlanEntries, "" + self getGuid() );
     if ( want == "" )
     {
-        self [[level.gf_stockAutoassign]]();     // fresh joiner not in the plan
+        self gf_stockAutoassignStamped();        // fresh joiner not in the plan
         return;
     }
     if ( want == "spectator" )
         return;                                  // stock connect already parked them spectator
 
     self gf_seatJoinTeam( want );
+}
+
+// Run the saved REAL stock autoassign (menuAutoAssign) and stamp the team it picked, so the
+// tracer attributes stock's write instead of flagging it UNTRACED — stock writes pers["team"]
+// with no token, and the "UNTRACED human spectator -> axis" live capture (KL9, mp_hanoi
+// 2026-07-20) was exactly a player clicking Auto Assign into gf_autoJoinBalance's balanced-split
+// stock fallback. The stamp-BEFORE-the-write rule can't apply here (the target is unknowable
+// until stock picks); stamping after is safe because menuAutoAssign's team write is synchronous —
+// there is no yield between the write and this stamp for the sampler to misattribute across.
+gf_stockAutoassignStamped()
+{
+    self [[level.gf_stockAutoassign]]();
+    if ( isDefined( self.pers["team"] ) )
+        self gf_stampTeamWriter( "stockauto", self.pers["team"] );
 }
 
 // Seat `self` on `want` while pre-spawn (spectator/dead), mirroring menuAutoAssign's tail
@@ -1232,7 +1246,7 @@ gf_autoJoinBalance()
 {
     if ( self istestclient() || self isdemoclient() )
     {
-        self [[level.gf_stockAutoassign]]();
+        self gf_stockAutoassignStamped();
         return;
     }
     if ( isDefined( level.gf_teamPlanEntries ) )
@@ -1285,7 +1299,7 @@ gf_autoJoinBalance()
         diff = hx - ha;                              // abs without unary minus
     if ( diff <= 1 )                                 // balanced enough — let the player pick a side
     {
-        self [[level.gf_stockAutoassign]]();
+        self gf_stockAutoassignStamped();
         return;
     }
 
@@ -1451,6 +1465,12 @@ gf_menuTeamChoice( team )
 
     if ( self istestclient() || self isdemoclient() )
     {
+        // Stamp the passthrough BEFORE stock runs: stock menuAllies/menuAxis write pers["team"]
+        // with no token, and a parked bot answering the re-begin team menu through this path is
+        // the prime suspect for the every-round "UNTRACED bot spectator -> team" trace noise
+        // (test clients auto-respond to menus). If bots STILL trace UNTRACED after this stamp,
+        // the re-seat is genuinely not the menu path — either way the tracer learns.
+        self gf_stampTeamWriter( "stockmenu", team );
         self [[stockFn]]();
         return;
     }

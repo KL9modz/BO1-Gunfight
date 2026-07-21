@@ -49,10 +49,24 @@ async function setAllInBlock(btn){
     if(_skipUnsynced(row)){skipped++;return;}
     const mirror=row.getAttribute('data-mirror');
     const dv=mirror||row.getAttribute('data-dvar'),v=_rowVal(row);
+    // A mirror row's visible value is the live EFFECTIVE dvar — normally the Difficulty preset.
+    // Blanket-writing every row's value into its gf_* mirror would freeze the whole preset as
+    // overrides (Difficulty buttons become no-ops), so an UNCHANGED row (value === what the last
+    // read reported, per dataset.read) is skipped: only fields the user actually edited become
+    // overrides. Session-explicit clears are re-sent below.
+    if(mirror){
+      const el=row.querySelector('input,select');
+      if(el&&el.dataset.read===String(v)) return;
+    }
     if(mirror&&v!==null) svset++;
     if(dv&&v!==null&&!seen[dv]){seen[dv]=1;cmds.push(`set ${dv} ${v}`);}
     const also=row.getAttribute('data-also');
     if(also&&v!==null&&!seen[also]){seen[also]=1;cmds.push(`set ${also} ${v}`);}
+  });
+  // Overrides ↺-CLEARED this session must be re-sent as blanks — Set All right after a clear
+  // should leave the preset in charge, not resurrect the old override from a stale mirror.
+  Object.keys(_svOverrides).forEach(m=>{
+    if(_svOverrides[m]===''&&!seen[m]&&block.querySelector(`[data-mirror="${m}"]`)){seen[m]=1;cmds.push(`set ${m} ""`);svset++;}
   });
   // One unstamped bridge call applies every mirror at once (seq 0 = no dedup, always runs).
   if(svset) cmds.push('set gf_cmd svsync');
@@ -76,15 +90,28 @@ function collectBlockDvars(block){
   const out={};
   block.querySelectorAll('[data-dvar]').forEach(row=>{
     if(_skipUnsynced(row)) return;   // never persist a value we never read (see _skipUnsynced)
-    // A cheat-protected dvar cannot be persisted directly: dedicated.cfg is executed as console
-    // commands at startup, so `set sv_botFov 50` there is refused exactly like an rcon set. Persist
-    // the plain gf_* mirror instead — gf_bridgeApplyServerDvars() copies it onto the real dvar from
-    // GSC on the first round after the restart, which is the only path that works.
-    const dv=row.getAttribute('data-mirror')||row.getAttribute('data-dvar'),v=_rowVal(row);
+    // svset rows persist their plain gf_* MIRROR, not the real dvar: a `set sv_botFov 50` cfg line
+    // is legal but pointless — the Difficulty preset rewrites the real dvar every 1.5s, and only
+    // the mirror (re-applied on top by gf_bridgeApplyServerDvars after every preset pass) sticks.
+    // ⚠ Only rows the user actually CHANGED since the last read are persisted (dataset.read):
+    // an untouched row shows the live preset value, and persisting all of those would pin the
+    // entire preset as overrides. Session-explicit writes/clears are overlaid below.
+    const mirror=row.getAttribute('data-mirror');
+    if(mirror){
+      const el=row.querySelector('input,select'),v=_rowVal(row);
+      if(el&&el.dataset.read===String(v)) return;   // unchanged from the server read — not an override
+      if(v!==null) out[mirror]=v;
+      return;
+    }
+    const dv=row.getAttribute('data-dvar'),v=_rowVal(row);
     if(dv&&v!==null) out[dv]=v;
     const also=row.getAttribute('data-also');
     if(also&&v!==null) out[also]=v;
   });
+  // Session-explicit mirror writes/clears always win over the DOM heuristic above — in particular
+  // a ↺ clear persists as `set gf_* ""`, overwriting any stale override line already in the cfg.
+  const blockMirrors=new Set(Array.from(block.querySelectorAll('[data-mirror]')).map(r=>r.getAttribute('data-mirror')));
+  Object.keys(_svOverrides).forEach(m=>{ if(blockMirrors.has(m)) out[m]=_svOverrides[m]; });
   block.querySelectorAll('[onclick],[onchange]').forEach(el=>{
     const a=(el.getAttribute('onclick')||'')+' '+(el.getAttribute('onchange')||'');
     let m=a.match(/sdve\('([^']+)','([^']+)'\)/);
@@ -879,8 +906,10 @@ function showRowCtx(e,row){
        : key ? `<div class="ctx-item" onclick="rowCtxAction('pin')">${pinned?'★ Remove from FAVORITES':'☆ Add to FAVORITES'}</div>`
            : `<div class="ctx-item cur" title="Per-gametype rows are re-rendered whenever the gametype dropdown changes, so a pinned one would lose its home.">☆ Add to FAVORITES <span style="opacity:.6">— n/a</span></div>`)
     + '<div class="ctx-sep"></div>'
-    + (ctls.length ? `<div class="ctx-item yellow" onclick="rowCtxAction('reset')">↺ Reset to default${def!==''?' ('+x(def)+')':''}</div>`
-                   : `<div class="ctx-item cur">↺ Reset to default <span style="opacity:.6">— n/a</span></div>`);
+    + (row.getAttribute('data-mirror')
+        ? `<div class="ctx-item yellow" onclick="rowCtxAction('reset')" title="Blanks the gf_* mirror — the Difficulty preset re-asserts the real dvar within 1.5s. There is no meaningful default VALUE for an override row.">↺ Clear override — back to Difficulty preset</div>`
+        : ctls.length ? `<div class="ctx-item yellow" onclick="rowCtxAction('reset')">↺ Reset to default${def!==''?' ('+x(def)+')':''}</div>`
+                      : `<div class="ctx-item cur">↺ Reset to default <span style="opacity:.6">— n/a</span></div>`);
   m.style.display='block';
   // Measure the real rendered size (menu is already display:block) rather than guess — keeps the
   // menu on screen regardless of item count.
@@ -901,11 +930,31 @@ async function rowCtxAction(act){
     catch(_){ toast('Clipboard blocked — '+dv,'err'); }
   }
 }
+// ↺ on an svset (mirror-backed) row: blank the gf_* mirror so gf_bridgeApplyServerDvars() skips it
+// and the next diffBots tick (≤1.5s) re-asserts the Difficulty preset. The row is flagged unsynced
+// (its field still shows the old override until the next read) and the clear is recorded in
+// _svOverrides so 💾 Save persists `set gf_* ""` OVER any stale override line in dedicated.cfg.
+async function clearSvOverride(row){
+  const mirror=row.getAttribute('data-mirror'), real=row.getAttribute('data-dvar')||mirror.replace(/^gf_/,'');
+  const lbl=_gsClean(row.querySelector('.slbl'))||real;
+  if(!live){ toast('Not connected — nothing cleared','info'); return; }
+  const r=await rcon(`set ${mirror} ""`);
+  if(!r||!r.ok){ toast('Clear failed','err'); return; }
+  _svOverrides[mirror]='';
+  row.classList.add('unsynced');
+  toast(lbl+': override cleared — Difficulty preset re-asserts within 1.5s','ok');
+  actLog('Cleared override '+real+' → back to the Difficulty preset','wn');
+}
 // Restore the row's authored value, then push it the way the ROW ITSELF pushes: its primary
 // (Set / Apply) button when it has one, else a synthetic change on its control. The reset therefore
 // travels the row's own transport — plain `set`, the gf_* mirror + svsync, or the GSC bridge — and
 // can't drift from it.
 function rowReset(row){
+  // …except a mirror-backed (svset) row, whose default STATE is "no override" rather than any
+  // value: pushing the engine default through its transport — what reset means everywhere else —
+  // would do the opposite here and PIN that number as a permanent override the Difficulty preset
+  // can never move again. Reset on these rows = clear the override.
+  if(row.getAttribute('data-mirror')){ clearSvOverride(row); return; }
   const ctls=_rowCtls(row); if(!ctls.length) return;
   const lbl=_gsClean(row.querySelector('.slbl'))||_rowDvar(row);
   ctls.forEach(el=>{
@@ -1099,16 +1148,21 @@ async function sdv(dv,id){
 async function sdvv(dv,v){
   return reportWrite(dv,v,await rcon(`set ${dv} ${v}`));
 }
-// Cheat-protected SERVER dvars (bot tuning, timescale) go through the GSC bridge, not a raw
-// `set`: GSC setDvar runs with engine authority and is NOT cheat-gated, so these keep working on
-// the dedicated VPS with sv_cheats 0. The bridge also mirrors the value into a plain gf_<dvar>
-// dvar, which is what 💾 Save persists to dedicated.cfg — a cfg `set sv_botFov 50` line would be
-// cheat-refused at startup exactly like an rcon one, so the mirror is the only thing that CAN
-// persist. gf_bridgeApplyServerDvars() copies the mirrors back each round.
+// Server dvars owned by the bot Difficulty preset (+ timescale) go through the GSC bridge — NOT
+// because rcon cannot set them (cheat protection is a CLIENT-side check; a plain rcon `set` lands
+// fine on the dedicated console — proven live 2026-07-20 with a same-packet set+read), but because
+// the bridge also writes the plain gf_<dvar> MIRROR. The mirror is the only write that STICKS:
+// _bot.gsc's diffBots() rewrites the whole sv_bot* family from the preset every 1.5s and then
+// re-applies every non-empty mirror on top in the same frame, so an override wins continuously and
+// a raw `set` (rcon OR dedicated.cfg) is clobbered within 1.5s. 💾 Save persists the mirror.
+// _svOverrides records this session's explicit writes/clears so Set All / 💾 Save can tell a real
+// override from a row that is merely SHOWING the live preset value (see collectBlockDvars).
+const _svOverrides={};
 async function bridgeSvSet(dv,id){
-  const v=g(id).value;
+  const el=g(id);
+  const v=el.type==='checkbox'?(el.checked?'1':'0'):el.value;
   const ok=await bridge(`svset_${dv}=${v}`,`${dv} = ${v}`);
-  if(ok){ toast(dv+'='+v+' (bridge)','ok'); actLog(dv+' → '+v+' (GSC bridge — cheat-protected)','ok'); }
+  if(ok){ _svOverrides['gf_'+dv]=v; toast(dv+'='+v+' (override)','ok'); actLog(dv+' → '+v+' (override on the Difficulty preset)','ok'); }
   return ok;
 }
 // Set two dvars to the same value in one chained send (used by rows with an `also:` dvar,
@@ -1371,11 +1425,17 @@ async function botTeam(act,team){
     actLog(lbl,act==='add'?'ok':'wn');toast(lbl,'info');
   }
 }
+// UI names ↔ engine values: BO1 Combat Training calls the four presets Recruit / Regular /
+// Hardened / Veteran; the dvar's CLOSED enum domain stays easy/normal/hard/fu — a fifth name is
+// domain-refused, so a "custom" difficulty is a baseline preset + gf_sv_* overrides, never a new
+// enum value.
+const BOTDIFF_NAMES={easy:'Recruit',normal:'Regular',hard:'Hardened',fu:'Veteran'};
 async function botDiff(d){
   const ok=await bridge(`botdiff_${d}`);
   if(ok){
     hlBotDiff(d);
-    actLog('Bot diff: '+d.toUpperCase(),'ok');toast('Bot diff: '+d.toUpperCase(),'info');
+    const nm=(BOTDIFF_NAMES[d]||d)+' ('+d+')';
+    actLog('Bot difficulty: '+nm,'ok');toast('Bot difficulty: '+nm,'info');
   }
 }
 function hlBotDiff(d){ ['easy','normal','hard','fu'].forEach(k=>g('d-'+k).classList.toggle('sel',k===d)); }
@@ -2043,17 +2103,19 @@ const SRV_SECTIONS = [
   // LISTEN/dev host and for the gf_* mirror's cfg-persistence, NOT because rcon can't reach these.
   // (The per-row "Cheat-protected" tips below are left over from the same misconception.)
   { title: 'BOT TUNING', eff: 'live', per: 'dvar', vars: [
-    { n:'sv_botFov',             lbl:'Bot FOV (deg)',         type:'num', def:'65',   svset:true, tip:'sv_botFov\nField of view bots use to acquire targets. Higher = they see you sooner.\nCheat-protected — set via the GSC bridge, so it works on the dedicated VPS with sv_cheats 0.' },
-    { n:'sv_botMinReactionTime', lbl:'Reaction Min (ms)',     type:'num', def:'500',  svset:true, tip:'sv_botMinReactionTime\nFastest reaction time on spotting a target. Lower = harder bots.\nCheat-protected — set via the GSC bridge.' },
-    { n:'sv_botMaxReactionTime', lbl:'Reaction Max (ms)',     type:'num', def:'1000', svset:true, tip:'sv_botMaxReactionTime\nSlowest reaction time. Lower = harder bots.\nCheat-protected — set via the GSC bridge.' },
-    { n:'sv_botMinFireTime',     lbl:'Fire Burst Min (ms)',   type:'num', def:'400',  svset:true, tip:'sv_botMinFireTime\nShortest continuous-fire burst.\nCheat-protected — set via the GSC bridge.' },
-    { n:'sv_botMaxFireTime',     lbl:'Fire Burst Max (ms)',   type:'num', def:'600',  svset:true, tip:'sv_botMaxFireTime\nLongest continuous-fire burst.\nCheat-protected — set via the GSC bridge.' },
-    { n:'sv_botStrafeChance',    lbl:'Strafe Chance (0–1)',   type:'flt', def:'0.1',  svset:true, tip:'sv_botStrafeChance\nProbability a bot strafes during a fight.\nCheat-protected — set via the GSC bridge.' },
-    { n:'sv_botSprintDistance',  lbl:'Sprint Distance',       type:'num', def:'512',  svset:true, tip:'sv_botSprintDistance\nRange beyond which bots sprint toward targets/objectives.\nCheat-protected — set via the GSC bridge.' },
-    { n:'sv_botMeleeDist',       lbl:'Melee Distance',        type:'num', def:'80',   svset:true, tip:'sv_botMeleeDist\nRange at which bots attempt a melee.\nCheat-protected — set via the GSC bridge.' },
-    { n:'sv_botYawSpeed',        lbl:'Turn Speed (hip)',      type:'num', def:'4',    svset:true, tip:'sv_botYawSpeed\nAim turn speed while NOT aiming down sights. Higher = snappier.\nThis is only half the aim behaviour — bots hold ADS in 3-5s windows at every difficulty, so most in-fight tracking runs on Turn Speed (ADS) below.\nDifficulty preset: fu 14 / hard 8 / normal 4 / easy 2. Engine default 4.' },
-    { n:'sv_botYawSpeedAds',     lbl:'Turn Speed (ADS)',      type:'num', def:'5',    svset:true, tip:'sv_botYawSpeedAds\nAim turn speed while aiming down sights — the dominant tracking knob, since sv_botMin/MaxAdsTime is 3000/5000 on every difficulty.\nLower this to soften how hard bots track you WITHOUT changing Difficulty.\nDifficulty preset: fu 14 / hard 10 / normal 5 / easy 2.5. Engine default 5.' },
-    { n:'sv_botAllowGrenades',   lbl:'Bots Throw Grenades',   type:'tog', def:'1',    tip:'sv_botAllowGrenades\nAllow bots to throw lethal grenades.' },
+    { n:'sv_botFov',             lbl:'Bot FOV (deg)',         type:'num', def:'65',   svset:true, tip:'sv_botFov\nField of view bots use to acquire targets, degrees. Higher = they see you sooner.\nPreset: fu 160 / hard 100 / normal 70 / easy 50. Engine default 65 (domain caps at 160 — fu already runs the max).\nOverride rides on top of Difficulty; right-click ↺ clears it back to the preset.' },
+    { n:'sv_botMinReactionTime', lbl:'Reaction Min (ms)',     type:'num', def:'500',  svset:true, tip:'sv_botMinReactionTime\nFastest reaction on spotting a target, ms. Lower = harder.\nPreset: fu 30 / hard 400 / normal 800 / easy 1200. Engine default 500.\nRight-click ↺ clears the override back to the preset.' },
+    { n:'sv_botMaxReactionTime', lbl:'Reaction Max (ms)',     type:'num', def:'1000', svset:true, tip:'sv_botMaxReactionTime\nSlowest reaction on spotting a target, ms.\nPreset: fu 100 / hard 700 / normal 1200 / easy 1600. Engine default 1000.\nRight-click ↺ clears the override back to the preset.' },
+    { n:'sv_botMinFireTime',     lbl:'Fire Burst Min (ms)',   type:'num', def:'400',  svset:true, tip:'sv_botMinFireTime\nShortest continuous-fire burst, ms.\nPreset: fu 100 / hard 400 / normal 600 / easy 900. Engine default 400.\nRight-click ↺ clears the override back to the preset.' },
+    { n:'sv_botMaxFireTime',     lbl:'Fire Burst Max (ms)',   type:'num', def:'600',  svset:true, tip:'sv_botMaxFireTime\nLongest continuous-fire burst, ms.\nPreset: fu 300 / hard 600 / normal 800 / easy 1000. Engine default 600.\nRight-click ↺ clears the override back to the preset.' },
+    { n:'sv_botStrafeChance',    lbl:'Strafe Chance (0–1)',   type:'flt', def:'0.1',  svset:true, tip:'sv_botStrafeChance\nProbability a bot strafes during a fight, 0-1.\nPreset: fu 1 / hard 0.9 / normal 0.6 / easy 0.1. Engine default 0.1.\nRight-click ↺ clears the override back to the preset.' },
+    { n:'sv_botSprintDistance',  lbl:'Sprint Distance',       type:'num', def:'512',  svset:true, tip:'sv_botSprintDistance\nRange beyond which bots sprint toward targets/objectives.\nPreset: 512 at every difficulty except easy 1024 (stock OIC drops hard/fu to 256). Engine default 512.\nRight-click ↺ clears the override back to the preset.' },
+    { n:'sv_botMeleeDist',       lbl:'Melee Distance',        type:'num', def:'80',   svset:true, tip:'sv_botMeleeDist\nRange at which bots attempt a melee.\nPreset: fu/hard/normal 80 / easy 40. Engine default 80.\nRight-click ↺ clears the override back to the preset.' },
+    { n:'sv_botYawSpeed',        lbl:'Turn Speed (hip)',      type:'num', def:'4',    svset:true, tip:'sv_botYawSpeed\nAim turn speed while NOT aiming down sights. Higher = snappier.\nOnly half the aim behaviour — bots hold ADS in 3-5s windows at every difficulty, so most in-fight tracking runs on Turn Speed (ADS) below.\nPreset: fu 14 / hard 8 / normal 4 / easy 2. Engine default 4.\nRight-click ↺ clears the override back to the preset.' },
+    { n:'sv_botYawSpeedAds',     lbl:'Turn Speed (ADS)',      type:'num', def:'5',    svset:true, tip:'sv_botYawSpeedAds\nAim turn speed while aiming down sights — the dominant tracking knob, since sv_botMin/MaxAdsTime is 3000/5000 at every difficulty.\nLower it to soften how hard bots track you WITHOUT changing Difficulty.\nPreset: fu 14 / hard 10 / normal 5 / easy 2.5. Engine default 5.\nRight-click ↺ clears the override back to the preset.' },
+    { n:'sv_botPitchUp',         lbl:'Aim Pitch Up (deg)',    type:'num', def:'-10',  svset:true, tip:'sv_botPitchUp\nUpper bound of the vertical aim envelope, degrees (negative = above the target; domain -90..0).\nReads as vertical aim SCATTER, inferred from the difficulty gradient — easier presets run far wider envelopes (sloppier vertical aim). The consumer is engine-side, so the exact mechanics are unverifiable from script.\nPreset: fu -5 / hard -5 / normal -10 / easy -20. Engine default -10.\nRight-click ↺ clears the override back to the preset.' },
+    { n:'sv_botPitchDown',       lbl:'Aim Pitch Down (deg)',  type:'num', def:'20',   svset:true, tip:'sv_botPitchDown\nLower bound of the vertical aim envelope, degrees (positive = below the target; domain 0..90).\nWiden both pitch values to make bots miss high/low more; fu runs -5/10, half of normal.\nPreset: fu 10 / hard 10 / normal 20 / easy 40. Engine default 20.\nRight-click ↺ clears the override back to the preset.' },
+    { n:'sv_botAllowGrenades',   lbl:'Bots Throw Grenades',   type:'tog', def:'1',    svset:true, tip:'sv_botAllowGrenades\nEngine-side lethal grenade throws. The preset writes 1 on fu/hard/normal and 0 on easy, so the old plain toggle here reverted within 1.5s — it now writes the gf_* override, which sticks at any difficulty.\nSeparate control: bots_play_nade 0 is an off-only master switch that ALSO stops the script-side equipment/tactical threads (read at bot spawn).\nRight-click ↺ clears the override back to the preset.' },
     { n:'sv_randomizeBotNames',  lbl:'Randomize Bot Names',   type:'tog', def:'1',    tip:'sv_randomizeBotNames\nGive bots random player-style names.' },
     { n:'sv_botUseFriendNames',  lbl:'Bots Use Friend Names', type:'tog', def:'1',    tip:'sv_botUseFriendNames\nBots borrow names from your friends list.' },
   ]},
@@ -2449,6 +2511,7 @@ function srvRow(v, prefix, dEff, dPer, dVia) {
     // Toggles apply immediately — no queuing
     const chk = v.def === '1' ? 'checked' : '';
     const oc = v.bridge ? `togDvarBridge(this,'${v.n}','${v.bridge}')`
+             : v.svset  ? `bridgeSvSet('${v.n}','${id}')`
              : v.also   ? `sdvv2('${v.n}','${v.also}',this.checked?'1':'0')`
              :            `sdvv('${v.n}',${id}.checked?'1':'0')`;
     ctrl = `<label class="tog ctrl"><input type="checkbox" id="${id}" ${chk} onchange="${oc}"><span class="tog-t"></span><span class="tog-th"></span></label>`;
@@ -2474,17 +2537,19 @@ function srvRow(v, prefix, dEff, dPer, dVia) {
     ctrl = `<input id="${id}" type="text" class="ctrl" value="${v.def}" style="flex:1;min-width:80px"><button class="b-ac b-sm ctrl" onclick="sdve('${v.n}','${id}')">Set</button>`;
   } else {
     const step = v.type === 'flt' ? '0.1' : '1';
-    // v.svset — a CHEAT-PROTECTED server dvar. A raw rcon `set` is refused by the engine whenever
-    // sv_cheats is 0 (i.e. always, on a correctly-configured dedicated server), so the Set button
-    // routes through the GSC bridge, which is not cheat-gated.
+    // v.svset — a dvar the bot Difficulty preset rewrites every 1.5s. The Set button routes
+    // through the GSC bridge so the value ALSO lands in the gf_* mirror, which diffBots re-applies
+    // on top of the preset each tick — a plain `set` (NOT cheat-refused on a dedicated console,
+    // proven live 2026-07-20) would simply be clobbered by the preset within 1.5s.
     const setCall = v.svset ? `bridgeSvSet('${v.n}','${id}')` : `sdve('${v.n}','${id}')`;
     ctrl = `<input id="${id}" type="number" class="num ctrl" value="${v.def}" step="${step}"><button class="b-ac b-sm ctrl" onclick="${setCall}">Set</button>`;
   }
   const noDvar = (v.type === 'perk' || v.type === 'btn' || v.type === 'bridgetog');
-  // data-dvar stays the REAL dvar (reads + search key off it — a READ is never cheat-gated).
-  // data-mirror is the plain gf_<dvar> the WRITERS must use: Set All pushes it over rcon and 💾 Save
-  // persists it to dedicated.cfg, because the real dvar can be written by NEITHER (both are
-  // cheat-refused). One `svsync` bridge call then copies the mirrors onto the real dvars from GSC.
+  // data-dvar stays the REAL dvar (reads + search key off it). data-mirror is the plain gf_<dvar>
+  // the WRITERS use: Set All pushes it over rcon and 💾 Save persists it to dedicated.cfg — not
+  // because the real dvar is unreachable (it isn't), but because the Difficulty preset rewrites it
+  // every 1.5s and only the mirror, re-applied AFTER each preset pass, sticks. One `svsync` bridge
+  // call then copies the mirrors onto the real dvars immediately.
   const dd = noDvar ? '' : ` data-dvar="${v.n}"` + (v.also ? ` data-also="${v.also}"` : '')
                                                  + (v.svset ? ` data-mirror="gf_${v.n}"` : '');
   const sp = (v.type === 'tog' || v.type === 'bridgetog' || v.type === 'perk' || v.type === 'btn') ? '<span style="flex:1"></span>' : '';
@@ -2507,7 +2572,7 @@ function srvRow(v, prefix, dEff, dPer, dVia) {
 // dEff/dPer = section-level behavior-pill defaults (per-var v.eff / v.per override them).
 // dVia = a section-level transport pill on the block TITLE, for a section where every row shares
 // the same transport (PERKS). Rows matching it stay bare, so the pill is stated once instead of
-// N times. A MIXED section (BOT TUNING: 9 cheat-protected svset rows + 3 plain toggles) declares
+// N times. A MIXED section (BOT TUNING: 13 preset-override svset rows + 2 plain toggles) declares
 // no dVia — each row then badges itself, which is exactly the useful signal there.
 function srvBlock(title, vars, prefix, dEff, dPer, dVia) {
   // A var may carry an optional grp:'Label' to open a sub-group header before its row
@@ -2583,6 +2648,11 @@ function srvApplyValues(vars, values, prefix) {
       return;
     }
     if (row) row.classList.remove('unsynced');
+    // Stamp what the server actually reported. Set All / 💾 Save use it to tell "the user edited
+    // this mirror row since the read" (a real override) from "the row is just SHOWING the live
+    // Difficulty-preset value" — persisting the latter for every row would freeze the whole preset
+    // as overrides and turn the Difficulty buttons into no-ops.
+    el.dataset.read = (v.type === 'tog') ? ((val === '1' || val === 1 || val === 'true') ? '1' : '0') : String(val);
     if (v.type === 'tog') { el.checked = (val === '1' || val === 1 || val === 'true'); }
     else if (v.type === 'sld') {
       el.value = val;
