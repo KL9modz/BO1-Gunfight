@@ -1312,13 +1312,34 @@ gf_planApplyMove( team )
 // NOT-"playing" player (a live body can't change teams without a respawn). Clearing
 // pers["savedmodel"] matters: a cached old-side model would render the player in the WRONG TEAM's
 // skin after the move. Mirrors _gf_bridge::gf_forceTeamQuiet / _bot::gf_botQuietSetTeam.
+//
+// ⚠ pers["class"] must come out of here VALID for a real team, not cleared. Stock's re-begin
+// (_globallogic_player.gsc:386) auto-spawns a team-assigned player only if isValidClass(pers["class"]);
+// otherwise it calls showMainMenuForTeam() (:392), which — unlike beginClassChoice — does NOT honor
+// scr_disable_cac and unconditionally opens the class menu. A quiet-moved human with class cleared
+// therefore could not spawn at the next round start until they manually picked a class (live repro:
+// basscar101 on mp_villa 2026-07-20, balancer boundary-out move -> "choose a class" menu; same bug
+// as the YooDyl report). Stock changeTeam also clears class, but it always follows with
+// beginClassChoice() which re-assigns level.defaultClass under scr_disable_cac — the quiet path
+// skips that call by design (no menus mid-killcam), so it must do the re-assign itself. Class
+// content is irrelevant here (gf_giveCustomLoadout overrides everything at spawn); it just has to
+// PASS the validity gate. Spectator keeps the clear (no class gate on the spectator branches).
 gf_quietSetTeam( team )
 {
     self gf_stampTeamWriter( "quietset", team );
     self.pers["team"]       = team;
     self.team               = team;
-    self.pers["class"]      = undefined;
-    self.class              = undefined;
+    if ( team != "spectator" && isDefined( level.defaultClass )
+        && ( level.oldschool || getDvarInt( "scr_disable_cac" ) == 1 ) )
+    {
+        self.pers["class"]  = level.defaultClass;   // what beginClassChoice would assign (disable_cac)
+        self.class          = level.defaultClass;
+    }
+    else
+    {
+        self.pers["class"]  = undefined;
+        self.class          = undefined;
+    }
     self.pers["weapon"]     = undefined;
     self.pers["savedmodel"] = undefined;
     self.sessionteam        = team;

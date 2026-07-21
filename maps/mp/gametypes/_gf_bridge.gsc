@@ -1300,8 +1300,20 @@ gf_forceTeamQuiet( team )
     self maps\mp\gametypes\_gf_rounds::gf_stampTeamWriter( "bridge", team );
     self.pers["team"]       = team;
     self.team               = team;
-    self.pers["class"]      = undefined;
-    self.class              = undefined;
+    // Keep in lockstep with _gf_rounds::gf_quietSetTeam: a quiet move to a real team must leave a
+    // VALID class or stock's re-begin (:392 showMainMenuForTeam, which ignores scr_disable_cac)
+    // blocks the player's spawn behind the class menu next round.
+    if ( team != "spectator" && isDefined( level.defaultClass )
+        && ( level.oldschool || getDvarInt( "scr_disable_cac" ) == 1 ) )
+    {
+        self.pers["class"]  = level.defaultClass;
+        self.class          = level.defaultClass;
+    }
+    else
+    {
+        self.pers["class"]  = undefined;
+        self.class          = undefined;
+    }
     self.pers["weapon"]     = undefined;
     self.pers["savedmodel"] = undefined;
     if ( team == "spectator" )

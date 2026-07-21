@@ -20,58 +20,39 @@ wins** takes the match.
 - Website screenshots
 
 ### Open bugs
-- **Unidentified bot mis-seater (contained by GF_FILLGUARD, culprit unknown).** Live listen-server repro
-  2026-07-16: after a joining human displaced a bot (parked to spectator), the NEXT round started with
-  that bot seated on the ENEMY side (3 bots vs human+1). The reconciler provably planned zero moves for
-  that state (1v0 humans, T=2, no surplus/deficit), stock's re-begin only autoassigns `needteam` clients
-  (parked bots never get it), and `teamWatch` only re-fires if `pers["team"]` goes undefined (nothing
-  does) — so the seater is an untraced path. **Contained structurally:** the maySpawn fill-discipline
-  gate now parks any over-size bot at its spawn attempt and prints `GF_FILLGUARD: parked bot <name> …`.
-  **Next occurrence: read `GF_TEAMTRACE` first** (see *Diagnostics* below) — it is built to answer
-  exactly this and names the checkpoint interval the mis-seat happened in; `GF_FILLGUARD` then names
-  the bot and round. Both are `logPrint` → **`mods/mp_gunfight/logs/games_mp.log`**, not console_mp.log.
-  **Same untraced path also strands HUMANS (reported live on the VPS 2026-07-19):** a mid-round joiner
-  takes a bot's spot, plays the round, then the NEXT round starts with their `pers["team"] ==
-  "spectator"` — on a ranked server that hits `_globallogic_player.gsc:365` (team menu, no autoassign),
-  i.e. "forced to choose a team first". At defaults NO mod path spectates a human (every spectator write
-  is `istestclient()`-gated; `gf_team_lock` off), so this is the bot mis-seater catching a human.
-  **Contained diagnostically AND now auto-repaired (root still untraced):** `_bot::gf_teamWatchHumans`
-  (top of every `gf_boundaryPass`) prints `GF_TEAMWATCH: human <name> in spectator at boundary - reason
-  UNTRACED (round R …)` — `reason UNTRACED` = the mis-seat, vs the intentional-spectate breadcrumbs
-  (`user`/`moved`/`maxsize`/`lock-queue`, classified by `_bot::gf_specReasonTag` from
-  `pers["gf_specReason"]` + `pers["gf_seatQueued"]`). Immediately after the log, **`_bot::gf_reclaimStrandedHumans`
-  re-seats any UNTRACED-stranded human onto the lighter side** (quiet reassign — a stranded human is a
-  spectator, never "playing"), BEFORE the balance/fill stages so they're counted, printing `GF_RECLAIM:
-  re-seated stranded human <name> to <side>`. Gated by **`gf_team_reclaim`** (default 1; bridge
-  `reclaim_<0|1>`). ⚠ It is a **containment, not a root fix**: the strand happens during the re-begin
-  AFTER a boundary, so it's caught at the NEXT boundary — the player still sees the menu for **that one
-  round**, then is auto-seated (repeats if the untraced writer re-strands them). **Next occurrence: read
-  `GF_TEAMTRACE` (below), then correlate the GF_TEAMWATCH/GF_RECLAIM round with the GF_FILLGUARD round** —
-  same untraced writer, now caught touching a human; TEAMWATCH reports the human is *already* stranded,
-  GF_TEAMTRACE reports the interval the strand *happened in*, which is what you work backward from to kill
-  the root. **Breadcrumb sites** (so the reclaim never grabs an intentional spectator): `gf_menuTeamChoice`
-  → `user`; `gf_seqTeamMove`'s spectator branch → `moved` (covers the bridge admin force-to-spectator,
-  which routes through it); the `scr_team_maxsize` overflow → `maxsize`; the lock queue via
-  `gf_lockQueueMark` → `gf_seatQueued`. ⚠ Still **UNVALIDATED against a live repro** — the reclaim fired
-  correctly in review but the bug is rare/unreproducible on demand; watch for `GF_RECLAIM` on the VPS.
-  **Root-cause narrowing (static analysis 2026-07-20):** the menu is stock `_globallogic_player.gsc:365` —
-  the `else if ( self.pers["team"] == "spectator" )` branch of `Callback_PlayerConnect` (which re-fires at
-  each re-begin). The **discriminator is `pers["needteam"]`**: a spectator WITH `needteam` set takes the
-  `:312` branch → `[[level.autoassign]]()` (`:327`) = the mod's `gf_autoJoinBalance`, seated, **no menu**; a
-  spectator WITHOUT it hits `:365` → forced team menu, no autoassign. So the untraced writer sets
-  `pers["team"]="spectator"` **and leaves `needteam` undefined**, and it is **NOT** any GSC path we can see:
-  stock team-autobalance is **off** (`scr_teambalance 0` in `dedicated.cfg` + engine default 0, so
-  `_teams::balanceTeams` never runs), every **mod** spectator-write is stamped (→ traced), and the three
-  `_globallogic.gsc` spectator checks (`:587/:663/:692`) are **read-only** display routing. That points at
-  an **engine/C-side write** (bot management / re-begin team assignment), which GSC cannot hook — matching
-  the long-standing suspicion. `gf_teamWatchHumans` now logs **`needteam` + the last writer stamp
-  (`who->to gen X/curGen`)** so the next occurrence proves it: `needteam 0` + a stale-gen/`none` stamp = a
-  stampless engine write. **Early-catch (unshipped) is viable but timing-racy:** the strand lands at
-  re-begin, AFTER the round-end boundary pass, and the boundary pass never runs at the start of rounds 2+
-  (triggers are round-end + match-start only), so getting them into the SAME round needs a round-start
-  listener that reseats via `gf_seatJoinTeam` and drives a late-spawn — which only works AFTER the spawn
-  wave (late-spawn requires a teammate alive), an untestable window without a live repro. Left for a real
-  `GF_TEAMWATCH`/`GF_RECLAIM` line to validate against.
+- **RESOLVED — "auto-balanced → forced to choose a class/team, couldn't spawn" (YooDyl `mp_silo`
+  2026-07-19, basscar101 `mp_villa` 2026-07-20).** Root-caused off the first `gf_trace_teams 2` live
+  capture (`GF_TEAMTRACE: human basscar101 axis -> allies by quietset (at boundary-out, round 8)`) —
+  the mover was the mod's own balancer, and the block was **`gf_quietSetTeam` clearing `pers["class"]`**:
+  stock's re-begin auto-spawns a team-assigned player only if `isValidClass(pers["class"])`
+  (`_globallogic_player.gsc:386`), and its else-branch `showMainMenuForTeam()` (`:392`) — unlike
+  `beginClassChoice` — **ignores `scr_disable_cac`** and unconditionally opens the class menu. Fixed:
+  quiet moves to a real team now assign `level.defaultClass` (exactly what `beginClassChoice` would do
+  under disable-cac) in `gf_quietSetTeam` + the bridge mirror `gf_forceTeamQuiet`; `gf_botQuietSetTeam`
+  deliberately untouched (BotWarfare drives bot class/spawn — demonstrably fine). ⚠ Rule: **any quiet
+  team write to a real team must leave `pers["class"]` valid** or its target blocks at the next re-begin.
+  `GF_TEAMWATCH`/`GF_RECLAIM` at 0 lines proved the player was never in spectator, killing the old
+  spectator-strand theory for these reports. ([[quiet-team-move-cleared-class-blocks-respawn]])
+- **Bot mis-seater — root-cause CONFIRMED as the engine, containment is the permanent answer.** The
+  2026-07-16 mystery ("parked bot seated on the enemy side next round") is the engine's **C-side
+  re-begin auto-assign of spectator test clients**: `gf_trace_teams 2` shows parked bots re-seated by a
+  stampless write at nearly **every** re-begin (`GF_TEAMTRACE: UNTRACED bot <name> spectator -> <team> -
+  last stamp NONE …, at pre-spawn`), and the maySpawn fill-discipline gate (`GF_FILLGUARD`) re-parks
+  them the same round. GSC cannot hook the engine write, so the FILLGUARD/park loop **is** the fix —
+  routine, harmless, ~2 trace+fillguard line pairs per round in the log are expected noise, not a fault.
+- **Humans stranded in spectator (`:365` team menu) — hypothesis only, never observed; net stays armed.**
+  `GF_TEAMWATCH` has fired **0 times ever**; the reports that seeded this theory are now explained by the
+  class-clear bug above. If it DOES exist: the discriminator is **`pers["needteam"]`** (a needteam
+  spectator is autoassigned via `:312`→`:327` = `gf_autoJoinBalance`, no menu; a spectator without it
+  hits `:365`), stock autobalance is off (`scr_teambalance 0`), every mod spectator-write is stamped,
+  and the `_globallogic.gsc` `:587/:663/:692` spectator checks are read-only — so a real occurrence
+  would be a stampless engine write, and `gf_teamWatchHumans` now logs `needteam` + the last writer
+  stamp to prove it. **`_bot::gf_reclaimStrandedHumans`** (top of every boundary pass, after the watch)
+  re-seats any UNTRACED-stranded human onto the lighter side and prints `GF_RECLAIM`; gated by
+  **`gf_team_reclaim`** (default 1, bridge `reclaim_<0|1>`); intentional spectates are excluded via the
+  breadcrumbs (`gf_menuTeamChoice` → `user`; `gf_seqTeamMove`'s spectator branch → `moved`, covering the
+  bridge admin force; `scr_team_maxsize` overflow → `maxsize`; lock queue → `gf_seatQueued`; classified
+  by `_bot::gf_specReasonTag`). All diagnostics are `logPrint` → **`mods/mp_gunfight/logs/games_mp.log`**.
 - **RESOLVED — the `MAX_PACKET_USERCMDS` killcam spam is a CLIENT-side `cl_maxpackets` limit, self-fixable,
   cosmetic.** Proven live 2026-07-15: a client running `com_maxfps 237` / `cl_maxpackets 30` (stock) spat
   ~37 lines per round-end killcam; setting **`cl_maxpackets 100` on that client killed the spam outright**,
