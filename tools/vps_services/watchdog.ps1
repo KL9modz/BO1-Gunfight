@@ -53,6 +53,9 @@ param(
     [string]   $NotifyConfigPath = '',
     [string]   $CfgPath          = '',   # dedicated.cfg (for the rcon password used by map_rotate)
     [int]      $PanelPort        = 3000, # RCON panel loopback port (single rcon pacer)
+    [string]   $ModRootPath      = '',   # ...\storage\t5\mods\mp_gunfight (for log hygiene); derived if empty
+    [int]      $LogArchiveBudgetMB = 400,# per-base cap on the engine's rolled <log>.NNN archive files (live file untouched)
+    [int]      $LiveLogWarnMB    = 800,  # warn if a LIVE log grows past this (a flood dvar likely left on; restart rolls it)
     [switch]   $NoRemediate,             # detect + alert only; never kill/rotate (like the old behavior)
     [switch]   $WhatIf
 )
@@ -62,6 +65,9 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $StatePath)        { $StatePath        = Join-Path $scriptRoot 'watchdog_state.json' }
 if (-not $MaintenancePath)  { $MaintenancePath  = Join-Path $scriptRoot 'watchdog_maintenance.json' }
 if (-not $NotifyConfigPath) { $NotifyConfigPath = Join-Path (Split-Path -Parent $scriptRoot) 'notify\config.json' }
+# ...\mp_gunfight\tools\vps_services -> two parents up = ...\mp_gunfight (the mod root, where the
+# engine writes console_mp.log and, under logs\, games_mp.log).
+if (-not $ModRootPath)      { $ModRootPath      = Split-Path -Parent (Split-Path -Parent $scriptRoot) }
 if (-not $CfgPath) {
     # ...\storage\t5\mods\mp_gunfight\tools\vps_services -> four parents up = ...\storage\t5
     $st5 = $scriptRoot
@@ -72,6 +78,31 @@ if (-not $CfgPath) {
 function Log($msg) {
     $t = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     Write-Host "[$t] $msg"
+}
+
+# ---- log hygiene -------------------------------------------------------------
+# The engine appends to a single live log (games_mp.log via g_logSync 1; console_mp.log) and rolls
+# it to <base>.000, .001, ... when it hits its own size cap. Those rolled files are CLOSED (the
+# server has moved on), but NOTHING prunes them, so uptime alone - and much faster, a chatty
+# diagnostic dvar - grows the mods folder without bound (we found 1.2 GB of console_mp.log.NNN).
+# Prune the closed rolls to a per-base byte budget, newest-first. The LIVE file is NEVER touched
+# (the server holds its handle open; only a restart safely rolls it) - we just warn if it gets big.
+function Trim-EngineLogArchive($dir, $base, $budgetMB) {
+    if (-not (Test-Path $dir)) { return }
+    $rolls = Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue |
+             Where-Object { $_.Name -match ('^' + [regex]::Escape($base) + '\.\d+$') } |
+             Sort-Object LastWriteTime -Descending
+    if (-not $rolls) { return }
+    $budget = [long]$budgetMB * 1MB
+    $running = [long]0
+    foreach ($f in $rolls) {
+        $running += $f.Length
+        if ($running -le $budget) { continue }
+        $mb = [math]::Round($f.Length / 1MB, 1)
+        if ($WhatIf) { Log "would prune log archive $($f.Name) (${mb}MB, over ${budgetMB}MB budget)"; continue }
+        try { Remove-Item $f.FullName -Force -ErrorAction Stop; Log "pruned log archive $($f.Name) (${mb}MB)" }
+        catch { Log "prune FAILED $($f.Name): $($_.Exception.Message)" }
+    }
 }
 
 # ---- deploy maintenance window ------------------------------------------------
@@ -393,6 +424,22 @@ if ($health -and $health.roundStuck) {
         Send-Alert -title 'Gunfight VPS - match cycling again' -message 'Rounds are advancing again.' -priority 'default' -tags 'white_check_mark'
     }
     if (-not $WhatIf) { Set-Item-State 'match-stuck' $false $null }
+}
+
+# (4) LOG HYGIENE. Prune the engine's CLOSED rolled log archives to a per-base budget so a
+# diagnostic dvar left on (or plain uptime) can't fill the disk; the live handle is untouched.
+# This is what makes leaving GF_TEAMTRACE on - and flipping a flood dvar on for an investigation -
+# safe. Runs regardless of $anyProblem; it's independent of server health.
+$modLogsDir = Join-Path $ModRootPath 'logs'
+Trim-EngineLogArchive $modLogsDir  'games_mp.log'   $LogArchiveBudgetMB
+Trim-EngineLogArchive $ModRootPath 'console_mp.log' $LogArchiveBudgetMB
+foreach ($lp in @((Join-Path $modLogsDir 'games_mp.log'), (Join-Path $ModRootPath 'console_mp.log'))) {
+    if (Test-Path $lp) {
+        $liveMB = [math]::Round((Get-Item $lp).Length / 1MB, 0)
+        if ($liveMB -ge $LiveLogWarnMB) {
+            Log "LIVE log large: $(Split-Path -Leaf $lp) = ${liveMB}MB (only a server restart rolls it - check for a flood dvar left on, e.g. gf_debug_popup)"
+        }
+    }
 }
 
 if (-not $WhatIf) {

@@ -29,7 +29,7 @@ wins** takes the match.
   gate now parks any over-size bot at its spawn attempt and prints `GF_FILLGUARD: parked bot <name> …`.
   **Next occurrence: read `GF_TEAMTRACE` first** (see *Diagnostics* below) — it is built to answer
   exactly this and names the checkpoint interval the mis-seat happened in; `GF_FILLGUARD` then names
-  the bot and round. Both are `logPrint` → **`mods/mp_gunfight/games_mp.log`**, not console_mp.log.
+  the bot and round. Both are `logPrint` → **`mods/mp_gunfight/logs/games_mp.log`**, not console_mp.log.
   **Same untraced path also strands HUMANS (reported live on the VPS 2026-07-19):** a mid-round joiner
   takes a bot's spot, plays the round, then the NEXT round starts with their `pers["team"] ==
   "spectator"` — on a ranked server that hits `_globallogic_player.gsc:365` (team menu, no autoassign),
@@ -224,22 +224,32 @@ conclude a diagnostic never fired:
 
 | GSC call | Lands in | Use for |
 |---|---|---|
-| `logPrint()` | **`mods/mp_gunfight/games_mp.log`** | **every `GF_*` diagnostic** — this is the one stream |
+| `logPrint()` | **`mods/mp_gunfight/logs/games_mp.log`** | **every `GF_*` diagnostic** — this is the one stream |
 | `println()` | `mods/mp_gunfight/console_mp.log` | engine console; GSC **compile/runtime errors** surface here |
 | `logString()` | **nowhere** | never use ([[xp-scrxpscale-readonly-and-dead-score-path]]) |
 
-⚠ Both live in the **mod folder**, never `storage/t5/main/` and never `storage/t5/mods/mp_gunfight/logs/`
-(that `g_log` path is a decoy — it exists and is empty of `GF_` lines). ⚠ **One stream is the rule:**
-diagnostics split across two files cannot be correlated by timestamp, which defeats having them. The
-sole deliberate exception is the `GF_SECURITY` boot alarm, which writes **both** (red console warning
-for a human watching the console + a `logPrint` twin so it still greps with everything else).
-⚠ **`games_mp.log` has NO rotation on the VPS** — nothing in `watchdog.ps1` / `status_service.ps1` /
-`deploy.ps1` truncates it (deploy `/XF`-excludes it). Growth is bounded only by the engine's own
-`.000`–`.00N` roll, so a per-event log on a hot path is a real disk cost. That is why the per-death
-`GF_POPUP` line is dvar-gated OFF.
+⚠ **The two logs live in DIFFERENT folders on the VPS — verified live 2026-07-20** (the running config
+has `g_log "logs\games_mp.log"`, so the old "logs/ is a decoy" claim was stale and is retired):
+`logPrint`/`GF_*` land in **`mp_gunfight/logs/games_mp.log`** (the mod-root `games_mp.log` does **not**
+exist), while `println`/console lands in **`mp_gunfight/console_mp.log`** (mod root). Neither is in
+`storage/t5/main/`. ⚠ Grep `logs/games_mp.log` for GF_ lines — grepping the mod root finds nothing.
+⚠ **One stream is the rule:** diagnostics split across two files cannot be correlated by timestamp,
+which defeats having them. The sole deliberate exception is the `GF_SECURITY` boot alarm, which writes
+**both** (red console warning for a human watching the console + a `logPrint` twin so it still greps
+with everything else).
+⚠ **`games_mp.log`'s LIVE file has no rotation** — the server holds its handle open (`g_logSync 1`), so
+only a restart rolls it, and the engine's own `.000`–`.00N` roll then archives it. **`watchdog.ps1` now
+prunes those CLOSED `<log>.NNN` archives** to a per-base budget (`$LogArchiveBudgetMB`, default 400) for
+both `games_mp.log` and `console_mp.log`, and warns if a LIVE file passes `$LiveLogWarnMB` (800) — so a
+flood dvar left on can no longer fill the disk, but it will still bloat the *single live file* until the
+next restart. That is why the per-death `GF_POPUP` line stays dvar-gated **OFF** by default (`gf_debug_popup 0`):
+the pruning makes a *temporary* investigation safe, not permanent per-hit logging.
 
 **`GF_TEAMTRACE` — the team-write tracer** (`_gf_debug::gf_teamTrace`, dvar `gf_trace_teams`, default
-**1 = on**; `2` = also log attributed moves, `0` = off). Built to identify the untraced mis-seater
+**2 = on, full history**; `1` = untraced moves only, `0` = off). Level 2 also logs the *sanctioned*
+balancer's attributed moves — the level-1 blind spot that hid the human "moved to other team → forced
+to choose a team/class" case (a transient spectator flash GF_TEAMWATCH can't catch because it only fires
+on a strand still present at the NEXT boundary). Built to identify the untraced mis-seater
 behind both open team bugs. GSC cannot hook a field write, so it works by **difference**: every
 sanctioned writer of `pers["team"]` stamps a **single-use token** naming itself and its target
 (`_gf_rounds::gf_stampTeamWriter` — 8 sites: `seatjoin`, `quietset`, `maxsize`, `botquiet`, `bridge`,

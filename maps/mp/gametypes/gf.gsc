@@ -513,11 +513,14 @@ onStartGameType()
     if ( getDvar( "gf_debug_hud_pool" ) == "" )  setDvar( "gf_debug_hud_pool", "0" );
     if ( getDvar( "gf_debug_elem_probe" ) == "" ) setDvar( "gf_debug_elem_probe", "0" );
     if ( getDvar( "gf_debug_spawnyaw" ) == "" )  setDvar( "gf_debug_spawnyaw", "0" );
-    // Team-write tracer (GF_TEAMTRACE). Seeded to 1 = ON, unlike every other debug dvar here: it
-    // exists to catch the untraced mis-seater, which is rare and unreproducible on demand, so a
-    // default of 0 guarantees it is off for the one occurrence that mattered. Costs one roster diff
-    // at 3 checkpoints/round. 2 = also log attributed moves (full history), 0 = silence.
-    if ( getDvar( "gf_trace_teams" ) == "" )     setDvar( "gf_trace_teams", "1" );
+    // Team-write tracer (GF_TEAMTRACE). Seeded to 2 = FULL history, unlike every other debug dvar
+    // here: it exists to catch the untraced mis-seater, which is rare and unreproducible on demand,
+    // so anything less than always-on-with-full-history loses the one occurrence that mattered.
+    // Level 1 logs only untraced moves; 2 ALSO logs attributed moves (so the sanctioned balancer's
+    // moves are recorded too — the level-1 blind spot that hid the YooDyl "moved + choose team" case).
+    // Costs one roster diff at 3 checkpoints/round plus a few attributed-move lines; both event-driven,
+    // negligible on an unrotated log. 1 = untraced only, 0 = silence.
+    if ( getDvar( "gf_trace_teams" ) == "" )     setDvar( "gf_trace_teams", "2" );
     // Per-death score-share logging. Default 0 — highest-volume line in the mod, and games_mp.log
     // has no rotation on the VPS.
     if ( getDvar( "gf_debug_popup" ) == "" )     setDvar( "gf_debug_popup", "0" );

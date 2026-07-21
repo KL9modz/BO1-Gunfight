@@ -810,8 +810,10 @@ gf_logCuratedSpawnMiss( team )
 // player was already wrong before the first checkpoint of the match.
 //
 // Cost: one pass over <=14 clients at 3 checkpoints per round, no yields, no entity work, no HUD.
-// It cannot perturb what it measures. Default ON (1) — a diagnostic gated off by default is off on
-// the one run that needed it. Set gf_trace_teams 2 for the full move history, 0 to silence.
+// It cannot perturb what it measures. Default ON (2 = full move history) — a diagnostic gated off by
+// default is off on the one run that needed it, and level 1 hides the sanctioned balancer's own moves
+// (the level-1 blind spot behind the YooDyl "moved + choose team" case). Set gf_trace_teams 1 for
+// untraced-only, 0 to silence.
 gf_teamTrace( checkpoint )
 {
     mode = getDvarInt( "gf_trace_teams" );
