@@ -333,7 +333,7 @@ the calling function. Current graph: `gf.gsc` → `_gf_locations`/`_gf_rounds`/`
 ## How each system works today
 
 *(Present-tense architecture. File refs are `_gf_rounds.gsc` unless noted. Deep detail →
-`docs/REFERENCE.md`; incident depth → `[[memory]]`.)*
+`docs/REFERENCE.md`; incident depth → `docs/notes/` (a `[[slug]]` = `docs/notes/<slug>.md`).)*
 
 ### The `map_restart` rule (read first)
 SD round cycling calls `_globallogic::endGame` → **`map_restart(true)` between rounds**, which wipes
