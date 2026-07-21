@@ -44,6 +44,18 @@ basscar had left, 2 axis bots became legal, and nothing ever fired.)
 killable and the bot is retired *this* round); **mid-round survivor → deferred mark** (unchanged,
 correct).
 
+## Second lifeless-bot mechanism (2026-07-20, `mp_nuked` round 7 — AFTER the fixes above shipped)
+
+A human spectated **mid-killcam, after the boundary pass had already planned the next round** — so
+the pass never saw the seat open. At the re-begin, an **unstamped stock-path team switch** moved a
+bot cross-team to fill the hole (`UNTRACED bot BLMercado axis -> allies … state dead` +
+`K;…;MOD_SUICIDE`): stock `changeTeam` `suicide()`s even a `"dead"` client, burning the **fresh
+life the re-begin had just dealt** → seated but lifeless all round. `gf_botQuietSetTeam`'s restore
+can't see a stock write, so the net moved to the one door every spawn passes through: **the
+maySpawn hook restores any BOT's lives at pre-spawn during the PREMATCH** (the round hasn't
+started; a consumed life there is always pre-round suicide debris). Mid-displacement/park bots are
+excluded (their suicide IS the retirement); humans untouched.
+
 ## Rules to keep
 
 - **`parkPending` is only valid on a client whose next spawn is still ahead of it this cycle.**

@@ -1101,6 +1101,23 @@ gf_lobbyMaySpawn()
         }
     }
 
+    // A BOT reaching pre-spawn during the PREMATCH always gets its life back. The round hasn't
+    // started, so a consumed life here is always debris from a pre-round suicide the one-life rule
+    // was never meant to count — the observed path is a STOCK re-begin team switch, whose changeTeam
+    // suicide()s even a "dead" client and so burns the fresh life the re-begin just dealt (live
+    // repro: BLMercado, mp_nuked round 7 2026-07-20 — a human spectated mid-killcam AFTER the
+    // boundary pass planned the round, stock moved the bot cross-team at re-begin to fill the hole,
+    // the switch's suicide left it seated but lifeless, dead on the scoreboard all round). This is
+    // the catch-all sibling of gf_botQuietSetTeam's restore, which only covers the mod's own
+    // redeploys. Mid-displacement/park bots are excluded (their suicide is the retirement itself);
+    // humans are untouched (their prematch moves restore explicitly via gf_seqTeamMove).
+    if ( self istestclient() && !( self isdemoclient() )
+        && !isDefined( self.gf_displacePending )
+        && !( isDefined( self.pers["gf_parkPending"] ) && self.pers["gf_parkPending"] )
+        && isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod
+        && isDefined( level.numLives ) && level.numLives > 0 )
+        self.pers["lives"] = level.numLives;
+
     // FILL DISCIPLINE — the spawn-gate half of the reconciler's size policy, enforced at the one
     // door every client walks through. Team size = max(bigger human side, gf_fill_n), the exact
     // formula the boundary pass pads to (the pass only PLANS; this gate ENFORCES). Inert at
