@@ -1162,7 +1162,13 @@ async function bridgeSvSet(dv,id){
   const el=g(id);
   const v=el.type==='checkbox'?(el.checked?'1':'0'):el.value;
   const ok=await bridge(`svset_${dv}=${v}`,`${dv} = ${v}`);
-  if(ok){ _svOverrides['gf_'+dv]=v; toast(dv+'='+v+' (override)','ok'); actLog(dv+' → '+v+' (override on the Difficulty preset)','ok'); }
+  if(ok){
+    _svOverrides['gf_'+dv]=v;
+    // GSC auto-switches the selector: tuning an sv_bot* override IS customizing (the write would
+    // be invisible under a stock preset). Mirror that in the highlight.
+    if(dv.indexOf('sv_bot')===0) hlBotDiff('custom');
+    toast(dv+'='+v+' (custom difficulty)','ok'); actLog(dv+' → '+v+' (custom-difficulty override)','ok');
+  }
   return ok;
 }
 // Set two dvars to the same value in one chained send (used by rows with an `also:` dvar,
@@ -1429,16 +1435,16 @@ async function botTeam(act,team){
 // Hardened / Veteran; the dvar's CLOSED enum domain stays easy/normal/hard/fu — a fifth name is
 // domain-refused, so a "custom" difficulty is a baseline preset + gf_sv_* overrides, never a new
 // enum value.
-const BOTDIFF_NAMES={easy:'Recruit',normal:'Regular',hard:'Hardened',fu:'Veteran'};
+const BOTDIFF_NAMES={easy:'Recruit',normal:'Regular',hard:'Hardened',fu:'Veteran',custom:'Custom (Veteran base + overrides)'};
 async function botDiff(d){
   const ok=await bridge(`botdiff_${d}`);
   if(ok){
     hlBotDiff(d);
-    const nm=(BOTDIFF_NAMES[d]||d)+' ('+d+')';
+    const nm=d==='custom'?BOTDIFF_NAMES.custom:(BOTDIFF_NAMES[d]||d)+' ('+d+')';
     actLog('Bot difficulty: '+nm,'ok');toast('Bot difficulty: '+nm,'info');
   }
 }
-function hlBotDiff(d){ ['easy','normal','hard','fu'].forEach(k=>g('d-'+k).classList.toggle('sel',k===d)); }
+function hlBotDiff(d){ ['easy','normal','hard','fu','custom'].forEach(k=>{const el=g('d-'+k);if(el)el.classList.toggle('sel',k===d);}); }
 
 // Legacy vision keys the GSC still honours (_gf_rounds::gf_visionSetForKey) but the dropdown no
 // longer offers — fold them onto the option that renders the same set, so a server carrying an old
@@ -1465,9 +1471,12 @@ function hlVisionSet(v){
 async function readBridgeState(fresh){
   if(!live) return;
   try{
-    const r=await fetchDvars(['bot_difficulty','gf_vis_vision'],fresh);
+    const r=await fetchDvars(['bot_difficulty','gf_vis_vision','gf_bot_difficulty'],fresh);
     if(!r||!r.ok) return;
-    hlBotDiff(String(r.values['bot_difficulty']||'').trim().toLowerCase());
+    // The CUSTOM selector wins the highlight: its base preset underneath is fu, so highlighting
+    // off bot_difficulty alone would light Veteran while the overrides are actually in charge.
+    const sel=String(r.values['gf_bot_difficulty']||'').trim().toLowerCase();
+    hlBotDiff(sel==='custom'?'custom':String(r.values['bot_difficulty']||'').trim().toLowerCase());
     hlVisionSet(r.values['gf_vis_vision']);
   }catch(_){}
 }
@@ -2074,11 +2083,15 @@ const SRV_SECTIONS = [
     { n:'scr_disable_cac',        lbl:'Disable Class Select', type:'tog', def:'1', tip:'scr_disable_cac\nDisable Create-a-Class; players auto-spawn with the default class.' },
     { n:'scr_disable_weapondrop', lbl:'Disable Weapon Drop',  type:'tog', def:'1', tip:'scr_disable_weapondrop\n1 = weapons do not drop on death.' },
   ]},
-  // BOT TUNING — these are OVERRIDES ON TOP OF the Difficulty preset, not independent settings.
+  // BOT TUNING — these rows DEFINE the CUSTOM difficulty (gf_bot_difficulty "custom" = Veteran/fu
+  // base + these overrides). They apply ONLY while CUSTOM is selected: the four stock presets run
+  // their pure designed values (picking one writes the "stock" sentinel and the GSC apply loop
+  // skips every sv_bot* mirror). Editing any slider auto-switches the server to CUSTOM — a write
+  // would otherwise be invisible under a stock preset.
   // _bot.gsc's diffBots() loop re-applies bot_set_difficulty() every 1.5s, which rewrites the WHOLE
   // sv_bot* set — so before 2026-07-11 every slider here was silently reverted within a second and a
   // half (the real reason they "did nothing"). diffBots now calls gf_bridgeApplyServerDvars() right
-  // after the preset, in the SAME frame, so Difficulty = baseline and a tuned slider sticks.
+  // after the preset, in the SAME frame, so a tuned slider sticks (under CUSTOM).
   //
   // ⚠ Only the dvars in _gf_bridge::gf_bridgeServerDvarList() (the svset:true rows below) are
   // overridable at all — it is both the allowlist and the mirror list. Any OTHER sv_bot* the preset

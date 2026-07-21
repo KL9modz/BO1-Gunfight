@@ -151,6 +151,14 @@ gf_bridgeInit()
     setDvar( "gf_roster", "" );
     setDvar( "gf_perkdump", "" );   // pperkdump_<num> result; seeded so an rcon read never echoes "Unknown cmd"
 
+    // CUSTOM-difficulty selector. "custom" = Veteran(fu) base + the gf_sv_* overrides applied on
+    // top; "stock" = the four presets run PURE designed values (overrides gated off). The GF
+    // shipped tuning IS custom, so an empty (never-set) selector seeds to it. ⚠ Stock is the
+    // explicit sentinel "stock", never the empty string — a "" stock state would be flipped back
+    // to custom by this seed every round.
+    if ( getDvar( "gf_bot_difficulty" ) == "" )
+        setDvar( "gf_bot_difficulty", "custom" );
+
     // Copy every mirrored cheat-protected server dvar (gf_sv_botFov -> sv_botFov, ...) onto the real
     // dvar from GSC, where the sv_cheats gate does not apply. This runs EVERY round, but the load-
     // bearing one is the first round after a full server restart: dedicated.cfg is executed as
@@ -348,6 +356,10 @@ gf_bridgeTelemetry()
         // preset word with no colons, so it appends cleanly to the index-based parse. _bot::diffBots
         // writes bot_difficulty back from the preset every 1.5s, so this is always populated.
         diff = getDvar( "bot_difficulty" );
+        // The panel's difficulty row highlights off this field — report the CUSTOM selection as
+        // its own value (the base preset underneath it is fu, which would light Veteran and lie).
+        if ( getDvar( "gf_bot_difficulty" ) == "custom" )
+            diff = "custom";
 
         setDvar( "gf_state", wA + ":" + wX + ":" + rn + ":" + aA + ":" + aX + ":" + level.gameType + ":" + hold + ":" + fillN + ":" + pAll + ":" + pAxi + ":" + parked + ":" + diff );
         setDvar( "gf_roster", gf_bridgeRosterString() );
@@ -399,10 +411,19 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "resume" ) { gf_bridgeResume(); return; }
     if ( cmd == "lobbystart" ) { gf_bridgeLobbyStart(); return; }
 
-    if ( cmd == "botdiff_easy"   ) { maps\mp\gametypes\_bot::bot_set_difficulty( "easy"   ); gf_bridgeNotify( "^2Bot: Easy"   ); return; }
-    if ( cmd == "botdiff_normal" ) { maps\mp\gametypes\_bot::bot_set_difficulty( "normal" ); gf_bridgeNotify( "^2Bot: Normal" ); return; }
-    if ( cmd == "botdiff_hard"   ) { maps\mp\gametypes\_bot::bot_set_difficulty( "hard"   ); gf_bridgeNotify( "^1Bot: Hard"   ); return; }
-    if ( cmd == "botdiff_fu"     ) { maps\mp\gametypes\_bot::bot_set_difficulty( "fu"     ); gf_bridgeNotify( "^1Bot: FU"     ); return; }
+    // The four stock presets write the "stock" sentinel so they run PURE designed values — the
+    // gf_sv_* overrides apply only under "custom" (gf_bridgeApplyServerDvars gates on it). Before
+    // this, an override contaminated whichever preset was selected: "Veteran" ran the tuned 12/10
+    // instead of its designed 14/14.
+    if ( cmd == "botdiff_easy"   ) { setDvar( "gf_bot_difficulty", "stock" ); maps\mp\gametypes\_bot::bot_set_difficulty( "easy"   ); gf_bridgeNotify( "^2Bot: Recruit (easy)"   ); return; }
+    if ( cmd == "botdiff_normal" ) { setDvar( "gf_bot_difficulty", "stock" ); maps\mp\gametypes\_bot::bot_set_difficulty( "normal" ); gf_bridgeNotify( "^2Bot: Regular (normal)" ); return; }
+    if ( cmd == "botdiff_hard"   ) { setDvar( "gf_bot_difficulty", "stock" ); maps\mp\gametypes\_bot::bot_set_difficulty( "hard"   ); gf_bridgeNotify( "^1Bot: Hardened (hard)"  ); return; }
+    if ( cmd == "botdiff_fu"     ) { setDvar( "gf_bot_difficulty", "stock" ); maps\mp\gametypes\_bot::bot_set_difficulty( "fu"     ); gf_bridgeNotify( "^1Bot: Veteran (fu)"     ); return; }
+    // CUSTOM = the Veteran (fu) table as its base — incl. the 160 FOV, which IS the engine domain
+    // max (sv_botFov caps at 160; "360 vision" is not expressible) — with every non-empty gf_sv_*
+    // override applied on top (shipped: yaw hip 12 / ADS 10). Apply immediately, not at the next
+    // diffBots tick.
+    if ( cmd == "botdiff_custom" ) { setDvar( "gf_bot_difficulty", "custom" ); maps\mp\gametypes\_bot::bot_set_difficulty( "fu" ); gf_bridgeApplyServerDvars(); gf_bridgeNotify( "^1Bot: Custom (Veteran base + overrides)" ); return; }
 
     if ( cmd == "botadd"         ) { gf_bridgeAddBot(); return; }
     if ( cmd == "botadd_allies"  ) { gf_bridgeAddBotToTeam( "allies" ); return; }
@@ -925,6 +946,12 @@ gf_bridgeServerDvarSet( arg )
         return;
     }
 
+    // Tuning an sv_bot* override IS customizing: flip the selector so the write takes effect
+    // immediately — and so the stock preset the admin may have been on stays pure for whoever
+    // selects it next (overrides only ever apply under "custom").
+    if ( isSubStr( name, "sv_bot" ) )
+        setDvar( "gf_bot_difficulty", "custom" );
+
     setDvar( name, value );
 
     // Mirror into a plain (non-cheat) gf_* dvar so the value can PERSIST. dedicated.cfg is executed
@@ -943,9 +970,15 @@ gf_bridgeServerDvarSet( arg )
 // the engine default alone.
 gf_bridgeApplyServerDvars()
 {
+    // The sv_bot* mirrors are the CUSTOM difficulty's DEFINITION — they apply only while the
+    // selector says custom, so a stock preset selection (gf_bot_difficulty "stock") runs PURE
+    // designed values. timescale is not bot tuning and always applies.
+    custom = ( getDvar( "gf_bot_difficulty" ) == "custom" );
     names = gf_bridgeServerDvarList();
     for ( i = 0; i < names.size; i++ )
     {
+        if ( !custom && isSubStr( names[i], "sv_bot" ) )
+            continue;
         v = getDvar( "gf_" + names[i] );
         if ( v == "" )
             continue;

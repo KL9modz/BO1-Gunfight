@@ -12,6 +12,7 @@ memory folder as a second copy — it drifts ([[site-css-js-cache-bust-version-q
 
 ## Working rules (read first)
 - [read-the-server-not-the-file](read-the-server-not-the-file.md) — a cfg on disk is an INTENTION; the running process is REALITY. Seeds are if-empty and cfg execs FIRST, so a cfg line restating a default silently PINS it. cfg = deviations only.
+- [local-launcher-no-exec-dedicated-cfg](local-launcher-no-exec-dedicated-cfg.md) — the LAPTOP's dedicated server is launcher-started with NO `+exec dedicated.cfg`, so that file (and the panel's 💾 Save, which writes it) is decoration locally — only `seta`-archived dvars survive a local restart. VPS unaffected (its bat execs the cfg).
 - [cheat-protection-is-client-side-rcon-can-set](cheat-protection-is-client-side-rcon-can-set.md) — the "is cheat protected" boot spam is a CLIENT exec'ing default_xboxlive.cfg, not a server refusing you. Only cheat-protected CLIENT dvars (r_*) and archived ones (cg_fov) are truly unreachable.
 - [engine-dvar-defaults-from-log-dump](engine-dvar-defaults-from-log-dump.md) — the console_mp.log dvar dump prints REGISTERED DEFAULTS, never live values. `Domain is any text` = a cfg-CREATED dvar → a `set` on a name the engine never registered is a silent PLACEBO.
 - [perk-multiplier-defaults-are-the-effect](perk-multiplier-defaults-are-the-effect.md) — 0.5 = half time, and that default IS the perk. `1.0` is NOT stock, it's the WORST value. Domains CAP AT 1 → a slider offering >1 pushes values the server REJECTS. READ THE DOMAIN before calling a dvar inert.
