@@ -1042,9 +1042,38 @@ gf_lobbyMaySpawn()
     // through, which is the same property the fill-discipline gate relies on.
     maps\mp\gametypes\_gf_debug::gf_teamTrace( "pre-spawn" );
 
+    // Ordered guard stages (decomposed 2026-07-22; each helper carries its original comment).
+    // A gf_maySpawn_* GATE returns the maySpawn verdict for its one concern — false = deny this
+    // spawn now (the engine then routes the client to spawnSpectator); a mutate-only stage never
+    // denies and is called plainly. ORDER IS LOAD-BEARING: the admin pteam consume sits AFTER the
+    // balancer's movePending so a same-round admin move wins, and the fill guard runs before the
+    // late-spawn admit (a parked bot must never reach the admit).
+    if ( !self gf_maySpawn_lobbyHold() )
+        return false;
+    if ( !self gf_maySpawn_parkPending() )
+        return false;
+    self gf_maySpawn_movePending();
+    if ( !self gf_maySpawn_adminMove() )
+        return false;
+    self gf_maySpawn_prematchBotLives();
+    if ( !self gf_maySpawn_fillGuard() )
+        return false;
+    self gf_maySpawn_lateSpawn();
+
+    return true;
+}
+
+// ─── maySpawn stage: restart-lobby hold (false = every spawn becomes a spectator) ──────
+gf_maySpawn_lobbyHold()
+{
     if ( isDefined( level.gf_lobbyRestartHold ) && level.gf_lobbyRestartHold )
         return false;
+    return true;
+}
 
+// ─── maySpawn stage: reconciler surplus-bot park ───────────────────────────────────────
+gf_maySpawn_parkPending()
+{
     // Dynamic-fill surplus trim (driven by the dev-only bot reconciler; inert without it since
     // nothing else sets the mark). When a human joins a team already at the per-team fill target,
     // the reconciler marks the displaced bot pers["gf_parkPending"]; here — the pre-spawn window,
@@ -1058,7 +1087,12 @@ gf_lobbyMaySpawn()
         self gf_setTeamFields( "parkpending", "spectator" );
         return false;
     }
+    return true;
+}
 
+// ─── maySpawn stage: balancer deferred human move (never denies) ───────────────────────
+gf_maySpawn_movePending()
+{
     // Deferred team move (human balancing). The boundary reconciler cannot quietly move a player
     // who was still ALIVE at the boundary (a round survivor in the killcam), so it marks them
     // pers["gf_movePending"] instead and the move lands HERE — the pre-spawn window of their next
@@ -1077,7 +1111,11 @@ gf_lobbyMaySpawn()
             self.pers["savedmodel"] = undefined;
         }
     }
+}
 
+// ─── maySpawn stage: bridge pteam_ deferred ADMIN move ─────────────────────────────────
+gf_maySpawn_adminMove()
+{
     // Deferred ADMIN team move (bridge pteam_ "next round"). Consumed HERE — the same pre-spawn
     // mechanism as gf_movePending above — because the old apply (a spawned_player watcher in
     // _gf_bridge) ran DURING the re-begin spawn wave: any player's spawn could trigger it while the
@@ -1108,7 +1146,12 @@ gf_lobbyMaySpawn()
             self.pers["savedmodel"] = undefined;
         }
     }
+    return true;
+}
 
+// ─── maySpawn stage: prematch bot lives-restore net (never denies) ─────────────────────
+gf_maySpawn_prematchBotLives()
+{
     // A BOT reaching pre-spawn during the PREMATCH always gets its life back. The round hasn't
     // started, so a consumed life here is always debris from a pre-round suicide the one-life rule
     // was never meant to count — the observed path is a STOCK re-begin team switch, whose changeTeam
@@ -1125,7 +1168,11 @@ gf_lobbyMaySpawn()
         && isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod
         && isDefined( level.numLives ) && level.numLives > 0 )
         self.pers["lives"] = level.numLives;
+}
 
+// ─── maySpawn stage: fill discipline (bot park / human seat-priority displace) ─────────
+gf_maySpawn_fillGuard()
+{
     // FILL DISCIPLINE — the spawn-gate half of the reconciler's size policy, enforced at the one
     // door every client walks through. Team size = max(bigger human side, gf_fill_n), the exact
     // formula the boundary pass pads to (the pass only PLANS; this gate ENFORCES). Inert at
@@ -1165,7 +1212,12 @@ gf_lobbyMaySpawn()
             self thread gf_displaceBotForHuman( self.pers["team"] );
         }
     }
+    return true;
+}
 
+// ─── maySpawn stage: mid-round late-spawn admit (never denies) ─────────────────────────
+gf_maySpawn_lateSpawn()
+{
     // LATE SPAWN — admit a first spawn into a LIVE round (mid-round joiners, admin force moves,
     // spectators picking a team) while their team still has >=1 alive, it isn't overtime, and the
     // spawn preserves the round's team size (gf_lateSpawnAllowed: fill a gap, or displace a bot).
@@ -1188,8 +1240,6 @@ gf_lobbyMaySpawn()
     {
         self.hasSpawned = true;
     }
-
-    return true;
 }
 
 // Two ways into a live round, and never a third — the round's team SIZE is preserved either way:
