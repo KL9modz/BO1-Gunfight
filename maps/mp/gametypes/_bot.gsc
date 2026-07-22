@@ -1099,117 +1099,127 @@ diffBots()
 */
 bot_set_difficulty( difficulty )
 {
-	if ( difficulty == "fu" )
-	{
-		SetDvar( "sv_botMinDeathTime",		"250" );
-		SetDvar( "sv_botMaxDeathTime",		"500" );
-		SetDvar( "sv_botMinFireTime",		"100" );
-		SetDvar( "sv_botMaxFireTime",		"300" );
-		SetDvar( "sv_botYawSpeed",			"14" );
-		SetDvar( "sv_botYawSpeedAds",		"14" );
-		SetDvar( "sv_botPitchUp",			"-5" );
-		SetDvar( "sv_botPitchDown",			"10" );
-		SetDvar( "sv_botFov",				"160" );
-		SetDvar( "sv_botMinAdsTime",		"3000" );
-		SetDvar( "sv_botMaxAdsTime",		"5000" );
-		SetDvar( "sv_botMinCrouchTime",		"100" );
-		SetDvar( "sv_botMaxCrouchTime",		"400" );
-		SetDvar( "sv_botTargetLeadBias",	"2" );
-		SetDvar( "sv_botMinReactionTime",	"30" );
-		SetDvar( "sv_botMaxReactionTime",	"100" );
-		SetDvar( "sv_botStrafeChance",		"1" );
-		SetDvar( "sv_botMinStrafeTime",		"3000" );
-		SetDvar( "sv_botMaxStrafeTime",		"6000" );
-		SetDvar( "scr_help_dist",			"512" );
-		SetDvar( "sv_botAllowGrenades",		"1"	);
-		SetDvar( "sv_botMinGrenadeTime",	"1500" );
-		SetDvar( "sv_botMaxGrenadeTime",	"4000" );
-		SetDvar( "sv_botSprintDistance",	"512"	);
-		SetDvar( "sv_botMeleeDist",			"80" );
-	}
-	else if ( difficulty == "hard" )
-	{
-		SetDvar( "sv_botMinDeathTime",		"250" );
-		SetDvar( "sv_botMaxDeathTime",		"500" );
-		SetDvar( "sv_botMinFireTime",		"400" );
-		SetDvar( "sv_botMaxFireTime",		"600" );
-		SetDvar( "sv_botYawSpeed",			"8" );
-		SetDvar( "sv_botYawSpeedAds",		"10" );
-		SetDvar( "sv_botPitchUp",			"-5" );
-		SetDvar( "sv_botPitchDown",			"10" );
-		SetDvar( "sv_botFov",				"100" );
-		SetDvar( "sv_botMinAdsTime",		"3000" );
-		SetDvar( "sv_botMaxAdsTime",		"5000" );
-		SetDvar( "sv_botMinCrouchTime",		"100" );
-		SetDvar( "sv_botMaxCrouchTime",		"400" );
-		SetDvar( "sv_botTargetLeadBias",	"2" );
-		SetDvar( "sv_botMinReactionTime",	"400" );
-		SetDvar( "sv_botMaxReactionTime",	"700" );
-		SetDvar( "sv_botStrafeChance",		"0.9" );
-		SetDvar( "sv_botMinStrafeTime",		"3000" );
-		SetDvar( "sv_botMaxStrafeTime",		"6000" );
-		SetDvar( "scr_help_dist",			"384" );
-		SetDvar( "sv_botAllowGrenades",		"1"	);
-		SetDvar( "sv_botMinGrenadeTime",	"1500" );
-		SetDvar( "sv_botMaxGrenadeTime",	"4000" );
-		SetDvar( "sv_botSprintDistance",	"512"	);
-		SetDvar( "sv_botMeleeDist",			"80" );
-	}
-	else if ( difficulty == "easy" )
-	{
-		SetDvar( "sv_botMinDeathTime",		"1000" );
-		SetDvar( "sv_botMaxDeathTime",		"2000" );
-		SetDvar( "sv_botMinFireTime",		"900" );
-		SetDvar( "sv_botMaxFireTime",		"1000" );
-		SetDvar( "sv_botYawSpeed",			"2" );
-		SetDvar( "sv_botYawSpeedAds",		"2.5" );
-		SetDvar( "sv_botPitchUp",			"-20" );
-		SetDvar( "sv_botPitchDown",			"40" );
-		SetDvar( "sv_botFov",				"50" );
-		SetDvar( "sv_botMinAdsTime",		"3000" );
-		SetDvar( "sv_botMaxAdsTime",		"5000" );
-		SetDvar( "sv_botMinCrouchTime",		"4000" );
-		SetDvar( "sv_botMaxCrouchTime",		"6000" );
-		SetDvar( "sv_botTargetLeadBias",	"8" );
-		SetDvar( "sv_botMinReactionTime",	"1200" );
-		SetDvar( "sv_botMaxReactionTime",	"1600" );
-		SetDvar( "sv_botStrafeChance",		"0.1" );
-		SetDvar( "sv_botMinStrafeTime",		"3000" );
-		SetDvar( "sv_botMaxStrafeTime",		"6000" );
-		SetDvar( "scr_help_dist",			"256" );
-		SetDvar( "sv_botAllowGrenades",		"0"	);
-		SetDvar( "sv_botSprintDistance",	"1024"	);
-		SetDvar( "sv_botMeleeDist",			"40" );
-	}
-	else // 'normal' difficulty
-	{
-		SetDvar( "sv_botMinDeathTime",		"500" );
-		SetDvar( "sv_botMaxDeathTime",		"1000" );
-		SetDvar( "sv_botMinFireTime",		"600" );
-		SetDvar( "sv_botMaxFireTime",		"800" );
-		SetDvar( "sv_botYawSpeed",			"4" );
-		SetDvar( "sv_botYawSpeedAds",		"5" );
-		SetDvar( "sv_botPitchUp",			"-10" );
-		SetDvar( "sv_botPitchDown",			"20" );
-		SetDvar( "sv_botFov",				"70" );
-		SetDvar( "sv_botMinAdsTime",		"3000" );
-		SetDvar( "sv_botMaxAdsTime",		"5000" );
-		SetDvar( "sv_botMinCrouchTime",		"2000" );
-		SetDvar( "sv_botMaxCrouchTime",		"4000" );
-		SetDvar( "sv_botTargetLeadBias",	"4" );
-		SetDvar( "sv_botMinReactionTime",	"800" );
-		SetDvar( "sv_botMaxReactionTime",	"1200" );
-		SetDvar( "sv_botStrafeChance",		"0.6" );
-		SetDvar( "sv_botMinStrafeTime",		"3000" );
-		SetDvar( "sv_botMaxStrafeTime",		"6000" );
-		SetDvar( "scr_help_dist",			"256" );
-		SetDvar( "sv_botAllowGrenades",		"1"	);
-		SetDvar( "sv_botMinGrenadeTime",	"1500" );
-		SetDvar( "sv_botMaxGrenadeTime",	"4000" );
-		SetDvar( "sv_botSprintDistance",	"512"	);
-		SetDvar( "sv_botMeleeDist",			"80" );
+	// Per-difficulty sv_bot* preset table — verified 1:1 against the prior fu/hard/easy/normal
+	// branches. One data table + one apply loop replaces four ~25-line if-branches. A difficulty
+	// the table doesn't know falls back to "normal" (exactly the old `else`). Iteration order is
+	// irrelevant — every entry is an independent SetDvar with no cross-dependency.
+	// ⚠ easy deliberately OMITS sv_botMin/MaxGrenadeTime: it forces sv_botAllowGrenades 0, so the
+	// grenade times never apply. Do NOT add them — that would be a behavior change.
+	presets = [];
+
+	presets["fu"] = [];
+	presets["fu"]["sv_botMinDeathTime"]    = "250";
+	presets["fu"]["sv_botMaxDeathTime"]    = "500";
+	presets["fu"]["sv_botMinFireTime"]     = "100";
+	presets["fu"]["sv_botMaxFireTime"]     = "300";
+	presets["fu"]["sv_botYawSpeed"]        = "14";
+	presets["fu"]["sv_botYawSpeedAds"]     = "14";
+	presets["fu"]["sv_botPitchUp"]         = "-5";
+	presets["fu"]["sv_botPitchDown"]       = "10";
+	presets["fu"]["sv_botFov"]             = "160";
+	presets["fu"]["sv_botMinAdsTime"]      = "3000";
+	presets["fu"]["sv_botMaxAdsTime"]      = "5000";
+	presets["fu"]["sv_botMinCrouchTime"]   = "100";
+	presets["fu"]["sv_botMaxCrouchTime"]   = "400";
+	presets["fu"]["sv_botTargetLeadBias"]  = "2";
+	presets["fu"]["sv_botMinReactionTime"] = "30";
+	presets["fu"]["sv_botMaxReactionTime"] = "100";
+	presets["fu"]["sv_botStrafeChance"]    = "1";
+	presets["fu"]["sv_botMinStrafeTime"]   = "3000";
+	presets["fu"]["sv_botMaxStrafeTime"]   = "6000";
+	presets["fu"]["scr_help_dist"]         = "512";
+	presets["fu"]["sv_botAllowGrenades"]   = "1";
+	presets["fu"]["sv_botMinGrenadeTime"]  = "1500";
+	presets["fu"]["sv_botMaxGrenadeTime"]  = "4000";
+	presets["fu"]["sv_botSprintDistance"]  = "512";
+	presets["fu"]["sv_botMeleeDist"]       = "80";
+
+	presets["hard"] = [];
+	presets["hard"]["sv_botMinDeathTime"]    = "250";
+	presets["hard"]["sv_botMaxDeathTime"]    = "500";
+	presets["hard"]["sv_botMinFireTime"]     = "400";
+	presets["hard"]["sv_botMaxFireTime"]     = "600";
+	presets["hard"]["sv_botYawSpeed"]        = "8";
+	presets["hard"]["sv_botYawSpeedAds"]     = "10";
+	presets["hard"]["sv_botPitchUp"]         = "-5";
+	presets["hard"]["sv_botPitchDown"]       = "10";
+	presets["hard"]["sv_botFov"]             = "100";
+	presets["hard"]["sv_botMinAdsTime"]      = "3000";
+	presets["hard"]["sv_botMaxAdsTime"]      = "5000";
+	presets["hard"]["sv_botMinCrouchTime"]   = "100";
+	presets["hard"]["sv_botMaxCrouchTime"]   = "400";
+	presets["hard"]["sv_botTargetLeadBias"]  = "2";
+	presets["hard"]["sv_botMinReactionTime"] = "400";
+	presets["hard"]["sv_botMaxReactionTime"] = "700";
+	presets["hard"]["sv_botStrafeChance"]    = "0.9";
+	presets["hard"]["sv_botMinStrafeTime"]   = "3000";
+	presets["hard"]["sv_botMaxStrafeTime"]   = "6000";
+	presets["hard"]["scr_help_dist"]         = "384";
+	presets["hard"]["sv_botAllowGrenades"]   = "1";
+	presets["hard"]["sv_botMinGrenadeTime"]  = "1500";
+	presets["hard"]["sv_botMaxGrenadeTime"]  = "4000";
+	presets["hard"]["sv_botSprintDistance"]  = "512";
+	presets["hard"]["sv_botMeleeDist"]       = "80";
+
+	presets["easy"] = [];
+	presets["easy"]["sv_botMinDeathTime"]    = "1000";
+	presets["easy"]["sv_botMaxDeathTime"]    = "2000";
+	presets["easy"]["sv_botMinFireTime"]     = "900";
+	presets["easy"]["sv_botMaxFireTime"]     = "1000";
+	presets["easy"]["sv_botYawSpeed"]        = "2";
+	presets["easy"]["sv_botYawSpeedAds"]     = "2.5";
+	presets["easy"]["sv_botPitchUp"]         = "-20";
+	presets["easy"]["sv_botPitchDown"]       = "40";
+	presets["easy"]["sv_botFov"]             = "50";
+	presets["easy"]["sv_botMinAdsTime"]      = "3000";
+	presets["easy"]["sv_botMaxAdsTime"]      = "5000";
+	presets["easy"]["sv_botMinCrouchTime"]   = "4000";
+	presets["easy"]["sv_botMaxCrouchTime"]   = "6000";
+	presets["easy"]["sv_botTargetLeadBias"]  = "8";
+	presets["easy"]["sv_botMinReactionTime"] = "1200";
+	presets["easy"]["sv_botMaxReactionTime"] = "1600";
+	presets["easy"]["sv_botStrafeChance"]    = "0.1";
+	presets["easy"]["sv_botMinStrafeTime"]   = "3000";
+	presets["easy"]["sv_botMaxStrafeTime"]   = "6000";
+	presets["easy"]["scr_help_dist"]         = "256";
+	presets["easy"]["sv_botAllowGrenades"]   = "0";
+	presets["easy"]["sv_botSprintDistance"]  = "1024";
+	presets["easy"]["sv_botMeleeDist"]       = "40";
+
+	presets["normal"] = [];
+	presets["normal"]["sv_botMinDeathTime"]    = "500";
+	presets["normal"]["sv_botMaxDeathTime"]    = "1000";
+	presets["normal"]["sv_botMinFireTime"]     = "600";
+	presets["normal"]["sv_botMaxFireTime"]     = "800";
+	presets["normal"]["sv_botYawSpeed"]        = "4";
+	presets["normal"]["sv_botYawSpeedAds"]     = "5";
+	presets["normal"]["sv_botPitchUp"]         = "-10";
+	presets["normal"]["sv_botPitchDown"]       = "20";
+	presets["normal"]["sv_botFov"]             = "70";
+	presets["normal"]["sv_botMinAdsTime"]      = "3000";
+	presets["normal"]["sv_botMaxAdsTime"]      = "5000";
+	presets["normal"]["sv_botMinCrouchTime"]   = "2000";
+	presets["normal"]["sv_botMaxCrouchTime"]   = "4000";
+	presets["normal"]["sv_botTargetLeadBias"]  = "4";
+	presets["normal"]["sv_botMinReactionTime"] = "800";
+	presets["normal"]["sv_botMaxReactionTime"] = "1200";
+	presets["normal"]["sv_botStrafeChance"]    = "0.6";
+	presets["normal"]["sv_botMinStrafeTime"]   = "3000";
+	presets["normal"]["sv_botMaxStrafeTime"]   = "6000";
+	presets["normal"]["scr_help_dist"]         = "256";
+	presets["normal"]["sv_botAllowGrenades"]   = "1";
+	presets["normal"]["sv_botMinGrenadeTime"]  = "1500";
+	presets["normal"]["sv_botMaxGrenadeTime"]  = "4000";
+	presets["normal"]["sv_botSprintDistance"]  = "512";
+	presets["normal"]["sv_botMeleeDist"]       = "80";
+
+	if ( !isDefined( presets[difficulty] ) )
 		difficulty = "normal";
-	}
+
+	p    = presets[difficulty];
+	keys = getArrayKeys( p );
+	for ( i = 0; i < keys.size; i++ )
+		SetDvar( keys[i], p[keys[i]] );
 
 	if ( level.gameType == "oic" && difficulty == "fu" )
 	{
