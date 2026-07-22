@@ -563,14 +563,11 @@ gf_boundaryPass()
 // exactly there and suicided bots mid-spawn).
 gf_botQuietSetTeam(team)
 {
-	self maps\mp\gametypes\_gf_rounds::gf_stampTeamWriter("botquiet", team);
-	self.pers["team"]       = team;
-	self.team               = team;
+	self maps\mp\gametypes\_gf_rounds::gf_setTeamFields("botquiet", team);
 	self.pers["class"]      = undefined;
 	self.class              = undefined;
 	self.pers["weapon"]     = undefined;
 	self.pers["savedmodel"] = undefined;
-	self.sessionteam        = team;
 	// Seating on a real team: restore the life. A parked bot's park may have been a SUICIDE-park
 	// (displacer / prematch surplus trim), which consumed pers["lives"]; redeploying it in the
 	// same round then hits maySpawn gate A (no lives) and it sits DEAD the whole round — the

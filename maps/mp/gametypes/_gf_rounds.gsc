@@ -126,6 +126,21 @@ gf_stampTeamWriter( who, team )
         self.pers["gf_teamWriterGen"] = 0;
 }
 
+// Set the three team fields (pers["team"] / .team / .sessionteam) as one sanctioned
+// GF_TEAMTRACE writer, stamped by `who` BEFORE the write (the sampler compares the
+// stamped target against the team it observes, so the stamp must precede the write
+// with no yield — gf_stampTeamWriter is yield-free). The single home for that
+// contract; the per-caller weapon/model/class clears stay at the call site.
+// ⚠ Kept (public): the scr_team_maxsize overflow writer ships public, so like
+// gf_stampTeamWriter this must live OUTSIDE every strip region.
+gf_setTeamFields( who, team )
+{
+    self gf_stampTeamWriter( who, team );
+    self.pers["team"]  = team;
+    self.team          = team;
+    self.sessionteam   = team;
+}
+
 // Flinch (damage view-kick) scale. scr_gf_flinch is a MULTIPLIER of the stock
 // bg_viewKickScale (0.2): 1 = stock flinch, 0 = no flinch, >1 = more. Called each
 // round from onStartGameType (so an RCON change persists across map_restart) and
@@ -1234,15 +1249,12 @@ gf_stockAutoassignStamped()
 gf_seatJoinTeam( want )
 {
     self.pers["gf_specReason"] = undefined;    // seated on a real team: drop any spectate breadcrumb
-    self gf_stampTeamWriter( "seatjoin", want );
-    self.pers["team"]       = want;
-    self.team               = want;
+    self gf_setTeamFields( "seatjoin", want );
     self.pers["class"]      = undefined;
     self.class              = undefined;
     self.pers["weapon"]     = undefined;
     self.pers["savedmodel"] = undefined;
     self maps\mp\gametypes\_globallogic_ui::updateObjectiveText();
-    self.sessionteam        = want;
     if ( !isAlive( self ) )
         self.statusicon = "hud_status_dead";
     self notify( "joined_team" );
@@ -1362,9 +1374,7 @@ gf_planApplyMove( team )
 // PASS the validity gate. Spectator keeps the clear (no class gate on the spectator branches).
 gf_quietSetTeam( team )
 {
-    self gf_stampTeamWriter( "quietset", team );
-    self.pers["team"]       = team;
-    self.team               = team;
+    self gf_setTeamFields( "quietset", team );
     if ( team != "spectator" && isDefined( level.defaultClass )
         && ( level.oldschool || getDvarInt( "scr_disable_cac" ) == 1 ) )
     {
@@ -1378,7 +1388,6 @@ gf_quietSetTeam( team )
     }
     self.pers["weapon"]     = undefined;
     self.pers["savedmodel"] = undefined;
-    self.sessionteam        = team;
 }
 
 // ─── Sequenced team move — the ONLY way to move a "playing" player ─────────

@@ -1035,10 +1035,7 @@ gf_lobbyMaySpawn()
     if ( isDefined( self.pers["gf_parkPending"] ) && self.pers["gf_parkPending"] )
     {
         self.pers["gf_parkPending"] = undefined;
-        self gf_stampTeamWriter( "parkpending", "spectator" );
-        self.pers["team"]           = "spectator";
-        self.team                   = "spectator";
-        self.sessionteam            = "spectator";
+        self gf_setTeamFields( "parkpending", "spectator" );
         return false;
     }
 
@@ -1055,10 +1052,7 @@ gf_lobbyMaySpawn()
         self.pers["gf_movePending"] = undefined;
         if ( team == "allies" || team == "axis" )
         {
-            self gf_stampTeamWriter( "movepending", team );
-            self.pers["team"]       = team;
-            self.team               = team;
-            self.sessionteam        = team;
+            self gf_setTeamFields( "movepending", team );
             self.pers["weapon"]     = undefined;
             self.pers["savedmodel"] = undefined;
         }
@@ -1082,20 +1076,14 @@ gf_lobbyMaySpawn()
         self.pers["gf_pendingTeam"] = undefined;
         if ( team == "spectator" )
         {
-            self gf_stampTeamWriter( "pteam", "spectator" );
             self.pers["gf_specReason"] = "moved";
-            self.pers["team"]          = "spectator";
-            self.team                  = "spectator";
-            self.sessionteam           = "spectator";
+            self gf_setTeamFields( "pteam", "spectator" );
             return false;
         }
         if ( ( team == "allies" || team == "axis" )
             && !( isDefined( self.pers["team"] ) && self.pers["team"] == team ) )
         {
-            self gf_stampTeamWriter( "pteam", team );
-            self.pers["team"]       = team;
-            self.team               = team;
-            self.sessionteam        = team;
+            self gf_setTeamFields( "pteam", team );
             self.pers["weapon"]     = undefined;
             self.pers["savedmodel"] = undefined;
         }
@@ -1147,10 +1135,7 @@ gf_lobbyMaySpawn()
             {
                 logPrint( "GF_FILLGUARD: parked bot " + self.name + " - " + self.pers["team"]
                     + " already at size " + sizeT + " (round " + game["roundsplayed"] + ")\n" );
-                self gf_stampTeamWriter( "fillguard", "spectator" );
-                self.pers["team"] = "spectator";
-                self.team         = "spectator";
-                self.sessionteam  = "spectator";
+                self gf_setTeamFields( "fillguard", "spectator" );
                 return false;
             }
             // Human: this is only a cheap PRE-FILTER (the roster is transiently over-counted during
