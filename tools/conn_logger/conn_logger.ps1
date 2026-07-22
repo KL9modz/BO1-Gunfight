@@ -39,11 +39,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot '..\common.ps1')   # Resolve-T5Root
+
 # --- Resolve default paths ----------------------------------------------------
-# This script lives at storage\t5\mods\mp_gunfight\tools\conn_logger\ ; walk four
-# parents to reach storage\t5\ (where the logs\ folder lives).
-$storageT5 = $PSScriptRoot
-for ($i = 0; $i -lt 4; $i++) { $storageT5 = Split-Path -Parent $storageT5 }
+# storage\t5\ (where the logs\ folder lives); common.ps1 resolves it from its fixed location.
+$storageT5 = Resolve-T5Root
 
 if ([string]::IsNullOrEmpty($LogDir)) { $LogDir = Join-Path $storageT5 'logs' }
 

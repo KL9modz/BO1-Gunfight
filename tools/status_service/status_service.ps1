@@ -86,11 +86,12 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\ignore_list.ps1')
 # Shared with GF-JoinNotify: Get-GfMapName (map id -> display name).
 . (Join-Path $PSScriptRoot '..\map_names.ps1')
+# Shared path helpers + Get-RconPassword.
+. (Join-Path $PSScriptRoot '..\common.ps1')
 if ([string]::IsNullOrEmpty($IgnoreFile)) { $IgnoreFile = Join-Path $PSScriptRoot '..\ignore.local.json' }
 
-# storage\t5\mods\mp_gunfight\tools\status_service\ -> four parents = storage\t5\
-$storageT5 = $PSScriptRoot
-for ($i = 0; $i -lt 4; $i++) { $storageT5 = Split-Path -Parent $storageT5 }
+# storage\t5 (…\mods\mp_gunfight\tools\common.ps1 resolves it, independent of this subdir).
+$storageT5 = Resolve-T5Root
 if ([string]::IsNullOrEmpty($CfgPath)) { $CfgPath = Join-Path $storageT5 'dedicated.cfg' }
 if ([string]::IsNullOrEmpty($LogDir))  { $LogDir  = Join-Path $storageT5 'logs' }
 # admin_history.json lives beside the admin snapshot (same .secured-gated folder), so
@@ -108,24 +109,12 @@ if ([string]::IsNullOrEmpty($ActivityOutFile)) {
     $ActivityOutFile = Join-Path (Split-Path -Parent $OutFile) 'activity.json'
 }
 # The engine's games_mp.log (advances on game events = a liveness proxy) lives in the MOD
-# folder's own logs\ dir, distinct from $LogDir (players_*.log). $PSScriptRoot =
-# ...\mods\mp_gunfight\tools\status_service -> two parents up = the mod folder.
-$modFolder    = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+# folder's own logs\ dir, distinct from $LogDir (players_*.log).
+$modFolder    = Resolve-ModRoot
 $gamesLogPath = Join-Path $modFolder 'logs\games_mp.log'
 
-# --- RCON password ------------------------------------------------------------
-function Get-RconPassword {
-    param([string]$explicit, [string]$cfg)
-    if (-not [string]::IsNullOrEmpty($explicit)) { return $explicit }
-    if (-not [string]::IsNullOrEmpty($env:GF_RCON_PW)) { return $env:GF_RCON_PW }
-    if (Test-Path $cfg) {
-        $m = Select-String -Path $cfg -Pattern 'set\s+rcon_password\s+"([^"]*)"' -ErrorAction SilentlyContinue |
-             Select-Object -First 1
-        if ($m) { return $m.Matches[0].Groups[1].Value }
-    }
-    return ''
-}
-$rconPw = Get-RconPassword -explicit $RconPassword -cfg $CfgPath
+# --- RCON password (explicit -> $env:GF_RCON_PW -> cfg; Get-RconPassword in common.ps1) -------
+$rconPw = Get-RconPassword -Explicit $RconPassword -CfgPath $CfgPath
 if ([string]::IsNullOrEmpty($rconPw)) {
     Write-Error "No rcon_password found. Set it in $CfgPath, pass -RconPassword, or set env GF_RCON_PW."
     exit 1

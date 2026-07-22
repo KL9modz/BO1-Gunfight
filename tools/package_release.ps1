@@ -54,6 +54,7 @@ $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 # DO ship) live in release_common.ps1 so tools\verify_release_strip.ps1 checks the exact
 # same build this script produces.
 . (Join-Path $PSScriptRoot "release_common.ps1")
+. (Join-Path $PSScriptRoot "common.ps1")   # Invoke-BuildFf (shared with package_server.ps1)
 
 function Strip-Comments {
     param([string]$Content)
@@ -211,15 +212,7 @@ Write-Host "Version: $Version"
 Write-Host "Mod:     $ModRoot"
 
 # -- Build mod.ff -------------------------------------------------------------
-if (-not $SkipBuild) {
-    $buildScript = Join-Path $PSScriptRoot "build_ff.ps1"
-    if (!(Test-Path -LiteralPath $buildScript)) { throw "build_ff.ps1 not found: $buildScript" }
-    Write-Host ""
-    Write-Host "Building mod.ff ..."
-    & $buildScript -GameRoot $GameRoot -ModName $ModName
-    if ($LASTEXITCODE -ne 0) { throw "build_ff.ps1 failed (exit $LASTEXITCODE)" }
-}
-if (!(Test-Path -LiteralPath $ModFf)) { throw "mod.ff not found (build it first): $ModFf" }
+Invoke-BuildFf -GameRoot $GameRoot -ModName $ModName -SkipBuild:$SkipBuild -ModFf $ModFf
 
 # -- Stage + zip --------------------------------------------------------------
 Write-Host ""

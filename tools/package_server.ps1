@@ -11,6 +11,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot 'common.ps1')   # Resolve-*Root / Get-RconPassword / Invoke-BuildFf
+
 # Build a PRIVATE VPS deployment bundle (NOT for public release):
 #   t5/
 #     mods/mp_gunfight/   COMPLETE mirror of the 'main' branch: every git-tracked
@@ -71,15 +73,7 @@ Write-Host "Mod:     $ModRoot"
 Write-Host "T5 root: $T5Root"
 
 # -- Build mod.ff -------------------------------------------------------------
-if (-not $SkipBuild) {
-    $buildScript = Join-Path $PSScriptRoot "build_ff.ps1"
-    if (!(Test-Path -LiteralPath $buildScript)) { throw "build_ff.ps1 not found: $buildScript" }
-    Write-Host ""
-    Write-Host "Building mod.ff ..."
-    & $buildScript -GameRoot $GameRoot -ModName $ModName
-    if ($LASTEXITCODE -ne 0) { throw "build_ff.ps1 failed (exit $LASTEXITCODE)" }
-}
-if (!(Test-Path -LiteralPath $ModFf)) { throw "mod.ff not found (build it first): $ModFf" }
+Invoke-BuildFf -GameRoot $GameRoot -ModName $ModName -SkipBuild:$SkipBuild -ModFf $ModFf
 
 # -- Fresh staging ------------------------------------------------------------
 if (Test-Path -LiteralPath $StageRoot) { Remove-Item -Recurse -Force -LiteralPath $StageRoot }
