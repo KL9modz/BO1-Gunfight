@@ -106,6 +106,29 @@ init()
 }
 
 /*
+	STOCK PUBLIC SURFACE — kept because this file OVERRIDES stock maps/mp/gametypes/_bot.gsc.
+
+	GSC resolves symbols at COMPILE time, so a stock caller links against our file unconditionally,
+	even from inside a runtime guard that can never be true. mp_hotel ships its own elevator script
+	(maps/mp/mp_hotel_elevators.gsc, inside mp_hotel.ff) whose elevator_prox_think() calls
+	  players[i] maps\mp\gametypes\_bot::bot_is_idle()
+	to make idle bots wander over and ride the lift. Without this stub, LOADING MP_HOTEL FAILS THE
+	WHOLE SERVER with "Server script compile error / unknown function" — every other map is fine,
+	which is why it went unnoticed (hotel is rarely in rotation, and the public build ships no
+	_bot.gsc at all, so it hits the dev/VPS tree only).
+
+	⚠ The scr_elevator_failsafe 1 default does NOT protect us: elevator_prox_think returns on it at
+	RUNTIME, but the call is still compiled. Only the stub fixes it.
+
+	Returns false: BotWarfare bots always have a goal, and Gunfight deliberately runs Hotel with the
+	elevators dead — we never want a bot pathing to a lift.
+*/
+bot_is_idle()
+{
+	return false;
+}
+
+/*
 	Thread when any player connects. Starts the threads needed.
 */
 onPlayerConnect()

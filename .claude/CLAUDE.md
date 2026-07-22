@@ -1483,7 +1483,13 @@ deleted from a stock script you override**. Causes (b)/(c) → [[vector-scale-in
 
 ⚠ **(d) — overriding a stock script means keeping its ENTIRE public surface.** GSC resolves symbols at
 **compile** time, so a stock caller links against your file *unconditionally* — even from inside a
-runtime guard that would never be true. `_globallogic_ui::menuClass` does `if (isPregame()) self
+runtime guard that would never be true. ⚠ **This mod DOES override one: `maps/mp/gametypes/_bot.gsc`**
+(the vendored reconciler shadows stock's) — and `mp_hotel` + `mp_outskirts` call
+`_bot::bot_is_idle()` from their idle-bot ambient code, so those two maps failed the **whole server**
+with `unknown function` until a stub was added. The base `raw/` dump has **zero** `gametypes\_bot::`
+callers, so grepping it proves nothing — DLC map scripts live only inside their `.ff`. And no dvar can
+fix it (`scr_elevator_failsafe` gates the call at *runtime*; it is still compiled)
+([[dlc-map-scripts-call-stock-bot-is-idle]]). `_globallogic_ui::menuClass` does `if (isPregame()) self
 maps\mp\gametypes\_pregame::OnPlayerClassChange(response);`, so shipping a `_pregame.gsc` without that
 function fails the WHOLE server with `unknown function @ _globallogic_ui::menuclass` — naming the
 caller, not the missing symbol. Before overriding any stock script, grep the raw dump for

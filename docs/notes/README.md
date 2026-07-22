@@ -79,6 +79,7 @@ memory folder as a second copy — it drifts ([[site-css-js-cache-bust-version-q
 ## Map scripts (stock)
 - [extract-dlc-map-gsc-from-fastfile](extract-dlc-map-gsc-from-fastfile.md) — DLC map scripts are NOT in raw/ but ARE shipped as rawfile SOURCE in zone/Common/mp_*.ff. TWO layers of zlib.
 - [silo-background-missiles-are-client-side](silo-background-missiles-are-client-side.md) — mp_silo.csc `rocket_manager`; NO server dvar/entity reaches it. Launch (mp_cosmodrome) is the opposite — `scr_rocket_event_off`.
+- [dlc-map-scripts-call-stock-bot-is-idle](dlc-map-scripts-call-stock-bot-is-idle.md) — mp_hotel + mp_outskirts call `_bot::bot_is_idle()` (idle bots ride the lift); our `_bot.gsc` shadows stock's and lacked it → those two maps failed the WHOLE server with `unknown function`. A dvar (`scr_elevator_failsafe`) can NEVER fix a compile error, and the raw/ dump has zero callers because DLC scripts live only in the .ff.
 
 ## Build / release / deploy
 - [modff-cannot-embed-new-images](modff-cannot-embed-new-images.md) — the linker writes an image REFERENCE and never embeds .iwi pixel data. Both attempts BUILT CLEAN; one would have shipped a CHECKERBOARD to every client.
