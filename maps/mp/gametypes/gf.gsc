@@ -223,6 +223,16 @@ onPrecacheGameType()
     gf_precacheWagerZoneAssets();
 }
 
+// Seed a dvar to `def` only if it is unset (empty). The seed-if-empty idiom used ~30x across
+// onStartGameType so the RCON panel's connect-sweep never reads an unregistered dvar (which
+// echoes "Unknown cmd"). Unlike gf_cfgFloat/gf_cfgInt this neither clamps nor reads back — it
+// only registers a default, exactly as the open-coded lines did. Kept (public): the strip-marked
+// seed sites call it too, and a stripped caller may call kept code but never the reverse.
+gf_seedDvar( name, def )
+{
+    gf_seedDvar( name, def );
+}
+
 onStartGameType()
 {
     level.noPersistence = true;
@@ -366,14 +376,12 @@ onStartGameType()
     // motion while holding the gap at ~83ms. Seeded here so the RCON panel can read it from boot;
     // gf_endRound acts on it.
     //   0.25 = stock BO1 cinematic (and the plug)   0.6 = default   1.0 = no slow motion
-    if ( getDvar( "scr_gf_killcam_slowmo" ) == "" )
-        setDvar( "scr_gf_killcam_slowmo", "0.6" );
+    gf_seedDvar( "scr_gf_killcam_slowmo", "0.6" );
     // Stock reads scr_killcam_time as a STRING and only uses it when non-empty (_killcam.gsc:554),
     // deriving camtime from the weapon otherwise. So seed it EMPTY: the panel gets a dvar it can
     // read without an "Unknown cmd", and stock keeps its own per-weapon default until someone sets
     // a value. Seeding a number here would silently override every killcam length in the game.
-    if ( getDvar( "scr_killcam_time" ) == "" )
-        setDvar( "scr_killcam_time", "" );
+    gf_seedDvar( "scr_killcam_time", "" );
 
     // HOTEL ELEVATORS — OFF by default in Gunfight. mp_hotel ships its OWN elevator system
     // (maps/mp/mp_hotel_elevators.gsc, NOT the generic maps/mp/_elevator.gsc), and Treyarch built
@@ -393,8 +401,7 @@ onStartGameType()
     // the NEXT map load onward; dvars outlive a map change, so it is already in the table by then.
     // dedicated.cfg sets it too, for the boot-straight-onto-Hotel case where this has never run.
     // 1 = elevators disabled (GF default), 0 = stock working elevators.
-    if ( getDvar( "scr_elevator_failsafe" ) == "" )
-        setDvar( "scr_elevator_failsafe", "1" );
+    gf_seedDvar( "scr_elevator_failsafe", "1" );
 
     // Per-round prematch via the engine's native countdown. The engine zeroes level.prematchPeriod
     // every round (Callback_StartGameType) and only refills it once per match, so we set it HERE
@@ -414,27 +421,19 @@ onStartGameType()
     // The prematch LENGTH is the one exception worth keeping tunable here: the public build
     // pins it to the fixed 20s/7s assigned below (see level.prematchPeriod), while dev/VPS gets
     // these two dvars so the RCON panel can retune it live.
-    if ( getDvar( "scr_gf_match_prematch_seconds" ) == "" )
-        setDvar( "scr_gf_match_prematch_seconds", "20" );   // first round of the match (longer intro)
-    if ( getDvar( "scr_gf_prematch_seconds" ) == "" )
-        setDvar( "scr_gf_prematch_seconds", "7" );          // every later round
+    gf_seedDvar( "scr_gf_match_prematch_seconds", "20" );   // first round of the match (longer intro)
+    gf_seedDvar( "scr_gf_prematch_seconds", "7" );          // every later round
 
     // Seed the pre-prematch gate dvars here so they exist from boot (the RCON panel reads
     // them, and they'd otherwise show "not read" until gf_waitForLoadingClients first
     // touched them via gf_cfgFloat). Clamping still happens on read in _gf_rounds.gsc.
     // Both feed the single pre-prematch hold in gf_waitForLoadingClients.
-    if ( getDvar( "scr_gf_min_players" ) == "" )
-        setDvar( "scr_gf_min_players", "1" );     // min HUMANS to start the match (1 = off)
-    if ( getDvar( "scr_gf_minplayers_timer" ) == "" )
-        setDvar( "scr_gf_minplayers_timer", "0" );// min-players "start anyway" ceiling (s). 0 = never auto-start (hold until enough humans / admin START). Was a hardcoded 90s that started too-thin matches
-    if ( getDvar( "scr_gf_load_wait" ) == "" )
-        setDvar( "scr_gf_load_wait", "20" );      // max s to hold the prematch for map-loading clients (0 = off; a loader that misses the gate still gets scr_gf_load_grace). Non-zero ARMS the hold, so every match start now pays the 3s arrival floor
-    if ( getDvar( "scr_gf_load_grace" ) == "" )
-        setDvar( "scr_gf_load_grace", "20" );     // s past prematch_over to keep grace open for a still-loading client so it spawns into round 1 (0 = off)
-    if ( getDvar( "scr_gf_lobby" ) == "" )
-        setDvar( "scr_gf_lobby", "0" );           // Match Start: 0 = Normal (default, off), 1 = Auto lobby (min-players -> fast-restart), 2 = Manual lobby (admin START -> fast-restart)
-    if ( getDvar( "scr_gf_lobby_timer" ) == "" )
-        setDvar( "scr_gf_lobby_timer", "600" );   // MANUAL lobby auto-start timer (s). Was the hardcoded 10-min backstop; now RCON-adjustable. 0 = never auto-start (hold until START)
+    gf_seedDvar( "scr_gf_min_players", "1" );     // min HUMANS to start the match (1 = off)
+    gf_seedDvar( "scr_gf_minplayers_timer", "0" );// min-players "start anyway" ceiling (s). 0 = never auto-start (hold until enough humans / admin START). Was a hardcoded 90s that started too-thin matches
+    gf_seedDvar( "scr_gf_load_wait", "20" );      // max s to hold the prematch for map-loading clients (0 = off; a loader that misses the gate still gets scr_gf_load_grace). Non-zero ARMS the hold, so every match start now pays the 3s arrival floor
+    gf_seedDvar( "scr_gf_load_grace", "20" );     // s past prematch_over to keep grace open for a still-loading client so it spawns into round 1 (0 = off)
+    gf_seedDvar( "scr_gf_lobby", "0" );           // Match Start: 0 = Normal (default, off), 1 = Auto lobby (min-players -> fast-restart), 2 = Manual lobby (admin START -> fast-restart)
+    gf_seedDvar( "scr_gf_lobby_timer", "600" );   // MANUAL lobby auto-start timer (s). Was the hardcoded 10-min backstop; now RCON-adjustable. 0 = never auto-start (hold until START)
 
     // PRE-MATCH WARMUP — 100% stock, zero mod GSC. g_pregame_enabled is an ENGINE dvar (it lives in
     // BlackOpsMP.exe, alongside the hardcoded script path "maps/mp/gametypes/_pregame"): when it is
@@ -447,8 +446,7 @@ onStartGameType()
     // Not seeding it is exactly what keeps the warmup OUT of the public build: the engine defaults
     // it to 0, nothing else writes it, so BO1's pregame gametype can never come up. (This is also
     // why there is no _pregame.gsc to exclude — the warmup carries no mod GSC at all.)
-    if ( getDvar( "g_pregame_enabled" ) == "" )
-        setDvar( "g_pregame_enabled", "0" );
+    gf_seedDvar( "g_pregame_enabled", "0" );
     // ⚠ MUST be 0, and it is OUR job to make it so. The warmup's OWN time limit is registered by stock
     // _pregame::main() -> registerTimeLimitDvar( "pregame", 5, 0, 1440 ) on PC, and registerTimeLimitDvar
     // is SEED-IF-EMPTY — so an unregistered scr_pregame_timelimit lands on FIVE MINUTES. _pregame's
@@ -459,38 +457,28 @@ onStartGameType()
     // warmup's level load because dvars outlive a map change, and _pregame's seed-if-empty then leaves
     // our 0 alone. dedicated.cfg.example sets it too, for the boot-straight-into-a-warmup case where
     // this callback has never run.
-    if ( getDvar( "scr_pregame_timelimit" ) == "" )
-        setDvar( "scr_pregame_timelimit", "0" );
+    gf_seedDvar( "scr_pregame_timelimit", "0" );
     // TEAM SIZE + BOT FILL. gf_fill_n is the per-team TARGET size: at every round boundary the
     // reconciler (gf_reconcilerInit in _bot.gsc, dev-only) evens the HUMAN split to off-by-1
     // (moving the most recent joiner; gf_team_balance 0 disables), then pads BOTH sides with bots
     // to max(bigger human side, gf_fill_n) — so humans define the size, bots absorb the variance,
     // and enough humans means ZERO bots. 0 = no bot fill (human balancing still runs; manual bot
     // control sticks). It MUST be a dvar — the only state surviving the lobby's map_restart(false).
-    if ( getDvar( "gf_fill_n" ) == "" )
-        setDvar( "gf_fill_n", "2" );              // per-team target size (clamped 0-6 on read); 0 = no bots
-    if ( getDvar( "gf_fill_kick_floor" ) == "" )
-        setDvar( "gf_fill_kick_floor", "2" );     // client slots kept free for humans: a parked bot is KICKED (not parked) once level.players >= sv_maxclients - this
-    if ( getDvar( "gf_team_balance" ) == "" )
-        setDvar( "gf_team_balance", "1" );        // 1 = even the HUMAN split (off-by-1) at every round boundary; 0 = never move humans
-    if ( getDvar( "gf_team_lock" ) == "" )
-        setDvar( "gf_team_lock", "0" );           // 1 = gf_fill_n is a hard HUMAN cap per side: overflow joiners spectate, queued (join order) for the next open seat
-    if ( getDvar( "gf_team_switch" ) == "" )
-        setDvar( "gf_team_switch", "1" );         // 1 = players may switch teams themselves (immediately; alive mid-round = die + sit out); 0 = self-switching disabled
-    if ( getDvar( "scr_gf_latespawn" ) == "" )
-        setDvar( "scr_gf_latespawn", "1" );       // 1 = a joiner/mover may spawn INTO a live round while their team has >=1 alive (never in OT); 0 = spectate until next round
-    if ( getDvar( "gf_team_reclaim" ) == "" )
-        setDvar( "gf_team_reclaim", "1" );        // 1 = at each boundary, re-seat a human the untraced mis-seater stranded in spectator (reason UNTRACED) onto the lighter side, so they aren't forced to the ranked team/class menu; 0 = leave them (diagnostic-only)
-    if ( getDvar( "gf_teamplan" ) == "" )
-        setDvar( "gf_teamplan", "" );             // lobby->match transfer: "<guid>:<a|x|s>,..." snapshot written pre-restart, re-applied post-restart (survives map_restart(false))
+    gf_seedDvar( "gf_fill_n", "2" );              // per-team target size (clamped 0-6 on read); 0 = no bots
+    gf_seedDvar( "gf_fill_kick_floor", "2" );     // client slots kept free for humans: a parked bot is KICKED (not parked) once level.players >= sv_maxclients - this
+    gf_seedDvar( "gf_team_balance", "1" );        // 1 = even the HUMAN split (off-by-1) at every round boundary; 0 = never move humans
+    gf_seedDvar( "gf_team_lock", "0" );           // 1 = gf_fill_n is a hard HUMAN cap per side: overflow joiners spectate, queued (join order) for the next open seat
+    gf_seedDvar( "gf_team_switch", "1" );         // 1 = players may switch teams themselves (immediately; alive mid-round = die + sit out); 0 = self-switching disabled
+    gf_seedDvar( "scr_gf_latespawn", "1" );       // 1 = a joiner/mover may spawn INTO a live round while their team has >=1 alive (never in OT); 0 = spectate until next round
+    gf_seedDvar( "gf_team_reclaim", "1" );        // 1 = at each boundary, re-seat a human the untraced mis-seater stranded in spectator (reason UNTRACED) onto the lighter side, so they aren't forced to the ranked team/class menu; 0 = leave them (diagnostic-only)
+    gf_seedDvar( "gf_teamplan", "" );             // lobby->match transfer: "<guid>:<a|x|s>,..." snapshot written pre-restart, re-applied post-restart (survives map_restart(false))
     // #strip-end
 
     // Register scr_team_maxsize with its documented default (0 = no cap) so it always exists
     // in the dvar table. The mod reads it via getDvarInt (0 when unset), but an UNregistered
     // dvar echoes "Unknown cmd scr_team_maxsize" when the RCON panel's connect-sweep reads it
     // by bare name — spam the host sees on a listen server. dedicated.cfg still overrides this.
-    if ( getDvar( "scr_team_maxsize" ) == "" )
-        setDvar( "scr_team_maxsize", "0" );       // max players/team (0 = no cap); cfg ships 6
+    gf_seedDvar( "scr_team_maxsize", "0" );       // max players/team (0 = no cap); cfg ships 6
 
     // Seed BOTH team-size-mode variants of every mode-specific dvar so they ALWAYS exist in the
     // dvar table, even the variant for the mode not currently active. Each is otherwise only
@@ -501,20 +489,20 @@ onStartGameType()
     // gf_getOvertimeLimit, gf_getCaptureTime). scr_gf_timelimit + scr_gf_teamspawnmode are
     // already always-registered (registerTimeLimitDvar / gf_resolveTeamMode).
     gtp = "scr_" + level.gameType;
-    if ( getDvar( gtp + "_timelimit" ) == "" )           setDvar( gtp + "_timelimit", "0.7" );
-    if ( getDvar( gtp + "_timelimit_large" ) == "" )     setDvar( gtp + "_timelimit_large", "1.5" );
-    if ( getDvar( gtp + "_overtimelimit" ) == "" )       setDvar( gtp + "_overtimelimit", "15" );
-    if ( getDvar( gtp + "_overtimelimit_large" ) == "" ) setDvar( gtp + "_overtimelimit_large", "30" );
-    if ( getDvar( "gf_capture_time" ) == "" )            setDvar( "gf_capture_time", "3.5" );
-    if ( getDvar( "gf_capture_time_large" ) == "" )      setDvar( "gf_capture_time_large", "5" );
+    gf_seedDvar( gtp + "_timelimit", "0.7" );
+    gf_seedDvar( gtp + "_timelimit_large", "1.5" );
+    gf_seedDvar( gtp + "_overtimelimit", "15" );
+    gf_seedDvar( gtp + "_overtimelimit_large", "30" );
+    gf_seedDvar( "gf_capture_time", "3.5" );
+    gf_seedDvar( "gf_capture_time_large", "5" );
 
     // #strip-begin - dev debug dvars: seed to 0 so the RCON panel's DEBUG section reads them
     // cleanly (they're otherwise read via getDvarInt, which never registers them → "Unknown cmd"
     // on the panel's bare-name sweep). Dev-only; the reader blocks are strip-wrapped too.
-    if ( getDvar( "gf_debug_spawns" ) == "" )    setDvar( "gf_debug_spawns", "0" );
-    if ( getDvar( "gf_debug_hud_pool" ) == "" )  setDvar( "gf_debug_hud_pool", "0" );
-    if ( getDvar( "gf_debug_elem_probe" ) == "" ) setDvar( "gf_debug_elem_probe", "0" );
-    if ( getDvar( "gf_debug_spawnyaw" ) == "" )  setDvar( "gf_debug_spawnyaw", "0" );
+    gf_seedDvar( "gf_debug_spawns", "0" );
+    gf_seedDvar( "gf_debug_hud_pool", "0" );
+    gf_seedDvar( "gf_debug_elem_probe", "0" );
+    gf_seedDvar( "gf_debug_spawnyaw", "0" );
     // Team-write tracer (GF_TEAMTRACE). Seeded to 2 = FULL history, unlike every other debug dvar
     // here: it exists to catch the untraced mis-seater, which is rare and unreproducible on demand,
     // so anything less than always-on-with-full-history loses the one occurrence that mattered.
@@ -522,12 +510,12 @@ onStartGameType()
     // moves are recorded too — the level-1 blind spot that hid the YooDyl "moved + choose team" case).
     // Costs one roster diff at 3 checkpoints/round plus a few attributed-move lines; both event-driven,
     // negligible on an unrotated log. 1 = untraced only, 0 = silence.
-    if ( getDvar( "gf_trace_teams" ) == "" )     setDvar( "gf_trace_teams", "2" );
+    gf_seedDvar( "gf_trace_teams", "2" );
     // Per-death score-share logging. Default 0 — highest-volume line in the mod, and games_mp.log
     // has no rotation on the VPS.
-    if ( getDvar( "gf_debug_popup" ) == "" )     setDvar( "gf_debug_popup", "0" );
-    if ( getDvar( "gf_force_loadout" ) == "" )    setDvar( "gf_force_loadout", "-1" );   // loadout test aids (read in _gf_loadouts.gsc)
-    if ( getDvar( "gf_force_camo" ) == "" )       setDvar( "gf_force_camo", "-1" );
+    gf_seedDvar( "gf_debug_popup", "0" );
+    gf_seedDvar( "gf_force_loadout", "-1" );   // loadout test aids (read in _gf_loadouts.gsc)
+    gf_seedDvar( "gf_force_camo", "-1" );
 
     // The RCON panel READS this one back to show which vision set is live, so it has to be
     // registered or the panel's bare-name sweep echoes "Unknown cmd gf_vis_vision". Seeded to the
@@ -536,7 +524,7 @@ onStartGameType()
     // ⚠ Seed it to "enhance", never "" and never "normal": empty is only ever a TRANSIENT state
     // (the bridge's visreset clears the dvar and this re-seeds it next round), and "normal" is the
     // EXPLICIT map-default key, which is a different look.
-    if ( getDvar( "gf_vis_vision" ) == "" )       setDvar( "gf_vis_vision", "enhance" );
+    gf_seedDvar( "gf_vis_vision", "enhance" );
     // #strip-end
 
     // Flinch (damage view-kick) scale — mult of stock bg_viewKickScale (0.2).
@@ -877,17 +865,9 @@ gf_warnIfCheatsOnDedicated()
 
 gf_registerLoadoutCycleDvar()
 {
+    // Seed-if-empty (2), clamp to [1,9], persist the clamp — exactly gf_cfgInt.
     dvar = "scr_" + level.gameType + "_roundsperloadout";
-
-    if ( GetDvar( dvar ) == "" )
-        setDvar( dvar, 2 );
-
-    raw   = GetDvarInt( dvar );
-    value = maps\mp\gametypes\_globallogic_utils::getValueInRange( raw, 1, 9 );
-    if ( value != raw )
-        setDvar( dvar, value );   // persist the clamped value back, as before
-
-    level.gf_cfg_roundsPerLoadout = value;
+    level.gf_cfg_roundsPerLoadout = gf_cfgInt( dvar, 2, 1, 9 );
 }
 
 onSpawnPlayer( teamOverride )

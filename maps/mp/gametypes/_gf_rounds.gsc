@@ -78,9 +78,10 @@ gf_cfgFloat( dvar, def, lo, hi )
 // Deliberately does NOT route through getValueInRange (that returns a float) — the clamp is
 // inline so the return is always a true int.
 //
-// ⚠ Lives OUTSIDE every strip region on purpose. Its callers (gf_teamTargetSize here,
-// _bot::gf_fillTarget, gf.gsc::gf_targetRoundSize) are all dev-only and stripped from the
-// public build; a stripped caller may call kept code, never the reverse.
+// ⚠ Lives OUTSIDE every strip region on purpose. Most callers (gf_teamTargetSize here,
+// _bot::gf_fillTarget, gf.gsc::gf_targetRoundSize) are dev-only and stripped from the public
+// build — a stripped caller may call kept code, never the reverse — but gf.gsc::
+// gf_registerLoadoutCycleDvar is a PUBLIC caller, so keeping this kept is mandatory, not just tidy.
 gf_cfgInt( dvar, def, lo, hi )
 {
     if ( GetDvar( dvar ) == "" )
