@@ -7,6 +7,28 @@
 // #strip-end
 #include maps\mp\gametypes\_hud_util;
 
+// --- Shared player-class predicates ---------------------------------------
+// A demo client is NEITHER a human nor a bot: isdemoclient() true, istestclient()
+// false, parked teamless (CLAUDE.md, T5 gotchas). Because a demo client can never
+// be a test client, istestclient() alone already equals "real bot" — the explicit
+// !isdemoclient() below only documents intent. "human" must exclude both. Kept
+// (public) helpers, outside every strip region; dev files call them fully-qualified.
+gf_isHuman( p )
+{
+    return ( !( p istestclient() ) && !( p isdemoclient() ) );
+}
+
+gf_isRealBot( p )
+{
+    return ( p istestclient() && !( p isdemoclient() ) );
+}
+
+// Occupies a real team seat (human OR bot); only a demo client does not.
+gf_holdsSeat( p )
+{
+    return ( !( p isdemoclient() ) );
+}
+
 gf_registerOvertimeLimitDvar()
 {
     level.gf_overtimeLimitDvar = "scr_" + level.gameType + "_overtimelimit";
@@ -771,7 +793,7 @@ gf_waitForLoadingClients()
             // (isdemoclient — e.g. "[3arc]democlient", guid 0). A demo client is NOT a
             // test client, so without the isdemoclient check it was wrongly counted as a
             // human, inflating the readout and satisfying scr_gf_min_players by itself.
-            else if ( !( p istestclient() ) && !( p isdemoclient() ) )
+            else if ( gf_isHuman( p ) )
             {
                 humans++;
             }
@@ -964,7 +986,7 @@ gf_writeTeamPlan()
         p = players[i];
         if ( !isDefined( p ) )
             continue;
-        if ( p istestclient() || p isdemoclient() )   // humans only
+        if ( !gf_isHuman( p ) )   // humans only
             continue;
         t = p.pers["team"];
         if ( !isDefined( t ) )
@@ -1002,7 +1024,7 @@ gf_writeBotPlan()
         // Bots only. NOT the plain inverse of gf_writeTeamPlan's humans-only test: a demo client is
         // neither a human nor a bot (isdemoclient true, istestclient FALSE), so it must be dropped by
         // BOTH filters — matching _bot.gsc's real-bot test.
-        if ( !( p istestclient() ) || p isdemoclient() )
+        if ( !gf_isRealBot( p ) )
             continue;
         t = p.pers["team"];
         if ( !isDefined( t ) )
@@ -1050,7 +1072,7 @@ gf_applyTeamPlan()
             p = players[i];
             if ( !isDefined( p ) )
                 continue;
-            if ( p istestclient() || p isdemoclient() )
+            if ( !gf_isHuman( p ) )
                 continue;
             want = gf_teamPlanLookup( entries, "" + p getGuid() );
             if ( want == "" )
@@ -1120,7 +1142,7 @@ gf_applyBotPlan()
             p = players[i];
             if ( !isDefined( p ) )
                 continue;
-            if ( !( p istestclient() ) || p isdemoclient() )
+            if ( !gf_isRealBot( p ) )
                 continue;                // bots only — the democlient is NOT one (see gf_writeBotPlan)
             if ( isDefined( p.gf_botPlanSeated ) )
                 continue;                // one-shot per bot
@@ -1171,7 +1193,7 @@ gf_teamPlanLookup( entries, guid )
 gf_autoassignPlanned()
 {
     if ( !isDefined( level.gf_teamPlanEntries )
-         || self istestclient() || self isdemoclient()
+         || !gf_isHuman( self )
          || !( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod ) )
     {
         self gf_stockAutoassignStamped();        // no plan / bot / past prematch -> stock behaviour
@@ -1244,7 +1266,7 @@ gf_seatJoinTeam( want )
 // Dev/main only — the install in gf.gsc is strip-wrapped; the public build keeps stock autoassign.
 gf_autoJoinBalance()
 {
-    if ( self istestclient() || self isdemoclient() )
+    if ( !gf_isHuman( self ) )
     {
         self gf_stockAutoassignStamped();
         return;
@@ -1463,7 +1485,7 @@ gf_menuTeamChoice( team )
     else if ( team == "axis" )
         stockFn = level.gf_stockAxis;
 
-    if ( self istestclient() || self isdemoclient() )
+    if ( !gf_isHuman( self ) )
     {
         // Stamp the passthrough BEFORE stock runs: stock menuAllies/menuAxis write pers["team"]
         // with no token, and a parked bot answering the re-begin team menu through this path is
@@ -1585,7 +1607,7 @@ gf_countTeamHumans( team, exclude )
     for ( i = 0; i < players.size; i++ )
     {
         p = players[i];
-        if ( !isDefined( p ) || p istestclient() || p isdemoclient() )
+        if ( !isDefined( p ) || !gf_isHuman( p ) )
             continue;
         if ( isDefined( exclude ) && p == exclude )
             continue;
@@ -1644,7 +1666,7 @@ gf_anyTrackedClientLoading()
         p = level.gf_loadGateSeen[i];
         if ( !isDefined( p ) )
             continue;
-        if ( p istestclient() || p isdemoclient() )   // bots + demo clients: never hold grace for them
+        if ( !gf_isHuman( p ) )   // bots + demo clients: never hold grace for them
             continue;
         if ( isDefined( p.statusicon ) && p.statusicon == "hud_status_connecting" )
             return true;
@@ -1701,7 +1723,7 @@ gf_lobbyCamPut()
 
     if ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold )   // hold already released
         return;
-    if ( self istestclient() || self isdemoclient() )                    // bots + demo clients stay put
+    if ( !gf_isHuman( self ) )                    // bots + demo clients stay put
         return;
 
     // CRITICAL: everything below runs ONCE per player (guarded by self.gf_inLobbyCam). It must NOT run
@@ -1797,12 +1819,12 @@ gf_lobbyRosterLoop()
             p = level.players[i];
             if ( !isDefined( p ) )
                 continue;
-            if ( p isdemoclient() )
+            if ( !gf_holdsSeat( p ) )
                 continue;
             if ( isDefined( p.statusicon ) && p.statusicon == "hud_status_connecting" )
                 continue;   // still loading — not standing in the lobby yet
             nm = p.name;
-            if ( p istestclient() )
+            if ( gf_isRealBot( p ) )
                 nm = nm + "  (bot)";
             names[ names.size ] = nm;
         }
@@ -1844,7 +1866,7 @@ gf_lobbyRosterLoop()
             for ( i = 0; i < level.players.size; i++ )
             {
                 pl = level.players[i];
-                if ( !isDefined( pl ) || pl istestclient() || pl isdemoclient() )
+                if ( !isDefined( pl ) || !gf_isHuman( pl ) )
                     continue;   // bots/demo render no HUD — don't push to them
 
                 pl setClientDvars( "ui_gf_lobby_pcount", "" + names.size,
@@ -1923,7 +1945,7 @@ gf_lobbyIconCycler()
         for ( i = 0; i < level.players.size; i++ )
         {
             pl = level.players[i];
-            if ( !isDefined( pl ) || pl istestclient() || pl isdemoclient() )
+            if ( !isDefined( pl ) || !gf_isHuman( pl ) )
                 continue;   // bots/demo render no HUD — don't push to them
             pl setClientDvar( "ui_gf_lobby_icon", icons[idx] );
         }
@@ -2052,7 +2074,7 @@ gf_countSeatedHumans()
     for ( i = 0; i < players.size; i++ )
     {
         p = players[i];
-        if ( !isDefined( p ) || p istestclient() || p isdemoclient() )
+        if ( !isDefined( p ) || !gf_isHuman( p ) )
             continue;
         if ( !isDefined( p.pers["team"] ) )
             continue;
@@ -2496,7 +2518,7 @@ gf_onSpawnSpectator( origin, angles )
     // level-scope visionSetNaked("mpIntro") applied at the hold start (no per-player self-method form
     // in T5 MP). No teardown: map_restart(false) on lobby release respawns everyone fresh.
     if ( isDefined( level.gf_inLobbyHold ) && level.gf_inLobbyHold
-        && !( self istestclient() ) && !( self isdemoclient() ) )
+        && gf_isHuman( self ) )
     {
         self gf_hideLobbyHUD();
         return;
@@ -2518,7 +2540,7 @@ gf_onSpawnSpectator( origin, angles )
     // the client and nothing outside the lobby clears it — so the whole lobby chrome sticks over their
     // view. The inLobbyHold branch above already returned for real lobby spectators, so reaching here (as
     // a human) means the LIVE match. Humans only.
-    if ( !( self istestclient() ) && !( self isdemoclient() ) )
+    if ( gf_isHuman( self ) )
         self setClientDvar( "ui_gf_lobby_show", "0" );
 
     gf_queueHealthHUDUpdate();
@@ -2838,9 +2860,9 @@ gf_breakRoundEndDeadlock( elapsed )
         if ( isDefined( p.name ) )
             who = p.name;
         kind = "human";
-        if ( p isdemoclient() )
+        if ( !gf_holdsSeat( p ) )
             kind = "demo";
-        else if ( p istestclient() )
+        else if ( gf_isRealBot( p ) )
             kind = "bot";
 
         // Orphaned final-killcam flag -> areAnyPlayersWatchingTheKillcam() never goes false

@@ -379,7 +379,7 @@ gf_bridgeRosterString()
     for ( i = 0; i < players.size; i++ )
     {
         p = players[i];
-        if ( !isDefined( p ) || p isdemoclient() )
+        if ( !isDefined( p ) || !gf_holdsSeat( p ) )
             continue;
         if ( s != "" )                       // separator keys off what's emitted, not the loop index
             s += ";";
@@ -387,7 +387,7 @@ gf_bridgeRosterString()
         if ( isDefined( p.health ) && p.health > 0 )
             alive = "1";
         bot = "0";
-        if ( p istestclient() )
+        if ( gf_isRealBot( p ) )
             bot = "1";
         s += p getEntityNumber() + "," + gf_bridgeTeamShort( p.pers["team"] ) + "," + alive + "," + gf_bridgeTeamShort( p.pers["gf_pendingTeam"] ) + "," + bot;
     }
@@ -1468,7 +1468,7 @@ gf_bridgeKickBotFromTeam( team )
     for ( i = 0; i < players.size; i++ )
     {
         p = players[i];
-        if ( !isDefined( p ) || !( p istestclient() ) )
+        if ( !isDefined( p ) || !gf_isRealBot( p ) )
             continue;
         if ( p.pers["team"] != team )
             continue;
@@ -1502,7 +1502,7 @@ gf_bridgeKickAllBots()
     for ( i = 0; i < players.size; i++ )
     {
         p = players[i];
-        if ( !isDefined( p ) || !( p istestclient() ) || p isdemoclient() )
+        if ( !isDefined( p ) || !gf_isRealBot( p ) )
             continue;
         bots[ bots.size ] = p;
     }
@@ -1592,7 +1592,7 @@ gf_bridgeTeamMembers( team )
     for ( i = 0; i < players.size; i++ )
     {
         p = players[i];
-        if ( !isDefined( p ) || p isdemoclient() )
+        if ( !isDefined( p ) || !gf_holdsSeat( p ) )
             continue;
         if ( p.pers["team"] == team )
             out[ out.size ] = p;
@@ -1605,10 +1605,10 @@ gf_bridgePickMovers( from, n )
 {
     picked = [];
     for ( i = 0; i < from.size && picked.size < n; i++ )
-        if ( from[i] istestclient() )
+        if ( gf_isRealBot( from[i] ) )
             picked[ picked.size ] = from[i];
     for ( i = 0; i < from.size && picked.size < n; i++ )
-        if ( !( from[i] istestclient() ) )
+        if ( !gf_isRealBot( from[i] ) )
             picked[ picked.size ] = from[i];
     return picked;
 }

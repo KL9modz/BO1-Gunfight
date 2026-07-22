@@ -285,7 +285,7 @@ gf_gateListener()
 				for(i = 0; i < players.size; i++)
 				{
 					p = players[i];
-					if(isDefined(p) && p istestclient() && !(p isdemoclient()))
+					if(isDefined(p) && maps\mp\gametypes\_gf_rounds::gf_isRealBot(p))
 						kick(p getEntityNumber(), "EXE_PLAYERKICKED");
 				}
 			}
@@ -367,13 +367,13 @@ gf_reconcileCount()
 		p = players[i];
 		if(!isDefined(p))
 			continue;
-		if(p isdemoclient())             // server-side democlient: never counted, never touched
+		if(!maps\mp\gametypes\_gf_rounds::gf_holdsSeat(p))             // server-side democlient: never counted, never touched
 			continue;
 		r["clients"]++;
 		t = p.pers["team"];
 		onTeam = (isDefined(t) && (t == "allies" || t == "axis"));
 
-		if(p istestclient())
+		if(maps\mp\gametypes\_gf_rounds::gf_isRealBot(p))
 		{
 			if(isDefined(p.gf_fillPending))
 			{
@@ -491,7 +491,7 @@ gf_boundaryPass()
 	for(i = 0; i < players.size; i++)
 	{
 		p = players[i];
-		if(!isDefined(p) || !(p istestclient()) || p isdemoclient())
+		if(!isDefined(p) || !maps\mp\gametypes\_gf_rounds::gf_isRealBot(p))
 			continue;
 		if(isDefined(p.gf_fillPending))  // mid-connect: already steered at a team
 			continue;
@@ -658,7 +658,7 @@ gf_parkBots(team, count, ceiling)
 	for(i = 0; i < players.size; i++)
 	{
 		p = players[i];
-		if(!isDefined(p) || !(p istestclient()) || p isdemoclient())
+		if(!isDefined(p) || !maps\mp\gametypes\_gf_rounds::gf_isRealBot(p))
 			continue;
 		if(!(isDefined(p.pers["team"]) && p.pers["team"] == team))
 			continue;
@@ -704,7 +704,7 @@ gf_clearAllParkPending()
 	for(i = 0; i < players.size; i++)
 	{
 		p = players[i];
-		if(isDefined(p) && p istestclient() && isDefined(p.pers["gf_parkPending"]))
+		if(isDefined(p) && maps\mp\gametypes\_gf_rounds::gf_isRealBot(p) && isDefined(p.pers["gf_parkPending"]))
 			p.pers["gf_parkPending"] = undefined;
 	}
 }
@@ -723,7 +723,7 @@ gf_teamWatchHumans()
 	for(i = 0; i < players.size; i++)
 	{
 		p = players[i];
-		if(!isDefined(p) || p istestclient() || p isdemoclient())
+		if(!isDefined(p) || !maps\mp\gametypes\_gf_rounds::gf_isHuman(p))
 			continue;
 		if(!(isDefined(p.pers["team"]) && p.pers["team"] == "spectator"))
 			continue;
@@ -803,7 +803,7 @@ gf_reclaimStrandedHumans()
 	for(i = 0; i < players.size; i++)
 	{
 		p = players[i];
-		if(!isDefined(p) || p istestclient() || p isdemoclient())
+		if(!isDefined(p) || !maps\mp\gametypes\_gf_rounds::gf_isHuman(p))
 			continue;
 		if(!(isDefined(p.pers["team"]) && p.pers["team"] == "spectator"))
 			continue;
@@ -869,7 +869,7 @@ gf_seatQueuedHumans( hA, hX )
 		for(i = 0; i < players.size; i++)
 		{
 			p = players[i];
-			if(!isDefined(p) || p istestclient() || p isdemoclient())
+			if(!isDefined(p) || !maps\mp\gametypes\_gf_rounds::gf_isHuman(p))
 				continue;
 			if(!isDefined(p.pers["gf_seatQueued"]))
 				continue;
@@ -948,7 +948,7 @@ gf_balanceHumans( hA, hX )
 			for(i = 0; i < players.size; i++)
 			{
 				p = players[i];
-				if(!isDefined(p) || p istestclient() || p isdemoclient())
+				if(!isDefined(p) || !maps\mp\gametypes\_gf_rounds::gf_isHuman(p))
 					continue;
 				if(!(isDefined(p.pers["team"]) && p.pers["team"] == from))
 					continue;

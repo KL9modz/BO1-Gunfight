@@ -1111,7 +1111,7 @@ gf_lobbyMaySpawn()
     // the catch-all sibling of gf_botQuietSetTeam's restore, which only covers the mod's own
     // redeploys. Mid-displacement/park bots are excluded (their suicide is the retirement itself);
     // humans are untouched (their prematch moves restore explicitly via gf_seqTeamMove).
-    if ( self istestclient() && !( self isdemoclient() )
+    if ( gf_isRealBot( self )
         && !isDefined( self.gf_displacePending )
         && !( isDefined( self.pers["gf_parkPending"] ) && self.pers["gf_parkPending"] )
         && isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod
@@ -1138,12 +1138,12 @@ gf_lobbyMaySpawn()
     //           spawned before touching any bot, so threading it pre-verdict costs nothing.
     if ( isDefined( self.pers["team"] )
         && ( self.pers["team"] == "allies" || self.pers["team"] == "axis" )
-        && !( self isdemoclient() ) )
+        && gf_holdsSeat( self ) )
     {
         sizeT = gf_targetRoundSize();
         if ( sizeT > 0 && gf_teamRosterCount( self.pers["team"], self ) >= sizeT )
         {
-            if ( self istestclient() )
+            if ( gf_isRealBot( self ) )
             {
                 logPrint( "GF_FILLGUARD: parked bot " + self.name + " - " + self.pers["team"]
                     + " already at size " + sizeT + " (round " + game["roundsplayed"] + ")\n" );
@@ -1213,7 +1213,7 @@ gf_lateSpawnAllowed()
     if ( mine + 1 <= other )
         return true;                                   // 1. genuine gap
 
-    if ( self istestclient() )
+    if ( gf_isRealBot( self ) )
         return false;                                  // a bot never displaces anyone to get in
     if ( !isDefined( gf_pickDisplaceableBot( self.pers["team"] ) ) )
         return false;                                  // 2. no bot to displace: all humans, and full
@@ -1252,7 +1252,7 @@ gf_teamRosterCount( team, exclude )
     for ( i = 0; i < players.size; i++ )
     {
         p = players[i];
-        if ( !isDefined( p ) || p isdemoclient() )
+        if ( !isDefined( p ) || !gf_holdsSeat( p ) )
             continue;
         if ( isDefined( exclude ) && p == exclude )
             continue;
@@ -1280,7 +1280,7 @@ gf_pickDisplaceableBot( team )
     for ( i = 0; i < players.size; i++ )
     {
         p = players[i];
-        if ( !isDefined( p ) || !( p istestclient() ) || p isdemoclient() )
+        if ( !isDefined( p ) || !gf_isRealBot( p ) )
             continue;
         if ( !( isDefined( p.pers["team"] ) && p.pers["team"] == team ) )
             continue;

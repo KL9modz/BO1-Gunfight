@@ -461,7 +461,7 @@ gf_hitchHumans()
     for ( i = 0; i < level.players.size; i++ )
     {
         p = level.players[i];
-        if ( isDefined( p ) && !( p istestclient() ) )
+        if ( isDefined( p ) && !maps\mp\gametypes\_gf_rounds::gf_isRealBot( p ) )
             n++;
     }
     return n;
@@ -475,7 +475,7 @@ gf_hitchBots()
     for ( i = 0; i < level.players.size; i++ )
     {
         p = level.players[i];
-        if ( isDefined( p ) && p istestclient() )
+        if ( isDefined( p ) && maps\mp\gametypes\_gf_rounds::gf_isRealBot( p ) )
             n++;
     }
     return n;
@@ -686,7 +686,7 @@ gf_probeSpawnYaw( intendedYaw, source )
     if ( getDvarInt( "gf_debug_spawnyaw" ) <= 0 )
         return;
 
-    if ( self istestclient() )
+    if ( maps\mp\gametypes\_gf_rounds::gf_isRealBot( self ) )
         return;
 
     org = self.origin;
@@ -775,7 +775,7 @@ gf_logCuratedSpawnMiss( team )
     // The remaining causes mean small mode HAS data for this map and still failed to hand it out.
     // Loud, every occurrence, named — these are the ones worth acting on.
     kind = "human";
-    if ( self istestclient() )
+    if ( maps\mp\gametypes\_gf_rounds::gf_isRealBot( self ) )
         kind = "bot";
 
     logPrint( "GF_SPAWNMISS: " + kind + " " + self.name + " fell back to start spawns - team " + team
@@ -834,7 +834,7 @@ gf_teamTrace( checkpoint )
         // A demo client is neither human nor bot and stock parks it teamless (pers["team"] == ""),
         // which would read as a phantom transition on every checkpoint. Excluded outright — the
         // real-bot test is istestclient() && !isdemoclient() (CLAUDE.md, T5 gotchas).
-        if ( p isdemoclient() )
+        if ( !maps\mp\gametypes\_gf_rounds::gf_holdsSeat( p ) )
             continue;
 
         now = "none";
@@ -856,7 +856,7 @@ gf_teamTrace( checkpoint )
         p.pers["gf_traceTeam"] = now;      // re-baseline before any logging, so one move logs once
 
         kind = "human";
-        if ( p istestclient() )
+        if ( maps\mp\gametypes\_gf_rounds::gf_isRealBot( p ) )
             kind = "bot";
 
         writer = "NONE";
