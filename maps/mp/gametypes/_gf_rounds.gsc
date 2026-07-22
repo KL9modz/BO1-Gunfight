@@ -29,6 +29,20 @@ gf_holdsSeat( p )
     return ( !( p isdemoclient() ) );
 }
 
+// The 1 Hz countdown-beep sound alias — single-sourced across the prematch ticker, the round clock,
+// and the overtime clock (all three play the same stock UI tick).
+gf_countdownTickAlias()
+{
+    return "mpl_ui_timer_countdown";
+}
+
+// Final-countdown tick window in ms: beep only in the last 10 seconds. Shared by the round and
+// overtime clocks so the two windows can't drift apart.
+gf_finalTickWindowMs()
+{
+    return 10000;
+}
+
 gf_registerOvertimeLimitDvar()
 {
     level.gf_overtimeLimitDvar = "scr_" + level.gameType + "_overtimelimit";
@@ -171,10 +185,25 @@ gf_setTeamFields( who, team )
 // in config_mp.cfg — so unlike r_gamma it can be written and never sticks in the
 // player's config). Reset-to-stock must push too: a live client is still holding
 // whatever we last gave it, so it needs an explicit 0.2 to be put back.
+// Stock engine default for bg_viewKickScale. scr_gf_flinch is a straight multiplier of it; kept in
+// ONE place so gf_applyFlinch and gf_applyFlinchClient can never disagree on what "stock" is.
+gf_stockViewKick()
+{
+    return 0.2;
+}
+
+// scr_gf_flinch scale — seeded (0.5 = half stock kick) and clamped [0,3]. Single-sourced so the
+// default and clamp cannot drift between the two flinch pushers (gf_cfgFloat seeds only when the
+// dvar is empty, so a drift would be silently masked by whichever ran first).
+gf_flinchScale()
+{
+    return gf_cfgFloat( "scr_gf_flinch", 0.5, 0, 3 );
+}
+
 gf_applyFlinch()
 {
-    scale = gf_cfgFloat( "scr_gf_flinch", 0.5, 0, 3 ); // seeds the dvar if unset
-    setDvar( "bg_viewKickScale", 0.2 * scale );        // 0.2 = stock bg_viewKickScale
+    scale = gf_flinchScale();
+    setDvar( "bg_viewKickScale", gf_stockViewKick() * scale );
 
     // level.players is EMPTY during onStartGameType, so this loop is a no-op on the
     // per-round call — the per-spawn push below is what covers the round-start case.
@@ -183,7 +212,7 @@ gf_applyFlinch()
         p = level.players[i];
         if ( isDefined( p.pers["isBot"] ) && p.pers["isBot"] )
             continue;                                  // bots have no client to push to
-        p setClientDvar( "bg_viewKickScale", 0.2 * scale );
+        p setClientDvar( "bg_viewKickScale", gf_stockViewKick() * scale );
     }
     return scale;
 }
@@ -199,13 +228,13 @@ gf_applyFlinch()
 // future default of 1.0 would silently turn the push off entirely. Pushing unconditionally
 // is what makes the server's value authoritative, which is the property this dvar is
 // documented to have ([[flinch-bg-viewkickscale-not-replicated]]).
-// ⚠ This default must stay in lockstep with the one in gf_applyFlinch above —
-// gf_cfgFloat seeds only if the dvar is empty, so a drift here would be silently
-// masked by whichever function ran first.
+// The scr_gf_flinch default + clamp and the stock 0.2 now come from gf_flinchScale() /
+// gf_stockViewKick(), so there is no longer a duplicated constant to keep in lockstep with
+// gf_applyFlinch — the two pushers read the same single source.
 gf_applyFlinchClient()
 {
-    scale = gf_cfgFloat( "scr_gf_flinch", 0.5, 0, 3 );
-    self setClientDvar( "bg_viewKickScale", 0.2 * scale );
+    scale = gf_flinchScale();
+    self setClientDvar( "bg_viewKickScale", gf_stockViewKick() * scale );
 }
 
 // "Jump fatigue" is the community name for the engine's post-jump slowdown: jump_slowdownEnable
@@ -458,7 +487,7 @@ gf_nativePrematchTicker()
     tickObj = spawn( "script_origin", ( 0, 0, 0 ) );
     while ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
     {
-        tickObj playSound( "mpl_ui_timer_countdown" );
+        tickObj playSound( gf_countdownTickAlias() );
         wait 1.0;
     }
     tickObj delete();
@@ -3079,7 +3108,7 @@ gf_updateRoundWarning()
     }
 
     // Countdown beeps in the final 10 seconds only (one per second, 10 -> 1).
-    if ( remaining <= 0 || remaining > 10000 )
+    if ( remaining <= 0 || remaining > gf_finalTickWindowMs() )
         return;
 
     tick = int( ( remaining + 999 ) / 1000 );
@@ -3092,7 +3121,7 @@ gf_updateRoundWarning()
     level.gf_roundLastTick = tick;
 
     if ( isDefined( level.gf_roundTickObject ) )
-        level.gf_roundTickObject playSound( "mpl_ui_timer_countdown" );
+        level.gf_roundTickObject playSound( gf_countdownTickAlias() );
 }
 
 gf_cleanupRoundTimerState()
@@ -3543,7 +3572,7 @@ gf_updateOvertimeTickSound()
         return;
 
     remaining = level.gf_overtimeRemaining;
-    if ( remaining <= 0 || remaining > 10000 )   // tick only in the final 10s
+    if ( remaining <= 0 || remaining > gf_finalTickWindowMs() )   // tick only in the final 10s
         return;
 
     // 1 beep/sec from 10s -> 5s (matches the round beeps), then 2 beeps/sec for the final 5s.
@@ -3561,7 +3590,7 @@ gf_updateOvertimeTickSound()
     level.gf_overtimeLastTickMs = remaining;
 
     if ( isDefined( level.gf_overtimeTickObject ) )
-        level.gf_overtimeTickObject playSound( "mpl_ui_timer_countdown" );
+        level.gf_overtimeTickObject playSound( gf_countdownTickAlias() );
 }
 
 gf_pauseOvertimeForCapture()
