@@ -556,8 +556,11 @@ gf_boundaryPass()
 
 // Quiet team placement for a NOT-"playing" bot: the persistent-state half of the stock
 // menuAllies/menuAxis/menuSpectator (no suicide, no respawn, no menus). The next spawn wave
-// reads pers["team"] and the bot simply spawns on the new side. Mirrors
-// _gf_bridge::gf_forceTeamQuiet (duplicated so _bot.gsc needs no bridge include). Yield-free,
+// reads pers["team"] and the bot simply spawns on the new side. Sibling of
+// _gf_rounds::gf_quietSetTeam, kept separate ON PURPOSE: bots ALWAYS clear class (BotWarfare drives
+// their class/spawn, so they never hit the showMainMenuForTeam gate the human path guards against —
+// see docs/notes/quiet-team-move-cleared-class-blocks-respawn.md) and this path additionally
+// restores pers["lives"] on a real-team seat. Yield-free,
 // and every caller classifies-then-places with no wait in between — GSC has no preemption, so
 // the engine's spawn pipeline can never interleave (the old check-then-STOCK-switch raced
 // exactly there and suicided bots mid-spawn).

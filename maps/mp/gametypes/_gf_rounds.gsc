@@ -1360,7 +1360,8 @@ gf_planApplyMove( team )
 // spawn reads pers["team"] and the player simply spawns on the new side. Only ever safe on a
 // NOT-"playing" player (a live body can't change teams without a respawn). Clearing
 // pers["savedmodel"] matters: a cached old-side model would render the player in the WRONG TEAM's
-// skin after the move. Mirrors _gf_bridge::gf_forceTeamQuiet / _bot::gf_botQuietSetTeam.
+// skin after the move. Sibling of _bot::gf_botQuietSetTeam (the bot path always clears class and
+// restores lives instead — kept separate on purpose; see that function).
 //
 // ⚠ pers["class"] must come out of here VALID for a real team, not cleared. Stock's re-begin
 // (_globallogic_player.gsc:386) auto-spawns a team-assigned player only if isValidClass(pers["class"]);
