@@ -1,6 +1,18 @@
 'use strict';
 const API='/api';   // same-origin (relative): works whether the page is opened via 127.0.0.1 or localhost, no CORS needed
 
+// ─── Shared fetch / format helpers ──────────────────────────────────────────────
+// GET a same-origin API path (query string included) and parse the JSON reply.
+async function getJSON(path){ return (await fetch(API+path)).json(); }
+// POST a JSON body to an API path and parse the JSON reply.
+async function postJSON(path, body){
+  return (await fetch(API+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+}
+// Trim a float to at most 3 decimals, dropping trailing zeros ("1.500"→"1.5", "2.000"→"2").
+function fmtFloat(v){ return parseFloat(v).toFixed(3).replace(/0+$/,'').replace(/\.$/,''); }
+// DOM id for a dvar's row control: <prefix>_<dvar with every non-alnum char → '_'> (prefix 'srv').
+function rowId(dvar, prefix){ return (prefix||'srv')+'_'+String(dvar).replace(/[^a-zA-Z0-9]/g,'_'); }
+
 // ─── Maps data ────────────────────────────────────────────────────────────────
 const MAPS=[
   // Base game (14) — all gunfight-ready
@@ -125,7 +137,7 @@ function collectBlockDvars(block){
   return out;
 }
 async function saveCfgDvars(dvars){
-  return (await fetch(API+'/savecfg',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dvars})})).json();
+  return postJSON('/savecfg',{dvars});
 }
 async function saveBlockToCfg(btn){
   const dvars=collectBlockDvars(btn.closest('.block'));
@@ -203,10 +215,10 @@ function fillFromProfile(){
 }
 // server-side secrets store (gitignored) ──────────────────────────────
 async function fetchSecrets(){
-  try{const r=await (await fetch(API+'/secrets')).json();return (r&&r.ok&&r.profiles)||{};}catch(_){return {};}
+  try{const r=await getJSON('/secrets');return (r&&r.ok&&r.profiles)||{};}catch(_){return {};}
 }
 async function saveSecret(name,pass){
-  try{await fetch(API+'/secrets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,pass})});}catch(_){}
+  try{await postJSON('/secrets',{name,pass});}catch(_){}
 }
 // Copy the current input fields back into the active profile (called on connect / field edit).
 // host/port → localStorage; rcon_password → gitignored secrets.local.json (never localStorage).
@@ -248,27 +260,27 @@ function conn(){return{host:g('iHost').value.trim()||'127.0.0.1',port:parseInt(g
 // ─── API ────────────────────────────────────────────────────────────────────
 async function rcon(command,priority){
   const c=conn();
-  return (await fetch(API+'/rcon',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...c,command,priority:!!priority})})).json();
+  return postJSON('/rcon',{...c,command,priority:!!priority});
 }
 async function batchCmds(commands,delay=80){
   const c=conn();
-  return (await fetch(API+'/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...c,commands,delayMs:delay})})).json();
+  return postJSON('/batch',{...c,commands,delayMs:delay});
 }
 async function fetchStatus(){
   const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
-  return (await fetch(API+'/status?'+p)).json();
+  return getJSON('/status?'+p);
 }
 async function fetchTick(){
   // ONE rcon send for the whole dashboard refresh (status + gf_state + gf_roster chained
   // server-side). state/roster come back null on a listen server — status still lands.
   const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
-  return (await fetch(API+'/tick?'+p)).json();
+  return getJSON('/tick?'+p);
 }
 async function fetchDvars(names,fresh){
   const c=conn();const q={host:c.host,port:c.port,password:c.password,names:names.join(',')};
   if(fresh)q.fresh='1';   // re-probe: server clears its cached "unregistered" set for this profile
   const p=new URLSearchParams(q);
-  return (await fetch(API+'/dvars?'+p)).json();
+  return getJSON('/dvars?'+p);
 }
 
 // ─── Connect ────────────────────────────────────────────────────────────────
@@ -625,7 +637,7 @@ async function ctxAction(act,ev){
     if(!ip){toast('No IP for this player','err');return;}
     actLog('Locating '+name+' ('+ip+')…','in');
     try{
-      const r=await (await fetch(API+'/geoip?ip='+encodeURIComponent(ip))).json();
+      const r=await getJSON('/geoip?ip='+encodeURIComponent(ip));
       if(r.ok){ const loc=[r.city,r.region,r.country].filter(Boolean).join(', ')||'unknown';
         actLog(name+' @ '+loc+(r.isp?' · '+r.isp:''),'ok'); }
       else toast('Locate failed: '+(r.error||'unknown'),'err');
@@ -706,14 +718,14 @@ try{ const _fs=localStorage.getItem(FAV_KEY); _favs=_fs?JSON.parse(_fs):FAV_DEFA
 if(!Array.isArray(_favs)) _favs=FAV_DEFAULT.slice();
 function favSave(){
   try{ localStorage.setItem(FAV_KEY,JSON.stringify(_favs)); }catch(_){}   // cache for the next paint
-  fetch(API+'/prefs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({favs:_favs})})
-    .then(r=>r.json()).then(r=>{ if(!r||!r.ok) toast('Favorites not saved on the server: '+((r&&r.error)||'?'),'err'); })
+  postJSON('/prefs',{favs:_favs})
+    .then(r=>{ if(!r||!r.ok) toast('Favorites not saved on the server: '+((r&&r.error)||'?'),'err'); })
     .catch(()=>toast('Favorites not saved on the server (panel API unreachable)','err'));
 }
 // Adopt the panel's pinboard on load. An empty/absent server pinboard is SEEDED from this browser's
 // cache (first run after the feature ships), so an existing local pinboard isn't thrown away.
 async function favSyncFromServer(){
-  let r; try{ r=await (await fetch(API+'/prefs')).json(); }catch(_){ return; }   // API down → keep the cache
+  let r; try{ r=await getJSON('/prefs'); }catch(_){ return; }   // API down → keep the cache
   if(!r||!r.ok) return;
   const remote=(r.prefs&&Array.isArray(r.prefs.favs))?r.prefs.favs:null;
   if(!remote){ favSave(); return; }
@@ -1070,7 +1082,7 @@ function gSearchGo(i){
   let el=e.el;
   if(e.gt){                                 // synthetic gametype entry — render its block first
     buildGtSection(e.gt);
-    const inp=document.getElementById('srv_'+e.dvar.replace(/[^a-zA-Z0-9]/g,'_'));
+    const inp=document.getElementById(rowId(e.dvar));
     el=inp?inp.closest('.srow'):null;
   }
   if(el){
@@ -1120,9 +1132,8 @@ function dvarWriteError(resp){
 // .unsynced already means, so reuse it: the row gets flagged AND Set All / 💾 Save will now
 // refuse to push that stale value back (see _skipUnsynced).
 function flagDvarRow(dv){
-  const id=String(dv).replace(/[^a-zA-Z0-9]/g,'_');
-  ['srv_','mt_'].forEach(p=>{
-    const el=g(p+id), row=el&&el.closest('.srow');
+  ['srv','mt'].forEach(p=>{
+    const el=g(rowId(dv,p)), row=el&&el.closest('.srow');
     if(row) row.classList.add('unsynced');
   });
 }
@@ -1251,7 +1262,7 @@ let _cmdSeq=parseInt(localStorage.getItem('gf_cmdseq')||'0')||0;
 async function seedCmdSeq(){
   try{
     const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
-    const r=await (await fetch(API+'/ack?'+p)).json();
+    const r=await getJSON('/ack?'+p);
     if(r.ok && r.ack>=_cmdSeq){ _cmdSeq=r.ack; localStorage.setItem('gf_cmdseq',String(_cmdSeq)); }
   }catch(_){}
 }
@@ -1312,7 +1323,7 @@ async function ackTick(){
     _ackBusy=true;
     try{
       const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
-      const r=await (await fetch(API+'/ack?'+p)).json();
+      const r=await getJSON('/ack?'+p);
       if(r.ok){
         cqResolve(r.ack);
         // Keep our counter above the game's mark (which now persists across a map_restart, and is
@@ -1522,7 +1533,7 @@ async function setGt(){await sdvv('xblive_wagermatch',wagerFlag(_gtVal));await s
 // order drives the engine's own next rotation — one clean load, no flash.
 async function fetchMapRotation(){
   const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
-  return (await fetch(API+'/maprotation?'+p)).json();
+  return getJSON('/maprotation?'+p);
 }
 async function loadRotation(force){
   if(!live)return;
@@ -2513,7 +2524,7 @@ document.addEventListener('click',e=>{
 
 function srvRow(v, prefix, dEff, dPer, dVia) {
   const tip = `data-tip="${v.tip.replace(/"/g,'&quot;').replace(/\n/g,'&#10;')}"`;
-  const id  = (prefix || 'srv') + '_' + v.n.replace(/[^a-zA-Z0-9]/g,'_');
+  const id  = rowId(v.n, prefix);
   let ctrl;
   // Optional row extensions:
   //   v.also   — a second dvar set to the same value on every change (tog/sel), e.g. the
@@ -2540,8 +2551,8 @@ function srvRow(v, prefix, dEff, dPer, dVia) {
   } else if (v.type === 'sld') {
     // Range slider — applies the dvar live on release, value readout updates on drag
     const mn = v.min || '0.1', mx = v.max || '2', st = v.step || '0.05';
-    const dv = parseFloat(v.def).toFixed(3).replace(/0+$/,'').replace(/\.$/,'');
-    ctrl = `<input type="range" id="${id}" class="ctrl sld" min="${mn}" max="${mx}" step="${st}" value="${v.def}" oninput="g('${id}_v').textContent=parseFloat(this.value).toFixed(3).replace(/0+$/,'').replace(/\.$/,'')" onchange="sdvv('${v.n}',this.value)"><span class="sldval" id="${id}_v">${dv}</span>`;
+    const dv = fmtFloat(v.def);
+    ctrl = `<input type="range" id="${id}" class="ctrl sld" min="${mn}" max="${mx}" step="${st}" value="${v.def}" oninput="g('${id}_v').textContent=fmtFloat(this.value)" onchange="sdvv('${v.n}',this.value)"><span class="sldval" id="${id}_v">${dv}</span>`;
   } else if (v.type === 'btn') {
     ctrl = `<button class="b-gh b-sm ctrl" onclick="${v.act}">${v.btxt || 'Run'}</button>`;
   } else if (v.type === 'sel') {
@@ -2651,7 +2662,7 @@ function srvApplyValues(vars, values, prefix) {
   const pf = prefix || 'srv';
   vars.forEach(v => {
     if (v.type === 'perk' || v.type === 'btn' || v.type === 'bridgetog') return;
-    const base = pf + '_' + v.n.replace(/[^a-zA-Z0-9]/g,'_');
+    const base = rowId(v.n, pf);
     const el = g(base);
     if (!el) return;
     const row = el.closest('.srow');
@@ -2672,7 +2683,7 @@ function srvApplyValues(vars, values, prefix) {
     else if (v.type === 'sld') {
       el.value = val;
       const vv = g(base + '_v');
-      if (vv) vv.textContent = parseFloat(val).toFixed(3).replace(/0+$/,'').replace(/\.$/,'');
+      if (vv) vv.textContent = fmtFloat(val);
     } else { el.value = val; }   // num / flt / text / sel
   });
 }
@@ -2748,7 +2759,7 @@ function buildMatchModifiers() {
 async function resetModifiers() {
   const dvars = MATCH_MODIFIERS.filter(v => v.type === 'tog').map(v => v.n);
   await batchCmds(dvars.map(d => `set ${d} 0`), 40);
-  dvars.forEach(n => { const el = g('mt_' + n.replace(/[^a-zA-Z0-9]/g,'_')); if (el) el.checked = false; });
+  dvars.forEach(n => { const el = g(rowId(n, 'mt')); if (el) el.checked = false; });
   actLog('Game modifiers reset', 'ok'); toast('Modifiers reset', 'ok');
 }
 // Live-read the gunfight + gameplay + modifier dvars into their mt_-prefixed blocks
