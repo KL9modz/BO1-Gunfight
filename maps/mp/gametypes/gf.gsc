@@ -235,6 +235,118 @@ gf_seedDvar( name, def )
 
 onStartGameType()
 {
+    // Decomposed 2026-07-22: six sequential stage helpers, called in the ORIGINAL inline order.
+    // Pure extraction — the whole sequence is yield-free (the engine threads startGame() the
+    // moment this callback returns, so nothing here may wait; the strip-marked hold at the
+    // bottom is deliberately the only exception and must stay the last call before the ticker).
+    gf_roundEngineSetup();      // stock-dvar forcing + hook/callback installs
+    gf_roundRulesSetup();       // rule registration, team mode, grace, engine-behavior seeds
+    gf_roundSeedDvars();        // panel-facing dvar seeding (gf_seedDvar)
+    gf_roundApplyTuning();      // per-round gameplay applies (flinch/jump/sprint/vision/music)
+    gf_roundPresentation();     // banner strings + prematch countdown length
+
+    // #strip-begin - pre-prematch load gate (dev/main only; the public build has no match-start hold)
+    // Arm the load-gate's connect tracker NOW: the engine delivers "connecting"
+    // callbacks (which fire for rotation-carried clients while they are STILL on
+    // their loading screen) as soon as this Callback_StartGameType slice first
+    // yields, so the tracker must be listening before any later helper can wait.
+    // The actual hold is the last statement of this function. (The per-second
+    // prematch tick also moved there: it loops on inPrematchPeriod, which is
+    // already true during the hold, and would have beeped through it from here.)
+    gf_armLoadGate();
+    // #strip-end
+
+    gf_roundWorldSetup();       // round state flags, objective text, XP, loadouts, spawns, objects
+
+    // #strip-begin - RCON bridge + bot init (dev/main only; stripped from public release)
+    thread gf_bridgeInit();   // per-round: re-seeds dvars/flags + re-arms the vision blend (level.* wiped by map_restart); its telemetry/poll/pending-team loops self-guard to once-per-match inside
+    // The bot manager is once-per-MATCH, NOT once-per-round. onStartGameType re-runs on every
+    // map_restart (SD round cycling), but _bot::init() threads PERSISTENT managers (diffBots +
+    // the round-boundary fill reconciler) that must survive round cycling; re-threading them
+    // every round would stack copies. Gate on game[] — the only state that survives map_restart,
+    // and it resets on a genuine new map load — so exactly ONE manager set runs per match and it
+    // still re-inits for the next match.
+    // ⚠ This gate is only safe because those managers do NOT endon("game_ended"). That notify is
+    // NOT match-end: _globallogic::endGame fires it on EVERY round end (gf_endRound threads
+    // endGame in the same frame it notifies gf_round_over). This comment used to claim the
+    // opposite, and gf_boundaryListener carried the endon on that basis — so it died at the first
+    // round end, was never re-threaded by this once-per-match gate, and the bot fill silently
+    // stopped reconciling for the rest of the match ("fill ignores humans"). Re-init is collapsed
+    // by "bot_reinit" (fired at the top of _bot::init), which is the only notify that may tear
+    // these down. Same idiom as
+    // gf_rocketOncePerMatch / game["gf_init"]. bots_manage_add is legacy-cleared: nothing
+    // consumes it anymore (the addBots loop is deleted), but a stale nonzero value from an
+    // older build should not linger in the panel-visible dvar table.
+    if ( !isDefined( game["gf_botInit"] ) )
+    {
+        game["gf_botInit"] = true;
+        setDvar( "bots_manage_add", 0 );
+        thread maps\mp\gametypes\_bot::init();
+    }
+
+    // Default bot difficulty — OWNED BY dedicated.cfg (set bot_difficulty "fu"), NOT seeded here.
+    // bot_difficulty is a REAL ENGINE dvar (BO1 Combat Training), registered at process start as an
+    // enum: default "normal", domain easy/normal/hard/fu (live rcon read 2026-07-17). It is
+    // therefore NEVER empty, so the seed-if-empty that used to sit here was dead code that never
+    // fired once — the "fu" the VPS ran was a live panel botdiff_fu click surviving in-process,
+    // silently reverted to "normal" by the next server restart. GSC can't own this default without
+    // stomping a deliberate cfg value (an engine-registered "normal" is indistinguishable from an
+    // admin's chosen "normal"), so the GF default is a cfg deviation from the engine default —
+    // exactly what dedicated.cfg is for. _bot::diffBots re-applies the whole sv_bot* preset from
+    // the dvar every 1.5s, so a cfg value or a live panel botdiff_* click lands within a tick.
+
+    // Frame-hitch / slow-mo diagnostic (dev only). Chases the "prematch/preround
+    // countdown + whole game runs in slow-motion until it hits 0" report: samples
+    // how much gettime() advances across a fixed wait() and logs GF_HITCH to
+    // games_mp.log when a window runs slow. Re-launched every onStartGameType but
+    // collapsed to exactly one live sampler by the gf_hitch_reinit notify (threads
+    // survive map_restart, so a bare re-thread would stack). See _gf_debug.gsc.
+    level notify( "gf_hitch_reinit" );
+    level thread gf_hitchMonitor();
+
+    // Report the round-end dark window from the FAR side of map_restart. gf_roundEndProbe runs
+    // on the near side and dies inside the restart (a thread parked in a timed wait does not
+    // come back), so it stamps a heartbeat into a dvar and we read it here — the first mod code
+    // to run after the restart. Yields the one number the "Connection Interrupted" theory has
+    // always assumed and never measured: how long the server ran no script at all.
+    gf_reportRoundEndGap();
+    // #strip-end
+
+    // Undo any timescale stock's final-killcam slowdown left behind. Its SetTimeScale(1.0) restore
+    // sits AFTER a wait and behind endon("end_killcam"), so if every viewer skips (or drops out of)
+    // the killcam in that window the restore never runs and the server is stranded at 0.25x — and
+    // nothing in stock ever puts it back. gf_killcamSlowmoClamp restores 1.0 on its own path too,
+    // but only when it actually ran; this is the unconditional net that also covers the stock-depth
+    // (floor 0.25) case, where the clamp returns early and never touches the timescale at all.
+    // There is deliberately NO detector for the leak: the `timescale` dvar does not track
+    // SetTimeScale, so nothing inside the VM can see one (see _gf_debug.gsc). This costs a single
+    // builtin call per round, so guard it and move on.
+    gf_resetTimeScale();
+
+    // #strip-begin - pre-prematch hold (dev/main only; stripped from public release)
+    // Pre-prematch load gate — MUST be the last statement: the engine threads
+    // startGame() (prematch countdown -> prematch_over) the moment this callback
+    // returns, and everything above (spawn points, gameobjects, bridge, bots)
+    // must be in place before the first yield lets connect/spawn callbacks run.
+    // Holds the match's FIRST round until every rotation-carried client is off
+    // the loading screen (bounded by scr_gf_load_wait) so the full countdown and
+    // intro play for everyone at once, and slow loaders can no longer be
+    // grace-locked into spectating round 1. See _gf_rounds.gsc.
+    //
+    // The public build has NO hold: with this call gone, onStartGameType simply returns and the
+    // engine threads the prematch immediately. That is the whole "no lobby / no wait times" of the
+    // public build — there is nothing else to switch off, because every hold hangs off this one call.
+    gf_waitForLoadingClients();
+    // #strip-end
+
+    level thread gf_nativePrematchTicker();      // engine matchStartTimer is silent — re-add the per-second tick (start only now, post-hold)
+}
+
+// ─── onStartGameType stage 1: engine dvar forcing + hook/callback installs ─────────────────────
+// Re-run every round (map_restart wipes level.*). Order note: SetupCallbacks() (main(), before
+// onStartGameType) has just reset the stock handlers, so the saves below capture REAL stock.
+gf_roundEngineSetup()
+{
     level.noPersistence = true;
 
     // These are STOCK engine dvars, NOT mod-registered scr_gf_* dvars: _globallogic::registerDvars()
@@ -338,7 +450,11 @@ onStartGameType()
     // because map_restart wipes level.*. Admins gate switching with gf_team_switch / gf_team_lock.
     level.teamchange_keepbalanced = false;
     // #strip-end
+}
 
+// ─── onStartGameType stage 2: rule registration, team mode, grace, engine-behavior seeds ───────
+gf_roundRulesSetup()
+{
     gf_registerLoadoutCycleDvar(); // also sets level.gf_cfg_roundsPerLoadout
     gf_registerOvertimeLimitDvar(); // also sets level.gf_cfg_overtimeLimit
     gf_initDamageScoring(); // relies on level.gf_cfg_roundsPerLoadout
@@ -402,7 +518,13 @@ onStartGameType()
     // dedicated.cfg sets it too, for the boot-straight-onto-Hotel case where this has never run.
     // 1 = elevators disabled (GF default), 0 = stock working elevators.
     gf_seedDvar( "scr_elevator_failsafe", "1" );
+}
 
+// ─── onStartGameType stage 3: panel-facing dvar seeding ────────────────────────────────────────
+// Everything here is gf_seedDvar (seed-if-empty) so the RCON panel's connect-sweep never reads
+// an unregistered dvar; the strip-marked blocks inside belong to systems the public build drops.
+gf_roundSeedDvars()
+{
     // Per-round prematch via the engine's native countdown. The engine zeroes level.prematchPeriod
     // every round (Callback_StartGameType) and only refills it once per match, so we set it HERE
     // each round: onStartGameType runs after the engine's prematch randomization and before
@@ -419,8 +541,8 @@ onStartGameType()
     // no bots — so seeding their dvars would only publish knobs that nothing reads.
     //
     // The prematch LENGTH is the one exception worth keeping tunable here: the public build
-    // pins it to the fixed 20s/7s assigned below (see level.prematchPeriod), while dev/VPS gets
-    // these two dvars so the RCON panel can retune it live.
+    // pins it to the fixed 20s/7s assigned in gf_roundPresentation (see level.prematchPeriod),
+    // while dev/VPS gets these two dvars so the RCON panel can retune it live.
     gf_seedDvar( "scr_gf_match_prematch_seconds", "20" );   // first round of the match (longer intro)
     gf_seedDvar( "scr_gf_prematch_seconds", "7" );          // every later round
 
@@ -526,7 +648,11 @@ onStartGameType()
     // EXPLICIT map-default key, which is a different look.
     gf_seedDvar( "gf_vis_vision", "enhance" );
     // #strip-end
+}
 
+// ─── onStartGameType stage 4: per-round gameplay applies ───────────────────────────────────────
+gf_roundApplyTuning()
+{
     // Flinch (damage view-kick) scale — mult of stock bg_viewKickScale (0.2).
     // Seeds scr_gf_flinch (default 0.5 = half stock kick) and applies bg_viewKickScale each
     // round so an RCON change persists across map_restart. Server-side, so it
@@ -560,7 +686,11 @@ onStartGameType()
     // before it — never on the round start. This suppresses stock's push; the per-player start point
     // is armed from gf_playerSpawnedCB. Re-run every round: level.nextMusicState is level state.
     gf_initRoundMusic();
+}
 
+// ─── onStartGameType stage 5: banner strings + prematch countdown length ───────────────────────
+gf_roundPresentation()
+{
     // Match-end banner subtitle. Stock's getEndReasonText() OVERWRITES the reason we hand endGame
     // on the match-end path only (_globallogic.gsc: `if (!isOneRound()) endReasonText =
     // getEndReasonText();`, after startNextRound returns false), so the last banner of a match is
@@ -595,18 +725,11 @@ onStartGameType()
     else
         level.prematchPeriod = maps\mp\gametypes\_globallogic_utils::getValueInRange( getDvarInt( "scr_gf_prematch_seconds" ), 2, 20 );
     // #strip-end
+}
 
-    // #strip-begin - pre-prematch load gate (dev/main only; the public build has no match-start hold)
-    // Arm the load-gate's connect tracker NOW: the engine delivers "connecting"
-    // callbacks (which fire for rotation-carried clients while they are STILL on
-    // their loading screen) as soon as this Callback_StartGameType slice first
-    // yields, so the tracker must be listening before any later helper can wait.
-    // The actual hold is the last statement of this function. (The per-second
-    // prematch tick also moved there: it loops on inPrematchPeriod, which is
-    // already true during the hold, and would have beeped through it from here.)
-    gf_armLoadGate();
-    // #strip-end
-
+// ─── onStartGameType stage 6: round state flags, objective text, XP, loadouts, spawns, objects ─
+gf_roundWorldSetup()
+{
     level.gf_roundActive     = false;
     level.gf_roundEnding     = false;
     level.gf_activatingRound = false;
@@ -712,89 +835,6 @@ onStartGameType()
 
     if ( !level.gf_largeMode )
         gf_applyWagerZoneAssets();
-
-    // #strip-begin - RCON bridge + bot init (dev/main only; stripped from public release)
-    thread gf_bridgeInit();   // per-round: re-seeds dvars/flags + re-arms the vision blend (level.* wiped by map_restart); its telemetry/poll/pending-team loops self-guard to once-per-match inside
-    // The bot manager is once-per-MATCH, NOT once-per-round. onStartGameType re-runs on every
-    // map_restart (SD round cycling), but _bot::init() threads PERSISTENT managers (diffBots +
-    // the round-boundary fill reconciler) that must survive round cycling; re-threading them
-    // every round would stack copies. Gate on game[] — the only state that survives map_restart,
-    // and it resets on a genuine new map load — so exactly ONE manager set runs per match and it
-    // still re-inits for the next match.
-    // ⚠ This gate is only safe because those managers do NOT endon("game_ended"). That notify is
-    // NOT match-end: _globallogic::endGame fires it on EVERY round end (gf_endRound threads
-    // endGame in the same frame it notifies gf_round_over). This comment used to claim the
-    // opposite, and gf_boundaryListener carried the endon on that basis — so it died at the first
-    // round end, was never re-threaded by this once-per-match gate, and the bot fill silently
-    // stopped reconciling for the rest of the match ("fill ignores humans"). Re-init is collapsed
-    // by "bot_reinit" (fired at the top of _bot::init), which is the only notify that may tear
-    // these down. Same idiom as
-    // gf_rocketOncePerMatch / game["gf_init"]. bots_manage_add is legacy-cleared: nothing
-    // consumes it anymore (the addBots loop is deleted), but a stale nonzero value from an
-    // older build should not linger in the panel-visible dvar table.
-    if ( !isDefined( game["gf_botInit"] ) )
-    {
-        game["gf_botInit"] = true;
-        setDvar( "bots_manage_add", 0 );
-        thread maps\mp\gametypes\_bot::init();
-    }
-
-    // Default bot difficulty — OWNED BY dedicated.cfg (set bot_difficulty "fu"), NOT seeded here.
-    // bot_difficulty is a REAL ENGINE dvar (BO1 Combat Training), registered at process start as an
-    // enum: default "normal", domain easy/normal/hard/fu (live rcon read 2026-07-17). It is
-    // therefore NEVER empty, so the seed-if-empty that used to sit here was dead code that never
-    // fired once — the "fu" the VPS ran was a live panel botdiff_fu click surviving in-process,
-    // silently reverted to "normal" by the next server restart. GSC can't own this default without
-    // stomping a deliberate cfg value (an engine-registered "normal" is indistinguishable from an
-    // admin's chosen "normal"), so the GF default is a cfg deviation from the engine default —
-    // exactly what dedicated.cfg is for. _bot::diffBots re-applies the whole sv_bot* preset from
-    // the dvar every 1.5s, so a cfg value or a live panel botdiff_* click lands within a tick.
-
-    // Frame-hitch / slow-mo diagnostic (dev only). Chases the "prematch/preround
-    // countdown + whole game runs in slow-motion until it hits 0" report: samples
-    // how much gettime() advances across a fixed wait() and logs GF_HITCH to
-    // games_mp.log when a window runs slow. Re-launched every onStartGameType but
-    // collapsed to exactly one live sampler by the gf_hitch_reinit notify (threads
-    // survive map_restart, so a bare re-thread would stack). See _gf_debug.gsc.
-    level notify( "gf_hitch_reinit" );
-    level thread gf_hitchMonitor();
-
-    // Report the round-end dark window from the FAR side of map_restart. gf_roundEndProbe runs
-    // on the near side and dies inside the restart (a thread parked in a timed wait does not
-    // come back), so it stamps a heartbeat into a dvar and we read it here — the first mod code
-    // to run after the restart. Yields the one number the "Connection Interrupted" theory has
-    // always assumed and never measured: how long the server ran no script at all.
-    gf_reportRoundEndGap();
-    // #strip-end
-
-    // Undo any timescale stock's final-killcam slowdown left behind. Its SetTimeScale(1.0) restore
-    // sits AFTER a wait and behind endon("end_killcam"), so if every viewer skips (or drops out of)
-    // the killcam in that window the restore never runs and the server is stranded at 0.25x — and
-    // nothing in stock ever puts it back. gf_killcamSlowmoClamp restores 1.0 on its own path too,
-    // but only when it actually ran; this is the unconditional net that also covers the stock-depth
-    // (floor 0.25) case, where the clamp returns early and never touches the timescale at all.
-    // There is deliberately NO detector for the leak: the `timescale` dvar does not track
-    // SetTimeScale, so nothing inside the VM can see one (see _gf_debug.gsc). This costs a single
-    // builtin call per round, so guard it and move on.
-    gf_resetTimeScale();
-
-    // #strip-begin - pre-prematch hold (dev/main only; stripped from public release)
-    // Pre-prematch load gate — MUST be the last statement: the engine threads
-    // startGame() (prematch countdown -> prematch_over) the moment this callback
-    // returns, and everything above (spawn points, gameobjects, bridge, bots)
-    // must be in place before the first yield lets connect/spawn callbacks run.
-    // Holds the match's FIRST round until every rotation-carried client is off
-    // the loading screen (bounded by scr_gf_load_wait) so the full countdown and
-    // intro play for everyone at once, and slow loaders can no longer be
-    // grace-locked into spectating round 1. See _gf_rounds.gsc.
-    //
-    // The public build has NO hold: with this call gone, onStartGameType simply returns and the
-    // engine threads the prematch immediately. That is the whole "no lobby / no wait times" of the
-    // public build — there is nothing else to switch off, because every hold hangs off this one call.
-    gf_waitForLoadingClients();
-    // #strip-end
-
-    level thread gf_nativePrematchTicker();      // engine matchStartTimer is silent — re-add the per-second tick (start only now, post-hold)
 }
 
 // ─── Cosmodrome rocket: once per match, not once per round ───────────────────
