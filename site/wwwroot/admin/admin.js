@@ -127,6 +127,7 @@ function fetchHist(){
       if (histFoot) histFoot.textContent = 'History '+(d&&d.updated?ago(d.updated):'')+
         '  ·  spans up to '+((d&&d.days)||'?')+' days  ·  refreshes every 60s';
       renderHist();
+      renderStats();
     })
     .catch(function(){
       if (histAll.length) return;   // keep last good data on a transient error
@@ -154,6 +155,137 @@ function initHist(){
   fetchHist(); setInterval(fetchHist,60000);
 }
 initHist();
+
+// ---- All-time stats (aggregated over the history events) ------------------
+// Pure client-side summary of the SAME histAll array the history search uses
+// (each event carries guid, session, cc), so it costs no extra fetch and no
+// server change. Re-rendered from fetchHist() whenever the 60s history refresh
+// lands. Scope = whatever admin_history.json holds (up to 60 days / 5000 events).
+var STATS_TOP = 10;
+
+// Flag SVG, self-hosted like the public page. Admin lives at /admin/, so the
+// assets/ dir is one level up. Unknown/absent -> the neutral xx placeholder.
+function statFlag(cc){
+  cc = String(cc||'').toLowerCase();
+  if(!/^[a-z]{2}$/.test(cc)) return el('span','flag-none');
+  var im = document.createElement('img');
+  im.className='flag'; im.src='../assets/flags/'+cc+'.svg';
+  im.alt=cc.toUpperCase(); im.title=cc.toUpperCase(); im.loading='lazy';
+  im.onerror=function(){ this.onerror=null; this.src='../assets/flags/xx.svg'; };
+  return im;
+}
+// Player identity: GUID when real, else the bare IP (bots/still-connecting rows
+// never reach admin_history — Build-ConnHistory drops guid 0 / no ip:port).
+function statKey(e){ var g=(e.guid||'').trim(); return (g && g!=='0') ? 'g:'+g : 'i:'+String(e.ip||'').split(':')[0]; }
+// Session string is "<minutes>m<ss>s" (minutes can exceed 59; no hours field).
+function parseSession(s){ var m=/(\d+)m(\d+)s/.exec(String(s||'')); return m ? (+m[1])*60 + (+m[2]) : 0; }
+function fmtDur(s){ s=Math.round(s||0); var h=Math.floor(s/3600), m=Math.floor((s%3600)/60);
+  if(h) return h+'h '+(m<10?'0':'')+m+'m'; if(m) return m+'m'; return s+'s'; }
+
+function computeStats(events){
+  var P={}, totSec=0, totLeft=0, connects=0, days={};
+  // events are NEWEST-FIRST, so the first sighting of a key is its most recent
+  // name; take the most recent non-empty country the same way.
+  for(var i=0;i<events.length;i++){
+    var e=events[i], k=statKey(e), p=P[k];
+    if(!p){ p=P[k]={ name:e.name||'?', cc:'', sec:0, sessions:0, conns:0 }; }
+    if(!p.cc && e.cc) p.cc=e.cc;
+    if(e.date) days[e.date]=1;
+    if(e.event==='CONNECT'){ connects++; p.conns++; }
+    if(e.event==='LEFT'){ var s=parseSession(e.session); if(s>0){ p.sec+=s; p.sessions++; totSec+=s; totLeft++; } }
+  }
+  var arr=[], key; for(key in P){ if(P.hasOwnProperty(key)) arr.push(P[key]); }
+  var byCC={}; arr.forEach(function(p){ if(p.cc) byCC[p.cc]=(byCC[p.cc]||0)+1; });
+  var cc=[], c; for(c in byCC){ if(byCC.hasOwnProperty(c)) cc.push({cc:c,n:byCC[c]}); }
+  cc.sort(function(a,b){ return b.n-a.n; });
+  var top=arr.filter(function(p){ return p.sec>0; })
+             .sort(function(a,b){ return b.sec-a.sec; }).slice(0,STATS_TOP);
+  var topConn=arr.filter(function(p){ return p.conns>0; })
+             .sort(function(a,b){ return b.conns-a.conns; }).slice(0,STATS_TOP);
+  return { unique:arr.length, connects:connects, totSec:totSec, totLeft:totLeft,
+           days:Object.keys(days).length, countries:cc, top:top, topConn:topConn };
+}
+
+function renderStats(){
+  var host=document.getElementById('stats'); if(!host) return;
+  host.innerHTML='';
+  if(!histAll.length) return;   // nothing to summarise yet
+  var s=computeStats(histAll);
+
+  // Summary tiles
+  var c1=el('div','card');
+  c1.appendChild(el('p','kick','All-time stats  ·  from '+s.days+' day'+(s.days===1?'':'s')+' on file'));
+  var g=el('div','hstat');
+  function cell(k,v){ var c=el('div','cell'); c.appendChild(el('div','k',k));
+    c.appendChild(el('div','v',String(v))); g.appendChild(c); }
+  cell('Unique players', s.unique);
+  cell('Countries', s.countries.length);
+  cell('Total sessions', s.totLeft);
+  cell('Total playtime', fmtDur(s.totSec));
+  cell('Avg session', s.totLeft ? fmtDur(s.totSec/s.totLeft) : '—');
+  cell('Connects', s.connects);
+  c1.appendChild(g);
+  host.appendChild(c1);
+
+  // Most playtime leaderboard
+  var c2=el('div','card');
+  c2.appendChild(el('p','kick','Most playtime  (top '+STATS_TOP+')'));
+  if(!s.top.length){ c2.appendChild(el('div','empty','No completed sessions yet.')); }
+  else{
+    var tbl=el('table'), th=el('tr');
+    ['#','Player','Playtime','Sessions'].forEach(function(h){ th.appendChild(el('th',null,h)); });
+    tbl.appendChild(th);
+    s.top.forEach(function(p,idx){
+      var tr=el('tr');
+      tr.appendChild(el('td','rank', String(idx+1)));
+      var nt=el('td','name'); nt.appendChild(statFlag(p.cc)); nt.appendChild(document.createTextNode(p.name||'?')); tr.appendChild(nt);
+      tr.appendChild(el('td','dur', fmtDur(p.sec)));
+      tr.appendChild(el('td',null, String(p.sessions)));
+      tbl.appendChild(tr);
+    });
+    c2.appendChild(tbl);
+  }
+  c2.appendChild(el('div','stnote','Playtime counts completed sessions only — anyone online right now is added when they leave.'));
+  host.appendChild(c2);
+
+  // Most connections leaderboard
+  var c4=el('div','card');
+  c4.appendChild(el('p','kick','Most connections  (top '+STATS_TOP+')'));
+  if(!s.topConn.length){ c4.appendChild(el('div','empty','No connections recorded yet.')); }
+  else{
+    var tblc=el('table'), thc=el('tr');
+    ['#','Player','Connects','Playtime'].forEach(function(h){ thc.appendChild(el('th',null,h)); });
+    tblc.appendChild(thc);
+    s.topConn.forEach(function(p,idx){
+      var tr=el('tr');
+      tr.appendChild(el('td','rank', String(idx+1)));
+      var nt=el('td','name'); nt.appendChild(statFlag(p.cc)); nt.appendChild(document.createTextNode(p.name||'?')); tr.appendChild(nt);
+      tr.appendChild(el('td',null, String(p.conns)));
+      tr.appendChild(el('td','dur', p.sec ? fmtDur(p.sec) : '—'));
+      tblc.appendChild(tr);
+    });
+    c4.appendChild(tblc);
+  }
+  host.appendChild(c4);
+
+  // Players by country
+  var c3=el('div','card');
+  c3.appendChild(el('p','kick','Players by country  ('+s.countries.length+')'));
+  if(!s.countries.length){ c3.appendChild(el('div','empty','No countries resolved yet.')); }
+  else{
+    var max=s.countries[0].n || 1, list=el('div','clist');
+    s.countries.forEach(function(o){
+      var row=el('div','crow');
+      row.appendChild(statFlag(o.cc));
+      row.appendChild(el('span','cc', o.cc.toUpperCase()));
+      var bar=el('div','cbar'), fill=el('i'); fill.style.width=Math.round(o.n/max*100)+'%'; bar.appendChild(fill); row.appendChild(bar);
+      row.appendChild(el('span','cn', String(o.n)));
+      list.appendChild(row);
+    });
+    c3.appendChild(list);
+  }
+  host.appendChild(c3);
+}
 
 // ---- Server health (ops status) ------------------------------------------
 // Own container (#health) + own 5s interval, separate from the roster tick so

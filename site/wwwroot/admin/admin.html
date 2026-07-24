@@ -73,6 +73,21 @@
     .hstat .cell{background:var(--panel2);border:1px solid var(--bd);border-radius:8px;padding:8px 10px}
     .hstat .k{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dm)}
     .hstat .v{font-size:16px;font-weight:700;margin-top:3px;overflow-wrap:anywhere}
+    /* all-time stats card: flags, playtime leaderboard, country bars */
+    .flag{width:15px;height:15px;flex:0 0 auto;border-radius:50%;display:inline-block;
+      vertical-align:-3px;margin-right:7px;box-shadow:0 0 0 1px rgba(255,255,255,.14)}
+    .flag-none{box-shadow:none;background:transparent;width:15px;height:15px;
+      display:inline-block;vertical-align:-3px;margin-right:7px}
+    td.rank{width:26px;color:var(--dm);font-variant-numeric:tabular-nums}
+    td.dur{font-variant-numeric:tabular-nums;color:#c7d0dc}
+    .clist{display:flex;flex-direction:column;gap:7px;margin-top:2px}
+    .crow{display:flex;align-items:center;gap:9px;font-size:13px}
+    .crow .cc{color:var(--dm);font-size:11px;letter-spacing:.06em;width:22px}
+    .crow .cbar{flex:1;height:8px;min-width:50px;border-radius:999px;background:#0c0f13;
+      border:1px solid var(--bd);overflow:hidden}
+    .crow .cbar > i{display:block;height:100%;background:var(--accent)}
+    .crow .cn{font-variant-numeric:tabular-nums;color:#c7d0dc;width:30px;text-align:right}
+    .stnote{color:#6b7482;font-size:11px;margin-top:9px}
   </style>
 </head>
 <body>
@@ -87,6 +102,7 @@
 
     <div id="health"></div>
     <div id="content"></div>
+    <div id="stats"></div>
     <div id="history"></div>
     <p class="foot" id="foot">&nbsp;</p>
   </main>
