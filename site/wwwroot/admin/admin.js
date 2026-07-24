@@ -177,6 +177,17 @@ function statFlag(cc){
 // Player identity: GUID when real, else the bare IP (bots/still-connecting rows
 // never reach admin_history — Build-ConnHistory drops guid 0 / no ip:port).
 function statKey(e){ var g=(e.guid||'').trim(); return (g && g!=='0') ? 'g:'+g : 'i:'+String(e.ip||'').split(':')[0]; }
+// 2-letter code -> full English country name via the browser's built-in
+// Intl.DisplayNames (no lookup table needed). Falls back to the upper-case code
+// if the API is missing or the code is unknown.
+var _regionNames = null;
+try { _regionNames = new Intl.DisplayNames(['en'], { type:'region' }); } catch(e){ _regionNames = null; }
+function countryName(cc){
+  cc = String(cc||'').toUpperCase();
+  if(!/^[A-Z]{2}$/.test(cc)) return cc || '—';
+  if(_regionNames){ try { var n=_regionNames.of(cc); if(n && n!==cc) return n; } catch(e){} }
+  return cc;
+}
 // Session string is "<minutes>m<ss>s" (minutes can exceed 59; no hours field).
 function parseSession(s){ var m=/(\d+)m(\d+)s/.exec(String(s||'')); return m ? (+m[1])*60 + (+m[2]) : 0; }
 function fmtDur(s){ s=Math.round(s||0); var h=Math.floor(s/3600), m=Math.floor((s%3600)/60);
@@ -277,7 +288,7 @@ function renderStats(){
     s.countries.forEach(function(o){
       var row=el('div','crow');
       row.appendChild(statFlag(o.cc));
-      row.appendChild(el('span','cc', o.cc.toUpperCase()));
+      var nm=el('span','cname', countryName(o.cc)); nm.title=o.cc.toUpperCase(); row.appendChild(nm);
       var bar=el('div','cbar'), fill=el('i'); fill.style.width=Math.round(o.n/max*100)+'%'; bar.appendChild(fill); row.appendChild(bar);
       row.appendChild(el('span','cn', String(o.n)));
       list.appendChild(row);
