@@ -230,7 +230,8 @@ onPrecacheGameType()
 // seed sites call it too, and a stripped caller may call kept code but never the reverse.
 gf_seedDvar( name, def )
 {
-    gf_seedDvar( name, def );
+    if ( getDvar( name ) == "" )
+        setDvar( name, def );
 }
 
 onStartGameType()
