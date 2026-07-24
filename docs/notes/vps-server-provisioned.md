@@ -13,7 +13,7 @@ CLAUDE.md TODO "Setup a modded T5 Plutonium server on a VPS").
 - Provider/plan: Contabo Cloud VPS 10 SSD - 4 vCPU / 8 GB RAM / 150 GB SSD / 200 Mbit/s, ~$18.20/mo (base + US West + Windows license)
 - Public IPv4: 94.72.121.4 (IPv6 2605:a141:2340:4923::1)
 - Location: Seattle (US West). OS: **Windows Server 2019 Datacenter 64-bit** (the order page said 2025, but the provisioned image is 2019 per Server Manager — fine, 2019 is Plutonium's documented minimum).
-- VNC out-of-band console: 144.126.146.144:63019 (8-char VNC pass; Windows login is `Administrator` / its own pass). RDP needed Remote Desktop enabled + the box fully provisioned (initial 0x204 was just it still booting).
+- VNC out-of-band console: 144.126.146.144:63019 (8-char VNC pass; Windows login is `Administrator` / its own pass). RDP needed Remote Desktop enabled + the box fully provisioned (initial 0x204 was just it still booting). ⚠ **`144.126.146.144` is VNC-ONLY** — it does not answer SSH/RDP/HTTPS/game traffic for the VM. Don't hand-type it as "the VPS IP"; use the `gf-vps` SSH alias or `94.72.121.4` directly. See [[vps-three-ips-dont-confuse-vnc-with-vm]].
 - Game UDP port: 28960. Game files live at C:\gameserver\T5 (BO1 install). Mod + dedicated.cfg in %LOCALAPPDATA%\Plutonium\storage\t5\. Launch bat: C:\gameserver\T5\start_mp_server.bat (bootstrapper `t5mp "C:\gameserver\T5" -dedicated +set key ... +set fs_game mods/mp_gunfight +exec dedicated.cfg ...`, with a restart loop).
 
 **STATUS 2026-06-29: server is LIVE and successfully joined.** Full runbook in repo **VPS_DEPLOY.md** (root, `main`).
