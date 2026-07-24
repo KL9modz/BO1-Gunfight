@@ -34,6 +34,9 @@ $script:IgnoreFile = Join-Path $PSScriptRoot '..\ignore.local.json'
 # Send-GfNtfy: the shared ntfy sender (JSON publish, unicode-safe titles).
 . (Join-Path $PSScriptRoot '..\ntfy.ps1')
 
+# Resolve-T5Root + Get-RconPassword (shared path/cfg helpers).
+. (Join-Path $PSScriptRoot '..\common.ps1')
+
 function Write-Log($msg) {
   Write-Host ("[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $msg)
 }
@@ -60,14 +63,9 @@ function Get-CfgVal($fileCfg, $envKey, $fileKey, $def) {
 }
 
 function Read-RconPw {
-  # this file: storage\t5\mods\mp_gunfight\tools\notify -> 4 up = storage\t5
-  $cfgPath = Join-Path $PSScriptRoot '..\..\..\..\dedicated.cfg'
-  if (Test-Path $cfgPath) {
-    $t = Get-Content $cfgPath -Raw
-    $m = [regex]::Match($t, '(?im)^\s*set[as]?\s+"?rcon_password"?\s+"([^"]*)"')
-    if ($m.Success) { return $m.Groups[1].Value }
-  }
-  return ''
+  # Only reached as a fallback after the GF_RCON_PW env / config password (line ~450) came up
+  # empty, so Get-RconPassword's env check is a no-op here — this stays a cfg-only read.
+  return (Get-RconPassword -CfgPath (Join-Path (Resolve-T5Root) 'dedicated.cfg'))
 }
 
 # ── RCON (UDP OOB) ────────────────────────────────────────────────────────────

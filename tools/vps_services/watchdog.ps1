@@ -62,18 +62,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $scriptRoot '..\common.ps1')   # Resolve-*Root / Get-RconPassword
 if (-not $StatePath)        { $StatePath        = Join-Path $scriptRoot 'watchdog_state.json' }
 if (-not $MaintenancePath)  { $MaintenancePath  = Join-Path $scriptRoot 'watchdog_maintenance.json' }
 if (-not $NotifyConfigPath) { $NotifyConfigPath = Join-Path (Split-Path -Parent $scriptRoot) 'notify\config.json' }
-# ...\mp_gunfight\tools\vps_services -> two parents up = ...\mp_gunfight (the mod root, where the
-# engine writes console_mp.log and, under logs\, games_mp.log).
-if (-not $ModRootPath)      { $ModRootPath      = Split-Path -Parent (Split-Path -Parent $scriptRoot) }
-if (-not $CfgPath) {
-    # ...\storage\t5\mods\mp_gunfight\tools\vps_services -> four parents up = ...\storage\t5
-    $st5 = $scriptRoot
-    for ($i = 0; $i -lt 4; $i++) { $st5 = Split-Path -Parent $st5 }
-    $CfgPath = Join-Path $st5 'dedicated.cfg'
-}
+# ...\mp_gunfight (the mod root, where the engine writes console_mp.log and, under logs\,
+# games_mp.log) and ...\storage\t5 (dedicated.cfg), both from common.ps1's fixed location.
+if (-not $ModRootPath)      { $ModRootPath      = Resolve-ModRoot }
+if (-not $CfgPath)          { $CfgPath          = Join-Path (Resolve-T5Root) 'dedicated.cfg' }
 
 function Log($msg) {
     $t = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
@@ -150,22 +146,12 @@ function Send-Alert($title, $message, $priority, $tags) {
     }
 }
 
-# ---- rcon password (read from dedicated.cfg, box-local, never logged) --------
-function Get-RconPw {
-    if ($env:GF_RCON_PW) { return $env:GF_RCON_PW }
-    if (Test-Path $CfgPath) {
-        $m = Select-String -Path $CfgPath -Pattern 'set\s+rcon_password\s+"([^"]*)"' -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($m) { return $m.Matches[0].Groups[1].Value }
-    }
-    return ''
-}
-
 # ---- issue an rcon command THROUGH the panel (the single box-side rcon pacer) ----
 # Never send raw rcon here: the project rule is exactly one process owns the ~1-reply-
 # per-0.7s pacing (the panel). map_rotate goes on the panel's priority lane.
 function Send-PanelRcon($command) {
     try {
-        $pw = Get-RconPw
+        $pw = Get-RconPassword -CfgPath $CfgPath   # box-local, never logged (env GF_RCON_PW wins)
         if (-not $pw) { Log "Send-PanelRcon: no rcon password in $CfgPath"; return $false }
         $body = @{ host = '127.0.0.1'; port = '28960'; password = $pw; command = $command; priority = $true } | ConvertTo-Json -Compress
         $r = Invoke-RestMethod -Uri "http://127.0.0.1:$PanelPort/api/rcon" -Method Post -ContentType 'application/json' -Body $body -TimeoutSec 12

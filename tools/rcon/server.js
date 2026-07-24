@@ -590,6 +590,28 @@ function sendJson(res, data, status = 200) {
   res.end(body);
 }
 
+// ─── Shared endpoint helpers ────────────────────────────────────────────────────
+// Standard connection params from a GET query string, with the panel's loopback defaults.
+// `p` is the parsed integer port (the numeric form most rcon calls want).
+function connFromQuery(query) {
+  const { host = '127.0.0.1', port = '28960', password = '' } = query;
+  return { host, port, password, p: parseInt(port) };
+}
+
+// Read + JSON-parse a request body. On malformed JSON, respond 400 and return undefined — since
+// JSON.parse never yields undefined, `body === undefined` uniquely means "already responded, bail".
+async function readJsonBody(req, res) {
+  try { return JSON.parse(await readBody(req)); }
+  catch (_) { sendJson(res, { ok: false, error: 'Bad JSON' }, 400); return undefined; }
+}
+
+// Run an async endpoint body, funnelling any throw into the standard { ok:false, error } tail so
+// each endpoint no longer repeats the same try/catch.
+async function handle(res, fn) {
+  try { return await fn(); }
+  catch (err) { return sendJson(res, { ok: false, error: err.message }); }
+}
+
 function serveFile(res, filePath) {
   try {
     const data = fs.readFileSync(filePath);
@@ -648,9 +670,8 @@ const server = http.createServer(async (req, res) => {
   // fell minutes behind. On a listen server the gf_* tokens echo nothing (state/roster → null);
   // the status part still lands.
   if (req.method === 'GET' && pathname === '/api/tick') {
-    const { host = '127.0.0.1', port = '28960', password = '' } = query;
-    const p = parseInt(port);
-    try {
+    const { host, password, p } = connFromQuery(query);
+    return handle(res, async () => {
       const buf  = await sendRconQueuedKeyed(`tick:${host}:${p}`, host, p, password, 'status;gf_state;gf_roster');
       const text = parseRconResponse(buf);
       const data = parseStatusText(text);
@@ -661,50 +682,18 @@ const server = http.createServer(async (req, res) => {
         state:  sv ? parseGfState(sv) : null,
         roster: rv !== null ? parseGfRoster(rv) : null,
       });
-    } catch (err) {
-      return sendJson(res, { ok: false, error: err.message });
-    }
+    });
   }
 
   // ── GET /api/status ──
   if (req.method === 'GET' && pathname === '/api/status') {
-    const { host = '127.0.0.1', port = '28960', password = '' } = query;
-    const p = parseInt(port);
-    try {
+    const { host, password, p } = connFromQuery(query);
+    return handle(res, async () => {
       const statusBuf = await sendRconQueuedKeyed(`status:${host}:${p}`, host, p, password, 'status');
       const text = parseRconResponse(statusBuf);
       const data = parseStatusText(text);
       return sendJson(res, { ok: true, ...data, raw: text });
-    } catch (err) {
-      return sendJson(res, { ok: false, error: err.message });
-    }
-  }
-
-  // ── GET /api/gfstate ── reads gf_state telemetry dvar (works on dedicated; times out on listen)
-  if (req.method === 'GET' && pathname === '/api/gfstate') {
-    const { host = '127.0.0.1', port = '28960', password = '' } = query;
-    try {
-      const buf  = await sendRconQueuedKeyed(`gfstate:${host}:${port}`, host, parseInt(port), password, 'gf_state');
-      const text = parseRconResponse(buf);
-      const val  = parseDvarValue(text, 'gf_state');
-      const state = val ? parseGfState(val) : null;
-      return sendJson(res, { ok: !!state, state });
-    } catch (err) {
-      return sendJson(res, { ok: false, error: err.message });
-    }
-  }
-
-  // ── GET /api/gfroster ── reads gf_roster telemetry dvar (dedicated only; times out on listen)
-  if (req.method === 'GET' && pathname === '/api/gfroster') {
-    const { host = '127.0.0.1', port = '28960', password = '' } = query;
-    try {
-      const buf  = await sendRconQueuedKeyed(`gfroster:${host}:${port}`, host, parseInt(port), password, 'gf_roster');
-      const text = parseRconResponse(buf);
-      const val  = parseDvarValue(text, 'gf_roster');
-      return sendJson(res, { ok: val !== null, roster: val !== null ? parseGfRoster(val) : [] });
-    } catch (err) {
-      return sendJson(res, { ok: false, error: err.message });
-    }
+    });
   }
 
   // ── GET /api/maprotation ── the live server rotation. Reads two plain engine dvars in one send:
@@ -714,9 +703,9 @@ const server = http.createServer(async (req, res) => {
   //                           the engine's own rotation instead of racing it with a reactive `map`.
   // Answers on dedicated AND listen (engine dvars, unlike gf_state). Coalesced under a keyed lane.
   if (req.method === 'GET' && pathname === '/api/maprotation') {
-    const { host = '127.0.0.1', port = '28960', password = '' } = query;
-    try {
-      const buf  = await sendRconQueuedKeyed(`maprot:${host}:${port}`, host, parseInt(port), password, 'sv_maprotation;sv_maprotationcurrent');
+    const { host, port, password, p } = connFromQuery(query);
+    return handle(res, async () => {
+      const buf  = await sendRconQueuedKeyed(`maprot:${host}:${port}`, host, p, password, 'sv_maprotation;sv_maprotationcurrent');
       const text = parseRconResponse(buf);
       const full = parseDvarValue(text, 'sv_maprotation');
       const cur  = parseDvarValue(text, 'sv_maprotationcurrent');
@@ -727,9 +716,7 @@ const server = http.createServer(async (req, res) => {
         rawRotation: full || '',
         rawCurrent:  cur  || '',
       });
-    } catch (err) {
-      return sendJson(res, { ok: false, error: err.message });
-    }
+    });
   }
 
   // ── GET /api/geoip ── two modes over the shared, disk-cached resolver above.
@@ -758,24 +745,19 @@ const server = http.createServer(async (req, res) => {
 
     const ip = geoNormIp(query.ip);
     if (!ip) return sendJson(res, { ok: false, error: 'Bad IP' }, 400);
-    try {
-      return sendJson(res, await geoResolve(ip));
-    } catch (err) {
-      return sendJson(res, { ok: false, error: err.message });
-    }
+    return handle(res, async () => sendJson(res, await geoResolve(ip)));
   }
 
   // ── GET /api/dvars ── batch-read dvar values: ?names=a,b,c (read-only, chunked)
   if (req.method === 'GET' && pathname === '/api/dvars') {
-    const { host = '127.0.0.1', port = '28960', password = '', names = '', fresh = '' } = query;
+    const { host, password, p } = connFromQuery(query);
+    const { names = '', fresh = '' } = query;
     const list = names.split(',').map(s => s.trim()).filter(Boolean);
     if (!list.length) return sendJson(res, { ok: false, error: 'No dvar names' }, 400);
-    try {
-      const values = await readDvars(host, parseInt(port), password, list, fresh === '1' || fresh === 'true');
+    return handle(res, async () => {
+      const values = await readDvars(host, p, password, list, fresh === '1' || fresh === 'true');
       return sendJson(res, { ok: true, values });
-    } catch (err) {
-      return sendJson(res, { ok: false, error: err.message });
-    }
+    });
   }
 
   // ── POST /api/rcon ──
@@ -783,39 +765,35 @@ const server = http.createServer(async (req, res) => {
   // echoes nothing useful, so we don't hold the lane for the full RCON_TIMEOUT — the panel marks
   // the command "sent" optimistically and confirms it via the gf_ack poll (/api/ack) anyway.
   if (req.method === 'POST' && pathname === '/api/rcon') {
-    let body;
-    try { body = JSON.parse(await readBody(req)); } catch (_) { return sendJson(res, { ok: false, error: 'Bad JSON' }, 400); }
+    const body = await readJsonBody(req, res);
+    if (body === undefined) return;
     const { host = '127.0.0.1', port = '28960', password = '', command, priority = false } = body;
     if (!command) return sendJson(res, { ok: false, error: 'Missing command' }, 400);
-    try {
+    return handle(res, async () => {
       const buf = priority
         ? await sendRconPriority(host, parseInt(port), password, command, 150, 700)
         : await sendRconQueued(host, parseInt(port), password, command);
       const response = parseRconResponse(buf);
       return sendJson(res, { ok: true, response });
-    } catch (err) {
-      return sendJson(res, { ok: false, error: err.message });
-    }
+    });
   }
 
   // ── GET /api/ack ── high-priority read of gf_ack (last processed command seq). The panel polls
   // this right after sending a bridge command to flip it from "sent" to "received".
   if (req.method === 'GET' && pathname === '/api/ack') {
-    const { host = '127.0.0.1', port = '28960', password = '' } = query;
-    try {
-      const buf  = await sendRconPriorityKeyed(`ack:${host}:${port}`, host, parseInt(port), password, 'gf_ack', 150, 700);
+    const { host, port, password, p } = connFromQuery(query);
+    return handle(res, async () => {
+      const buf  = await sendRconPriorityKeyed(`ack:${host}:${port}`, host, p, password, 'gf_ack', 150, 700);
       const text = parseRconResponse(buf);
       const val  = parseDvarValue(text, 'gf_ack');
       return sendJson(res, { ok: val !== null, ack: val !== null ? (parseInt(val) || 0) : 0 });
-    } catch (err) {
-      return sendJson(res, { ok: false, error: err.message });
-    }
+    });
   }
 
   // ── POST /api/savecfg ── persist dvars to dedicated.cfg (upsert; makes a .bak)
   if (req.method === 'POST' && pathname === '/api/savecfg') {
-    let body;
-    try { body = JSON.parse(await readBody(req)); } catch (_) { return sendJson(res, { ok: false, error: 'Bad JSON' }, 400); }
+    const body = await readJsonBody(req, res);
+    if (body === undefined) return;
     const rawDvars = body.dvars || {};
     // Only accept identifier-shaped dvar names, and strip quotes/newlines from values, so a
     // crafted name/value can't inject extra cfg lines or break out of the quoted value.
@@ -828,7 +806,7 @@ const server = http.createServer(async (req, res) => {
     }
     const cfgPath = CFG_PATH;   // pinned: never honor a caller-supplied path (arbitrary-write guard)
     if (!Object.keys(dvars).length) return sendJson(res, { ok: false, error: 'No valid dvars to save' }, 400);
-    try {
+    return handle(res, async () => {
       if (!fs.existsSync(cfgPath)) return sendJson(res, { ok: false, error: 'dedicated.cfg not found at ' + cfgPath }, 404);
       const orig = fs.readFileSync(cfgPath, 'utf8');
       fs.writeFileSync(cfgPath + '.bak', orig);                       // safety backup (last save)
@@ -836,9 +814,7 @@ const server = http.createServer(async (req, res) => {
       const { text, updated, added } = upsertCfg(orig, dvars, eol);
       fs.writeFileSync(cfgPath, text);
       return sendJson(res, { ok: true, updated, added, count: Object.keys(dvars).length, path: cfgPath });
-    } catch (err) {
-      return sendJson(res, { ok: false, error: err.message });
-    }
+    });
   }
 
   // ── GET /api/secrets ── profile-name → rcon_password map from the gitignored file
@@ -848,13 +824,12 @@ const server = http.createServer(async (req, res) => {
 
   // ── POST /api/secrets ── upsert one profile's password into the gitignored file
   if (req.method === 'POST' && pathname === '/api/secrets') {
-    let body;
-    try { body = JSON.parse(await readBody(req)); } catch (_) { return sendJson(res, { ok: false, error: 'Bad JSON' }, 400); }
+    const body = await readJsonBody(req, res);
+    if (body === undefined) return;
     const name = String(body.name == null ? '' : body.name).slice(0, 64).trim();
     if (!name) return sendJson(res, { ok: false, error: 'Missing profile name' }, 400);
     const pass = String(body.pass == null ? '' : body.pass).slice(0, 256);
-    try { saveSecret(name, pass); return sendJson(res, { ok: true }); }
-    catch (err) { return sendJson(res, { ok: false, error: err.message }); }
+    return handle(res, async () => { saveSecret(name, pass); return sendJson(res, { ok: true }); });
   }
 
   // ── GET /api/prefs ── panel UI state (the FAVORITES pinboard)
@@ -865,22 +840,22 @@ const server = http.createServer(async (req, res) => {
   // ── POST /api/prefs ── replace the pinboard. Bounded on purpose: the entries are row keys
   // ("dv:<dvar>" / "lb:<tab>|<block>|<label>"), not free text, so cap the count and the length.
   if (req.method === 'POST' && pathname === '/api/prefs') {
-    let body;
-    try { body = JSON.parse(await readBody(req)); } catch (_) { return sendJson(res, { ok: false, error: 'Bad JSON' }, 400); }
+    const body = await readJsonBody(req, res);
+    if (body === undefined) return;
     if (!Array.isArray(body.favs)) return sendJson(res, { ok: false, error: 'favs must be an array' }, 400);
     const favs = body.favs.filter(k => typeof k === 'string').slice(0, 200).map(k => k.slice(0, 120));
-    try {
+    return handle(res, async () => {
       const prefs = loadPrefs();
       prefs.favs = favs;
       savePrefs(prefs);
       return sendJson(res, { ok: true });
-    } catch (err) { return sendJson(res, { ok: false, error: err.message }); }
+    });
   }
 
   // ── POST /api/batch ──
   if (req.method === 'POST' && pathname === '/api/batch') {
-    let body;
-    try { body = JSON.parse(await readBody(req)); } catch (_) { return sendJson(res, { ok: false, error: 'Bad JSON' }, 400); }
+    const body = await readJsonBody(req, res);
+    if (body === undefined) return;
     const { host = '127.0.0.1', port = '28960', password = '', commands = [], delayMs = 80 } = body;
     const results = [];
     for (let i = 0; i < commands.length; i++) {

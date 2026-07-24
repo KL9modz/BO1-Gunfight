@@ -7,6 +7,42 @@
 // #strip-end
 #include maps\mp\gametypes\_hud_util;
 
+// --- Shared player-class predicates ---------------------------------------
+// A demo client is NEITHER a human nor a bot: isdemoclient() true, istestclient()
+// false, parked teamless (CLAUDE.md, T5 gotchas). Because a demo client can never
+// be a test client, istestclient() alone already equals "real bot" — the explicit
+// !isdemoclient() below only documents intent. "human" must exclude both. Kept
+// (public) helpers, outside every strip region; dev files call them fully-qualified.
+gf_isHuman( p )
+{
+    return ( !( p istestclient() ) && !( p isdemoclient() ) );
+}
+
+gf_isRealBot( p )
+{
+    return ( p istestclient() && !( p isdemoclient() ) );
+}
+
+// Occupies a real team seat (human OR bot); only a demo client does not.
+gf_holdsSeat( p )
+{
+    return ( !( p isdemoclient() ) );
+}
+
+// The 1 Hz countdown-beep sound alias — single-sourced across the prematch ticker, the round clock,
+// and the overtime clock (all three play the same stock UI tick).
+gf_countdownTickAlias()
+{
+    return "mpl_ui_timer_countdown";
+}
+
+// Final-countdown tick window in ms: beep only in the last 10 seconds. Shared by the round and
+// overtime clocks so the two windows can't drift apart.
+gf_finalTickWindowMs()
+{
+    return 10000;
+}
+
 gf_registerOvertimeLimitDvar()
 {
     level.gf_overtimeLimitDvar = "scr_" + level.gameType + "_overtimelimit";
@@ -56,9 +92,10 @@ gf_cfgFloat( dvar, def, lo, hi )
 // Deliberately does NOT route through getValueInRange (that returns a float) — the clamp is
 // inline so the return is always a true int.
 //
-// ⚠ Lives OUTSIDE every strip region on purpose. Its callers (gf_teamTargetSize here,
-// _bot::gf_fillTarget, gf.gsc::gf_targetRoundSize) are all dev-only and stripped from the
-// public build; a stripped caller may call kept code, never the reverse.
+// ⚠ Lives OUTSIDE every strip region on purpose. Most callers (gf_teamTargetSize here,
+// _bot::gf_fillTarget, gf.gsc::gf_targetRoundSize) are dev-only and stripped from the public
+// build — a stripped caller may call kept code, never the reverse — but gf.gsc::
+// gf_registerLoadoutCycleDvar is a PUBLIC caller, so keeping this kept is mandatory, not just tidy.
 gf_cfgInt( dvar, def, lo, hi )
 {
     if ( GetDvar( dvar ) == "" )
@@ -104,6 +141,21 @@ gf_stampTeamWriter( who, team )
         self.pers["gf_teamWriterGen"] = 0;
 }
 
+// Set the three team fields (pers["team"] / .team / .sessionteam) as one sanctioned
+// GF_TEAMTRACE writer, stamped by `who` BEFORE the write (the sampler compares the
+// stamped target against the team it observes, so the stamp must precede the write
+// with no yield — gf_stampTeamWriter is yield-free). The single home for that
+// contract; the per-caller weapon/model/class clears stay at the call site.
+// ⚠ Kept (public): the scr_team_maxsize overflow writer ships public, so like
+// gf_stampTeamWriter this must live OUTSIDE every strip region.
+gf_setTeamFields( who, team )
+{
+    self gf_stampTeamWriter( who, team );
+    self.pers["team"]  = team;
+    self.team          = team;
+    self.sessionteam   = team;
+}
+
 // Flinch (damage view-kick) scale. scr_gf_flinch is a MULTIPLIER of the stock
 // bg_viewKickScale (0.2): 1 = stock flinch, 0 = no flinch, >1 = more. Called each
 // round from onStartGameType (so an RCON change persists across map_restart) and
@@ -133,10 +185,25 @@ gf_stampTeamWriter( who, team )
 // in config_mp.cfg — so unlike r_gamma it can be written and never sticks in the
 // player's config). Reset-to-stock must push too: a live client is still holding
 // whatever we last gave it, so it needs an explicit 0.2 to be put back.
+// Stock engine default for bg_viewKickScale. scr_gf_flinch is a straight multiplier of it; kept in
+// ONE place so gf_applyFlinch and gf_applyFlinchClient can never disagree on what "stock" is.
+gf_stockViewKick()
+{
+    return 0.2;
+}
+
+// scr_gf_flinch scale — seeded (0.5 = half stock kick) and clamped [0,3]. Single-sourced so the
+// default and clamp cannot drift between the two flinch pushers (gf_cfgFloat seeds only when the
+// dvar is empty, so a drift would be silently masked by whichever ran first).
+gf_flinchScale()
+{
+    return gf_cfgFloat( "scr_gf_flinch", 0.5, 0, 3 );
+}
+
 gf_applyFlinch()
 {
-    scale = gf_cfgFloat( "scr_gf_flinch", 0.5, 0, 3 ); // seeds the dvar if unset
-    setDvar( "bg_viewKickScale", 0.2 * scale );        // 0.2 = stock bg_viewKickScale
+    scale = gf_flinchScale();
+    setDvar( "bg_viewKickScale", gf_stockViewKick() * scale );
 
     // level.players is EMPTY during onStartGameType, so this loop is a no-op on the
     // per-round call — the per-spawn push below is what covers the round-start case.
@@ -145,7 +212,7 @@ gf_applyFlinch()
         p = level.players[i];
         if ( isDefined( p.pers["isBot"] ) && p.pers["isBot"] )
             continue;                                  // bots have no client to push to
-        p setClientDvar( "bg_viewKickScale", 0.2 * scale );
+        p setClientDvar( "bg_viewKickScale", gf_stockViewKick() * scale );
     }
     return scale;
 }
@@ -161,13 +228,13 @@ gf_applyFlinch()
 // future default of 1.0 would silently turn the push off entirely. Pushing unconditionally
 // is what makes the server's value authoritative, which is the property this dvar is
 // documented to have ([[flinch-bg-viewkickscale-not-replicated]]).
-// ⚠ This default must stay in lockstep with the one in gf_applyFlinch above —
-// gf_cfgFloat seeds only if the dvar is empty, so a drift here would be silently
-// masked by whichever function ran first.
+// The scr_gf_flinch default + clamp and the stock 0.2 now come from gf_flinchScale() /
+// gf_stockViewKick(), so there is no longer a duplicated constant to keep in lockstep with
+// gf_applyFlinch — the two pushers read the same single source.
 gf_applyFlinchClient()
 {
-    scale = gf_cfgFloat( "scr_gf_flinch", 0.5, 0, 3 );
-    self setClientDvar( "bg_viewKickScale", 0.2 * scale );
+    scale = gf_flinchScale();
+    self setClientDvar( "bg_viewKickScale", gf_stockViewKick() * scale );
 }
 
 // "Jump fatigue" is the community name for the engine's post-jump slowdown: jump_slowdownEnable
@@ -420,7 +487,7 @@ gf_nativePrematchTicker()
     tickObj = spawn( "script_origin", ( 0, 0, 0 ) );
     while ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
     {
-        tickObj playSound( "mpl_ui_timer_countdown" );
+        tickObj playSound( gf_countdownTickAlias() );
         wait 1.0;
     }
     tickObj delete();
@@ -771,7 +838,7 @@ gf_waitForLoadingClients()
             // (isdemoclient — e.g. "[3arc]democlient", guid 0). A demo client is NOT a
             // test client, so without the isdemoclient check it was wrongly counted as a
             // human, inflating the readout and satisfying scr_gf_min_players by itself.
-            else if ( !( p istestclient() ) && !( p isdemoclient() ) )
+            else if ( gf_isHuman( p ) )
             {
                 humans++;
             }
@@ -964,7 +1031,7 @@ gf_writeTeamPlan()
         p = players[i];
         if ( !isDefined( p ) )
             continue;
-        if ( p istestclient() || p isdemoclient() )   // humans only
+        if ( !gf_isHuman( p ) )   // humans only
             continue;
         t = p.pers["team"];
         if ( !isDefined( t ) )
@@ -1002,7 +1069,7 @@ gf_writeBotPlan()
         // Bots only. NOT the plain inverse of gf_writeTeamPlan's humans-only test: a demo client is
         // neither a human nor a bot (isdemoclient true, istestclient FALSE), so it must be dropped by
         // BOTH filters — matching _bot.gsc's real-bot test.
-        if ( !( p istestclient() ) || p isdemoclient() )
+        if ( !gf_isRealBot( p ) )
             continue;
         t = p.pers["team"];
         if ( !isDefined( t ) )
@@ -1050,7 +1117,7 @@ gf_applyTeamPlan()
             p = players[i];
             if ( !isDefined( p ) )
                 continue;
-            if ( p istestclient() || p isdemoclient() )
+            if ( !gf_isHuman( p ) )
                 continue;
             want = gf_teamPlanLookup( entries, "" + p getGuid() );
             if ( want == "" )
@@ -1120,7 +1187,7 @@ gf_applyBotPlan()
             p = players[i];
             if ( !isDefined( p ) )
                 continue;
-            if ( !( p istestclient() ) || p isdemoclient() )
+            if ( !gf_isRealBot( p ) )
                 continue;                // bots only — the democlient is NOT one (see gf_writeBotPlan)
             if ( isDefined( p.gf_botPlanSeated ) )
                 continue;                // one-shot per bot
@@ -1171,7 +1238,7 @@ gf_teamPlanLookup( entries, guid )
 gf_autoassignPlanned()
 {
     if ( !isDefined( level.gf_teamPlanEntries )
-         || self istestclient() || self isdemoclient()
+         || !gf_isHuman( self )
          || !( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod ) )
     {
         self gf_stockAutoassignStamped();        // no plan / bot / past prematch -> stock behaviour
@@ -1212,15 +1279,12 @@ gf_stockAutoassignStamped()
 gf_seatJoinTeam( want )
 {
     self.pers["gf_specReason"] = undefined;    // seated on a real team: drop any spectate breadcrumb
-    self gf_stampTeamWriter( "seatjoin", want );
-    self.pers["team"]       = want;
-    self.team               = want;
+    self gf_setTeamFields( "seatjoin", want );
     self.pers["class"]      = undefined;
     self.class              = undefined;
     self.pers["weapon"]     = undefined;
     self.pers["savedmodel"] = undefined;
     self maps\mp\gametypes\_globallogic_ui::updateObjectiveText();
-    self.sessionteam        = want;
     if ( !isAlive( self ) )
         self.statusicon = "hud_status_dead";
     self notify( "joined_team" );
@@ -1244,7 +1308,7 @@ gf_seatJoinTeam( want )
 // Dev/main only — the install in gf.gsc is strip-wrapped; the public build keeps stock autoassign.
 gf_autoJoinBalance()
 {
-    if ( self istestclient() || self isdemoclient() )
+    if ( !gf_isHuman( self ) )
     {
         self gf_stockAutoassignStamped();
         return;
@@ -1325,7 +1389,8 @@ gf_planApplyMove( team )
 // spawn reads pers["team"] and the player simply spawns on the new side. Only ever safe on a
 // NOT-"playing" player (a live body can't change teams without a respawn). Clearing
 // pers["savedmodel"] matters: a cached old-side model would render the player in the WRONG TEAM's
-// skin after the move. Mirrors _gf_bridge::gf_forceTeamQuiet / _bot::gf_botQuietSetTeam.
+// skin after the move. Sibling of _bot::gf_botQuietSetTeam (the bot path always clears class and
+// restores lives instead — kept separate on purpose; see that function).
 //
 // ⚠ pers["class"] must come out of here VALID for a real team, not cleared. Stock's re-begin
 // (_globallogic_player.gsc:386) auto-spawns a team-assigned player only if isValidClass(pers["class"]);
@@ -1340,9 +1405,7 @@ gf_planApplyMove( team )
 // PASS the validity gate. Spectator keeps the clear (no class gate on the spectator branches).
 gf_quietSetTeam( team )
 {
-    self gf_stampTeamWriter( "quietset", team );
-    self.pers["team"]       = team;
-    self.team               = team;
+    self gf_setTeamFields( "quietset", team );
     if ( team != "spectator" && isDefined( level.defaultClass )
         && ( level.oldschool || getDvarInt( "scr_disable_cac" ) == 1 ) )
     {
@@ -1356,7 +1419,6 @@ gf_quietSetTeam( team )
     }
     self.pers["weapon"]     = undefined;
     self.pers["savedmodel"] = undefined;
-    self.sessionteam        = team;
 }
 
 // ─── Sequenced team move — the ONLY way to move a "playing" player ─────────
@@ -1463,7 +1525,7 @@ gf_menuTeamChoice( team )
     else if ( team == "axis" )
         stockFn = level.gf_stockAxis;
 
-    if ( self istestclient() || self isdemoclient() )
+    if ( !gf_isHuman( self ) )
     {
         // Stamp the passthrough BEFORE stock runs: stock menuAllies/menuAxis write pers["team"]
         // with no token, and a parked bot answering the re-begin team menu through this path is
@@ -1585,7 +1647,7 @@ gf_countTeamHumans( team, exclude )
     for ( i = 0; i < players.size; i++ )
     {
         p = players[i];
-        if ( !isDefined( p ) || p istestclient() || p isdemoclient() )
+        if ( !isDefined( p ) || !gf_isHuman( p ) )
             continue;
         if ( isDefined( exclude ) && p == exclude )
             continue;
@@ -1644,7 +1706,7 @@ gf_anyTrackedClientLoading()
         p = level.gf_loadGateSeen[i];
         if ( !isDefined( p ) )
             continue;
-        if ( p istestclient() || p isdemoclient() )   // bots + demo clients: never hold grace for them
+        if ( !gf_isHuman( p ) )   // bots + demo clients: never hold grace for them
             continue;
         if ( isDefined( p.statusicon ) && p.statusicon == "hud_status_connecting" )
             return true;
@@ -1701,7 +1763,7 @@ gf_lobbyCamPut()
 
     if ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold )   // hold already released
         return;
-    if ( self istestclient() || self isdemoclient() )                    // bots + demo clients stay put
+    if ( !gf_isHuman( self ) )                    // bots + demo clients stay put
         return;
 
     // CRITICAL: everything below runs ONCE per player (guarded by self.gf_inLobbyCam). It must NOT run
@@ -1797,12 +1859,12 @@ gf_lobbyRosterLoop()
             p = level.players[i];
             if ( !isDefined( p ) )
                 continue;
-            if ( p isdemoclient() )
+            if ( !gf_holdsSeat( p ) )
                 continue;
             if ( isDefined( p.statusicon ) && p.statusicon == "hud_status_connecting" )
                 continue;   // still loading — not standing in the lobby yet
             nm = p.name;
-            if ( p istestclient() )
+            if ( gf_isRealBot( p ) )
                 nm = nm + "  (bot)";
             names[ names.size ] = nm;
         }
@@ -1844,7 +1906,7 @@ gf_lobbyRosterLoop()
             for ( i = 0; i < level.players.size; i++ )
             {
                 pl = level.players[i];
-                if ( !isDefined( pl ) || pl istestclient() || pl isdemoclient() )
+                if ( !isDefined( pl ) || !gf_isHuman( pl ) )
                     continue;   // bots/demo render no HUD — don't push to them
 
                 pl setClientDvars( "ui_gf_lobby_pcount", "" + names.size,
@@ -1923,7 +1985,7 @@ gf_lobbyIconCycler()
         for ( i = 0; i < level.players.size; i++ )
         {
             pl = level.players[i];
-            if ( !isDefined( pl ) || pl istestclient() || pl isdemoclient() )
+            if ( !isDefined( pl ) || !gf_isHuman( pl ) )
                 continue;   // bots/demo render no HUD — don't push to them
             pl setClientDvar( "ui_gf_lobby_icon", icons[idx] );
         }
@@ -2052,7 +2114,7 @@ gf_countSeatedHumans()
     for ( i = 0; i < players.size; i++ )
     {
         p = players[i];
-        if ( !isDefined( p ) || p istestclient() || p isdemoclient() )
+        if ( !isDefined( p ) || !gf_isHuman( p ) )
             continue;
         if ( !isDefined( p.pers["team"] ) )
             continue;
@@ -2496,7 +2558,7 @@ gf_onSpawnSpectator( origin, angles )
     // level-scope visionSetNaked("mpIntro") applied at the hold start (no per-player self-method form
     // in T5 MP). No teardown: map_restart(false) on lobby release respawns everyone fresh.
     if ( isDefined( level.gf_inLobbyHold ) && level.gf_inLobbyHold
-        && !( self istestclient() ) && !( self isdemoclient() ) )
+        && gf_isHuman( self ) )
     {
         self gf_hideLobbyHUD();
         return;
@@ -2518,7 +2580,7 @@ gf_onSpawnSpectator( origin, angles )
     // the client and nothing outside the lobby clears it — so the whole lobby chrome sticks over their
     // view. The inLobbyHold branch above already returned for real lobby spectators, so reaching here (as
     // a human) means the LIVE match. Humans only.
-    if ( !( self istestclient() ) && !( self isdemoclient() ) )
+    if ( gf_isHuman( self ) )
         self setClientDvar( "ui_gf_lobby_show", "0" );
 
     gf_queueHealthHUDUpdate();
@@ -2838,9 +2900,9 @@ gf_breakRoundEndDeadlock( elapsed )
         if ( isDefined( p.name ) )
             who = p.name;
         kind = "human";
-        if ( p isdemoclient() )
+        if ( !gf_holdsSeat( p ) )
             kind = "demo";
-        else if ( p istestclient() )
+        else if ( gf_isRealBot( p ) )
             kind = "bot";
 
         // Orphaned final-killcam flag -> areAnyPlayersWatchingTheKillcam() never goes false
@@ -3046,7 +3108,7 @@ gf_updateRoundWarning()
     }
 
     // Countdown beeps in the final 10 seconds only (one per second, 10 -> 1).
-    if ( remaining <= 0 || remaining > 10000 )
+    if ( remaining <= 0 || remaining > gf_finalTickWindowMs() )
         return;
 
     tick = int( ( remaining + 999 ) / 1000 );
@@ -3059,7 +3121,7 @@ gf_updateRoundWarning()
     level.gf_roundLastTick = tick;
 
     if ( isDefined( level.gf_roundTickObject ) )
-        level.gf_roundTickObject playSound( "mpl_ui_timer_countdown" );
+        level.gf_roundTickObject playSound( gf_countdownTickAlias() );
 }
 
 gf_cleanupRoundTimerState()
@@ -3510,7 +3572,7 @@ gf_updateOvertimeTickSound()
         return;
 
     remaining = level.gf_overtimeRemaining;
-    if ( remaining <= 0 || remaining > 10000 )   // tick only in the final 10s
+    if ( remaining <= 0 || remaining > gf_finalTickWindowMs() )   // tick only in the final 10s
         return;
 
     // 1 beep/sec from 10s -> 5s (matches the round beeps), then 2 beeps/sec for the final 5s.
@@ -3528,7 +3590,7 @@ gf_updateOvertimeTickSound()
     level.gf_overtimeLastTickMs = remaining;
 
     if ( isDefined( level.gf_overtimeTickObject ) )
-        level.gf_overtimeTickObject playSound( "mpl_ui_timer_countdown" );
+        level.gf_overtimeTickObject playSound( gf_countdownTickAlias() );
 }
 
 gf_pauseOvertimeForCapture()

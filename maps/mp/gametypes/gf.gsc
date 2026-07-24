@@ -223,7 +223,130 @@ onPrecacheGameType()
     gf_precacheWagerZoneAssets();
 }
 
+// Seed a dvar to `def` only if it is unset (empty). The seed-if-empty idiom used ~30x across
+// onStartGameType so the RCON panel's connect-sweep never reads an unregistered dvar (which
+// echoes "Unknown cmd"). Unlike gf_cfgFloat/gf_cfgInt this neither clamps nor reads back — it
+// only registers a default, exactly as the open-coded lines did. Kept (public): the strip-marked
+// seed sites call it too, and a stripped caller may call kept code but never the reverse.
+gf_seedDvar( name, def )
+{
+    if ( getDvar( name ) == "" )
+        setDvar( name, def );
+}
+
 onStartGameType()
+{
+    // Decomposed 2026-07-22: six sequential stage helpers, called in the ORIGINAL inline order.
+    // Pure extraction — the whole sequence is yield-free (the engine threads startGame() the
+    // moment this callback returns, so nothing here may wait; the strip-marked hold at the
+    // bottom is deliberately the only exception and must stay the last call before the ticker).
+    gf_roundEngineSetup();      // stock-dvar forcing + hook/callback installs
+    gf_roundRulesSetup();       // rule registration, team mode, grace, engine-behavior seeds
+    gf_roundSeedDvars();        // panel-facing dvar seeding (gf_seedDvar)
+    gf_roundApplyTuning();      // per-round gameplay applies (flinch/jump/sprint/vision/music)
+    gf_roundPresentation();     // banner strings + prematch countdown length
+
+    // #strip-begin - pre-prematch load gate (dev/main only; the public build has no match-start hold)
+    // Arm the load-gate's connect tracker NOW: the engine delivers "connecting"
+    // callbacks (which fire for rotation-carried clients while they are STILL on
+    // their loading screen) as soon as this Callback_StartGameType slice first
+    // yields, so the tracker must be listening before any later helper can wait.
+    // The actual hold is the last statement of this function. (The per-second
+    // prematch tick also moved there: it loops on inPrematchPeriod, which is
+    // already true during the hold, and would have beeped through it from here.)
+    gf_armLoadGate();
+    // #strip-end
+
+    gf_roundWorldSetup();       // round state flags, objective text, XP, loadouts, spawns, objects
+
+    // #strip-begin - RCON bridge + bot init (dev/main only; stripped from public release)
+    thread gf_bridgeInit();   // per-round: re-seeds dvars/flags + re-arms the vision blend (level.* wiped by map_restart); its telemetry/poll/pending-team loops self-guard to once-per-match inside
+    // The bot manager is once-per-MATCH, NOT once-per-round. onStartGameType re-runs on every
+    // map_restart (SD round cycling), but _bot::init() threads PERSISTENT managers (diffBots +
+    // the round-boundary fill reconciler) that must survive round cycling; re-threading them
+    // every round would stack copies. Gate on game[] — the only state that survives map_restart,
+    // and it resets on a genuine new map load — so exactly ONE manager set runs per match and it
+    // still re-inits for the next match.
+    // ⚠ This gate is only safe because those managers do NOT endon("game_ended"). That notify is
+    // NOT match-end: _globallogic::endGame fires it on EVERY round end (gf_endRound threads
+    // endGame in the same frame it notifies gf_round_over). This comment used to claim the
+    // opposite, and gf_boundaryListener carried the endon on that basis — so it died at the first
+    // round end, was never re-threaded by this once-per-match gate, and the bot fill silently
+    // stopped reconciling for the rest of the match ("fill ignores humans"). Re-init is collapsed
+    // by "bot_reinit" (fired at the top of _bot::init), which is the only notify that may tear
+    // these down. Same idiom as
+    // gf_rocketOncePerMatch / game["gf_init"]. bots_manage_add is legacy-cleared: nothing
+    // consumes it anymore (the addBots loop is deleted), but a stale nonzero value from an
+    // older build should not linger in the panel-visible dvar table.
+    if ( !isDefined( game["gf_botInit"] ) )
+    {
+        game["gf_botInit"] = true;
+        setDvar( "bots_manage_add", 0 );
+        thread maps\mp\gametypes\_bot::init();
+    }
+
+    // Default bot difficulty — OWNED BY dedicated.cfg (set bot_difficulty "fu"), NOT seeded here.
+    // bot_difficulty is a REAL ENGINE dvar (BO1 Combat Training), registered at process start as an
+    // enum: default "normal", domain easy/normal/hard/fu (live rcon read 2026-07-17). It is
+    // therefore NEVER empty, so the seed-if-empty that used to sit here was dead code that never
+    // fired once — the "fu" the VPS ran was a live panel botdiff_fu click surviving in-process,
+    // silently reverted to "normal" by the next server restart. GSC can't own this default without
+    // stomping a deliberate cfg value (an engine-registered "normal" is indistinguishable from an
+    // admin's chosen "normal"), so the GF default is a cfg deviation from the engine default —
+    // exactly what dedicated.cfg is for. _bot::diffBots re-applies the whole sv_bot* preset from
+    // the dvar every 1.5s, so a cfg value or a live panel botdiff_* click lands within a tick.
+
+    // Frame-hitch / slow-mo diagnostic (dev only). Chases the "prematch/preround
+    // countdown + whole game runs in slow-motion until it hits 0" report: samples
+    // how much gettime() advances across a fixed wait() and logs GF_HITCH to
+    // games_mp.log when a window runs slow. Re-launched every onStartGameType but
+    // collapsed to exactly one live sampler by the gf_hitch_reinit notify (threads
+    // survive map_restart, so a bare re-thread would stack). See _gf_debug.gsc.
+    level notify( "gf_hitch_reinit" );
+    level thread gf_hitchMonitor();
+
+    // Report the round-end dark window from the FAR side of map_restart. gf_roundEndProbe runs
+    // on the near side and dies inside the restart (a thread parked in a timed wait does not
+    // come back), so it stamps a heartbeat into a dvar and we read it here — the first mod code
+    // to run after the restart. Yields the one number the "Connection Interrupted" theory has
+    // always assumed and never measured: how long the server ran no script at all.
+    gf_reportRoundEndGap();
+    // #strip-end
+
+    // Undo any timescale stock's final-killcam slowdown left behind. Its SetTimeScale(1.0) restore
+    // sits AFTER a wait and behind endon("end_killcam"), so if every viewer skips (or drops out of)
+    // the killcam in that window the restore never runs and the server is stranded at 0.25x — and
+    // nothing in stock ever puts it back. gf_killcamSlowmoClamp restores 1.0 on its own path too,
+    // but only when it actually ran; this is the unconditional net that also covers the stock-depth
+    // (floor 0.25) case, where the clamp returns early and never touches the timescale at all.
+    // There is deliberately NO detector for the leak: the `timescale` dvar does not track
+    // SetTimeScale, so nothing inside the VM can see one (see _gf_debug.gsc). This costs a single
+    // builtin call per round, so guard it and move on.
+    gf_resetTimeScale();
+
+    // #strip-begin - pre-prematch hold (dev/main only; stripped from public release)
+    // Pre-prematch load gate — MUST be the last statement: the engine threads
+    // startGame() (prematch countdown -> prematch_over) the moment this callback
+    // returns, and everything above (spawn points, gameobjects, bridge, bots)
+    // must be in place before the first yield lets connect/spawn callbacks run.
+    // Holds the match's FIRST round until every rotation-carried client is off
+    // the loading screen (bounded by scr_gf_load_wait) so the full countdown and
+    // intro play for everyone at once, and slow loaders can no longer be
+    // grace-locked into spectating round 1. See _gf_rounds.gsc.
+    //
+    // The public build has NO hold: with this call gone, onStartGameType simply returns and the
+    // engine threads the prematch immediately. That is the whole "no lobby / no wait times" of the
+    // public build — there is nothing else to switch off, because every hold hangs off this one call.
+    gf_waitForLoadingClients();
+    // #strip-end
+
+    level thread gf_nativePrematchTicker();      // engine matchStartTimer is silent — re-add the per-second tick (start only now, post-hold)
+}
+
+// ─── onStartGameType stage 1: engine dvar forcing + hook/callback installs ─────────────────────
+// Re-run every round (map_restart wipes level.*). Order note: SetupCallbacks() (main(), before
+// onStartGameType) has just reset the stock handlers, so the saves below capture REAL stock.
+gf_roundEngineSetup()
 {
     level.noPersistence = true;
 
@@ -328,7 +451,11 @@ onStartGameType()
     // because map_restart wipes level.*. Admins gate switching with gf_team_switch / gf_team_lock.
     level.teamchange_keepbalanced = false;
     // #strip-end
+}
 
+// ─── onStartGameType stage 2: rule registration, team mode, grace, engine-behavior seeds ───────
+gf_roundRulesSetup()
+{
     gf_registerLoadoutCycleDvar(); // also sets level.gf_cfg_roundsPerLoadout
     gf_registerOvertimeLimitDvar(); // also sets level.gf_cfg_overtimeLimit
     gf_initDamageScoring(); // relies on level.gf_cfg_roundsPerLoadout
@@ -366,14 +493,12 @@ onStartGameType()
     // motion while holding the gap at ~83ms. Seeded here so the RCON panel can read it from boot;
     // gf_endRound acts on it.
     //   0.25 = stock BO1 cinematic (and the plug)   0.6 = default   1.0 = no slow motion
-    if ( getDvar( "scr_gf_killcam_slowmo" ) == "" )
-        setDvar( "scr_gf_killcam_slowmo", "0.6" );
+    gf_seedDvar( "scr_gf_killcam_slowmo", "0.6" );
     // Stock reads scr_killcam_time as a STRING and only uses it when non-empty (_killcam.gsc:554),
     // deriving camtime from the weapon otherwise. So seed it EMPTY: the panel gets a dvar it can
     // read without an "Unknown cmd", and stock keeps its own per-weapon default until someone sets
     // a value. Seeding a number here would silently override every killcam length in the game.
-    if ( getDvar( "scr_killcam_time" ) == "" )
-        setDvar( "scr_killcam_time", "" );
+    gf_seedDvar( "scr_killcam_time", "" );
 
     // HOTEL ELEVATORS — OFF by default in Gunfight. mp_hotel ships its OWN elevator system
     // (maps/mp/mp_hotel_elevators.gsc, NOT the generic maps/mp/_elevator.gsc), and Treyarch built
@@ -393,9 +518,14 @@ onStartGameType()
     // the NEXT map load onward; dvars outlive a map change, so it is already in the table by then.
     // dedicated.cfg sets it too, for the boot-straight-onto-Hotel case where this has never run.
     // 1 = elevators disabled (GF default), 0 = stock working elevators.
-    if ( getDvar( "scr_elevator_failsafe" ) == "" )
-        setDvar( "scr_elevator_failsafe", "1" );
+    gf_seedDvar( "scr_elevator_failsafe", "1" );
+}
 
+// ─── onStartGameType stage 3: panel-facing dvar seeding ────────────────────────────────────────
+// Everything here is gf_seedDvar (seed-if-empty) so the RCON panel's connect-sweep never reads
+// an unregistered dvar; the strip-marked blocks inside belong to systems the public build drops.
+gf_roundSeedDvars()
+{
     // Per-round prematch via the engine's native countdown. The engine zeroes level.prematchPeriod
     // every round (Callback_StartGameType) and only refills it once per match, so we set it HERE
     // each round: onStartGameType runs after the engine's prematch randomization and before
@@ -412,29 +542,21 @@ onStartGameType()
     // no bots — so seeding their dvars would only publish knobs that nothing reads.
     //
     // The prematch LENGTH is the one exception worth keeping tunable here: the public build
-    // pins it to the fixed 20s/7s assigned below (see level.prematchPeriod), while dev/VPS gets
-    // these two dvars so the RCON panel can retune it live.
-    if ( getDvar( "scr_gf_match_prematch_seconds" ) == "" )
-        setDvar( "scr_gf_match_prematch_seconds", "20" );   // first round of the match (longer intro)
-    if ( getDvar( "scr_gf_prematch_seconds" ) == "" )
-        setDvar( "scr_gf_prematch_seconds", "7" );          // every later round
+    // pins it to the fixed 20s/7s assigned in gf_roundPresentation (see level.prematchPeriod),
+    // while dev/VPS gets these two dvars so the RCON panel can retune it live.
+    gf_seedDvar( "scr_gf_match_prematch_seconds", "20" );   // first round of the match (longer intro)
+    gf_seedDvar( "scr_gf_prematch_seconds", "7" );          // every later round
 
     // Seed the pre-prematch gate dvars here so they exist from boot (the RCON panel reads
     // them, and they'd otherwise show "not read" until gf_waitForLoadingClients first
     // touched them via gf_cfgFloat). Clamping still happens on read in _gf_rounds.gsc.
     // Both feed the single pre-prematch hold in gf_waitForLoadingClients.
-    if ( getDvar( "scr_gf_min_players" ) == "" )
-        setDvar( "scr_gf_min_players", "1" );     // min HUMANS to start the match (1 = off)
-    if ( getDvar( "scr_gf_minplayers_timer" ) == "" )
-        setDvar( "scr_gf_minplayers_timer", "0" );// min-players "start anyway" ceiling (s). 0 = never auto-start (hold until enough humans / admin START). Was a hardcoded 90s that started too-thin matches
-    if ( getDvar( "scr_gf_load_wait" ) == "" )
-        setDvar( "scr_gf_load_wait", "20" );      // max s to hold the prematch for map-loading clients (0 = off; a loader that misses the gate still gets scr_gf_load_grace). Non-zero ARMS the hold, so every match start now pays the 3s arrival floor
-    if ( getDvar( "scr_gf_load_grace" ) == "" )
-        setDvar( "scr_gf_load_grace", "20" );     // s past prematch_over to keep grace open for a still-loading client so it spawns into round 1 (0 = off)
-    if ( getDvar( "scr_gf_lobby" ) == "" )
-        setDvar( "scr_gf_lobby", "0" );           // Match Start: 0 = Normal (default, off), 1 = Auto lobby (min-players -> fast-restart), 2 = Manual lobby (admin START -> fast-restart)
-    if ( getDvar( "scr_gf_lobby_timer" ) == "" )
-        setDvar( "scr_gf_lobby_timer", "600" );   // MANUAL lobby auto-start timer (s). Was the hardcoded 10-min backstop; now RCON-adjustable. 0 = never auto-start (hold until START)
+    gf_seedDvar( "scr_gf_min_players", "1" );     // min HUMANS to start the match (1 = off)
+    gf_seedDvar( "scr_gf_minplayers_timer", "0" );// min-players "start anyway" ceiling (s). 0 = never auto-start (hold until enough humans / admin START). Was a hardcoded 90s that started too-thin matches
+    gf_seedDvar( "scr_gf_load_wait", "20" );      // max s to hold the prematch for map-loading clients (0 = off; a loader that misses the gate still gets scr_gf_load_grace). Non-zero ARMS the hold, so every match start now pays the 3s arrival floor
+    gf_seedDvar( "scr_gf_load_grace", "20" );     // s past prematch_over to keep grace open for a still-loading client so it spawns into round 1 (0 = off)
+    gf_seedDvar( "scr_gf_lobby", "0" );           // Match Start: 0 = Normal (default, off), 1 = Auto lobby (min-players -> fast-restart), 2 = Manual lobby (admin START -> fast-restart)
+    gf_seedDvar( "scr_gf_lobby_timer", "600" );   // MANUAL lobby auto-start timer (s). Was the hardcoded 10-min backstop; now RCON-adjustable. 0 = never auto-start (hold until START)
 
     // PRE-MATCH WARMUP — 100% stock, zero mod GSC. g_pregame_enabled is an ENGINE dvar (it lives in
     // BlackOpsMP.exe, alongside the hardcoded script path "maps/mp/gametypes/_pregame"): when it is
@@ -447,8 +569,7 @@ onStartGameType()
     // Not seeding it is exactly what keeps the warmup OUT of the public build: the engine defaults
     // it to 0, nothing else writes it, so BO1's pregame gametype can never come up. (This is also
     // why there is no _pregame.gsc to exclude — the warmup carries no mod GSC at all.)
-    if ( getDvar( "g_pregame_enabled" ) == "" )
-        setDvar( "g_pregame_enabled", "0" );
+    gf_seedDvar( "g_pregame_enabled", "0" );
     // ⚠ MUST be 0, and it is OUR job to make it so. The warmup's OWN time limit is registered by stock
     // _pregame::main() -> registerTimeLimitDvar( "pregame", 5, 0, 1440 ) on PC, and registerTimeLimitDvar
     // is SEED-IF-EMPTY — so an unregistered scr_pregame_timelimit lands on FIVE MINUTES. _pregame's
@@ -459,38 +580,28 @@ onStartGameType()
     // warmup's level load because dvars outlive a map change, and _pregame's seed-if-empty then leaves
     // our 0 alone. dedicated.cfg.example sets it too, for the boot-straight-into-a-warmup case where
     // this callback has never run.
-    if ( getDvar( "scr_pregame_timelimit" ) == "" )
-        setDvar( "scr_pregame_timelimit", "0" );
+    gf_seedDvar( "scr_pregame_timelimit", "0" );
     // TEAM SIZE + BOT FILL. gf_fill_n is the per-team TARGET size: at every round boundary the
     // reconciler (gf_reconcilerInit in _bot.gsc, dev-only) evens the HUMAN split to off-by-1
     // (moving the most recent joiner; gf_team_balance 0 disables), then pads BOTH sides with bots
     // to max(bigger human side, gf_fill_n) — so humans define the size, bots absorb the variance,
     // and enough humans means ZERO bots. 0 = no bot fill (human balancing still runs; manual bot
     // control sticks). It MUST be a dvar — the only state surviving the lobby's map_restart(false).
-    if ( getDvar( "gf_fill_n" ) == "" )
-        setDvar( "gf_fill_n", "2" );              // per-team target size (clamped 0-6 on read); 0 = no bots
-    if ( getDvar( "gf_fill_kick_floor" ) == "" )
-        setDvar( "gf_fill_kick_floor", "2" );     // client slots kept free for humans: a parked bot is KICKED (not parked) once level.players >= sv_maxclients - this
-    if ( getDvar( "gf_team_balance" ) == "" )
-        setDvar( "gf_team_balance", "1" );        // 1 = even the HUMAN split (off-by-1) at every round boundary; 0 = never move humans
-    if ( getDvar( "gf_team_lock" ) == "" )
-        setDvar( "gf_team_lock", "0" );           // 1 = gf_fill_n is a hard HUMAN cap per side: overflow joiners spectate, queued (join order) for the next open seat
-    if ( getDvar( "gf_team_switch" ) == "" )
-        setDvar( "gf_team_switch", "1" );         // 1 = players may switch teams themselves (immediately; alive mid-round = die + sit out); 0 = self-switching disabled
-    if ( getDvar( "scr_gf_latespawn" ) == "" )
-        setDvar( "scr_gf_latespawn", "1" );       // 1 = a joiner/mover may spawn INTO a live round while their team has >=1 alive (never in OT); 0 = spectate until next round
-    if ( getDvar( "gf_team_reclaim" ) == "" )
-        setDvar( "gf_team_reclaim", "1" );        // 1 = at each boundary, re-seat a human the untraced mis-seater stranded in spectator (reason UNTRACED) onto the lighter side, so they aren't forced to the ranked team/class menu; 0 = leave them (diagnostic-only)
-    if ( getDvar( "gf_teamplan" ) == "" )
-        setDvar( "gf_teamplan", "" );             // lobby->match transfer: "<guid>:<a|x|s>,..." snapshot written pre-restart, re-applied post-restart (survives map_restart(false))
+    gf_seedDvar( "gf_fill_n", "2" );              // per-team target size (clamped 0-6 on read); 0 = no bots
+    gf_seedDvar( "gf_fill_kick_floor", "2" );     // client slots kept free for humans: a parked bot is KICKED (not parked) once level.players >= sv_maxclients - this
+    gf_seedDvar( "gf_team_balance", "1" );        // 1 = even the HUMAN split (off-by-1) at every round boundary; 0 = never move humans
+    gf_seedDvar( "gf_team_lock", "0" );           // 1 = gf_fill_n is a hard HUMAN cap per side: overflow joiners spectate, queued (join order) for the next open seat
+    gf_seedDvar( "gf_team_switch", "1" );         // 1 = players may switch teams themselves (immediately; alive mid-round = die + sit out); 0 = self-switching disabled
+    gf_seedDvar( "scr_gf_latespawn", "1" );       // 1 = a joiner/mover may spawn INTO a live round while their team has >=1 alive (never in OT); 0 = spectate until next round
+    gf_seedDvar( "gf_team_reclaim", "1" );        // 1 = at each boundary, re-seat a human the untraced mis-seater stranded in spectator (reason UNTRACED) onto the lighter side, so they aren't forced to the ranked team/class menu; 0 = leave them (diagnostic-only)
+    gf_seedDvar( "gf_teamplan", "" );             // lobby->match transfer: "<guid>:<a|x|s>,..." snapshot written pre-restart, re-applied post-restart (survives map_restart(false))
     // #strip-end
 
     // Register scr_team_maxsize with its documented default (0 = no cap) so it always exists
     // in the dvar table. The mod reads it via getDvarInt (0 when unset), but an UNregistered
     // dvar echoes "Unknown cmd scr_team_maxsize" when the RCON panel's connect-sweep reads it
     // by bare name — spam the host sees on a listen server. dedicated.cfg still overrides this.
-    if ( getDvar( "scr_team_maxsize" ) == "" )
-        setDvar( "scr_team_maxsize", "0" );       // max players/team (0 = no cap); cfg ships 6
+    gf_seedDvar( "scr_team_maxsize", "0" );       // max players/team (0 = no cap); cfg ships 6
 
     // Seed BOTH team-size-mode variants of every mode-specific dvar so they ALWAYS exist in the
     // dvar table, even the variant for the mode not currently active. Each is otherwise only
@@ -501,20 +612,20 @@ onStartGameType()
     // gf_getOvertimeLimit, gf_getCaptureTime). scr_gf_timelimit + scr_gf_teamspawnmode are
     // already always-registered (registerTimeLimitDvar / gf_resolveTeamMode).
     gtp = "scr_" + level.gameType;
-    if ( getDvar( gtp + "_timelimit" ) == "" )           setDvar( gtp + "_timelimit", "0.7" );
-    if ( getDvar( gtp + "_timelimit_large" ) == "" )     setDvar( gtp + "_timelimit_large", "1.5" );
-    if ( getDvar( gtp + "_overtimelimit" ) == "" )       setDvar( gtp + "_overtimelimit", "15" );
-    if ( getDvar( gtp + "_overtimelimit_large" ) == "" ) setDvar( gtp + "_overtimelimit_large", "30" );
-    if ( getDvar( "gf_capture_time" ) == "" )            setDvar( "gf_capture_time", "3.5" );
-    if ( getDvar( "gf_capture_time_large" ) == "" )      setDvar( "gf_capture_time_large", "5" );
+    gf_seedDvar( gtp + "_timelimit", "0.7" );
+    gf_seedDvar( gtp + "_timelimit_large", "1.5" );
+    gf_seedDvar( gtp + "_overtimelimit", "15" );
+    gf_seedDvar( gtp + "_overtimelimit_large", "30" );
+    gf_seedDvar( "gf_capture_time", "3.5" );
+    gf_seedDvar( "gf_capture_time_large", "5" );
 
     // #strip-begin - dev debug dvars: seed to 0 so the RCON panel's DEBUG section reads them
     // cleanly (they're otherwise read via getDvarInt, which never registers them → "Unknown cmd"
     // on the panel's bare-name sweep). Dev-only; the reader blocks are strip-wrapped too.
-    if ( getDvar( "gf_debug_spawns" ) == "" )    setDvar( "gf_debug_spawns", "0" );
-    if ( getDvar( "gf_debug_hud_pool" ) == "" )  setDvar( "gf_debug_hud_pool", "0" );
-    if ( getDvar( "gf_debug_elem_probe" ) == "" ) setDvar( "gf_debug_elem_probe", "0" );
-    if ( getDvar( "gf_debug_spawnyaw" ) == "" )  setDvar( "gf_debug_spawnyaw", "0" );
+    gf_seedDvar( "gf_debug_spawns", "0" );
+    gf_seedDvar( "gf_debug_hud_pool", "0" );
+    gf_seedDvar( "gf_debug_elem_probe", "0" );
+    gf_seedDvar( "gf_debug_spawnyaw", "0" );
     // Team-write tracer (GF_TEAMTRACE). Seeded to 2 = FULL history, unlike every other debug dvar
     // here: it exists to catch the untraced mis-seater, which is rare and unreproducible on demand,
     // so anything less than always-on-with-full-history loses the one occurrence that mattered.
@@ -522,12 +633,12 @@ onStartGameType()
     // moves are recorded too — the level-1 blind spot that hid the YooDyl "moved + choose team" case).
     // Costs one roster diff at 3 checkpoints/round plus a few attributed-move lines; both event-driven,
     // negligible on an unrotated log. 1 = untraced only, 0 = silence.
-    if ( getDvar( "gf_trace_teams" ) == "" )     setDvar( "gf_trace_teams", "2" );
+    gf_seedDvar( "gf_trace_teams", "2" );
     // Per-death score-share logging. Default 0 — highest-volume line in the mod, and games_mp.log
     // has no rotation on the VPS.
-    if ( getDvar( "gf_debug_popup" ) == "" )     setDvar( "gf_debug_popup", "0" );
-    if ( getDvar( "gf_force_loadout" ) == "" )    setDvar( "gf_force_loadout", "-1" );   // loadout test aids (read in _gf_loadouts.gsc)
-    if ( getDvar( "gf_force_camo" ) == "" )       setDvar( "gf_force_camo", "-1" );
+    gf_seedDvar( "gf_debug_popup", "0" );
+    gf_seedDvar( "gf_force_loadout", "-1" );   // loadout test aids (read in _gf_loadouts.gsc)
+    gf_seedDvar( "gf_force_camo", "-1" );
 
     // The RCON panel READS this one back to show which vision set is live, so it has to be
     // registered or the panel's bare-name sweep echoes "Unknown cmd gf_vis_vision". Seeded to the
@@ -536,9 +647,13 @@ onStartGameType()
     // ⚠ Seed it to "enhance", never "" and never "normal": empty is only ever a TRANSIENT state
     // (the bridge's visreset clears the dvar and this re-seeds it next round), and "normal" is the
     // EXPLICIT map-default key, which is a different look.
-    if ( getDvar( "gf_vis_vision" ) == "" )       setDvar( "gf_vis_vision", "enhance" );
+    gf_seedDvar( "gf_vis_vision", "enhance" );
     // #strip-end
+}
 
+// ─── onStartGameType stage 4: per-round gameplay applies ───────────────────────────────────────
+gf_roundApplyTuning()
+{
     // Flinch (damage view-kick) scale — mult of stock bg_viewKickScale (0.2).
     // Seeds scr_gf_flinch (default 0.5 = half stock kick) and applies bg_viewKickScale each
     // round so an RCON change persists across map_restart. Server-side, so it
@@ -572,7 +687,11 @@ onStartGameType()
     // before it — never on the round start. This suppresses stock's push; the per-player start point
     // is armed from gf_playerSpawnedCB. Re-run every round: level.nextMusicState is level state.
     gf_initRoundMusic();
+}
 
+// ─── onStartGameType stage 5: banner strings + prematch countdown length ───────────────────────
+gf_roundPresentation()
+{
     // Match-end banner subtitle. Stock's getEndReasonText() OVERWRITES the reason we hand endGame
     // on the match-end path only (_globallogic.gsc: `if (!isOneRound()) endReasonText =
     // getEndReasonText();`, after startNextRound returns false), so the last banner of a match is
@@ -607,18 +726,11 @@ onStartGameType()
     else
         level.prematchPeriod = maps\mp\gametypes\_globallogic_utils::getValueInRange( getDvarInt( "scr_gf_prematch_seconds" ), 2, 20 );
     // #strip-end
+}
 
-    // #strip-begin - pre-prematch load gate (dev/main only; the public build has no match-start hold)
-    // Arm the load-gate's connect tracker NOW: the engine delivers "connecting"
-    // callbacks (which fire for rotation-carried clients while they are STILL on
-    // their loading screen) as soon as this Callback_StartGameType slice first
-    // yields, so the tracker must be listening before any later helper can wait.
-    // The actual hold is the last statement of this function. (The per-second
-    // prematch tick also moved there: it loops on inPrematchPeriod, which is
-    // already true during the hold, and would have beeped through it from here.)
-    gf_armLoadGate();
-    // #strip-end
-
+// ─── onStartGameType stage 6: round state flags, objective text, XP, loadouts, spawns, objects ─
+gf_roundWorldSetup()
+{
     level.gf_roundActive     = false;
     level.gf_roundEnding     = false;
     level.gf_activatingRound = false;
@@ -724,89 +836,6 @@ onStartGameType()
 
     if ( !level.gf_largeMode )
         gf_applyWagerZoneAssets();
-
-    // #strip-begin - RCON bridge + bot init (dev/main only; stripped from public release)
-    thread gf_bridgeInit();   // per-round: re-seeds dvars/flags + re-arms the vision blend (level.* wiped by map_restart); its telemetry/poll/pending-team loops self-guard to once-per-match inside
-    // The bot manager is once-per-MATCH, NOT once-per-round. onStartGameType re-runs on every
-    // map_restart (SD round cycling), but _bot::init() threads PERSISTENT managers (diffBots +
-    // the round-boundary fill reconciler) that must survive round cycling; re-threading them
-    // every round would stack copies. Gate on game[] — the only state that survives map_restart,
-    // and it resets on a genuine new map load — so exactly ONE manager set runs per match and it
-    // still re-inits for the next match.
-    // ⚠ This gate is only safe because those managers do NOT endon("game_ended"). That notify is
-    // NOT match-end: _globallogic::endGame fires it on EVERY round end (gf_endRound threads
-    // endGame in the same frame it notifies gf_round_over). This comment used to claim the
-    // opposite, and gf_boundaryListener carried the endon on that basis — so it died at the first
-    // round end, was never re-threaded by this once-per-match gate, and the bot fill silently
-    // stopped reconciling for the rest of the match ("fill ignores humans"). Re-init is collapsed
-    // by "bot_reinit" (fired at the top of _bot::init), which is the only notify that may tear
-    // these down. Same idiom as
-    // gf_rocketOncePerMatch / game["gf_init"]. bots_manage_add is legacy-cleared: nothing
-    // consumes it anymore (the addBots loop is deleted), but a stale nonzero value from an
-    // older build should not linger in the panel-visible dvar table.
-    if ( !isDefined( game["gf_botInit"] ) )
-    {
-        game["gf_botInit"] = true;
-        setDvar( "bots_manage_add", 0 );
-        thread maps\mp\gametypes\_bot::init();
-    }
-
-    // Default bot difficulty — OWNED BY dedicated.cfg (set bot_difficulty "fu"), NOT seeded here.
-    // bot_difficulty is a REAL ENGINE dvar (BO1 Combat Training), registered at process start as an
-    // enum: default "normal", domain easy/normal/hard/fu (live rcon read 2026-07-17). It is
-    // therefore NEVER empty, so the seed-if-empty that used to sit here was dead code that never
-    // fired once — the "fu" the VPS ran was a live panel botdiff_fu click surviving in-process,
-    // silently reverted to "normal" by the next server restart. GSC can't own this default without
-    // stomping a deliberate cfg value (an engine-registered "normal" is indistinguishable from an
-    // admin's chosen "normal"), so the GF default is a cfg deviation from the engine default —
-    // exactly what dedicated.cfg is for. _bot::diffBots re-applies the whole sv_bot* preset from
-    // the dvar every 1.5s, so a cfg value or a live panel botdiff_* click lands within a tick.
-
-    // Frame-hitch / slow-mo diagnostic (dev only). Chases the "prematch/preround
-    // countdown + whole game runs in slow-motion until it hits 0" report: samples
-    // how much gettime() advances across a fixed wait() and logs GF_HITCH to
-    // games_mp.log when a window runs slow. Re-launched every onStartGameType but
-    // collapsed to exactly one live sampler by the gf_hitch_reinit notify (threads
-    // survive map_restart, so a bare re-thread would stack). See _gf_debug.gsc.
-    level notify( "gf_hitch_reinit" );
-    level thread gf_hitchMonitor();
-
-    // Report the round-end dark window from the FAR side of map_restart. gf_roundEndProbe runs
-    // on the near side and dies inside the restart (a thread parked in a timed wait does not
-    // come back), so it stamps a heartbeat into a dvar and we read it here — the first mod code
-    // to run after the restart. Yields the one number the "Connection Interrupted" theory has
-    // always assumed and never measured: how long the server ran no script at all.
-    gf_reportRoundEndGap();
-    // #strip-end
-
-    // Undo any timescale stock's final-killcam slowdown left behind. Its SetTimeScale(1.0) restore
-    // sits AFTER a wait and behind endon("end_killcam"), so if every viewer skips (or drops out of)
-    // the killcam in that window the restore never runs and the server is stranded at 0.25x — and
-    // nothing in stock ever puts it back. gf_killcamSlowmoClamp restores 1.0 on its own path too,
-    // but only when it actually ran; this is the unconditional net that also covers the stock-depth
-    // (floor 0.25) case, where the clamp returns early and never touches the timescale at all.
-    // There is deliberately NO detector for the leak: the `timescale` dvar does not track
-    // SetTimeScale, so nothing inside the VM can see one (see _gf_debug.gsc). This costs a single
-    // builtin call per round, so guard it and move on.
-    gf_resetTimeScale();
-
-    // #strip-begin - pre-prematch hold (dev/main only; stripped from public release)
-    // Pre-prematch load gate — MUST be the last statement: the engine threads
-    // startGame() (prematch countdown -> prematch_over) the moment this callback
-    // returns, and everything above (spawn points, gameobjects, bridge, bots)
-    // must be in place before the first yield lets connect/spawn callbacks run.
-    // Holds the match's FIRST round until every rotation-carried client is off
-    // the loading screen (bounded by scr_gf_load_wait) so the full countdown and
-    // intro play for everyone at once, and slow loaders can no longer be
-    // grace-locked into spectating round 1. See _gf_rounds.gsc.
-    //
-    // The public build has NO hold: with this call gone, onStartGameType simply returns and the
-    // engine threads the prematch immediately. That is the whole "no lobby / no wait times" of the
-    // public build — there is nothing else to switch off, because every hold hangs off this one call.
-    gf_waitForLoadingClients();
-    // #strip-end
-
-    level thread gf_nativePrematchTicker();      // engine matchStartTimer is silent — re-add the per-second tick (start only now, post-hold)
 }
 
 // ─── Cosmodrome rocket: once per match, not once per round ───────────────────
@@ -877,17 +906,9 @@ gf_warnIfCheatsOnDedicated()
 
 gf_registerLoadoutCycleDvar()
 {
+    // Seed-if-empty (2), clamp to [1,9], persist the clamp — exactly gf_cfgInt.
     dvar = "scr_" + level.gameType + "_roundsperloadout";
-
-    if ( GetDvar( dvar ) == "" )
-        setDvar( dvar, 2 );
-
-    raw   = GetDvarInt( dvar );
-    value = maps\mp\gametypes\_globallogic_utils::getValueInRange( raw, 1, 9 );
-    if ( value != raw )
-        setDvar( dvar, value );   // persist the clamped value back, as before
-
-    level.gf_cfg_roundsPerLoadout = value;
+    level.gf_cfg_roundsPerLoadout = gf_cfgInt( dvar, 2, 1, 9 );
 }
 
 onSpawnPlayer( teamOverride )
@@ -1022,9 +1043,38 @@ gf_lobbyMaySpawn()
     // through, which is the same property the fill-discipline gate relies on.
     maps\mp\gametypes\_gf_debug::gf_teamTrace( "pre-spawn" );
 
+    // Ordered guard stages (decomposed 2026-07-22; each helper carries its original comment).
+    // A gf_maySpawn_* GATE returns the maySpawn verdict for its one concern — false = deny this
+    // spawn now (the engine then routes the client to spawnSpectator); a mutate-only stage never
+    // denies and is called plainly. ORDER IS LOAD-BEARING: the admin pteam consume sits AFTER the
+    // balancer's movePending so a same-round admin move wins, and the fill guard runs before the
+    // late-spawn admit (a parked bot must never reach the admit).
+    if ( !self gf_maySpawn_lobbyHold() )
+        return false;
+    if ( !self gf_maySpawn_parkPending() )
+        return false;
+    self gf_maySpawn_movePending();
+    if ( !self gf_maySpawn_adminMove() )
+        return false;
+    self gf_maySpawn_prematchBotLives();
+    if ( !self gf_maySpawn_fillGuard() )
+        return false;
+    self gf_maySpawn_lateSpawn();
+
+    return true;
+}
+
+// ─── maySpawn stage: restart-lobby hold (false = every spawn becomes a spectator) ──────
+gf_maySpawn_lobbyHold()
+{
     if ( isDefined( level.gf_lobbyRestartHold ) && level.gf_lobbyRestartHold )
         return false;
+    return true;
+}
 
+// ─── maySpawn stage: reconciler surplus-bot park ───────────────────────────────────────
+gf_maySpawn_parkPending()
+{
     // Dynamic-fill surplus trim (driven by the dev-only bot reconciler; inert without it since
     // nothing else sets the mark). When a human joins a team already at the per-team fill target,
     // the reconciler marks the displaced bot pers["gf_parkPending"]; here — the pre-spawn window,
@@ -1035,13 +1085,15 @@ gf_lobbyMaySpawn()
     if ( isDefined( self.pers["gf_parkPending"] ) && self.pers["gf_parkPending"] )
     {
         self.pers["gf_parkPending"] = undefined;
-        self gf_stampTeamWriter( "parkpending", "spectator" );
-        self.pers["team"]           = "spectator";
-        self.team                   = "spectator";
-        self.sessionteam            = "spectator";
+        self gf_setTeamFields( "parkpending", "spectator" );
         return false;
     }
+    return true;
+}
 
+// ─── maySpawn stage: balancer deferred human move (never denies) ───────────────────────
+gf_maySpawn_movePending()
+{
     // Deferred team move (human balancing). The boundary reconciler cannot quietly move a player
     // who was still ALIVE at the boundary (a round survivor in the killcam), so it marks them
     // pers["gf_movePending"] instead and the move lands HERE — the pre-spawn window of their next
@@ -1055,15 +1107,16 @@ gf_lobbyMaySpawn()
         self.pers["gf_movePending"] = undefined;
         if ( team == "allies" || team == "axis" )
         {
-            self gf_stampTeamWriter( "movepending", team );
-            self.pers["team"]       = team;
-            self.team               = team;
-            self.sessionteam        = team;
+            self gf_setTeamFields( "movepending", team );
             self.pers["weapon"]     = undefined;
             self.pers["savedmodel"] = undefined;
         }
     }
+}
 
+// ─── maySpawn stage: bridge pteam_ deferred ADMIN move ─────────────────────────────────
+gf_maySpawn_adminMove()
+{
     // Deferred ADMIN team move (bridge pteam_ "next round"). Consumed HERE — the same pre-spawn
     // mechanism as gf_movePending above — because the old apply (a spawned_player watcher in
     // _gf_bridge) ran DURING the re-begin spawn wave: any player's spawn could trigger it while the
@@ -1082,25 +1135,24 @@ gf_lobbyMaySpawn()
         self.pers["gf_pendingTeam"] = undefined;
         if ( team == "spectator" )
         {
-            self gf_stampTeamWriter( "pteam", "spectator" );
             self.pers["gf_specReason"] = "moved";
-            self.pers["team"]          = "spectator";
-            self.team                  = "spectator";
-            self.sessionteam           = "spectator";
+            self gf_setTeamFields( "pteam", "spectator" );
             return false;
         }
         if ( ( team == "allies" || team == "axis" )
             && !( isDefined( self.pers["team"] ) && self.pers["team"] == team ) )
         {
-            self gf_stampTeamWriter( "pteam", team );
-            self.pers["team"]       = team;
-            self.team               = team;
-            self.sessionteam        = team;
+            self gf_setTeamFields( "pteam", team );
             self.pers["weapon"]     = undefined;
             self.pers["savedmodel"] = undefined;
         }
     }
+    return true;
+}
 
+// ─── maySpawn stage: prematch bot lives-restore net (never denies) ─────────────────────
+gf_maySpawn_prematchBotLives()
+{
     // A BOT reaching pre-spawn during the PREMATCH always gets its life back. The round hasn't
     // started, so a consumed life here is always debris from a pre-round suicide the one-life rule
     // was never meant to count — the observed path is a STOCK re-begin team switch, whose changeTeam
@@ -1111,13 +1163,17 @@ gf_lobbyMaySpawn()
     // the catch-all sibling of gf_botQuietSetTeam's restore, which only covers the mod's own
     // redeploys. Mid-displacement/park bots are excluded (their suicide is the retirement itself);
     // humans are untouched (their prematch moves restore explicitly via gf_seqTeamMove).
-    if ( self istestclient() && !( self isdemoclient() )
+    if ( gf_isRealBot( self )
         && !isDefined( self.gf_displacePending )
         && !( isDefined( self.pers["gf_parkPending"] ) && self.pers["gf_parkPending"] )
         && isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod
         && isDefined( level.numLives ) && level.numLives > 0 )
         self.pers["lives"] = level.numLives;
+}
 
+// ─── maySpawn stage: fill discipline (bot park / human seat-priority displace) ─────────
+gf_maySpawn_fillGuard()
+{
     // FILL DISCIPLINE — the spawn-gate half of the reconciler's size policy, enforced at the one
     // door every client walks through. Team size = max(bigger human side, gf_fill_n), the exact
     // formula the boundary pass pads to (the pass only PLANS; this gate ENFORCES). Inert at
@@ -1138,19 +1194,16 @@ gf_lobbyMaySpawn()
     //           spawned before touching any bot, so threading it pre-verdict costs nothing.
     if ( isDefined( self.pers["team"] )
         && ( self.pers["team"] == "allies" || self.pers["team"] == "axis" )
-        && !( self isdemoclient() ) )
+        && gf_holdsSeat( self ) )
     {
         sizeT = gf_targetRoundSize();
         if ( sizeT > 0 && gf_teamRosterCount( self.pers["team"], self ) >= sizeT )
         {
-            if ( self istestclient() )
+            if ( gf_isRealBot( self ) )
             {
                 logPrint( "GF_FILLGUARD: parked bot " + self.name + " - " + self.pers["team"]
                     + " already at size " + sizeT + " (round " + game["roundsplayed"] + ")\n" );
-                self gf_stampTeamWriter( "fillguard", "spectator" );
-                self.pers["team"] = "spectator";
-                self.team         = "spectator";
-                self.sessionteam  = "spectator";
+                self gf_setTeamFields( "fillguard", "spectator" );
                 return false;
             }
             // Human: this is only a cheap PRE-FILTER (the roster is transiently over-counted during
@@ -1160,7 +1213,12 @@ gf_lobbyMaySpawn()
             self thread gf_displaceBotForHuman( self.pers["team"] );
         }
     }
+    return true;
+}
 
+// ─── maySpawn stage: mid-round late-spawn admit (never denies) ─────────────────────────
+gf_maySpawn_lateSpawn()
+{
     // LATE SPAWN — admit a first spawn into a LIVE round (mid-round joiners, admin force moves,
     // spectators picking a team) while their team still has >=1 alive, it isn't overtime, and the
     // spawn preserves the round's team size (gf_lateSpawnAllowed: fill a gap, or displace a bot).
@@ -1183,8 +1241,6 @@ gf_lobbyMaySpawn()
     {
         self.hasSpawned = true;
     }
-
-    return true;
 }
 
 // Two ways into a live round, and never a third — the round's team SIZE is preserved either way:
@@ -1213,7 +1269,7 @@ gf_lateSpawnAllowed()
     if ( mine + 1 <= other )
         return true;                                   // 1. genuine gap
 
-    if ( self istestclient() )
+    if ( gf_isRealBot( self ) )
         return false;                                  // a bot never displaces anyone to get in
     if ( !isDefined( gf_pickDisplaceableBot( self.pers["team"] ) ) )
         return false;                                  // 2. no bot to displace: all humans, and full
@@ -1252,7 +1308,7 @@ gf_teamRosterCount( team, exclude )
     for ( i = 0; i < players.size; i++ )
     {
         p = players[i];
-        if ( !isDefined( p ) || p isdemoclient() )
+        if ( !isDefined( p ) || !gf_holdsSeat( p ) )
             continue;
         if ( isDefined( exclude ) && p == exclude )
             continue;
@@ -1280,7 +1336,7 @@ gf_pickDisplaceableBot( team )
     for ( i = 0; i < players.size; i++ )
     {
         p = players[i];
-        if ( !isDefined( p ) || !( p istestclient() ) || p isdemoclient() )
+        if ( !isDefined( p ) || !gf_isRealBot( p ) )
             continue;
         if ( !( isDefined( p.pers["team"] ) && p.pers["team"] == team ) )
             continue;
