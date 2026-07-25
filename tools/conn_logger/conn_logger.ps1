@@ -85,7 +85,7 @@ function Get-CurrentPlayers {
         # connecting / mis-tokenized status rows (guid 0, the address column holding a
         # lastmsg value, changing every tick) - which would otherwise key on a moving
         # bogus "ip" and spam CONNECT/LEFT. Restores the old direct-status logger's guard.
-        if ($ip -notmatch '^\d{1,3}(\.\d{1,3}){3}:\d+$') { continue }
+        if ($ip -notmatch '^\d{1,3}(\.\d{1,3}){3}:-?\d+$') { continue }   # -? : port prints signed-16-bit, can be negative (ip:-NNNNN)
         $guid = if ($p.guid) { [string]$p.guid } else { '' }
         $name = if ($p.name) { [string]$p.name } else { '(unknown)' }
         $ping = if ($null -ne $p.ping) { [string]$p.ping } else { '-' }

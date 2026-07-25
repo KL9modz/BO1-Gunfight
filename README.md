@@ -4,7 +4,7 @@
 
 # Black Ops Gunfight
 
-**Black Ops Gunfight** brings the authentic **Gunfight** game mode to **Call of Duty: Black Ops 1** on **Plutonium T5** for PC. Two teams face off using a **shared loadout** that **rotates every other round**. **No health regeneration, no custom loadouts, no killstreaks.** If time expires, capture the **overtime flag** to secure the round. Otherwise, the team with the **most remaining health** wins the round. The first team to win **6 rounds** wins the match.
+**Black Ops Gunfight** brings the authentic **Gunfight** game mode to **Call of Duty: Black Ops 1**, **free to play on PC** through Plutonium T5. Two teams face off using a **shared loadout** that **rotates every other round**. **No health regeneration, no custom loadouts, no killstreaks.** If time expires, capture the **overtime flag** to secure the round. Otherwise, the team with the **most remaining health** wins the round. The first team to win **6 rounds** wins the match.
 
 Made by **KL9**. Join us on **[Discord](https://discord.gg/blackops)**.
 
@@ -18,15 +18,14 @@ Made by **KL9**. Join us on **[Discord](https://discord.gg/blackops)**.
 
 ## Features
 
-- **Fully custom HUD** — a built-from-scratch heads-up display showing live health for both teams, plus a full loadout preview at the start of every round.
-- **Custom overtime flag** — a hold-to-capture objective that spawns in the center of the map at the end of a round for either team to take.
-- **Health-based round logic** — if both teams survive and neither captures the overtime flag, the round is decided on time expiry by **total remaining health**. Equal health is a draw.
-- **Per-map spawn & overtime points** — hand-placed spawn and overtime-flag locations for each map.
-- **All 24 maps + map-size scaling** — supports **all 24 maps** (12 base + 12 DLC), with map-size scaling: smaller wager-style map sizes for smaller lobbies, larger full-map sizes for bigger lobbies.
-- **50+ unique loadouts** — a shared, shuffle-without-repeat loadout pool with randomized weapon camos.
-- **Visual improvements** — tuned game rendering, lighting, and colors for a cleaner, sharper look.
-- **Damage-based scoring** — each player's score value is the total damage they've dealt.
-- **Full bot support** — bots are fully supported.
+- **Fully custom HUD** — a built-from-scratch heads-up display with **live health for both teams** and a full loadout preview at the start of every round.
+- **50+ unique loadouts** — a shared, **shuffle-without-repeat** loadout pool with randomized weapon camos; both teams get the same kit each round.
+- **All 24 maps & size scaling** — **all 24 maps** (12 base + 12 DLC), each with hand-placed spawn and overtime points, plus map-size scaling: tighter wager-style sizes for smaller lobbies, full-map sizes for bigger ones.
+- **Overtime flag** — a **hold-to-capture** objective spawns center-map when a round runs long; capture it to steal the round for either team.
+- **Health-based rounds** — if nobody captures the overtime flag, the round is decided on **total remaining health**. Equal health is a draw.
+- **Visual improvements** — tuned game rendering, lighting, and colors for a **cleaner, sharper look**.
+- **Real stats & XP** — a ranked server with real stats and XP tracking. **2XP enabled!**
+- **Full bot support** — **fully functional bots** can be added to any lobby.
 
 **Adjustable (server-side):**
 - Loadout rotation and side switching — every **2 rounds** by default.
@@ -51,6 +50,8 @@ Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFER
 ---
 
 ## How To Play
+
+Black Ops is **free to play** on PC through the CB Servers Launcher.
 
 1. **Get the game + Plutonium** with the **[CB Servers Launcher](https://docs.cbservers.xyz/games/t5)** — one app downloads Black Ops 1 and runs it on Plutonium (a free [Plutonium account](https://forum.plutonium.pw/register) is required).
 2. **Launch & join:** hit **PLAY → Multiplayer**, open the **Server Browser**, and join **`Gunfight`**.

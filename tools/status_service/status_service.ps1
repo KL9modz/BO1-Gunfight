@@ -176,7 +176,11 @@ function Parse-StatusPlayers {
         if ($nameEnd -ge 4) { $name = ($tok[4..$nameEnd] -join ' ') }
         $name = (Strip-Color $name).Trim()
         if ($name -eq '') { continue }
-        $isHuman = ($address -match '^\d{1,3}(\.\d{1,3}){3}:\d+$')
+        # Port may be NEGATIVE (Plutonium prints it as a signed 16-bit value): a source port
+        # >32767 shows as `ip:-NNNNN`, so `-?` on the port is required or ~half of real players
+        # fail this check and vanish from the activity feed. IP keeps its :port here; consumers
+        # strip it before geo (see line ~293), so the sign is dropped where the bare IP is used.
+        $isHuman = ($address -match '^\d{1,3}(\.\d{1,3}){3}:-?\d+$')
         $ip = if ($isHuman) { $address } else { '' }
         $byNum[$num] = @{ name = $name; ping = [int]$ping; bot = (-not $isHuman); ip = $ip; guid = $guid }
     }
@@ -450,7 +454,7 @@ while ($true) {
                 # bots the panel's guid/'unknown' check missed AND clients still connecting
                 # (guid 0, the address column holding a lastmsg value) - otherwise they inflate
                 # the human count and log spurious connects.
-                if ([string]$p.ip -ne 'local' -and [string]$p.ip -ne 'loopback' -and [string]$p.ip -notmatch '^\d{1,3}(\.\d{1,3}){3}:\d+$') { continue }
+                if ([string]$p.ip -ne 'local' -and [string]$p.ip -ne 'loopback' -and [string]$p.ip -notmatch '^\d{1,3}(\.\d{1,3}){3}:-?\d+$') { continue }   # -? : port prints signed-16-bit, can be negative
                 $r = $roster[$num]
                 $humansRaw += ,@{
                     name  = $p.name

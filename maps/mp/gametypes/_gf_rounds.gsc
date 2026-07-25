@@ -1844,7 +1844,7 @@ gf_lobbyCamPut()
 // CLIENT dvars, and a dedicated server's setDvar doesn't replicate). 12 fixed name slots
 // (ui_gf_lobby_p0..11) + a count (ui_gf_lobby_pcount) that gates each slot's menu visibility. Retires
 // with the hold via the same notifies the load tracker / cam watcher use. Still-connecting + demo
-// clients are excluded; bots are listed with a "(bot)" tag per the combined-list design.
+// clients are excluded, as are bots — the lobby list shows humans only.
 gf_lobbyRosterLoop()
 {
     level endon( "game_ended" );
@@ -1863,10 +1863,9 @@ gf_lobbyRosterLoop()
                 continue;
             if ( isDefined( p.statusicon ) && p.statusicon == "hud_status_connecting" )
                 continue;   // still loading — not standing in the lobby yet
-            nm = p.name;
             if ( gf_isRealBot( p ) )
-                nm = nm + "  (bot)";
-            names[ names.size ] = nm;
+                continue;   // bots are hidden from the lobby list (humans only)
+            names[ names.size ] = p.name;
         }
 
         // Push only when the roster actually changes (a join/leave/rename) so a static lobby pushes

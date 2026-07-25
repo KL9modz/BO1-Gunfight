@@ -144,7 +144,10 @@ function Parse-Status($text) {
       # phone until they are actually in — but the same flag on the RCON panel drove "Kick All
       # Bots", and there it kicked REAL PLAYERS. The flag is now three-state so no consumer can
       # inherit that footgun: $null means "could not tell", and it is never actionable.
-      $isHuman = ($addr -eq 'loopback' -or $addr -eq 'local' -or $addr -match '^\d{1,3}(\.\d{1,3}){3}:\d+$')
+      # Port may be NEGATIVE (Plutonium prints it as a signed 16-bit value): a source port
+      # >32767 shows as `ip:-NNNNN`, so `-?` on the port is required or ~half of real joiners
+      # classify as bot=null and never push. IP extraction ignores the port, so it's harmless.
+      $isHuman = ($addr -eq 'loopback' -or $addr -eq 'local' -or $addr -match '^\d{1,3}(\.\d{1,3}){3}:-?\d+$')
       $isBot   = (-not $isHuman) -and ($p[3] -eq '0') -and ($addr -match '^(unknown|bot|0\.0\.0\.0(:\d+)?)$')
       $bot     = $null; if ($isHuman) { $bot = $false } elseif ($isBot) { $bot = $true }
       $pg = $null; if ($p[2] -match '^\d+$') { $pg = [int]$p[2] }   # "CNCT"/"ZMBI" -> null

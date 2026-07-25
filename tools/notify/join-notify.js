@@ -168,7 +168,10 @@ function parseStatus(text) {
       // pushed to a phone until they're actually in — but the same flag on the RCON panel drove
       // "Kick All Bots", and there it kicked REAL PLAYERS. The flag is now three-state so no
       // consumer can inherit that footgun: null means "couldn't tell", and it is never actionable.
-      const isHuman = addr === 'loopback' || addr === 'local' || /^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(addr);
+      // Port may be NEGATIVE (Plutonium prints it as a signed 16-bit value): a source port
+      // >32767 shows as `ip:-NNNNN`, so `-?` on the port is required or ~half of real joiners
+      // classify as bot=null and never push. IP extraction ignores the port, so it's harmless.
+      const isHuman = addr === 'loopback' || addr === 'local' || /^\d{1,3}(\.\d{1,3}){3}:-?\d+$/.test(addr);
       const isBot   = !isHuman && p[3] === '0' && /^(unknown|bot|0\.0\.0\.0(:\d+)?)$/i.test(addr);
       const bot     = isHuman ? false : (isBot ? true : null);
       const ping  = /^\d+$/.test(p[2]) ? parseInt(p[2], 10) : null;   // "CNCT"/"ZMBI" → null

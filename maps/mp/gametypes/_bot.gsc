@@ -798,6 +798,21 @@ gf_specReasonTag(p)
 	return "UNTRACED";
 }
 
+// Announce a just-opened team seat — but only PROMISE "next round" when that is true. Both callers
+// (gf_reclaimStrandedHumans, gf_seatQueuedHumans) run inside gf_boundaryPass, which fires from three
+// triggers; one of them (gf_matchStartPass) can run while a round is LIVE. When it does and late-spawn
+// is on, the maySpawn hook (gf.gsc gf_lateSpawnAllowed) drops the freshly-seated player into the
+// CURRENT round, so the "next round" wording would be a lie — suppress it (they just spawn). Between
+// rounds gf_endRound has already cleared gf_roundActive, so the promise still prints there.
+gf_notifySeatOpened()
+{
+	if(isDefined(level.gf_roundActive) && level.gf_roundActive
+		&& !(isDefined(level.gf_roundEnding) && level.gf_roundEnding)
+		&& getDvarInt("scr_gf_latespawn") != 0)
+		return;                              // live round + late-spawn: they join NOW, don't promise next round
+	self iprintln("^2A team seat opened - you are in next round");
+}
+
 // CONTAINMENT for the untraced human mis-seat (the "moved to the other team -> forced to choose a
 // team/class" report). The companion to gf_teamWatchHumans: for every human stranded in SPECTATOR
 // with reason UNTRACED (NOT a self/admin/maxsize spectate, NOT lock-queued), re-seat them on the
@@ -842,7 +857,7 @@ gf_reclaimStrandedHumans()
 		// the explicit audit trail. Quiet reassign is safe — a stranded human is never "playing".
 		p maps\mp\gametypes\_gf_rounds::gf_quietSetTeam(want);
 		p.pers["gf_seatQueued"] = undefined; // seated now; drop any stale queue mark
-		p iprintln("^2A team seat opened - you are in next round");
+		p gf_notifySeatOpened();
 		logPrint("GF_RECLAIM: re-seated stranded human " + p.name + " to " + want
 			+ " (round " + game["roundsplayed"] + ")\n");
 
@@ -924,7 +939,7 @@ gf_seatQueuedHumans( hA, hX )
 
 		best.pers["gf_seatQueued"] = undefined;
 		best maps\mp\gametypes\_gf_rounds::gf_quietSetTeam(want);
-		best iprintln("^2A team seat opened - you are in next round");
+		best gf_notifySeatOpened();
 		if(want == "allies")
 			hA++;
 		else

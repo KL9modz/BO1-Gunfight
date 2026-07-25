@@ -173,7 +173,11 @@ function parseRconResponse(buf) {
 // which resolves identity server-side with istestclient(). Keep it that way.
 // Local player:  address == "loopback"
 
-const IP_PORT_RE  = /^\d{1,3}(\.\d{1,3}){3}:\d+$/;
+// ⚠ The port may be NEGATIVE: Plutonium prints it as a signed 16-bit value, so any client
+// whose source port is >32767 shows as `ip:-NNNNN` (e.g. 52978 → :-12558). `-?` on the port
+// is load-bearing — without it ~half of all real players fail this test and lose IP/notify/
+// history. The IP itself is always valid; extraction is split(':')[0], so the sign is dropped.
+const IP_PORT_RE  = /^\d{1,3}(\.\d{1,3}){3}:-?\d+$/;
 const BOT_ADDR_RE = /^(unknown|bot|0\.0\.0\.0(:\d+)?)$/i;
 
 function stripColors(s) { return String(s).replace(/\^[0-9a-zA-Z]/g, '').trim(); }

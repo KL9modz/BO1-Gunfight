@@ -111,6 +111,7 @@ memory folder as a second copy — it drifts ([[site-css-js-cache-bust-version-q
 - [rcon-connect-sweep-unknown-cmd-spam](rcon-connect-sweep-unknown-cmd-spam.md) — unregistered dvars echo the error. RULE: seed any new panel dvar in gf.gsc.
 - [rcon-map-rotation-editor](rcon-map-rotation-editor.md) — Pluto T5 honors rcon writes to sv_maprotation AND sv_maprotationcurrent (head = next map).
 - [status-parser-name-spaces-bot-miscount](status-parser-name-spaces-bot-miscount.md) — a spaced name shifts columns. RULE: read name/addr END-anchored.
+- [status-address-port-is-signed-16bit-can-be-negative](status-address-port-is-signed-16bit-can-be-negative.md) — `status` prints the address port as a SIGNED 16-bit value, so a source port >32767 shows as `ip:-NNNNN`. A `:\d+` regex rejected it → ~half of real players lost their IP + join alert + connection-history entry. FIXED: `-?\d+` in all 6 validation sites. RULE: allow a negative port.
 - [kick-all-bots-kicked-real-players](kick-all-bots-kicked-real-players.md) — the bot flag was fail-open and a STILL-CONNECTING client looks like a bot in `status`. A classifier's DEFAULT must never be the destructive class; identity for a kick comes from the SERVER (istestclient), never parsed text.
 - [server_reference](server_reference.md) — older Gunfight dvar cheat-sheet. ⚠ Some defaults are STALE (e.g. scr_gf_timelimit shown as 1) — trust docs/REFERENCE.md + CLAUDE.md's dvar tables over this.
 

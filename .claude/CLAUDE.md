@@ -1108,7 +1108,10 @@ DOM's own `defaultValue`/`defaultChecked` (so nothing carries a second copy of i
 through the row's **own** apply button / change handler, so a reset can't drift from the row's transport.
 Per-profile passwords live in gitignored `secrets.local.json`. ⚠ Status/dvar parsing is **end-anchored**
 because names can contain spaces (a bot "MCG Gordon" would otherwise leak in as a human —
-[[status-parser-name-spaces-bot-miscount]]).
+[[status-parser-name-spaces-bot-miscount]]), and the address-column **port is signed 16-bit** so a
+real client can show `ip:-NNNNN` — every `status` address regex allows a negative port (`-?\d+`), or
+~half of real players silently lose their IP + join alert + connection-history row
+([[status-address-port-is-signed-16bit-can-be-negative]]).
 
 ---
 
