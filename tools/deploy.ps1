@@ -56,6 +56,14 @@ $ErrorActionPreference = "Stop"
 #   - Never touches dedicated.cfg (lives in storage\t5\, not the mod folder; it
 #     is the sole owner of rcon_password and stays VPS-local).
 #   - Refuses to publish the website if it finds a secret (rcon password etc.).
+#   - Refuses to publish the website if it finds a PUBLIC IP LITERAL or a pasted
+#     `status` roster row (player PII). Separate rule from the password denylist -
+#     neither leak is a "secret", so no password scanner would ever match one. It is
+#     the deploy-side TWIN of tools/hooks/pre-commit section 4 and shares that rule's
+#     allowlist file and `ip-ok` opt-out; see PUBLISH GUARDS in release_common.ps1.
+#   - -Mod's /MIR never purges (or ships) the gitignored per-box stores: the /XF list
+#     is DERIVED from release_common.ps1's $LocalOnlyFiles so it cannot drift from the
+#     packagers' copy of the same list.
 #   - tools\rcon\ (the private admin panel) is part of the mod tree, NOT the
 #     site; it is never copied to wwwroot.
 #   - FastDL publishes ONLY mod.ff (the public artifact players already get),
@@ -63,6 +71,16 @@ $ErrorActionPreference = "Stop"
 #   - -Web's /MIR excludes mods\ + usermaps\ (FastDL copy) and live\/admin\live\
 #     (status snapshots) so it never purges box-local files that aren't in the repo.
 # ---------------------------------------------------------------------------
+
+# The publish guards (leak scan + the local-only store list) are shared with the two
+# packagers so all three agree on what may never leave this repo. Fail CLOSED: a guard
+# that silently vanishes because a file is missing is worse than no guard, because the
+# deploy still appears to succeed.
+$ReleaseCommon = Join-Path $PSScriptRoot "release_common.ps1"
+if (!(Test-Path -LiteralPath $ReleaseCommon)) {
+    throw "Publish guards missing: $ReleaseCommon (this clone predates them). Run 'git -C $RepoRoot pull --ff-only' by hand once, then re-run deploy."
+}
+. $ReleaseCommon
 
 # Secrets that must never reach the world-readable marketing page. These are
 # FATAL if found anywhere under site\wwwroot.
@@ -131,10 +149,13 @@ function Update-Repo {
     # copy directly without pulling again.
     if ($before -and $after -and ($before -ne $after)) {
         $changed = Invoke-Git @("diff", "--name-only", "$before..$after")
-        if ($changed -contains "tools/deploy.ps1") {
+        # release_common.ps1 is dot-sourced above, so a pull that changes IT leaves this
+        # process running the OLD guard definitions - same staleness trap as deploy.ps1
+        # itself, and on a security guard it is the worse of the two.
+        if (($changed -contains "tools/deploy.ps1") -or ($changed -contains "tools/release_common.ps1")) {
             Write-Host ""
-            Write-Host "deploy.ps1 was updated by this pull - re-run the SAME command so the" -ForegroundColor Yellow
-            Write-Host "NEW version executes (this run is still the old in-memory copy)." -ForegroundColor Yellow
+            Write-Host "deploy.ps1 / release_common.ps1 was updated by this pull - re-run the SAME" -ForegroundColor Yellow
+            Write-Host "command so the NEW version executes (this run is the old in-memory copy)." -ForegroundColor Yellow
             exit 0
         }
     }
@@ -184,6 +205,34 @@ function Deploy-Web {
         throw "Web deploy aborted: remove the secret(s) above (the page is world-readable)."
     }
     Write-Host "No secrets found."
+
+    # Second, INDEPENDENT rule: public IP literals + pasted `status` roster rows.
+    # The password denylist above can see neither, and these are the two worst leaks
+    # this repo has actually had (a third party's real IP in a pasted status dump; the
+    # owner's home egress IP in a firewall runbook). Neither is a "secret".
+    # >>> This is the deploy-side TWIN of tools/hooks/pre-commit section 4: same excluded
+    # >>> ranges, same `ip-ok` line marker, same tools/hooks/ip-allow.txt allowlist, so a
+    # >>> developer who satisfied the hook is never blocked here (or vice versa). Change
+    # >>> both or neither - see PUBLISH GUARDS in release_common.ps1.
+    Write-Host "Leak-scanning $webSrc (public IPs / player PII) ..."
+    $leaks = @(Find-LeakHits -Root $webSrc -AllowFile (Get-IpAllowFile $RepoRoot))
+    if ($leaks.Count -gt 0) {
+        Write-Host "REFUSING TO PUBLISH - public IP / player PII in the public site:" -ForegroundColor Red
+        $leaks | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+        Write-Host "  -> if intentional: put 'ip-ok' in a comment on that line, or add the address" -ForegroundColor Red
+        Write-Host "     to tools\hooks\ip-allow.txt (the SAME allowlist the pre-commit hook reads)." -ForegroundColor Red
+        throw "Web deploy aborted: that page is world-readable."
+    }
+    Write-Host "No public IP / player PII found."
+
+    # Belt to the /XF braces below: a gitignored per-box store must never reach IIS.
+    # site\wwwroot has never held one, which is exactly why an assertion is cheap here.
+    $localOnly = @(Find-LocalOnlyFiles -Root $webSrc)
+    if ($localOnly.Count -gt 0) {
+        Write-Host "REFUSING TO PUBLISH - box-local store(s) under site\wwwroot:" -ForegroundColor Red
+        $localOnly | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+        throw "Web deploy aborted: those files are gitignored for a reason."
+    }
 
     # web.config is VPS-owned (carries the hardened HTTP->HTTPS redirect + HSTS).
     # Only mirror it if the repo deliberately tracks one; otherwise exclude it so
@@ -499,9 +548,15 @@ function Deploy-Mod {
     #                              highest-signal detector on the box without a word.
     #   security_state.json      - its event bookmarks + learned baseline. Purging it replays history and
     #                              re-adopts the current authorized_keys/firewall as the baseline.
-    $xf = @("config.json", "secrets.local.json", "prefs.local.json", "ignore.local.json", "console_mp.log*",
-            ".dvarcache.json", ".geocache.json", "watchdog_state.json", "watchdog_maintenance.json",
-            "security.local.json", "security_state.json")
+    # DERIVED from release_common.ps1's $LocalOnlyFiles - do NOT re-list the names here.
+    # The packagers drop exactly this set, and a name present in one list but not the
+    # other is how the real IPs ship straight back out. Only console_mp.log* is local to
+    # this list: it is a running log, not a per-box store, so it has no place in the
+    # packagers' drop-list.
+    # $LocalOnlyGlobs rides along because robocopy /XF takes wildcards: without it the
+    # ops crib sheet (tools\ops.local.*, whatever extension the operator used) would be
+    # PURGED off the box by /MIR every deploy.
+    $xf = $LocalOnlyFiles + $LocalOnlyGlobs + @("console_mp.log*")
     Invoke-Robocopy -Source $RepoRoot -Destination $ModDest -ExtraArgs (@("/XD") + $xd + @("/XF") + $xf)
     Write-Host "Mod tree + mod.ff deployed$(if ($DryRun) { ' (dry run - nothing changed)' }) to $ModDest"
 

@@ -11,7 +11,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-. (Join-Path $PSScriptRoot 'common.ps1')   # Resolve-*Root / Get-RconPassword / Invoke-BuildFf
+. (Join-Path $PSScriptRoot 'common.ps1')          # Resolve-*Root / Get-RconPassword / Invoke-BuildFf
+. (Join-Path $PSScriptRoot 'release_common.ps1')  # $LocalOnlyFiles / Test-LocalOnlyPath (publish guards)
 
 # Build a PRIVATE VPS deployment bundle (NOT for public release):
 #   t5/
@@ -36,6 +37,17 @@ $ErrorActionPreference = "Stop"
 #   tools\package_server.ps1 1.0.0 -RotateRcon     # generate+inject a fresh rcon_password, print it
 #   tools\package_server.ps1 1.0.0 -SanitizeConfig # blank rcon_password in the copy
 #   tools\package_server.ps1 -IncludeRconTool      # also bundle the web RCON panel
+#
+# ONE guard applies here, and only one. This bundle is PRIVATE and deliberately carries
+# the live dedicated.cfg, so the leak scan that guards the public paths would be wrong
+# here -- it would reject every bundle over the VPS IP the runbooks legitimately name.
+# What it MUST NOT carry is the gitignored per-box stores ($LocalOnlyFiles /
+# $LocalOnlyGlobs in release_common.ps1): another box's live rcon passwords, its player
+# GUIDs, its ip-api geo cache (real player IPs), and the ops crib sheet (home egress IP,
+# VNC console). The tracked-tree copy is safe by construction -- `git ls-files` cannot
+# see a gitignored file -- but the -IncludeRconTool copy is a raw recursive Get-ChildItem
+# and DID sweep up secrets.local.json / prefs.local.json / .geocache.json before this
+# filter existed. The final assertion below covers both paths at once.
 
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
@@ -94,15 +106,21 @@ if ($LASTEXITCODE -ne 0) { throw "git ls-files failed (is '$ModRoot' a git work 
 if ($tracked.Count -eq 0) { throw "git ls-files returned no files; refusing to build an empty server bundle." }
 $copied = 0
 $skipped = 0
+$dropped = 0
 foreach ($rel in $tracked) {
     $win = $rel -replace '/', '\'
     $src = Join-Path $ModRoot $win
     if (!(Test-Path -LiteralPath $src)) { $skipped++; continue }   # tracked but absent in work tree
+    # Belt to git's braces: these are gitignored, so `git ls-files` should never list one.
+    # It would, though, the moment somebody `git add -f`s a per-box store -- and that is
+    # exactly the mistake worth catching, since the bundle then travels to another box.
+    if (Test-LocalOnlyPath $src) { $dropped++; continue }
     Copy-Into $src (Join-Path $StageMod $win)
     $copied++
 }
 $skipNote = ""
 if ($skipped -gt 0) { $skipNote = " ($skipped tracked path(s) absent in work tree, skipped)" }
+if ($dropped -gt 0) { $skipNote += " ($dropped per-box store(s) dropped - see `$LocalOnlyFiles)" }
 Write-Host "  + mod.ff + $copied tracked file(s) from main (complete source tree)$skipNote"
 
 # -- Safety guard: no committed secret in the staged GSC ----------------------
@@ -165,7 +183,12 @@ else {
 if ($IncludeRconTool) {
     $rconSrc = Join-Path $WorkspaceRoot "tools\rcon"
     if (Test-Path -LiteralPath $rconSrc) {
-        $rconFiles = Get-ChildItem -Recurse -File -LiteralPath $rconSrc | Where-Object { $_.FullName -notmatch '\\node_modules\\' }
+        # Test-LocalOnlyPath is what keeps this raw recursive copy from bundling the panel's
+        # own secrets.local.json / servers.local.json / prefs.local.json / .geocache.json.
+        # The .example templates alongside them are NOT matched and still ship, on purpose.
+        $rconFiles = Get-ChildItem -Recurse -File -LiteralPath $rconSrc |
+            Where-Object { $_.FullName -notmatch '\\node_modules\\' } |
+            Where-Object { -not (Test-LocalOnlyPath $_.FullName) }
         foreach ($f in $rconFiles) {
             $rel = $f.FullName.Substring($WorkspaceRoot.Length).TrimStart('\', '/')
             Copy-Into $f.FullName (Join-Path $StageRoot $rel)
@@ -216,6 +239,20 @@ Base server files (Black Ops 1 game files + Plutonium server binaries) are
 obtained ON the VPS per the Plutonium docs - they are NOT in this bundle.
 "@
 [System.IO.File]::WriteAllText((Join-Path $StageRoot "DEPLOY.txt"), $deploy, $Utf8NoBom)
+
+# -- Final assertion: no per-box store anywhere in the bundle ------------------
+# One sweep over the whole stage, so it covers the tracked-tree copy, the -IncludeRconTool
+# copy and anything a future stage step adds. Fatal: this zip is hand-carried to another
+# machine, and a stray secrets.local.json in it is a live credential handed over by accident.
+# (The dedicated.cfg password is a DIFFERENT thing - deliberate, announced, and the whole
+# point of the bundle. See the banner at the end.)
+$staleLocal = @(Find-LocalOnlyFiles -Root $StageRoot)
+if ($staleLocal.Count -gt 0) {
+    Write-Host "REFUSING TO BUNDLE - box-local store(s) reached the stage:" -ForegroundColor Red
+    $staleLocal | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+    throw "Server bundle aborted: those files are per-box state, not deployable content."
+}
+Write-Host "  + local-store guard: no per-box store in the bundle"
 
 # -- Zip ----------------------------------------------------------------------
 if (Test-Path -LiteralPath $ZipPath) { Remove-Item -Force -LiteralPath $ZipPath }

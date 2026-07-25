@@ -30,6 +30,12 @@ $ErrorActionPreference = "Stop"
 # (scorelimit / timelimit / overtimelimit / roundswitch / roundsperloadout / teamspawnmode /
 # capture_time / flinch / team_maxsize).
 #
+# Two PUBLISH GUARDS (release_common.ps1) run over the STAGED output before anything is
+# zipped or force-pushed, because the zip and the 'release' branch are the most public
+# things this repo produces: no public IP literal / pasted `status` roster row, and no
+# gitignored per-box store. The IP rule is the intentional twin of tools/hooks/pre-commit
+# section 4 -- same excluded ranges, same `ip-ok` marker, same ip-allow.txt.
+#
 # tools\verify_release_strip.ps1 statically proves the staged GSC still resolves -- run it
 # after touching ANY strip region. A region that removes a function some KEPT code still
 # calls is an "unknown function" compile error that kills the whole server, and it will not
@@ -217,6 +223,35 @@ Invoke-BuildFf -GameRoot $GameRoot -ModName $ModName -SkipBuild:$SkipBuild -ModF
 # -- Stage + zip --------------------------------------------------------------
 Write-Host ""
 Build-Staging $StageMod
+
+# -- Publish guards (see PUBLISH GUARDS in release_common.ps1) -----------------
+# Scan the STAGE, not the source tree: staging is what actually ships, and it is post
+# comment-strip, so a gamertag left in a GSC comment on main is already gone by here.
+# Placed BEFORE the zip and before -PublishBranch so a hit blocks every public path.
+#
+# >>> The IP/PII rule is the intentional TWIN of tools/hooks/pre-commit section 4.
+# >>> Change both or neither. A developer who satisfied the hook must never be blocked
+# >>> here, which is why both read the same tools/hooks/ip-allow.txt and honour the same
+# >>> `ip-ok` line marker.
+Write-Host ""
+Write-Host "Publish guard: scanning the stage for public IPs / player PII / box-local stores ..."
+$leaks     = @(Find-LeakHits -Root $StageMod -AllowFile (Get-IpAllowFile $ModRoot))
+$localOnly = @(Find-LocalOnlyFiles -Root $StageMod)
+if ($leaks.Count -gt 0) {
+    Write-Host "REFUSING TO PACKAGE - public IP / player PII in the staged public build:" -ForegroundColor Red
+    $leaks | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+    Write-Host "  -> if intentional: put 'ip-ok' in a comment on that line, or add the address" -ForegroundColor Red
+    Write-Host "     to tools\hooks\ip-allow.txt (the SAME allowlist the pre-commit hook reads)." -ForegroundColor Red
+}
+if ($localOnly.Count -gt 0) {
+    Write-Host "REFUSING TO PACKAGE - gitignored per-box store(s) reached the stage:" -ForegroundColor Red
+    $localOnly | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+}
+if (($leaks.Count + $localOnly.Count) -gt 0) {
+    throw "Release aborted: the zip and the 'release' branch are world-readable."
+}
+Write-Host "  clean (no public IP, no player PII, no box-local store)."
+
 if (Test-Path -LiteralPath $ZipPath) { Remove-Item -Force -LiteralPath $ZipPath }
 Compress-Archive -Path $StageMod -DestinationPath $ZipPath -Force
 $zip = Get-Item -LiteralPath $ZipPath

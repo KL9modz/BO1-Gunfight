@@ -26,7 +26,20 @@ tools/notify/config.json
 tools/ignore.local.json
 
 # RCON panel — real rcon_password store (per-profile). Never commit; template is .example
-tools/rcon/secrets.local.json
+# GLOB, not the exact path: `secrets.local.json.bak` (a routine editor backup) used to slip past
+# all three layers at once — this ignore, the pre-commit `case`, and the packagers' drop-list —
+# and would then have been BUNDLED by package_server.ps1 -IncludeRconTool, carrying live rcon
+# passwords to another box. The !…example negation keeps the template committable.
+tools/rcon/secrets.local.*
+!tools/rcon/secrets.local.*.example
+
+# RCON panel — profile list: names + REAL hosts/ports (incl. the VPS public IP). Split out of
+# secrets.local.json so a host/port edit never touches the password store, and so no public IP
+# ships in the committed tree. Joined to the password store BY PROFILE NAME — rename a profile
+# in one file and the panel shows the server but cannot auth. Never commit; template is .example
+# Same GLOB + negation as the password store above, and for the same near-miss-filename reason.
+tools/rcon/servers.local.*
+!tools/rcon/servers.local.*.example
 
 # RCON panel — box-local UI state (the FAVORITES pinboard). Lives with the PANEL, not the browser,
 # so the VPS panel shows one pinboard over RDP and over the SSH tunnel alike. Regenerated on demand.
@@ -40,6 +53,14 @@ tools/rcon/.dvarcache.json
 # player IPs to locations, so it stays on the box and never enters git or a web root. Only the
 # 2-letter country code derived from it is ever published. Regenerated on demand.
 tools/rcon/.geocache.json
+
+# Ops crib sheet — the REAL addresses docs/ now carries as <admin-home-ip> / <vnc-console-ip>
+# placeholders (home egress IP, Contabo VNC console). This is precisely what the doc redactions
+# + the pre-commit IP guard exist to keep out of git, so the ignore is a GLOB: it must hold whether
+# the file lands as .json or .md. The !…example negation keeps a committable template possible
+# (same pattern as server/*.cfg below). Box/operator-local; nothing reads it but a human.
+tools/ops.local.*
+!tools/ops.local.*.example
 
 # Security watcher — what it TRUSTS (ssh key fingerprints, users). Box-identifying, and this
 # repo is public. Optional file; template is .example

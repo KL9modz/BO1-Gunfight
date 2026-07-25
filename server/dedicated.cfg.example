@@ -6,8 +6,10 @@
 // tools/package_server.ps1.
 //
 // Secrets are stripped: rcon_password is blank and the RCON whitelist IPs are
-// placeholders. Before going live, set a strong unique rcon_password (or let
-// tools/package_server.ps1 -RotateRcon inject a fresh one into the bundle).
+// placeholders. Before going live, set a strong unique rcon_password -- and note the
+// HARD 23-CHARACTER CAP documented at the rcon_password line below. Generate a
+// compliant one with tools/package_server.ps1 -RotateRcon (new box) or rotate a
+// server that is ALREADY LIVE with tools/rotate_secrets.ps1 (dry run by default).
 // Machine-specific values (gamepath, net_port, sv_maxclients, key) live in the
 // launch .bat, not here.
 // ============================================================================
@@ -157,7 +159,15 @@ set bg_viewBobAmplitudeBase "0.3"                   // Reduced head-bob while mo
 //////////////////////////////////////////////////
 set g_logSync 1                                     // 0 only flush on game end, 1 flush when buffer full. (Keep this at 1 if you plan on using a 3rd party admin tool)
 set g_log "logs\games_mp.log"                       // IMPORTANT! Make sure the filename is unique for each server you clone!
-set rcon_password ""                                // RemoteCONtrol password. SET A STRONG UNIQUE VALUE before going live (or use tools/package_server.ps1 -RotateRcon). !!Do NOT skip if you plan on using a 3rd party admin tool such as B3 or IW4m-Admin!!
+// rcon_password has a HARD 23-CHARACTER CAP. Plutonium TRUNCATES it at 23 characters on login, so a
+// longer value is silently chopped and can NEVER authenticate -- and it fails identically to a dead
+// port or a firewall block (no reply at all, no error), which is exactly how a 24-character password
+// once burned an entire debugging session. Use 20 alphanumeric characters. Alphanumeric ONLY: quotes,
+// spaces and cfg metacharacters break either this line or the RCON packet itself.
+//   NEW box     -- tools/package_server.ps1 -RotateRcon generates a compliant value and injects it here.
+//   LIVE server -- tools/rotate_secrets.ps1 rotates the cfg, the live dvar, the panel secret store and
+//                  the box services in the correct order. It is a DRY RUN unless you pass -Apply.
+set rcon_password ""                                // RemoteCONtrol password. SET A STRONG UNIQUE VALUE before going live. MAX 23 CHARS -- see above. !!Do NOT skip if you plan on using a 3rd party admin tool such as B3 or IW4m-Admin!!
 set rcon_rate_limit "500"                           // Rate limit RCon, per IP, range 0 to 10 000, in milliseconds. Lower this if you use IW4mA's Game Interface.
 set rcon_prints "0"                                 // Show rcon activity on the server console? (1 = Yes, 0 = No)
 set rcon_localhost_bypass "0"                       // Does localhost rcon traffic bypass rate limits and whitelist checks? (1 = Yes, 0 = No)

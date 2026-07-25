@@ -1,0 +1,37 @@
+# Repo-wide IP allowlist -- the ONE list read by both halves of the IP guard:
+#   tools/hooks/pre-commit        section 4 (blocks a leak ENTERING git)
+#   tools/release_common.ps1      Find-LeakHits  (blocks one LEAVING via deploy/package)
+# Deliberately one file and not two: an address either side waved through while the
+# other refused it is the worst outcome available.
+#
+# FORMAT: one address per line. '#' starts a comment (inline or whole-line); blank
+# lines are ignored. IPv4 dotted quad or IPv6 literal, matched WHOLE -- no CIDR, no
+# wildcards, no ranges. Both consumers treat an absent or empty file as an empty
+# allowlist, so a clone that predates this file still commits and still deploys.
+#
+# WHEN TO USE THIS instead of a per-line 'ip-ok' marker: the moment an address
+# RECURS. 'ip-ok' whitelists the WHOLE line it sits on, so every extra marked line is
+# another place a second, accidental address can ride along unseen. Keep 'ip-ok' for
+# genuinely one-off lines and put anything repeated here.
+#
+# ############################################################################
+# # NEVER LIST HERE: the owner's home egress IP, the Contabo VNC console      #
+# # address, the VPS's own public IP, or ANY player address.                  #
+# ############################################################################
+# Those four are precisely the leaks this guard exists to stop -- they are the two
+# worst this repo has actually had -- and an allowlist entry is forever, silent, and
+# repo-wide. Docs carry them as <admin-home-ip> / <vnc-console-ip> placeholders and
+# the real values live only in the gitignored tools/ops.local.* crib sheet. This file
+# is ONLY for an address that is already deliberately public and belongs to someone
+# else: vendor-published infrastructure, or hostile infrastructure named in a forensic
+# note where the literal IS the evidence.
+#
+# Every entry must carry a comment saying what it is and which file needs it.
+
+43.160.219.175   # SSH brute-force source (95 preauth attempts in ~2 min, 2026-07-17).
+                 # Cited in tools/vps_services/security_watch.ps1 - hostile third-party
+                 # infrastructure, not ours; the forensic point depends on the literal.
+
+160.79.104.0     # Base of Anthropic's PUBLISHED egress CIDR 160.79.104.0/21.
+                 # Cited in docs/DEV.md as the range that LOOKS like the cloud-sandbox
+                 # SSH answer and is not. Vendor-published, nobody's address.

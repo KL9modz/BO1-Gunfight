@@ -1,7 +1,44 @@
 #!/bin/sh
 # GF pre-commit secret guard — blocks committing rcon passwords, join passwords,
-# the Plutonium server key, or the gitignored secret stores. Tracked so it travels
-# with the repo; enabled per-clone via:  git config core.hooksPath tools/hooks
+# the Plutonium server key, the gitignored secret stores, or a public IP literal
+# (player PII / infrastructure disclosure). Tracked so it travels with the repo;
+# enabled per-clone via:  git config core.hooksPath tools/hooks
+#
+# IP rule opt-outs, for an address this repo intends to publish:
+#   * one line   — put the token  ip-ok  in a comment on that line (whitelists the
+#                  WHOLE line, so a line carrying a second address is exempt too)
+#   * repo-wide  — add the address to tools/hooks/ip-allow.txt (one per line,
+#                  '#' comments allowed). Use this for an address that recurs.
+#   ⚠ PREFER the allowlist the moment an address appears more than once, so 'ip-ok'
+#     stays reserved for genuinely one-off lines: because the marker exempts the
+#     WHOLE line, every extra marked line is another place a second, accidental
+#     address can ride along unseen.
+#
+# Status-roster rule opt-out (section 5): put the token  pii-ok  in a comment on the
+# line. Same syntax and same word-boundary guards as ip-ok. It is for a row that is
+# already sanitized but must KEEP its column shape because the shape is the subject
+# (docs/notes/ carries one) — never for a row still holding a real gamertag or guid.
+#
+# Password/key rule opt-out (section 2): put the token  pw-ok  in a comment on the
+# line. Same syntax and same word-boundary guards as ip-ok / pii-ok. It exempts the
+# line from the three password patterns AND the key pattern together, because a
+# documented cfg snippet routinely shows both shapes.
+#   ⚠ PREFER an EMPTY value — `set rcon_password ""` — which every password rule
+#     already allows and which needs no marker at all (server/dedicated.cfg.example
+#     documents the cfg exactly that way). Reserve pw-ok for a line that must show a
+#     NON-EMPTY shape to make its point, e.g. an indented
+#     `set rcon_password <YOUR-PASSWORD-HERE>` inside a markdown list or fenced block.
+#   Without it the only escape was `git commit --no-verify`, which disarms the
+#   password, key, store, Discord, IP and roster rules all at once — the exact cost
+#   release_common.ps1 records this project already paying once, when the roster rule
+#   shipped with no opt-out and made its own sanitized documentation uncommittable.
+# ⚠ pw-ok is deliberately NOT chained into the IP or roster rules (it is derived from
+#   $added, not from $ip_src), so marking a documented cfg snippet cannot also blind
+#   the address rule on that line. Same separation as ip-ok vs pii-ok.
+# ⚠ It has NO twin in release_common.ps1, and that is correct: that file's Rule B is
+#   the twin of sections 4 + 5 only and carries no password or key rule at all, so
+#   there is nothing on that side to keep in lockstep. If one is ever added there it
+#   must honour pw-ok on these same terms.
 #
 # Bypass (only if you are SURE a match is a false positive):  git commit --no-verify
 
@@ -9,34 +46,118 @@ fail=0
 note() { echo "  pre-commit: $1" >&2; fail=1; }
 
 # 1) Never allow the secret stores / live cfg to be committed, even with `git add -f`.
+#
+# ⚠ The store patterns are GLOBS on both sides of the name, not "ends with". An exact
+#    tail match (`*secrets.local.json`) let a near-miss filename through all three
+#    layers at once — `secrets.local.json.bak` was invisible here, invisible to
+#    .gitignore's exact paths, and NOT dropped by the packagers, so a routine backup
+#    shipped live rcon passwords to another box. Keep the globs in lockstep with
+#    .gitignore (`tools/rcon/secrets.local.*`) and with release_common.ps1's
+#    $LocalOnlyGlobs — a name missing from any one of the three defeats the other two.
+# ⚠ The `*.example` case must stay FIRST: `case` takes the first match, and the
+#    committable templates (which exist precisely to document these stores) all end
+#    that way. Same guard as release_common.ps1's Test-LocalOnlyPath.
+#
+# ⚠ EVERY name in release_common.ps1's $LocalOnlyFiles / $LocalOnlyGlobs must appear
+#    below. Nine of them once did not — including the `ops.local.*` glob, which
+#    tools/hooks/ip-allow.txt's own header names as the sole home of the home egress
+#    IP and the VNC console address — so `git add -f tools/ops.local.md` committed
+#    clean while deploy would have refused to publish it. Rule A matched them by LEAF
+#    NAME, so the exact-name cases here are spelled `*/NAME|NAME` to mean the same
+#    thing on a repo-relative path. Where the two still differ, the HOOK is the
+#    stricter side by construction (`*secrets.local.*` matches the substring anywhere
+#    in the path, Rule A's `secrets.local.*` only a leaf) — stricter-on-entry is the
+#    safe direction, since anything this blocks was never going to be publishable.
+#
+# ⚠ ONE INTENTIONAL ASYMMETRY, DO NOT "FIX" IT: `dedicated.cfg` is blocked here but is
+#    deliberately ALLOWED by Rule A, because package_server.ps1 ships the live cfg
+#    inside the PRIVATE VPS bundle on purpose (that is where the rcon password is
+#    meant to travel, and -RotateRcon rewrites it there). The rule is "never into
+#    git", not "never into an output". Every OTHER name below is blocked on both
+#    sides.
 for p in $(git diff --cached --name-only); do
   case "$p" in
-    *secrets.local.json)            note "refusing to commit secret store: $p" ;;
-    tools/notify/config.json)       note "refusing to commit notifier secret: $p" ;;
+    *.example)                      : ;;   # sanitized template, never the live store
+    *secrets.local.*)               note "refusing to commit secret store: $p" ;;
+    *servers.local.*)               note "refusing to commit secret store: $p" ;;
+    *ops.local.*)                   note "refusing to commit ops crib sheet: $p" ;;
+    */prefs.local.json|prefs.local.json)
+                                    note "refusing to commit box-local panel state: $p" ;;
+    */ignore.local.json|ignore.local.json)
+                                    note "refusing to commit muted-player store (GUIDs): $p" ;;
+    */security.local.json|security.local.json)
+                                    note "refusing to commit trust store: $p" ;;
+    */security_state.json|security_state.json)
+                                    note "refusing to commit trust-store state: $p" ;;
+    */.dvarcache.json|.dvarcache.json)
+                                    note "refusing to commit box-local dvar cache: $p" ;;
+    */.geocache.json|.geocache.json)
+                                    note "refusing to commit geo cache (player IPs): $p" ;;
+    */watchdog_state.json|watchdog_state.json)
+                                    note "refusing to commit box-local watchdog state: $p" ;;
+    */watchdog_maintenance.json|watchdog_maintenance.json)
+                                    note "refusing to commit box-local watchdog state: $p" ;;
+    */config.json|config.json)      note "refusing to commit notifier secret: $p" ;;
     dedicated.cfg|*/dedicated.cfg)  note "refusing to commit live server cfg: $p" ;;
   esac
 done
 
 # 2) Scan ADDED lines of the staged diff for secret literals. Only added ('+') lines,
-#    excluding this hook + any .example template (they carry the patterns as docs).
-added=$(git diff --cached -U0 --no-color -- . ':(exclude)tools/hooks/pre-commit' ':(exclude)*.example' \
+#    excluding this hook + the IP allowlist (its whole job is to hold addresses).
+#
+# ⚠ `.example` templates are DELIBERATELY scanned. They used to be excluded here so
+#    they could document a pattern, but that exclusion fed EVERY content rule below
+#    (passwords, keys, Discord, IP, roster) — making `*.example` the one file class
+#    the guard refused to look at, while the templates whose entire job is to show an
+#    operator where the real rcon password / home egress IP / VPS address go are
+#    exactly that class. A template that must show a pattern carries the per-line
+#    marker (ip-ok / pii-ok), which is the mechanism already built for this.
+added=$(git diff --cached -U0 --no-color -- . ':(exclude)tools/hooks/pre-commit' \
+        ':(exclude)tools/hooks/ip-allow.txt' \
         | grep '^+' | grep -v '^+++')
 
-# rcon_password / g_password ASSIGNED a NON-EMPTY quoted value (blank "" and prose are allowed).
-#   cfg form :  set rcon_password "value"
+# rcon_password / g_password ASSIGNED a NON-EMPTY value (blank "" and prose are allowed).
+#   cfg form :  set rcon_password "value"  |  set rcon_password 'value'  |  set rcon_password value
 #   gsc form :  setDvar( "rcon_password", "value" )
+#
+# ⚠ Bare and single-quoted values are valid cfg syntax and used to walk straight
+#    through a rule that only looked for double quotes. They are matched by a SECOND,
+#    LINE-ANCHORED pattern (optionally behind a `//` comment, so a commented-out live
+#    line is still caught) rather than by widening the first: unanchored, "set
+#    rcon_password" occurs mid-sentence in prose ("...dev block set rcon_password
+#    live - DISPROVEN...") and every such mention would block a docs commit.
+#
+# Per-line opt-out for THIS section (both the password patterns and the key pattern
+# below): the token  pw-ok . Documented in the header. Derived from $added and NOT
+# chained onto $ip_src, so a pw-ok line carrying a real address is still caught by
+# section 4 — marking a documented cfg snippet must never blind the address rule.
+pw_src=$(printf '%s\n' "$added" | grep -vE '(^|[^A-Za-z0-9_-])pw-ok([^A-Za-z0-9_-]|$)')
+
 pw_cfg='(^|[^A-Za-z0-9_])(rcon_password|g_password)[[:space:]]+"[^"]+"'
+# ⚠ The leading slot is '\+?' (the diff's own '+') plus an OPTIONAL markdown list /
+#   blockquote marker — same lesson as the roster regex in section 5, found the same
+#   way. It was '.?', which the '+' consumes, so the marker had nothing left to match
+#   with: `- set rcon_password <value>` — a bare value in a markdown LIST ITEM, which
+#   is precisely the shape the pw-ok note above is about — walked through this rule at
+#   exit 0. Only the bare/single-quoted form escaped; the double-quoted form is caught
+#   by the unanchored $pw_cfg, and the plain-indented form was already caught.
+#   The rest of the anchoring is still deliberate and must stay: unanchored, "set
+#   rcon_password" occurs mid-sentence in prose and every such mention would block a
+#   docs commit. A bullet marker is not a word, so allowing one keeps prose out.
+pw_bare='^\+?[[:space:]]*([-*>|][[:space:]]*)?(//[[:space:]]*)?seta?[[:space:]]+(rcon_password|g_password)[[:space:]]+([^[:space:]'"'"'"]|'"'"'[^'"'"']+'"'"')'
 pw_dvar='"(rcon_password|g_password)"[[:space:]]*,[[:space:]]*"[^"]+"'
-if printf '%s\n' "$added" | grep -Eiq -e "$pw_cfg" -e "$pw_dvar"; then
+if printf '%s\n' "$pw_src" | grep -Eiq -e "$pw_cfg" -e "$pw_bare" -e "$pw_dvar"; then
   note "a non-empty rcon_password/g_password value is staged:"
-  printf '%s\n' "$added" | grep -Ein -e "$pw_cfg" -e "$pw_dvar" >&2
+  printf '%s\n' "$pw_src" | grep -Ein -e "$pw_cfg" -e "$pw_bare" -e "$pw_dvar" >&2
+  echo "  -> if it is a documented placeholder: prefer \`set rcon_password \"\"\`, or put 'pw-ok' on the line" >&2
 fi
 
 # Plutonium server key / any long key token:  key<sep><20+ char token>
 key_re='key["'"'"'= ]+[A-Za-z0-9+/=_-]{20,}'
-if printf '%s\n' "$added" | grep -Eiq "$key_re"; then
+if printf '%s\n' "$pw_src" | grep -Eiq "$key_re"; then
   note "a long key-like token is staged (Plutonium server key?):"
-  printf '%s\n' "$added" | grep -Ein "$key_re" >&2
+  printf '%s\n' "$pw_src" | grep -Ein "$key_re" >&2
+  echo "  -> if it is a documented placeholder shape: put 'pw-ok' on the line" >&2
 fi
 
 # 3) Discord invite must ALWAYS be the canonical vanity URL discord.gg/blackops.
@@ -46,6 +167,134 @@ bad_dg=$(printf '%s\n' "$added" | grep -oiE 'discord\.gg/[A-Za-z0-9]+' | grep -v
 if [ -n "$bad_dg" ]; then
   note "a non-canonical Discord invite is staged (must be https://discord.gg/blackops):"
   printf '%s\n' "$bad_dg" | sort -u >&2
+fi
+
+# 4) Public IP literals. A pasted `status` reply once put a third party's real IP
+#    into docs/, and the RDP/SSH firewall runbook published the owner's home egress
+#    IP — the two worst leaks in this repo, and neither is a "secret" any password
+#    scanner would catch. Flag any PUBLIC IPv4/IPv6 literal on an added line.
+#
+#    Deliberately NOT flagged: loopback / private / link-local / CGNAT-Tailscale /
+#    multicast / broadcast, the RFC 5737 + RFC 3849 documentation ranges, and any
+#    dotted quad whose four octets are ALL <= 20 — that shape is indistinguishable
+#    from a version string (1.2.3.4, 6.4.0.1), so it is conceded. ⚠ The cost of
+#    that concession is real but tiny: a public address with every octet <= 20
+#    (8.8.8.8, 1.1.1.1) walks through. No player or home IP has ever had that
+#    shape; version strings constantly do.
+ip_allow="$(git rev-parse --show-toplevel)/tools/hooks/ip-allow.txt"
+
+# Drop the lines the author marked, then reduce what is left to bare digit/dot
+# tokens. Whole-token matching is what makes '1.2.3.4.5', '10.0.19045.123' and a
+# '\d{1,3}(\.\d{1,3}){3}' regex literal all fail to match (this repo has six of
+# those regexes), and what lets two addresses on ONE line both be seen.
+ip_src=$(printf '%s\n' "$added" | grep -vE '(^|[^A-Za-z0-9_-])ip-ok([^A-Za-z0-9_-]|$)')
+
+# ⚠ The `sed` is load-bearing, and it is the twin of release_common.ps1's
+#   `-replace '\.*$'` in Get-LeakIpLiterals — change both or neither.
+#   '.' is INSIDE the tr character class (it has to be, it is the quad separator), so
+#   a SENTENCE-ENDING period is absorbed into the token: 'answered from <addr>.' came
+#   out as a 5-group token, failed the whole-quad grep, and BOTH guards reported
+#   nothing — while the same address with any following word was caught. This rule's
+#   whole stated purpose is human-authored prose, and end-of-sentence is the single
+#   most common prose position for an address, so that was the biggest hole in it.
+#   Strips ALL trailing dots, not one, so a trailing ellipsis is covered too; the PS
+#   side does the same. It cannot manufacture a false positive: removing dots can only
+#   REDUCE the group count, and every survivor still has to pass the whole-quad grep
+#   and the full exclusion ladder below ('...on 127.0.0.1.' is still skipped).
+bad_ip4=$(printf '%s\n' "$ip_src" \
+  | tr -c '0-9.' '\n' \
+  | sed 's/\.*$//' \
+  | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' \
+  | sort -u \
+  | while IFS=. read -r a b c d; do
+      [ "$a" -gt 255 ] || [ "$b" -gt 255 ] || [ "$c" -gt 255 ] || [ "$d" -gt 255 ] && continue
+      [ "$a" -le 20 ] && [ "$b" -le 20 ] && [ "$c" -le 20 ] && [ "$d" -le 20 ] && continue
+      case "$a.$b" in
+        0.*|10.*|127.*)                  continue ;;   # this-network / private / loopback
+        169.254)                         continue ;;   # link-local
+        172.1[6-9]|172.2[0-9]|172.3[01]) continue ;;   # private 172.16/12
+        192.168)                         continue ;;   # private
+        100.6[4-9]|100.[7-9][0-9]|100.1[01][0-9]|100.12[0-7]) continue ;;  # CGNAT / Tailscale
+        198.1[89])                       continue ;;   # RFC 2544 benchmarking
+        192.0)   [ "$c" -eq 2 ]   && continue ;;       # RFC 5737 TEST-NET-1
+        198.51)  [ "$c" -eq 100 ] && continue ;;       # RFC 5737 TEST-NET-2
+        203.0)   [ "$c" -eq 113 ] && continue ;;       # RFC 5737 TEST-NET-3
+      esac
+      [ "$a" -ge 224 ] && continue                     # multicast / reserved / broadcast
+      echo "$a.$b.$c.$d"
+    done)
+
+# IPv6: only a GLOBAL-UNICAST literal (first group 2xxx/3xxx) carrying a '::' or a
+# 4th group. That anchor alone excludes ::1, ::, fe80::, fc00::/fd00::, ff02::,
+# clock times (14:22:07), dates (2026:07:25) and the mod's own colon-packed
+# telemetry strings ('0:0:1:0:0:gf', '3:2:5:2:1:gf:0:3:3:3:1:fu').
+bad_ip6=$(printf '%s\n' "$ip_src" \
+  | tr -c '0-9A-Fa-f:' '\n' \
+  | grep -E '^[23][0-9A-Fa-f]{3}(:[0-9A-Fa-f]{0,4}){2,7}$' \
+  | grep -E '::|^([0-9A-Fa-f]*:){3}' \
+  | grep -viE '^2001:0*db8:' \
+  | sort -u)
+
+bad_ip=$(printf '%s\n%s\n' "$bad_ip4" "$bad_ip6" | grep -v '^$' | sort -u)
+if [ -n "$bad_ip" ] && [ -f "$ip_allow" ]; then
+  allow=$(sed 's/#.*//' "$ip_allow" | tr -d ' \t' | grep -v '^$' | sort -u)
+  [ -n "$allow" ] && bad_ip=$(printf '%s\n' "$bad_ip" | grep -Fxv "$allow")
+fi
+if [ -n "$bad_ip" ]; then
+  note "a public IP literal is staged (player PII / infrastructure disclosure):"
+  printf '%s\n' "$bad_ip" | sed 's/^/    /' >&2
+  printf '%s\n' "$ip_src" | grep -F "$bad_ip" >&2
+  echo "  -> if intentional: put 'ip-ok' on the line, or list it in tools/hooks/ip-allow.txt" >&2
+fi
+
+# 5) A pasted `status` reply is exactly how the player PII got in. Its address column
+# is already covered above; this catches a row whose IP was scrubbed but whose
+# guid + gamertag were not. Signature = the 4 leading integer columns
+# (num score ping guid) followed by a name carrying a Treyarch '^N' colour code.
+# Narrow on purpose: a bare guid is a 7-digit integer and cannot be matched
+# without flagging every timestamp and byte count in the repo.
+#
+# The '[[:space:]]*' after the diff prefix is load-bearing: the '+' is consumed by the
+# leading-character slot, so without it a single leading space (a row nested inside a
+# markdown list) walked through the whole rule.
+#
+# ⚠ THE LEADING-CHARACTER SLOT IS THE ONE PLACE THIS REGEX AND ITS TWIN ARE
+#   DELIBERATELY NOT SPELLED THE SAME, because they are fed different input:
+#   THIS side matches DIFF lines, which always carry a '+' prefix — hence '\+?'.
+#   release_common.ps1's $StatusRosterRe matches RAW file lines, which do not — hence
+#   a bare '^\s*'. Both therefore mean the identical thing: *the row's own first
+#   character must be whitespace or a digit*.
+#   Both used to be written '.?' "so the two spellings stay diffable". Identical text
+#   over different input is not identical behaviour: on the PS side that '.?' was free
+#   to eat one ARBITRARY character, so a roster row opening with a markdown bullet
+#   ('- '), a table pipe ('| ') or a blockquote ('> ') was PASSED here and REFUSED by
+#   Find-LeakHits — precisely the "hook waves it through, deploy refuses it at 2am"
+#   split that release_common.ps1's own header says must never exist.
+#   Keep them SEMANTICALLY equal, not textually equal. The residual is shared and
+#   known: a roster row whose first character is '-', '|' or '>' is out of scope for
+#   BOTH guards now. That was already true of the guard that governs entry into git,
+#   so nothing regressed — and a bulleted row still trips the IP rule above unless its
+#   address was scrubbed too.
+#
+# Own opt-out token, because the two rules answer different questions: a row can be
+# correctly sanitized (RFC 5737 address, invented name and guid) and still need to
+# KEEP the roster shape, because in that note the shape IS the subject. Deliberately
+# NOT an exemption for rows whose address is a documentation range — that would blind
+# the rule to the one thing it is here for, a row whose IP was scrubbed while the
+# gamertag and guid were not.
+#
+# ⚠ Note the one-way asymmetry, and leave it: 'pii-ok' does NOT exempt a line from the
+#   IP rule, but 'ip-ok' DOES exempt it from this one (status_src is derived from
+#   ip_src). release_common.ps1 has the same shape — its `continue` on ip-ok skips the
+#   roster check too — so this is lockstep, not an oversight. Fix one side alone and
+#   the two guards start disagreeing about the same line.
+status_src=$(printf '%s\n' "$ip_src" | grep -vE '(^|[^A-Za-z0-9_-])pii-ok([^A-Za-z0-9_-]|$)')
+
+bad_status=$(printf '%s\n' "$status_src" | grep -E '^\+?[[:space:]]*[0-9]+ +-?[0-9]+ +[0-9]+ +[0-9]+ +[^ ]*\^[0-9]')
+if [ -n "$bad_status" ]; then
+  note "an added line looks like a pasted 'status' roster row (gamertag + guid = player PII):"
+  printf '%s\n' "$bad_status" | sed 's/^/    /' >&2
+  echo "  -> if the row is already sanitized and must keep its shape: put 'pii-ok' on the line" >&2
 fi
 
 if [ "$fail" -ne 0 ]; then
