@@ -1,0 +1,11 @@
+{
+  "_comment": "Copy this file to servers.local.json (same folder) and list the servers YOU reach. servers.local.json is GITIGNORED and never committed - it is the ONLY place a real server address lives, which is why the panel's built-in fallback is loopback-only: a fresh clone of this repo names no machine at all. The panel reads this file per request (GET /api/servers), so an edit takes effect on the next page load - no restart, which matters on the VPS where the panel is a SYSTEM scheduled task.",
+  "_names": "A profile NAME is the join key into secrets.local.json, which holds that server's rcon_password. Keep the two in sync: rename a profile in one file and the panel will show the server but fail to authenticate. Names are matched case-insensitively.",
+  "_local": "Keep the 'Local' entry. It is this machine's own server over loopback, and it adapts per machine - on a laptop that is your in-game listen (or local dedicated) server, on the VPS it is that box's dedicated server. Its rcon_password is auto-seeded from dedicated.cfg the first time the panel starts, so it needs no typing and no secrets.local.json entry of your own.",
+  "_remote": "Add a non-loopback entry ONLY if you want to drive a remote server over public rcon. That is opt-in on purpose: rcon sends the password in a CLEARTEXT UDP packet with no challenge and no replay protection, so anyone on-path recovers it from a single packet. The recommended laptop -> VPS path is instead an SSH tunnel to the VPS's OWN panel, which resolves its credentials on the box: `ssh -L 3000:127.0.0.1:3000 gf-vps`, then browse http://localhost:3000 and pick 'Local'. (start.bat pins the laptop's own panel to 3005 so port 3000 stays free for that tunnel.)",
+  "_adhoc": "You do not need an entry for a one-off server - pick the panel's '- ad-hoc -' profile and type host/port/password by hand. Nothing about it is saved.",
+  "profiles": [
+    { "name": "Local", "host": "127.0.0.1", "port": "28960" },
+    { "name": "VPS", "host": "your.vps.ip.here", "port": "28960" }
+  ]
+}

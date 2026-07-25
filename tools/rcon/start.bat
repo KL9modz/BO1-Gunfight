@@ -4,6 +4,9 @@ cd /d "%~dp0"
 REM ============================================================================
 REM  LAPTOP RCON panel -- controls THIS machine's own listen server.
 REM  The panel's "Local" profile = 127.0.0.1:28960 = the server on this same box.
+REM  No typing: its rcon_password is auto-read from storage\t5\dedicated.cfg on the
+REM  first start (never overwriting one you saved), and the profile list comes from
+REM  the gitignored tools\rcon\servers.local.json -- see servers.local.json.example.
 REM  Pinned to 3005 so it never collides with the VPS SSH-tunnel panel on 3000
 REM  (Desktop "Gunfight RCON.bat"). Two fixed ports = two stable URLs:
 REM    laptop -> http://127.0.0.1:3005   VPS -> http://127.0.0.1:3000

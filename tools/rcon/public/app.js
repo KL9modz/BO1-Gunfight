@@ -158,140 +158,221 @@ let live=false, paused=false, hist=[], histI=-1, lastMap=null;
 let rotation=[], rotCurrentHead='', rotLoadedSig='';
 
 // ─── Persistence (server profiles) ────────────────────────────────────────────
-// Each profile remembers its host/port in localStorage; the rcon_password lives in the
-// GITIGNORED secrets.local.json on the server side (keyed by profile name) and is fetched
-// over the loopback API — so a password NEVER sits in localStorage or in any tracked file.
-// Two profiles:
-//   VPS   = reach the remote VPS over its public IP (used from the laptop).
-//   Local = reach THIS machine's own server over loopback. It "just works" per machine — on the
-//           laptop that's your listen (or local dedicated) server; on the VPS (via RDP) it's the
-//           VPS's own dedicated server. The password comes from that machine's secrets.local.json,
-//           and listen-vs-dedicated is auto-detected from `status`, so one loopback profile covers
-//           every case. (A 2nd loopback profile would only make sense to store a 2nd password on the
-//           same machine — not needed here.)
-let _profiles=[], _activeProfile=0, _secrets={};
-function defaultProfiles(){return[
-  {name:'Local', host:'127.0.0.1',  port:'28960'},   // DEFAULT: this machine's own server (loopback) — laptop listen server OR VPS dedicated server, whichever box the panel runs on
-  {name:'VPS',   host:'94.72.121.4',port:'28960'},   // optional: drive the remote VPS directly over public rcon (from the laptop, no tunnel)
-];}
-function loadProfiles(){
-  try{
-    const raw=JSON.parse(localStorage.getItem('gf_rcon_profiles')||'null');
-    if(raw&&Array.isArray(raw.profiles)&&raw.profiles.length){
-      _profiles=raw.profiles; _activeProfile=raw.active||0;
-    }else{
-      _profiles=defaultProfiles();
-      _activeProfile=0;
-    }
-  }catch(_){_profiles=defaultProfiles();_activeProfile=0;}
-  if(_activeProfile>=_profiles.length||_activeProfile<0)_activeProfile=0;
-  // remember the active profile by NAME so the dedupe below can't point at the wrong one
-  const activeName=(_profiles[_activeProfile]||{}).name;
-  // ensure every built-in profile exists, in canonical order; keep any custom profiles after them
-  const canon={}; defaultProfiles().forEach(d=>canon[d.name]=d);
-  const byName={}; _profiles.forEach(p=>byName[p.name]=p);
-  const ordered=[];
-  defaultProfiles().forEach(d=>ordered.push(byName[d.name]||{name:d.name,host:d.host,port:d.port}));
-  _profiles.forEach(p=>{ if(!canon[p.name])ordered.push(p); });
-  _profiles=ordered;
-  _activeProfile=Math.max(0,_profiles.findIndex(p=>p.name===activeName));
-  _profiles.forEach(p=>{delete p.pass;});   // passwords never live in localStorage
-  // backfill canonical host/port for built-in profiles if a stale entry lost them
-  _profiles.forEach(p=>{ const d=canon[p.name]; if(d){ if(!p.host)p.host=d.host; if(!p.port)p.port=d.port; } });
+// NOTHING about a server lives in this page any more. The profile LIST comes from the panel
+// process (GET /api/servers ← the gitignored servers.local.json) and the rcon_password never
+// leaves it at all: a request carries profile=<name>, and server.js resolves host, port AND
+// password from its two gitignored files (see "Credentials" in server.js). localStorage caches
+// only the ACTIVE PROFILE'S NAME (+ the ad-hoc host/port) — never a host, never a password, so a
+// stale browser copy can't resurrect an address that was deliberately removed from the file.
+// Result: zero typing in all three contexts —
+//   Local      = THIS machine's own server over loopback. It "just works" per machine: on the
+//                laptop that's your listen (or local dedicated) server, on the VPS (RDP, or an SSH
+//                tunnel to the box's own panel) it's the VPS's dedicated server. Its password is
+//                auto-seeded from dedicated.cfg on panel startup, and listen-vs-dedicated is
+//                auto-detected from `status`, so one loopback profile covers every case.
+//   <others>   = whatever servers.local.json lists — e.g. a remote box over public rcon. Opt-in on
+//                purpose: prefer the SSH tunnel, since public rcon puts the password in a
+//                cleartext UDP packet.
+//   — ad-hoc — = type a host/port/password by hand for a one-off. Never persisted server-side.
+const ADHOC='— ad-hoc —';
+let _profiles=[], _activeProfile='', _adhoc={host:'127.0.0.1',port:'28960'}, _passDirty=false;
+// Fallback when servers.local.json is absent (a fresh clone): LOOPBACK ONLY. No public IP ships
+// in this repo — a real host is added locally, in that gitignored file.
+function defaultProfiles(){return[{name:'Local',host:'127.0.0.1',port:'28960',hasPass:false,seeded:false}];}
+async function loadProfiles(){
+  // The panel process is AUTHORITATIVE: assign the list outright rather than merging, so a failed
+  // read falls back to loopback instead of leaving a stale list standing.
+  let list=null;
+  try{const r=await getJSON('/servers');if(r&&r.ok&&Array.isArray(r.profiles)&&r.profiles.length)list=r.profiles;}catch(_){}
+  _profiles=list||defaultProfiles();
+  // Pre-refactor key: it cached each profile's HOST, which is exactly what must not survive here
+  // (a removed server would keep connecting from this browser alone, with no file backing it).
+  localStorage.removeItem('gf_rcon_profiles');
+  let active='',adhoc=null;
+  try{const raw=JSON.parse(localStorage.getItem('gf_rcon_profile')||'null');if(raw){active=raw.active||'';adhoc=raw.adhoc;}}catch(_){}
+  if(adhoc&&adhoc.host)_adhoc={host:String(adhoc.host),port:String(adhoc.port||'28960')};
+  // the remembered name must still exist in the list — it may have been renamed or removed there
+  _activeProfile=(active===ADHOC||_profiles.some(p=>p.name===active))?active:_profiles[0].name;
 }
 function persistProfiles(){
-  // store name/host/port only — the secret is in secrets.local.json, not here
-  const clean=_profiles.map(p=>({name:p.name,host:p.host,port:p.port}));
-  localStorage.setItem('gf_rcon_profiles',JSON.stringify({profiles:clean,active:_activeProfile}));
+  localStorage.setItem('gf_rcon_profile',JSON.stringify({active:_activeProfile,adhoc:_adhoc}));
 }
+function activeEntry(){ return _profiles.find(p=>p.name===_activeProfile)||{}; }
+function activeHost(){ return _activeProfile===ADHOC?(_adhoc.host||'127.0.0.1'):(activeEntry().host||'127.0.0.1'); }
 function renderProfiles(){
-  const sel=g('iProfile');
-  sel.innerHTML=_profiles.map((p,i)=>`<option value="${i}"${i===_activeProfile?' selected':''}>${p.name}</option>`).join('');
+  const e=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const names=_profiles.map(p=>p.name).concat([ADHOC]);
+  g('iProfile').innerHTML=names.map(n=>`<option value="${e(n)}"${n===_activeProfile?' selected':''}>${e(n)}</option>`).join('');
 }
+// A file-defined profile's host/port are READ-ONLY: servers.local.json is canonical, so an edit
+// here would apply this session and silently revert on the next load — exactly the stale-copy
+// confusion this refactor removes. Edit the file, or pick — ad-hoc —.
+// The password box is never pre-filled: the value stays in the panel process. A saved one shows
+// as a placeholder; typing over it saves a new one (see captureToProfile).
+// `p.seeded` (from /api/servers) = that saved password is still the one in dedicated.cfg, i.e. it
+// was auto-read at panel startup and never typed. The placeholder says so because the failure mode
+// is invisible otherwise: a wrong rcon_password draws NO reply from Plutonium, so it looks exactly
+// like a server that is down — and on the laptop the cfg's value may never have been the live one
+// (that server is launcher-started without `+exec dedicated.cfg`).
 function fillFromProfile(){
-  const p=_profiles[_activeProfile]||{};
-  g('iHost').value=p.host||'';g('iPort').value=p.port||'28960';
-  g('iPass').value=(_secrets[p.name]!=null?_secrets[p.name]:'');
+  const adhoc=_activeProfile===ADHOC,p=activeEntry();
+  g('iHost').value=adhoc?(_adhoc.host||'127.0.0.1'):(p.host||'127.0.0.1');
+  g('iPort').value=adhoc?(_adhoc.port||'28960'):(p.port||'28960');
+  g('iHost').readOnly=g('iPort').readOnly=!adhoc;
+  g('iPass').value='';_passDirty=false;
+  g('iPass').placeholder=(!adhoc&&p.hasPass)?(p.seeded?'from dedicated.cfg — retype if timeout':'saved — leave blank'):'rcon_password';
 }
-// server-side secrets store (gitignored) ──────────────────────────────
-async function fetchSecrets(){
-  try{const r=await getJSON('/secrets');return (r&&r.ok&&r.profiles)||{};}catch(_){return {};}
-}
+// server-side secrets store (gitignored) — WRITE ONLY from here; the values never come back.
 async function saveSecret(name,pass){
-  try{await postJSON('/secrets',{name,pass});}catch(_){}
+  try{return await postJSON('/secrets',{name,pass});}catch(_){return null;}
 }
-// Copy the current input fields back into the active profile (called on connect / field edit).
-// host/port → localStorage; rcon_password → gitignored secrets.local.json (never localStorage).
-function captureToProfile(){
-  const p=_profiles[_activeProfile]; if(!p)return;
-  p.host=g('iHost').value.trim();p.port=g('iPort').value.trim();
+// ⚠ #iPass no longer holds the real password, so a blind write-back would overwrite a stored one
+// with a blank — and server.js treats a blank as "delete this profile's password" — the moment an
+// unrelated field changed (both host and port fire this too). Only a box the user actually TYPED
+// into is ever saved, tracked by this flag.
+function passDirty(){ _passDirty=true; }
+// The in-flight secret write, if any. Clicking Connect BLURS the password box, so the field's own
+// onchange save fires concurrently with doConn's — and that one consumes the dirty flag first,
+// leaving doConn nothing to await while the POST is still on the wire. The first resolved request
+// would then look up a password that hadn't been stored yet. Everything awaits this handle.
+let _passSave=null;
+// Copy the input fields back where they belong (called on connect / field edit / profile switch).
+// Ad-hoc: host/port → localStorage, nothing else. Named profile: only a typed rcon_password, and
+// only into the gitignored secrets.local.json — never localStorage, never this page.
+async function captureToProfile(){
+  if(_activeProfile===ADHOC){
+    _adhoc={host:g('iHost').value.trim()||'127.0.0.1',port:g('iPort').value.trim()||'28960'};
+    persistProfiles();return;
+  }
   persistProfiles();
-  const pass=g('iPass').value;
-  _secrets[p.name]=pass;
-  saveSecret(p.name,pass);
+  if(!_passDirty){ await _passSave; return; }   // nothing new to write; wait out any in-flight one
+  const name=_activeProfile,pass=g('iPass').value;
+  _passDirty=false;
+  // AWAIT the save: doConn() calls this immediately before its first request, which resolves the
+  // password server-side — a fire-and-forget POST could still be in flight at that point.
+  _passSave=saveSecret(name,pass);
+  const r=await _passSave;
+  // The write CAN be refused: the panel process will not overwrite a secrets.local.json it is
+  // present-but-unable-to-parse (that used to silently replace the whole store with this one
+  // entry). Never claim a save that didn't happen. Reporting success here is what made the data
+  // loss invisible.
+  // ⚠ `r.session` = refused, but the PANEL PROCESS is holding the password in memory for this
+  // session, so the panel still authenticates while carrying only profile=<name>. Clear the box on
+  // that path: a typed value left in #iPass is precisely what conn() used to attach to every polled
+  // GET's query string, ~1 Hz, for the rest of the session. Clear the dirty flag with it — the box
+  // is empty now, so a later re-save would write a BLANK, which server.js reads as "delete this
+  // profile's password" and would throw the held credential away mid-session. Persisting it means
+  // repairing the store and retyping, which the toast says.
+  if(!r||!r.ok){
+    if(r&&r.session){
+      const pe=activeEntry();pe.hasPass=pass!=='';pe.seeded=false;
+      g('iPass').value='';_passDirty=false;
+      g('iPass').placeholder=pe.hasPass?'held for this session — not saved':'rcon_password';
+      toast('rcon_password NOT saved ('+(r.error||'store unwritable')+') — held for this panel session only; fix the store and retype to persist it','wn');
+      return;
+    }
+    // Nothing was registered anywhere (panel unreachable / bad request): keep the typed value and
+    // the dirty flag so the next save retries. It is NOT sent with requests — see conn().
+    _passDirty=true; toast('rcon_password NOT saved: '+((r&&r.error)||'panel unreachable'),'err'); return;
+  }
+  const p=activeEntry();p.hasPass=pass!=='';p.seeded=false;   // typed now, no longer cfg-derived
+  g('iPass').value='';                       // it lives in secrets.local.json now, not in the DOM
+  g('iPass').placeholder=p.hasPass?'saved — leave blank':'rcon_password';
+  if(pass!=='')toast('rcon_password saved for '+name,'ok');
 }
-function switchProfile(){
-  captureToProfile();                       // save edits to the profile we're leaving
-  _activeProfile=parseInt(g('iProfile').value)||0;
+async function switchProfile(){
+  await captureToProfile();                  // save a typed password for the profile we're leaving
+  _activeProfile=g('iProfile').value;
   fillFromProfile();
   persistProfiles();
   if(live)disconnect();                      // switching servers drops the current connection
 }
 async function loadCfg(){
-  loadProfiles(); renderProfiles(); fillFromProfile();   // host/port immediately
-  _secrets=await fetchSecrets();
-  fillFromProfile();                                     // now with the password
-  // URL-driven convenience for the VPS desktop shortcut: ?profile=NAME selects a saved profile and
-  // ?autoconnect (or ?connect) clicks Connect once credentials are filled. Nothing sensitive is in
-  // the URL — the password still comes from the gitignored secrets file via the loopback API.
+  // Connect starts DISABLED (see the Init block) and is enabled here, because until this resolves
+  // _activeProfile is '' — and conn() would send profile= (empty), which server.js rejects rather
+  // than falling through to the loopback defaults with a blank password. Enable it even if the
+  // profile read blew up: the fallback list is loopback-only, which is still usable.
+  try{ await loadProfiles(); }
+  catch(_){ if(!_profiles.length)_profiles=defaultProfiles(); if(!_activeProfile)_activeProfile=_profiles[0].name; }
+  renderProfiles(); fillFromProfile();
+  g('cBtn').disabled=false;
+  // URL-driven convenience for the desktop shortcut: ?profile=NAME selects a saved profile and
+  // ?autoconnect (or ?connect) clicks Connect. Nothing sensitive is in the URL — and nothing
+  // sensitive is in the page either; the panel process holds the password.
   try{
     const q=new URLSearchParams(location.search);
     const prof=q.get('profile');
     if(prof){
-      const i=_profiles.findIndex(p=>p.name.toLowerCase()===prof.toLowerCase());
-      if(i>=0){ _activeProfile=i; renderProfiles(); persistProfiles(); fillFromProfile(); }
+      const hit=_profiles.find(p=>p.name.toLowerCase()===prof.toLowerCase());
+      if(hit){ _activeProfile=hit.name; renderProfiles(); persistProfiles(); fillFromProfile(); }
     }
     if((q.has('autoconnect')||q.has('connect')) && !live) doConn();
   }catch(_){}
 }
-function saveCfg(){ captureToProfile(); }
-function conn(){return{host:g('iHost').value.trim()||'127.0.0.1',port:parseInt(g('iPort').value)||28960,password:g('iPass').value}}
+async function saveCfg(){ await captureToProfile(); }
+// Connection params for an API call. A named profile sends ONLY profile=<name>; server.js resolves
+// host/port from servers.local.json and the rcon_password from secrets.local.json — or, when that
+// store refused the write, from the copy the panel PROCESS is holding for the session (see
+// captureToProfile). So a named profile's password never enters a URL, a POST body, or this page.
+// ⚠ A typed password is registered ONCE, in the POST body of /api/secrets, and is never attached to
+// a request afterwards. It used to ride along here whenever #iPass held text, which put it in the
+// query string of EVERY GET — including the ~1 Hz /api/tick poll — for the whole session on the
+// save-refused path, and made each keystroke send a PARTIAL password as an explicit override
+// (breaking a live connection until the box lost focus).
+// — ad-hoc — is the one deliberate exception: it names its own host/port and has no profile entry to
+// resolve against, so its typed password IS the credential and has to ride on the request. Its blank
+// is meaningful too — an EMPTY password is an explicit override ("this server has no
+// rcon_password", a supported config), which is the other reason a named profile must never send
+// the key at all: doing so stops profile resolution dead.
+function conn(){
+  if(_activeProfile===ADHOC) return {host:g('iHost').value.trim()||'127.0.0.1',port:parseInt(g('iPort').value)||28960,password:g('iPass').value};
+  return {profile:_activeProfile};
+}
+// Same params as a query string, plus any endpoint-specific fields. EVERY GET sender goes through
+// this — a hand-built URLSearchParams would stringify the absent host/port as "undefined".
+function connQS(extra){ return new URLSearchParams(Object.assign({},conn(),extra||{})); }
 
 // ─── API ────────────────────────────────────────────────────────────────────
 async function rcon(command,priority){
-  const c=conn();
-  return postJSON('/rcon',{...c,command,priority:!!priority});
+  return postJSON('/rcon',{...conn(),command,priority:!!priority});
 }
 async function batchCmds(commands,delay=80){
-  const c=conn();
-  return postJSON('/batch',{...c,commands,delayMs:delay});
+  return postJSON('/batch',{...conn(),commands,delayMs:delay});
 }
 async function fetchStatus(){
-  const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
-  return getJSON('/status?'+p);
+  return getJSON('/status?'+connQS());
 }
 async function fetchTick(){
   // ONE rcon send for the whole dashboard refresh (status + gf_state + gf_roster chained
   // server-side). state/roster come back null on a listen server — status still lands.
-  const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
-  return getJSON('/tick?'+p);
+  return getJSON('/tick?'+connQS());
 }
 async function fetchDvars(names,fresh){
-  const c=conn();const q={host:c.host,port:c.port,password:c.password,names:names.join(',')};
+  const q={names:names.join(',')};
   if(fresh)q.fresh='1';   // re-probe: server clears its cached "unregistered" set for this profile
-  const p=new URLSearchParams(q);
-  return getJSON('/dvars?'+p);
+  return getJSON('/dvars?'+connQS(q));
 }
 
 // ─── Connect ────────────────────────────────────────────────────────────────
 async function doConn(){
   if(live){disconnect();return;}
-  saveCfg();
+  // Belt to the disabled button's braces: nothing may connect before the profile list lands (?connect
+  // in the URL, a stray Enter). An empty profile name is a hard error server-side, not a fall-through.
+  if(!_activeProfile){toast('Still loading server profiles — try again in a moment','wn');return;}
+  await saveCfg();   // await: a just-typed password must be SAVED before the first resolved request
   const btn=g('cBtn');btn.disabled=true;btn.textContent='…';
   try{
     const d=await fetchStatus();
-    if(d.ok){setLive(true);tick(d);actLog('Connected to '+((_profiles[_activeProfile]||{}).name||conn().host)+' ('+conn().host+')','ok');reqNotifyPerm();pushAdminGuid();seedCmdSeq();readServerDvars();readMatchDvars();readBridgeState();loadRotation();}
-    else{toast('Failed: '+d.error,'err');setLive(false);}
+    if(d.ok){setLive(true);tick(d);actLog('Connected to '+(_activeProfile||activeHost())+' ('+activeHost()+')','ok');reqNotifyPerm();pushAdminGuid();seedCmdSeq();readServerDvars();readMatchDvars();readBridgeState();loadRotation();}
+    else{
+      toast('Failed: '+d.error,'err');
+      // A wrong rcon_password draws NO reply from Plutonium, so an auth failure and a dead server
+      // produce the SAME timeout. If this profile's password was auto-read from dedicated.cfg and
+      // never typed, name that as the likelier suspect instead of leaving the operator to restart a
+      // server that was never down.
+      if(activeEntry().seeded&&/not responding|timeout/i.test(d.error||''))toast("'"+_activeProfile+"' is using the rcon_password from dedicated.cfg — if the server IS up, type the real one and reconnect",'wn');
+      setLive(false);
+    }
   }catch(e){toast('Error: '+e.message,'err');setLive(false);}
   btn.disabled=false;
 }
@@ -1261,8 +1342,7 @@ let _cmdSeq=parseInt(localStorage.getItem('gf_cmdseq')||'0')||0;
 // earlier session, which would mark the new command "received" before it was even processed.
 async function seedCmdSeq(){
   try{
-    const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
-    const r=await getJSON('/ack?'+p);
+    const r=await getJSON('/ack?'+connQS());
     if(r.ok && r.ack>=_cmdSeq){ _cmdSeq=r.ack; localStorage.setItem('gf_cmdseq',String(_cmdSeq)); }
   }catch(_){}
 }
@@ -1322,8 +1402,7 @@ async function ackTick(){
   if(!_ackBusy&&live){
     _ackBusy=true;
     try{
-      const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
-      const r=await getJSON('/ack?'+p);
+      const r=await getJSON('/ack?'+connQS());
       if(r.ok){
         cqResolve(r.ack);
         // Keep our counter above the game's mark (which now persists across a map_restart, and is
@@ -1532,8 +1611,7 @@ async function setGt(){await sdvv('xblive_wagermatch',wagerFlag(_gtVal));await s
 // map-flash that felt "too late"). Saving writes sv_maprotation + sv_maprotationcurrent so the new
 // order drives the engine's own next rotation — one clean load, no flash.
 async function fetchMapRotation(){
-  const c=conn();const p=new URLSearchParams({host:c.host,port:c.port,password:c.password});
-  return getJSON('/maprotation?'+p);
+  return getJSON('/maprotation?'+connQS());
 }
 async function loadRotation(force){
   if(!live)return;
@@ -1872,6 +1950,10 @@ function toast(msg,type='info'){
 function g(id){return document.getElementById(id);}
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
+// Connect is dead until loadCfg() has the profile list: before that _activeProfile is '', and an
+// empty profile is a hard error server-side (it used to mean "loopback defaults, blank password").
+// loadCfg re-enables it — including on the failure path, where the loopback fallback still stands.
+g('cBtn').disabled=true;
 loadCfg();
 buildMapGrid();
 setCtrl(false);

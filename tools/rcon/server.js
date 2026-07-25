@@ -30,10 +30,17 @@ const PUBLIC_DIR   = path.join(__dirname, 'public');
 // storage/t5/mods/mp_gunfight/tools/rcon/server.js → four levels up.
 const CFG_PATH     = path.resolve(__dirname, '..', '..', '..', '..', 'dedicated.cfg');
 // Per-profile rcon_password lives HERE, next to server.js, and is GITIGNORED — it never
-// enters the repo. Shape: { "profiles": { "<profile name>": "<rcon_password>" } }. The panel
-// reads/writes it over the loopback-only API so passwords never sit in browser localStorage
-// or in any tracked file. See secrets.local.json.example.
+// enters the repo. Shape: { "profiles": { "<profile name>": "<rcon_password>" } }. The browser
+// never receives these values (see "Credentials" below): it sends profile=<name> and THIS
+// process does the lookup. See secrets.local.json.example.
 const SECRETS_PATH = path.join(__dirname, 'secrets.local.json');
+// Per-profile host/port, GITIGNORED for a different reason: a real server IP is infrastructure
+// disclosure and must not sit in a tracked file. This is the ONLY place a non-loopback host
+// lives — the built-in fallback (here and in app.js) is loopback-only, so a fresh clone of this
+// repo names no machine at all. Shape:
+//   { "profiles": [ { "name": "Local", "host": "127.0.0.1", "port": "28960" }, … ] }
+// Absent is normal → the loopback-only fallback. See servers.local.json.example.
+const SERVERS_PATH = path.join(__dirname, 'servers.local.json');
 // Panel UI state (today: the FAVORITES pinboard) — gitignored, box-local, and kept HERE rather
 // than in browser localStorage so it follows the PANEL PROCESS, not the browser. The VPS panel
 // then shows one pinboard whether you reach it by RDP on the box or over the SSH tunnel from a
@@ -263,12 +270,10 @@ function parseDvarValue(text, dvarName) {
 // clear the cache and re-probe (so a dvar that later becomes registered is picked back up).
 const DVAR_DEAD_FILE = path.join(__dirname, '.dvarcache.json');
 const deadDvarCache = (function loadDeadDvarCache() {
-  try {
-    const obj = JSON.parse(fs.readFileSync(DVAR_DEAD_FILE, 'utf8'));
-    const m = new Map();
-    for (const k of Object.keys(obj)) if (Array.isArray(obj[k])) m.set(k, new Set(obj[k]));
-    return m;
-  } catch (_) { return new Map(); }
+  const obj = readJsonFile(DVAR_DEAD_FILE);   // hoisted; see the Credentials section below
+  const m = new Map();
+  if (obj) for (const k of Object.keys(obj)) if (Array.isArray(obj[k])) m.set(k, new Set(obj[k]));
+  return m;
 })();
 function saveDeadDvarCache() {
   try {
@@ -437,37 +442,274 @@ function upsertCfg(text, dvars, eol) {
   return { text: lines.join(eol), updated, added };
 }
 
+// ─── Credentials: how a request resolves to host / port / rcon_password ───────
+//
+// GOAL: nobody types a password or an IP, in any of the three contexts —
+//   1) laptop browser  → this laptop's own listen / local dedicated server (loopback)
+//   2) laptop browser  → the VPS. PREFERRED: an SSH tunnel to the VPS's OWN panel, which resolves
+//      its credentials box-side and never puts anything on the wire in the clear:
+//        ssh -L 3000:127.0.0.1:3000 gf-vps    → http://127.0.0.1:3000, profile "Local"
+//      Direct public rcon is supported but OPT-IN (add the host to servers.local.json), because
+//      buildPacket() puts the password in a CLEARTEXT UDP payload — no challenge, no replay
+//      protection — so anyone on-path recovers it from one packet.
+//   3) the VPS box's own browser → that box's dedicated server (loopback)
+//
+// TWO gitignored side-files, joined on the profile NAME:
+//   servers.local.json   name → host/port        (the only place a real IP lives)
+//   secrets.local.json   name → rcon_password
+// Absent is always normal. With NEITHER file the panel still covers contexts 1 and 3 unassisted:
+// the fallback profile is Local → 127.0.0.1:28960, and seedLoopbackPasswords() below lifts its
+// password straight out of dedicated.cfg.
+//
+// PRECEDENCE — decided by PRESENCE, never by truthiness. A request may carry `profile`, or
+// explicit `host`/`port`/`password`, or both:
+//   • an explicitly PRESENT password wins, EVEN WHEN IT IS THE EMPTY STRING. A server with no
+//     rcon_password is a supported config, so '' cannot be overloaded to mean "unset". This is
+//     also the backward-compat path that keeps the box services working untouched — status_service,
+//     join-notify, watchdog and ts_sample all send an explicit password= and must keep doing so.
+//   • otherwise `profile` resolves the password here, so it never enters a URL or a POST body.
+//   • explicit host/port likewise override the profile's; an UNKNOWN profile is a hard 400, never
+//     a silent fall-through to the loopback defaults (that would fire rcon at whatever server is
+//     running on this box — on the VPS, the live one).
+//   • a KNOWN profile with NO entry in secrets.local.json is a hard 400 for the same reason, and
+//     never a blank password on the wire. Plutonium answers a wrong-or-blank rcon password with
+//     NOTHING AT ALL, so such a packet's only visible outcome is "Server not responding (timeout)"
+//     — byte-identical to a server that is down, which sends the operator hunting the wrong thing.
+//     The two side-files are joined on a free-text NAME, so a rename in only one of them lands
+//     exactly here. An explicit "" entry stays valid: that is a server with no rcon_password.
+//   • a PRESENT-but-empty `profile` key is a hard 400 too, never a fall-through to the loopback
+//     defaults. The browser holds profile='' until GET /api/servers resolves, so a Connect click
+//     in that window would otherwise fire a blank-password packet at 127.0.0.1:28960.
+// ⚠ The browser must OMIT the password key entirely when the user has not typed one. Sending
+// `password=` (empty) reads as an explicit blank override and profile resolution never runs.
+
+// Read + parse a JSON side-file. ABSENT is normal (a fresh clone has no local files) → null,
+// silently. PRESENT-but-unparseable is NOT, and is reported once PER CORRUPTION EVENT — otherwise
+// the symptom is invisible (no passwords / no profiles / a re-probed dvar cache, with nothing in
+// any log).
+// ⚠ "Once" is ENFORCED here, not merely intended. EVERY reader goes through this function and BOTH
+// credential files are read on EVERY HTTP request (resolveConnParams → findServer → loadServers,
+// and → secretFor → loadSecrets), so an unconditional report is one log line PER API CALL (measured:
+// exactly 1.00/call) — and since saveSecret below now REFUSES to overwrite a store it cannot parse,
+// that state persists until a human fixes it instead of self-healing destructively on the next save.
+// With the panel's stdout redirected to an unpruned log file and the UI ticking ~1 Hz, that is
+// ~6.6 MB/day of one repeated line. Dedupe key = the file's mtime+size, so a report fires AGAIN
+// whenever the file changes and is STILL corrupt (every fix attempt stays visible), and the entry is
+// dropped the moment it parses or the file disappears — a plain "already reported" flag would also
+// mute the next, different corruption, forever.
+// ⚠ The dedupe state hangs off the FUNCTION OBJECT, not a module-level `const` beside it:
+// readJsonFile is called during module init (the dead-dvar cache ~230 lines above), where a `const`
+// declared down here is still in its temporal dead zone — reading one from that call is a
+// ReferenceError before listen(), i.e. the panel never boots at all (verified).
+// ⚠ A leading BOM makes JSON.parse THROW. PowerShell's `Set-Content -Encoding UTF8` writes one,
+// so every writer of these files must use UTF-8 WITHOUT a BOM (setup_rcon_vps.ps1 does); we strip
+// one defensively here so a hand-edited file can't silently blank the panel's credentials.
+// ⚠ EVERY reader of these files goes through here — including the ones on a WRITE path (saveSecret
+// reads the current store before rewriting it). A second, raw JSON.parse anywhere makes the two
+// paths disagree about the same file: a BOM'd store that READS fine would fail only on write, and
+// a swallowed failure there is silent data loss rather than a loud, uniform "no passwords".
+// ⚠ The failure report prints e.NAME, never e.message. V8 quotes the offending INPUT back inside a
+// parse message whenever the failure sits at or near position 0 — `JSON.parse('PASSWORDLEAK{…}')`
+// yields `Unexpected token 'P', "PASSWORDLE"... is not valid JSON` (measured, node v24). This
+// reader runs over secrets.local.json, so a store mangled at the head would echo its own leading
+// bytes to the console, and to disk behind any log redirect. "SyntaxError" says all we need.
+function readJsonFile(file) {
+  const fails = readJsonFile._fails || (readJsonFile._fails = new Map());   // file -> reported signature
+  let raw;
+  try { raw = fs.readFileSync(file, 'utf8'); } catch (_) { fails.delete(file); return null; }
+  try { const obj = JSON.parse(raw.replace(/^\uFEFF/, '')); fails.delete(file); return obj; }
+  catch (e) {
+    // The signature of THIS corruption. A rewrite (new mtime/size) is a new event and reports
+    // again; a failed stat can't mute anything either, since the length moves as the file changes.
+    let sig;
+    try { const st = fs.statSync(file); sig = st.mtimeMs + ':' + st.size; } catch (_) { sig = 'nostat:' + raw.length; }
+    if (fails.get(file) !== sig) {
+      fails.set(file, sig);
+      console.error(`  ! ${path.basename(file)} is present but unreadable (${(e && e.name) || 'parse error'}) — ignoring it`);
+    }
+    return null;
+  }
+}
+
 // ─── Secrets (gitignored rcon_password store) ─────────────────────────────────
-// A profile-name → rcon_password map kept OUT of git in secrets.local.json. Missing
-// file / bad JSON is not an error — a fresh clone just has no saved passwords yet.
+// A profile-name → rcon_password map kept OUT of git in secrets.local.json. A missing file is
+// not an error — a fresh clone just has no saved passwords yet. A file that is present but
+// unparseable is (readJsonFile says so once): it looks identical from here, and silently having
+// zero passwords is how "Connect fails auth for no reason" happened.
 function loadSecrets() {
-  try {
-    const obj = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf8'));
-    if (obj && obj.profiles && typeof obj.profiles === 'object') return obj.profiles;
-  } catch (_) {}
+  const obj = readJsonFile(SECRETS_PATH);
+  if (obj && obj.profiles && typeof obj.profiles === 'object') return obj.profiles;
   return {};
 }
+// Passwords this PROCESS is holding for the session because the store refused the write (a corrupt
+// or unwritable secrets.local.json — see saveSecret). Memory only, never persisted, gone on restart.
+// It exists so the credential does not have to live in the BROWSER on that path: the page would then
+// have to attach it to every request, and the polled ones are GETs, which puts a password in a query
+// string ~1 Hz for the whole session. Registered ONCE via POST /api/secrets (a JSON body) and
+// resolved here from the profile name, exactly like the on-disk store.
+// ⚠ Same blank rule as saveSecret: '' means "this server has no rcon_password", so it CLEARS the
+// held value rather than holding an empty one — a blank must never be dressed up as a credential.
+// ⚠ GET /api/secrets deliberately still reports the DISK store only: it answers "what is saved".
+const sessionSecrets = new Map();   // lowercased profile name -> password
+function rememberSessionSecret(name, pass) {
+  const k = String(name).toLowerCase();
+  if (pass === '') sessionSecrets.delete(k);
+  else sessionSecrets.set(k, pass);
+}
+// One profile's password, or undefined if it has none saved. Case-insensitive fallback: the two
+// side-files are joined on a free-text name, so a case drift between them would otherwise read as
+// "no password saved" and surface only as an auth timeout.
+function secretFor(name) {
+  const s = loadSecrets();
+  if (Object.prototype.hasOwnProperty.call(s, name)) return s[name];
+  const k = Object.keys(s).find((k2) => k2.toLowerCase() === String(name).toLowerCase());
+  if (k !== undefined) return s[k];
+  // Nothing on disk: fall back to a session-held password. The disk store always WINS — a saved
+  // credential is the authoritative one, and a stale held value must never shadow it.
+  const sk = String(name).toLowerCase();
+  return sessionSecrets.has(sk) ? sessionSecrets.get(sk) : undefined;
+}
+// Upsert ONE profile's password, preserving every other entry in the store.
+// ⚠ The read-before-write MUST use readJsonFile — the same BOM-tolerant reader loadSecrets() uses —
+// and a present-but-unreadable store MUST refuse the write. This used to be a raw JSON.parse inside
+// a swallow-everything catch, which made the two paths disagree about the same file: a BOM'd store
+// (PowerShell's `Set-Content -Encoding UTF8` writes one) READ perfectly, so the panel showed every
+// profile as having a password, while the next write threw on the BOM, fell into the empty catch and
+// rewrote the whole file with only the profile being saved — every other password gone, reply
+// {ok:true}. It also fires UNATTENDED: seedLoopbackPasswords() calls this before listen(), so merely
+// restarting the panel could destroy the store with no user action. A destructive rewrite must never
+// be reachable from a parse failure — the throw below surfaces via handle() as { ok:false, error }.
 function saveSecret(name, pass) {
   let obj = { profiles: {} };
-  try {
-    const cur = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf8'));
-    if (cur && typeof cur === 'object') obj = cur;
-  } catch (_) {}
+  if (fs.existsSync(SECRETS_PATH)) {
+    const cur = readJsonFile(SECRETS_PATH);
+    if (!cur || typeof cur !== 'object' || Array.isArray(cur)) {
+      throw new Error('secrets.local.json is present but unreadable — refusing to overwrite it (fix or remove the file, then retry)');
+    }
+    obj = cur;
+  }
   if (!obj.profiles || typeof obj.profiles !== 'object') obj.profiles = {};
   if (pass === '') delete obj.profiles[name];   // don't persist blank entries
   else obj.profiles[name] = pass;
-  fs.writeFileSync(SECRETS_PATH, JSON.stringify(obj, null, 2) + '\n');
+  // ATOMIC: write a sibling temp file, then RENAME it over the store. A truncate-in-place
+  // writeFileSync leaves a half-written file if the process dies mid-write — and this process is
+  // killed routinely (Task Scheduler stop, deploy.ps1's panel recycle, a reboot). That used to
+  // self-heal destructively on the next save; with the refusal above it is now PERMANENT: the store
+  // reads as zero passwords and every subsequent save is refused until a human repairs it by hand.
+  // rename() within a volume is atomic, so a kill at any instant leaves either the whole old file or
+  // the whole new one — never a truncated store.
+  // ⚠ The temp MUST stay a sibling (same folder = same volume). A %TEMP% path would make this a
+  // cross-volume copy, which is exactly the non-atomic write we are removing.
+  // ⚠ `secrets.local.json.tmp` is covered by all three secret-store layers — .gitignore's
+  // `tools/rcon/secrets.local.*`, the pre-commit hook's `*secrets.local.*` case, and
+  // release_common.ps1's `secrets.local.*` glob — and it does NOT end in `.example`, so the
+  // committable-template exemption does not reach it. Any rename here must keep that true.
+  // fs.writeFileSync defaults to UTF-8 with NO BOM — keep it that way (see readJsonFile).
+  const tmp = SECRETS_PATH + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2) + '\n');
+  try { fs.renameSync(tmp, SECRETS_PATH); }
+  catch (e) { try { fs.unlinkSync(tmp); } catch (_) {} throw e; }   // never leave the temp behind
+}
+
+// ─── Server list (gitignored host/port store) ─────────────────────────────────
+// The panel's profile dropdown. Read PER REQUEST (like prefs/secrets) so editing the file takes
+// effect on the next page load — on the VPS the panel is a SYSTEM scheduled task, and needing a
+// restart to add a server would make a 10-second edit a two-command detour.
+// Missing file → the loopback-only fallback, which is the whole point: a clone with no local
+// files still drives the server on its own box, and names no other machine.
+const FALLBACK_SERVER = { name: 'Local', host: '127.0.0.1', port: '28960' };
+function loadServers() {
+  const obj = readJsonFile(SERVERS_PATH);
+  const out = [];
+  const seen = new Set();
+  if (obj && Array.isArray(obj.profiles)) {
+    for (const e of obj.profiles) {
+      if (!e || typeof e !== 'object') continue;
+      const name = String(e.name == null ? '' : e.name).trim().slice(0, 64);
+      if (!name || seen.has(name.toLowerCase())) continue;   // the name is the join key — no dupes
+      seen.add(name.toLowerCase());
+      out.push({
+        name,
+        host: String(e.host == null ? '' : e.host).trim() || FALLBACK_SERVER.host,
+        port: String(e.port == null ? '' : e.port).trim() || FALLBACK_SERVER.port,
+      });
+    }
+  }
+  return out.length ? out : [FALLBACK_SERVER];
+}
+function findServer(name) {
+  const want = String(name).trim().toLowerCase();
+  return loadServers().find((s) => s.name.toLowerCase() === want) || null;
+}
+
+// ─── Auto-seed: the loopback profile's password, straight from dedicated.cfg ───
+// setup_rcon_vps.ps1 does this ON the VPS; this is the laptop-side equivalent, so a fresh clone
+// needs zero typing to drive the server on its own box. Runs ONCE at startup, before listen().
+// ⚠ Never overwrites a password already saved, and never throws — no cfg at all is the normal
+// case for a clone with no server on the machine.
+// ⚠ On the LAPTOP this is a best guess, not a fact: the local dedicated server is launcher-started
+// WITHOUT `+exec dedicated.cfg`, and an in-game listen server takes its rcon_password from the
+// client's own config — so the cfg's value may never have been the live one. A wrong password
+// reads as a bare "Server not responding (timeout)", indistinguishable from a server that is down.
+// Typing the real one into the panel once saves it over this seed permanently (the seed then never
+// fires again — `secretFor(...) == null` is false forever after).
+// ⚠ Because the guess is one-shot and permanent, it fires ONLY for a lobby with exactly ONE
+// loopback profile — which is every zero-typing context by construction (laptop → its own server;
+// VPS box's own browser; laptop → VPS over the SSH tunnel, where the tunnel lands on the BOX's
+// panel and its one 'Local'). List two loopback servers and the cfg's single rcon_password can
+// belong to at most one of them, so seeding both would hand one a foreign credential that then
+// looks permanent and typed. In that case nothing is seeded and the log says why.
+// ⚠ The guess is not invisible either: GET /api/servers reports `seeded` for a saved password that
+// still equals the cfg's, so the panel can say WHERE the credential came from and a timeout points
+// at the credential instead of at the server.
+const CFG_CANDIDATES = [
+  CFG_PATH,                                                          // storage/t5/dedicated.cfg — the real one
+  path.resolve(__dirname, '..', '..', '..', '..', 'main', 'dedicated.cfg'),
+  path.resolve(__dirname, '..', '..', 'dedicated.cfg'),              // mod root
+  path.join(__dirname, 'dedicated.cfg'),                             // beside the panel
+];
+// Same shape as tools/common.ps1's Get-RconPassword: `seta` counts, quotes around the NAME are
+// optional, and the ^ anchor is what stops a commented-out line from matching.
+const RCON_PW_RE = /^\s*set[as]?\s+"?rcon_password"?\s+"([^"]*)"/im;
+const LOOPBACK_RX = /^(127\.\d+\.\d+\.\d+|localhost|::1|\[::1\])$/i;
+// The cfg's rcon_password and which cfg it came from, or { pw: null }. Read on DEMAND, like the two
+// side-files: the seed calls it once at startup, GET /api/servers calls it per page load to tell a
+// cfg-DERIVED password from a typed one.
+function cfgRconPassword() {
+  for (const f of CFG_CANDIDATES) {
+    let txt; try { txt = fs.readFileSync(f, 'utf8'); } catch (_) { continue; }
+    if (txt.charCodeAt(0) === 0xFEFF) txt = txt.slice(1);   // same BOM tolerance as readJsonFile
+    const m = txt.match(RCON_PW_RE);
+    if (m) return { pw: m[1], from: f };
+  }
+  return { pw: null, from: null };
+}
+function seedLoopbackPasswords() {
+  try {
+    const loopbacks = loadServers().filter((s) => LOOPBACK_RX.test(s.host));
+    const targets   = loopbacks.filter((s) => secretFor(s.name) == null);
+    if (!targets.length) return;                       // nothing to seed / already saved
+    // ONE cfg password, so at most ONE loopback profile may claim it. With two local servers listed
+    // we would be guessing which — and the guess writes itself in permanently. Seed nothing, say why.
+    if (loopbacks.length > 1) {
+      console.log(`  ${loopbacks.length} loopback profiles (${loopbacks.map((s) => `'${s.name}'`).join(', ')}) — the cfg's rcon_password belongs to at most one of them, so nothing was seeded. Type each one into the panel once.`);
+      return;
+    }
+    const { pw, from } = cfgRconPassword();
+    if (pw === null) { console.log(`  no rcon_password found in a dedicated.cfg (looked from ${CFG_PATH}) — nothing seeded`); return; }
+    if (pw === '') return;                             // cfg sets a blank password: nothing to save
+    saveSecret(targets[0].name, pw);                   // NEVER logged, only its length
+    console.log(`  seeded rcon_password for '${targets[0].name}' from ${from} (${pw.length} chars) — the panel flags it as cfg-derived until one is typed`);
+  } catch (e) { console.error('  ! rcon_password auto-seed skipped: ' + (e && e.message)); }
 }
 
 // ─── Panel prefs (gitignored UI state — see PREFS_PATH) ───────────────────────
-// Missing file / bad JSON is not an error: a fresh clone simply has no pinboard yet, and the UI
-// falls back to its localStorage cache (and to the seeded defaults) in that case.
+// A missing file is not an error: a fresh clone simply has no pinboard yet, and the UI falls back
+// to its localStorage cache (and to the seeded defaults) in that case. A present-but-unparseable
+// one is reported by readJsonFile, then treated the same way.
 function loadPrefs() {
-  try {
-    const obj = JSON.parse(fs.readFileSync(PREFS_PATH, 'utf8'));
-    if (obj && typeof obj === 'object') return obj;
-  } catch (_) {}
-  return {};
+  const obj = readJsonFile(PREFS_PATH);
+  return (obj && typeof obj === 'object') ? obj : {};
 }
 function savePrefs(prefs) {
   fs.writeFileSync(PREFS_PATH, JSON.stringify(prefs, null, 2) + '\n');
@@ -595,11 +837,60 @@ function sendJson(res, data, status = 200) {
 }
 
 // ─── Shared endpoint helpers ────────────────────────────────────────────────────
-// Standard connection params from a GET query string, with the panel's loopback defaults.
-// `p` is the parsed integer port (the numeric form most rcon calls want).
-function connFromQuery(query) {
-  const { host = '127.0.0.1', port = '28960', password = '' } = query;
-  return { host, port, password, p: parseInt(port) };
+// Resolve a request's connection params from a GET query object OR a POST body — see the
+// "Credentials" section above for the precedence rules. Returns { host, port, p, password } with
+// `p` the parsed integer port and `port` its string twin (they always agree), or { error } for an
+// unknown profile.
+// ⚠ PRESENCE, not truthiness: `password` is only defaulted when the key is ABSENT. A destructuring
+// default (`password = ''`) fires on undefined only, so it silently erased the difference between
+// "no password supplied, resolve it" and "this server has no rcon_password" — the second is a
+// supported config, so the two must stay distinguishable.
+// ⚠ Every coalescing key downstream is built from the RESOLVED host/p, never from the raw query.
+// Keying off the raw fields would (a) collapse every profile onto one key once the browser stopped
+// sending host/port, merging two panels' replies, and (b) split the browser's key from the box
+// services' explicit-host key, quietly doubling rcon load on the one 850ms lane.
+function resolveConnParams(src) {
+  const q = src || {};
+  const has = (k) => Object.prototype.hasOwnProperty.call(q, k) && q[k] !== undefined;
+  let host     = has('host')     && String(q.host).trim()     !== '' ? String(q.host).trim()     : undefined;
+  let port     = has('port')     && String(q.port).trim()     !== '' ? String(q.port).trim()     : undefined;
+  let password = has('password') ? String(q.password) : undefined;   // '' is an explicit override
+  // PRESENCE again, not truthiness: `profile` PRESENT-but-blank is an error, not "no profile".
+  // Truthiness sent `?profile=` down the no-profile path, i.e. straight to the loopback defaults
+  // with a blank password — reachable from the browser, which initialises its active profile to ''
+  // and only fills it in once GET /api/servers answers.
+  const rawProfile = has('profile') ? q.profile : undefined;
+  const wanted = rawProfile == null ? '' : String(rawProfile).trim();
+  if (rawProfile !== undefined && wanted === '') {
+    return { error: 'Empty server profile — send profile=<name>, or omit the key entirely for the loopback default' };
+  }
+  if (wanted) {
+    const prof = findServer(wanted);
+    if (!prof) return { error: `Unknown server profile "${wanted}" (see servers.local.json)` };
+    if (host === undefined)     host = prof.host;
+    if (port === undefined)     port = prof.port;
+    if (password === undefined) {
+      const s = secretFor(prof.name);
+      // '' is a real config ("this server has no rcon_password"); NO ENTRY is not, and must not be
+      // flattened into it — see the Credentials header. Name the profile and both remedies, because
+      // the wire symptom of guessing here is a bare timeout that accuses the server instead.
+      if (s == null) return { error: `No rcon_password saved for server profile "${prof.name}" — type it into the panel's password box once (it is stored in secrets.local.json, never in the browser), or add "${prof.name}": "" to that file if this server genuinely has none` };
+      password = String(s);
+    }
+  }
+  // Normalise the port ONCE so every cache/coalescing key agrees ('28960' from one caller and
+  // 28960 from another used to build two different key strings for the same server).
+  const p = parseInt(port === undefined ? '28960' : port, 10) || 28960;
+  return { host: host === undefined ? '127.0.0.1' : host, port: String(p), p, password: password === undefined ? '' : password };
+}
+// Same, but responds 400 and returns null on an unknown profile — so an endpoint reads
+// `const c = resolveConn(x, res); if (!c) return;` (same "already responded, bail" shape as
+// readJsonBody). ⚠ An unresolvable profile must NEVER fall through to the loopback defaults: that
+// would aim rcon at whatever server happens to run on this box (on the VPS, the live one).
+function resolveConn(src, res) {
+  const c = resolveConnParams(src);
+  if (c.error) { sendJson(res, { ok: false, error: c.error }, 400); return null; }
+  return c;
 }
 
 // Read + JSON-parse a request body. On malformed JSON, respond 400 and return undefined — since
@@ -674,7 +965,8 @@ const server = http.createServer(async (req, res) => {
   // fell minutes behind. On a listen server the gf_* tokens echo nothing (state/roster → null);
   // the status part still lands.
   if (req.method === 'GET' && pathname === '/api/tick') {
-    const { host, password, p } = connFromQuery(query);
+    const c = resolveConn(query, res); if (!c) return;
+    const { host, password, p } = c;
     return handle(res, async () => {
       const buf  = await sendRconQueuedKeyed(`tick:${host}:${p}`, host, p, password, 'status;gf_state;gf_roster');
       const text = parseRconResponse(buf);
@@ -691,7 +983,8 @@ const server = http.createServer(async (req, res) => {
 
   // ── GET /api/status ──
   if (req.method === 'GET' && pathname === '/api/status') {
-    const { host, password, p } = connFromQuery(query);
+    const c = resolveConn(query, res); if (!c) return;
+    const { host, password, p } = c;
     return handle(res, async () => {
       const statusBuf = await sendRconQueuedKeyed(`status:${host}:${p}`, host, p, password, 'status');
       const text = parseRconResponse(statusBuf);
@@ -707,9 +1000,10 @@ const server = http.createServer(async (req, res) => {
   //                           the engine's own rotation instead of racing it with a reactive `map`.
   // Answers on dedicated AND listen (engine dvars, unlike gf_state). Coalesced under a keyed lane.
   if (req.method === 'GET' && pathname === '/api/maprotation') {
-    const { host, port, password, p } = connFromQuery(query);
+    const c = resolveConn(query, res); if (!c) return;
+    const { host, password, p } = c;
     return handle(res, async () => {
-      const buf  = await sendRconQueuedKeyed(`maprot:${host}:${port}`, host, p, password, 'sv_maprotation;sv_maprotationcurrent');
+      const buf  = await sendRconQueuedKeyed(`maprot:${host}:${p}`, host, p, password, 'sv_maprotation;sv_maprotationcurrent');
       const text = parseRconResponse(buf);
       const full = parseDvarValue(text, 'sv_maprotation');
       const cur  = parseDvarValue(text, 'sv_maprotationcurrent');
@@ -754,7 +1048,8 @@ const server = http.createServer(async (req, res) => {
 
   // ── GET /api/dvars ── batch-read dvar values: ?names=a,b,c (read-only, chunked)
   if (req.method === 'GET' && pathname === '/api/dvars') {
-    const { host, password, p } = connFromQuery(query);
+    const c = resolveConn(query, res); if (!c) return;
+    const { host, password, p } = c;   // p (not the raw query port) also keys the dead-dvar cache
     const { names = '', fresh = '' } = query;
     const list = names.split(',').map(s => s.trim()).filter(Boolean);
     if (!list.length) return sendJson(res, { ok: false, error: 'No dvar names' }, 400);
@@ -771,12 +1066,14 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && pathname === '/api/rcon') {
     const body = await readJsonBody(req, res);
     if (body === undefined) return;
-    const { host = '127.0.0.1', port = '28960', password = '', command, priority = false } = body;
+    const c = resolveConn(body, res); if (!c) return;
+    const { host, password, p } = c;
+    const { command, priority = false } = body;
     if (!command) return sendJson(res, { ok: false, error: 'Missing command' }, 400);
     return handle(res, async () => {
       const buf = priority
-        ? await sendRconPriority(host, parseInt(port), password, command, 150, 700)
-        : await sendRconQueued(host, parseInt(port), password, command);
+        ? await sendRconPriority(host, p, password, command, 150, 700)
+        : await sendRconQueued(host, p, password, command);
       const response = parseRconResponse(buf);
       return sendJson(res, { ok: true, response });
     });
@@ -785,9 +1082,10 @@ const server = http.createServer(async (req, res) => {
   // ── GET /api/ack ── high-priority read of gf_ack (last processed command seq). The panel polls
   // this right after sending a bridge command to flip it from "sent" to "received".
   if (req.method === 'GET' && pathname === '/api/ack') {
-    const { host, port, password, p } = connFromQuery(query);
+    const c = resolveConn(query, res); if (!c) return;
+    const { host, password, p } = c;
     return handle(res, async () => {
-      const buf  = await sendRconPriorityKeyed(`ack:${host}:${port}`, host, p, password, 'gf_ack', 150, 700);
+      const buf  = await sendRconPriorityKeyed(`ack:${host}:${p}`, host, p, password, 'gf_ack', 150, 700);
       const text = parseRconResponse(buf);
       const val  = parseDvarValue(text, 'gf_ack');
       return sendJson(res, { ok: val !== null, ack: val !== null ? (parseInt(val) || 0) : 0 });
@@ -821,19 +1119,57 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-  // ── GET /api/secrets ── profile-name → rcon_password map from the gitignored file
-  if (req.method === 'GET' && pathname === '/api/secrets') {
-    return sendJson(res, { ok: true, profiles: loadSecrets() });
+  // ── GET /api/servers ── the panel's profile list: name + host/port, and whether a password is
+  // saved for it. NEVER a password. This replaces the hardcoded profile list the page used to
+  // carry, so the gitignored servers.local.json is the single source of truth for every browser
+  // pointed at this panel — fixing the file fixes the panel, with no localStorage to clear.
+  // `seeded` is PROVENANCE, not doubt: this profile's saved password is still the one sitting in
+  // dedicated.cfg, i.e. it was auto-read rather than typed. On the VPS the cfg IS authoritative and
+  // the flag is inert; on the laptop the cfg's value may never have been live (the local server is
+  // launcher-started without `+exec dedicated.cfg`), and a wrong password answers with silence, so
+  // the panel can point a timeout at the credential. Derived by comparison — no extra state, no
+  // change to the secrets file shape, and it clears itself the moment a different one is typed.
+  if (req.method === 'GET' && pathname === '/api/servers') {
+    const list  = loadServers();
+    const cfgPw = list.some((s) => LOOPBACK_RX.test(s.host)) ? cfgRconPassword().pw : null;
+    const profiles = list.map((s) => {
+      const saved = secretFor(s.name);
+      return { name: s.name, host: s.host, port: s.port, hasPass: saved != null,
+               seeded: cfgPw !== null && cfgPw !== '' && saved === cfgPw };
+    });
+    return sendJson(res, { ok: true, profiles });
   }
 
-  // ── POST /api/secrets ── upsert one profile's password into the gitignored file
+  // ── GET /api/secrets ── PRESENCE ONLY: { "<profile>": true }. Never the values.
+  // This used to hand the browser every stored password in one JSON reply, which the page then
+  // planted in a DOM input — so anything running on the page origin (an extension with page
+  // access, an injected snippet) could read the whole store in a single request. The panel no
+  // longer needs them at all: it sends profile=<name> and this process does the lookup.
+  if (req.method === 'GET' && pathname === '/api/secrets') {
+    const have = {};
+    for (const k of Object.keys(loadSecrets())) have[k] = true;
+    return sendJson(res, { ok: true, profiles: have });
+  }
+
+  // ── POST /api/secrets ── upsert one profile's password into the gitignored file.
+  // This POST body is the ONE channel a credential travels on, by design: a named profile's request
+  // then carries only profile=<name>, so nothing ends up in a GET query string (see the app.js
+  // conn() note). When the store REFUSES the write — corrupt file, read-only folder — the password
+  // is held in this process for the session instead of being handed back to the page to re-send on
+  // every poll, and the reply says so with `session:true` so the panel can label it accurately
+  // ("held, not saved") rather than claiming a save that did not happen.
   if (req.method === 'POST' && pathname === '/api/secrets') {
     const body = await readJsonBody(req, res);
     if (body === undefined) return;
     const name = String(body.name == null ? '' : body.name).slice(0, 64).trim();
     if (!name) return sendJson(res, { ok: false, error: 'Missing profile name' }, 400);
     const pass = String(body.pass == null ? '' : body.pass).slice(0, 256);
-    return handle(res, async () => { saveSecret(name, pass); return sendJson(res, { ok: true }); });
+    return handle(res, async () => {
+      try { saveSecret(name, pass); }
+      catch (e) { rememberSessionSecret(name, pass); return sendJson(res, { ok: false, session: true, error: e.message }); }
+      rememberSessionSecret(name, '');   // saved: the disk store is authoritative, drop any held copy
+      return sendJson(res, { ok: true });
+    });
   }
 
   // ── GET /api/prefs ── panel UI state (the FAVORITES pinboard)
@@ -860,14 +1196,16 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && pathname === '/api/batch') {
     const body = await readJsonBody(req, res);
     if (body === undefined) return;
-    const { host = '127.0.0.1', port = '28960', password = '', commands = [], delayMs = 80 } = body;
+    const c = resolveConn(body, res); if (!c) return;
+    const { host, password, p } = c;
+    const { commands = [], delayMs = 80 } = body;
     const results = [];
     for (let i = 0; i < commands.length; i++) {
       const command = commands[i];
       try {
         // Batch commands are writes (`set ...`, bridge triggers) that don't echo a reply, so
         // don't wait the full RCON_TIMEOUT for one — a short window keeps them snappy.
-        const buf      = await sendRconQueued(host, parseInt(port), password, command, 200, 700);
+        const buf      = await sendRconQueued(host, p, password, command, 200, 700);
         const response = parseRconResponse(buf);
         results.push({ ok: true, command, response });
       } catch (err) {
@@ -880,6 +1218,8 @@ const server = http.createServer(async (req, res) => {
 
   res.writeHead(404); res.end('Not found');
 });
+
+seedLoopbackPasswords();   // one shot, before we listen — never throws, never overwrites
 
 server.listen(WEB_PORT, '127.0.0.1', () => {
   const addr = `http://127.0.0.1:${WEB_PORT}`;

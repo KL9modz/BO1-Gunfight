@@ -38,20 +38,44 @@
 param(
   [int]$Seconds  = 240,
   [string]$Pw    = "",
+  # 3000 is correct for BOTH documented ways of running this: it is the panel's own port ON
+  # the box, and the port the laptop SSH tunnel forwards to it (ssh -L 3000:127.0.0.1:3000).
+  # The LAPTOP's own panel is a DIFFERENT server on 3005 - tools\rcon\start.bat pins it there
+  # so it can never collide with that tunnel - so to sample a local listen server instead,
+  # pass -Panel http://127.0.0.1:3005.
   [string]$Panel = "http://127.0.0.1:3000"
 )
 
+# Password: the same resolution order every other box service uses (common.ps1's
+# Get-RconPassword) - an explicit -Pw, then $env:GF_RCON_PW, then rcon_password out of
+# storage\t5\dedicated.cfg. status_service, join-notify and watchdog all read it this way.
+. (Join-Path $PSScriptRoot 'common.ps1')   # Resolve-T5Root / Get-RconPassword
+$Pw = Get-RconPassword -Explicit $Pw -CfgPath (Join-Path (Resolve-T5Root) 'dedicated.cfg')
+
 if (-not $Pw) {
-  # Same store the panel itself uses; gitignored, box-local.
+  # Last resort: the panel's own gitignored store. Read it PROFILE-AGNOSTICALLY. This used to
+  # pin $j.profiles.VPS, which went dead-on-arrival on any freshly provisioned box the moment
+  # setup_rcon_vps.ps1 started writing a single 'Local' profile (older boxes carry both, so the
+  # breakage was latent and would have surfaced only on a re-provision). Never pin a name here.
   $secrets = Join-Path $PSScriptRoot "rcon\secrets.local.json"
   if (Test-Path $secrets) {
-    $j = Get-Content $secrets -Raw | ConvertFrom-Json
-    $Pw = $j.profiles.VPS
+    $p = (Get-Content $secrets -Raw | ConvertFrom-Json).profiles
+    if ($p) {
+      $names = @($p.PSObject.Properties.Name)
+      foreach ($n in (@('VPS', 'Local') + $names)) {
+        if ($Pw) { break }
+        if ($names -contains $n) { $Pw = [string]$p.$n }
+      }
+    }
   }
 }
-if (-not $Pw) { throw "No RCON password. Pass -Pw <password> or populate tools/rcon/secrets.local.json." }
+if (-not $Pw) { throw "No RCON password. Pass -Pw <password>, set `$env:GF_RCON_PW, or populate storage\t5\dedicated.cfg / tools/rcon/secrets.local.json." }
 
-$uri  = "$Panel/api/dvars?fresh=1&password=$Pw&names=gf_endprobe_last"
+# Escape the password: an unescaped '&' would start a new query parameter (truncating the
+# credential on the wire) and '+' would decode as a space. Plutonium answers a wrong password
+# with SILENCE, so the symptom would be a bare timeout blamed on the server. Matches the three
+# sibling call sites (join-notify.ps1, status_service.ps1, rotate_secrets.ps1).
+$uri  = "$Panel/api/dvars?fresh=1&password=$([uri]::EscapeDataString($Pw))&names=gf_endprobe_last"
 $sw   = [System.Diagnostics.Stopwatch]::StartNew()
 $prevW = $null
 $prevG = $null
