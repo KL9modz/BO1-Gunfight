@@ -35,7 +35,7 @@ never torn.
 `storage\t5\logs\players_YYYY-MM-DD.log` (rotates daily):
 
 ```
-2026-07-03 14:22:07  ONLINE   ip=76.167.246.191:3074  name="Klaze"  guid=1100001abc  ping=32
+2026-07-03 14:22:07  ONLINE   ip=198.51.100.4:3074    name="Klaze"  guid=1100001abc  ping=32
 2026-07-03 14:31:10  CONNECT  ip=203.0.113.9:28960    name="Guest"  guid=1100001def  ping=61
 2026-07-03 14:41:55  LEFT     ip=203.0.113.9:28960    name="Guest"  guid=1100001def  ping=-   session=10m45s
 ```

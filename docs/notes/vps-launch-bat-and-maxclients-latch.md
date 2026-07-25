@@ -7,7 +7,7 @@ metadata:
   originSessionId: 6165d7a3-e1bd-4806-8147-81adb9c41b22
 ---
 
-The VPS (94.72.121.4, server runs as Administrator) has TWO mp launch bats — only one is live:
+The VPS (server runs as Administrator) has TWO mp launch bats — only one is live:
 - `C:\gameserver\T5\start_mp_server.bat` — **the LIVE launcher** (hardcodes gamepath `"C:\gameserver\T5"`, matches VPS_DEPLOY.md's documented launch line). Set `set maxclients=<N>` here.
 - `C:\gameserver\T5\T5ServerConfig-master\!start_mp_server.bat` — stale template copy (uses `%gamepath%`); NOT live.
 

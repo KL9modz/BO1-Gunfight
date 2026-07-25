@@ -1,6 +1,6 @@
 ---
 name: vps-server-provisioned
-description: "The Contabo VPS bought to host the Gunfight server - IP, specs, OS, and where the deploy runbook lives"
+description: "The Contabo VPS bought to host the Gunfight server - specs, OS, access model, and where the deploy runbook lives (the box's own IPs are declared once, in docs/VPS_DEPLOY.md)"
 metadata: 
   node_type: memory
   type: project
@@ -11,9 +11,9 @@ VPS purchased 2026-06-28 to host the mp_gunfight Plutonium T5 server (resolves t
 CLAUDE.md TODO "Setup a modded T5 Plutonium server on a VPS").
 
 - Provider/plan: Contabo Cloud VPS 10 SSD - 4 vCPU / 8 GB RAM / 150 GB SSD / 200 Mbit/s, ~$18.20/mo (base + US West + Windows license)
-- Public IPv4: 94.72.121.4 (IPv6 2605:a141:2340:4923::1)
+- Public IPv4 / IPv6: see the **Target box** table in `docs/VPS_DEPLOY.md` — the single canonical declaration of this box's own addresses. Deliberately not restated here: one copy means a migration is a one-row edit.
 - Location: Seattle (US West). OS: **Windows Server 2019 Datacenter 64-bit** (the order page said 2025, but the provisioned image is 2019 per Server Manager — fine, 2019 is Plutonium's documented minimum).
-- VNC out-of-band console: 144.126.146.144:63019 (8-char VNC pass; Windows login is `Administrator` / its own pass). RDP needed Remote Desktop enabled + the box fully provisioned (initial 0x204 was just it still booting). ⚠ **`144.126.146.144` is VNC-ONLY** — it does not answer SSH/RDP/HTTPS/game traffic for the VM. Don't hand-type it as "the VPS IP"; use the `gf-vps` SSH alias or `94.72.121.4` directly. See [[vps-three-ips-dont-confuse-vnc-with-vm]].
+- VNC out-of-band console: `<vnc-console-ip>:<vnc-port>` (8-char VNC pass; Windows login is `Administrator` / its own pass) — address + VNC pass in the gitignored `tools/ops.local.json`, never in a tracked file, because that console bypasses Windows Firewall entirely. RDP needed Remote Desktop enabled + the box fully provisioned (initial 0x204 was just it still booting). ⚠ **The VNC-console address is VNC-ONLY** — it does not answer SSH/RDP/HTTPS/game traffic for the VM. Don't reach for it as "the VPS IP"; use the `gf-vps` SSH alias and never hand-type an address for this box. See [[vps-three-ips-dont-confuse-vnc-with-vm]].
 - Game UDP port: 28960. Game files live at C:\gameserver\T5 (BO1 install). Mod + dedicated.cfg in %LOCALAPPDATA%\Plutonium\storage\t5\. Launch bat: C:\gameserver\T5\start_mp_server.bat (bootstrapper `t5mp "C:\gameserver\T5" -dedicated +set key ... +set fs_game mods/mp_gunfight +exec dedicated.cfg ...`, with a restart loop).
 
 **STATUS 2026-06-29: server is LIVE and successfully joined.** Full runbook in repo **VPS_DEPLOY.md** (root, `main`).
@@ -68,18 +68,19 @@ instance still holds UDP 28960 (port not released) - the bat loop relaunches it 
 stabilizes; a cold boot has no such collision. LESSON: after a reboot
 2026-07-03, SSH port 22 was DOWN (sshd/FW rule not
 persistent) though the box + IIS were up - fixed by `Set-Service sshd -StartupType Automatic`
-+ a **PersistentStore** FW rule "OpenSSH home" (TCP 22 from 76.167.246.191). So there may now
++ a **PersistentStore** FW rule "OpenSSH home" (TCP 22 from `<admin-home-ip>`). So there may now
 be TWO SSH FW rules (old `sshd-scoped` + `OpenSSH home`).
 
 **SSH ACCESS (set up 2026-07-03): Claude can drive the VPS directly.**
-`ssh -i ~/.ssh/gf_vps Administrator@94.72.121.4` (BatchMode-safe, PowerShell 5.1 is the default
+`ssh gf-vps` (the `~/.ssh/config` alias — `HostName`/`User`/`IdentityFile` block in
+[[vps-three-ips-dont-confuse-vnc-with-vm]]; BatchMode-safe, PowerShell 5.1 is the default
 shell). Key-only auth (`PasswordAuthentication no`, prepended as sshd_config line 1 so it wins
 first-match ahead of the Match Group administrators block); key lives on the dev machine at
 `~/.ssh/gf_vps` (ed25519, comment `claude-gf-deploy`), authorized via
 `C:\ProgramData\ssh\administrators_authorized_keys` (strict ACL). ⚠ **UPDATE: SSH (22) is now open to
 ANY IP** — rule **`SSH-Any-In (travel)`** carries the travel/ops path (additive, so it reverts by
 disabling that one rule); the old home-IP-scoped SSH rules are left in place. Safe only because sshd is
-key-only. **RDP stays home-IP-pinned** (`RDP-AdminOnly-In` → 76.167.246.191). Install was the official
+key-only. **RDP stays home-IP-pinned** (`RDP-AdminOnly-In` → `<admin-home-ip>`). Install was the official
 Win32-OpenSSH v9.5 MSI — `Add-WindowsCapability` FoD is broken on this box (0x800f0950).
 Used the same day to run `deploy.ps1 -Mod` remotely and verify live files/process.
 

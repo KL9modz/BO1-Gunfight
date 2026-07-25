@@ -1,0 +1,15 @@
+{
+  "_comment": "Copy this file to ops.local.json (same folder) and fill in the real values. ops.local.json is GITIGNORED and never committed. It is a PROSE CRIB SHEET, not config: NOTHING at runtime reads it - no GSC, no box service, no tool, no panel. Its only job is to be the documentation-of-record for the addresses the committed docs deliberately carry as <placeholders>, so a runbook step that says '<admin-home-ip>' is still followable. The RCON panel's own runtime host/port list is a DIFFERENT file (tools/rcon/servers.local.json, with the password in tools/rcon/secrets.local.json) - that pair owns the runtime path, this file owns the prose. Keep them in sync by hand; they are small and they change roughly never.",
+  "_placeholders": {
+    "<admin-home-ip>": "admin_home_ip",
+    "<vnc-console-ip>": "vnc_console, host half",
+    "<vnc-port>": "vnc_console, port half",
+    "<vps-ip>": "vps_host"
+  },
+  "_redaction_policy": "REDACTED from the docs - they carry the placeholder only, and the pre-commit hook blocks re-adding the literal: admin_home_ip and vnc_console. Those two are the ones that hurt: the home IP identifies a house, and the VNC console bypasses Windows Firewall entirely. PUBLISHED in the docs by design: vps_host and vps_ipv6 - the box's own public addresses, already handed out by the in-game server browser and by a DNS lookup of gunfight.us, and needed concrete inside the two runbooks (docs/VPS_DEPLOY.md, docs/VPS_HARDENING.md) so a lockout-gate step stays copy-pasteable. Their single canonical declaration is the 'Target box' table in docs/VPS_DEPLOY.md; every other file uses the gf-vps SSH alias or points at that table. They are recorded here anyway so a migration - or a later decision to redact them too - is a one-file lookup.",
+  "_never_record_here": "A PLAYER's IP or GUID. Those belong in no file in this repo, tracked or gitignored. GF-ConnLogger already writes them to the box's own players_*.log day-files, which is where they stay; never copy one into a doc, a note, or here. Every example in the docs uses RFC 5737 (203.0.113.x / 198.51.100.x) with an invented name and GUID - the pre-commit hook blocks both a public IP literal and a pasted 'status' roster row.",
+  "vps_host": "",
+  "vps_ipv6": "",
+  "admin_home_ip": "",
+  "vnc_console": ""
+}

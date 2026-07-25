@@ -1,9 +1,23 @@
 # gunfight.us / VPS Security Hardening Runbook
 
-Verified hardening steps for **gunfight.us** and the Contabo VPS (`94.72.121.4`) that
+Verified hardening steps for **gunfight.us** and the Contabo VPS (`94.72.121.4` <!-- ip-ok -->) that
 serves it. Produced from a live audit on 2026-06-29 (direct probing of the box + an
 adversarially-reviewed analysis). Every apply-to-production command below was checked for
 **lockout / breakage** risk before inclusion.
+
+> ⚠ **Two addresses in this runbook are `<placeholders>` on purpose** — the **admin/home egress IP**
+> (`<admin-home-ip>`) and the **Contabo VNC console** (`<vnc-console-ip>:<vnc-port>`). Publishing
+> either is a real harm (one identifies a house, the other bypasses Windows Firewall), and this repo's
+> `main` branch is world-readable. **The real values live in the gitignored `tools/ops.local.json`**
+> (template `tools/ops.local.json.example`) — open it before you start; every step below stays
+> followable once you have. The box's *own* public IPv4/IPv6 stay concrete here and in
+> `docs/VPS_DEPLOY.md` (its *Target box* table is their canonical declaration) because a lockout-gate
+> command must be copy-pasteable; the `<!-- ip-ok -->` markers are the pre-commit hook's per-line
+> opt-out, so every concrete address in this repo is a marked, deliberate choice. ⚠ One split to know:
+> **`ssh` invocations use the `gf-vps` alias** (the project's standing rule — hand-typing an IP for
+> this box once burned a whole session, [[vps-three-ips-dont-confuse-vnc-with-vm]]), while the RDP and
+> `Test-NetConnection` gates keep the literal, because they may be run from a machine that has no
+> `~/.ssh/config` at all.
 
 > **Architecture reality:** `gunfight.us` is a *static* IIS page, but it is served by **IIS on
 > the same VPS as the BO1 game server**. The page itself is low-risk; the real exposure is the
@@ -17,9 +31,9 @@ adversarially-reviewed analysis). Every apply-to-production command below was ch
 | Item | Status | Notes |
 |---|---|---|
 | RCON tool hardening (`tools/rcon/server.js`) | ✅ done | committed `af1707b`: CORS wildcard dropped, loopback Host/Origin guard, body cap, savecfg path pinned + sanitized. Panel password un-hardcoded. |
-| **P0.2 RDP → scoped to admin IP** (`76.167.246.191`) | ✅ done | rule `RDP-AdminOnly-In`; broad built-in allows disabled. Used a **15-min scheduled auto-rollback task** as the safety net (re-enables broad RDP if the scoped rule is wrong) — see pattern below. |
+| **P0.2 RDP → scoped to admin IP** (`<admin-home-ip>`, real value in `tools/ops.local.json`) | ✅ done | rule `RDP-AdminOnly-In`; broad built-in allows disabled. Used a **15-min scheduled auto-rollback task** as the safety net (re-enables broad RDP if the scoped rule is wrong) — see pattern below. |
 | **SSH (22) → OPEN to any IP** (deliberate) | ✅ done | Added **after** the 2026-06-29 audit (for the git-pull deploy pipeline), so it is absent from the baseline table below. Now **intentionally internet-open** — rule `SSH-Any-In (travel)`, **additive** (the older `OpenSSH home` / `OpenSSH (scoped to home IP)` rules remain, so revert = `Disable-NetFirewallRule -DisplayName 'SSH-Any-In (travel)'`). This is the **break-glass path**, not the daily one: ops-from-any-device runs through the `gf-vps` Remote Control session (task `GF-ClaudeRC`, outbound-only — see `docs/DEV.md` *Working remotely*), but if that server dies while you are away **only SSH can restart it**. ⚠ A cloud Claude session **cannot** reach the box regardless of this rule — its sandbox proxy is HTTP/HTTPS-only and raw TCP never passes, so opening 22 did nothing for that path. ⚠ Accepted trade: public SSH on an AutoAdminLogon `Administrator` box, mitigated **solely** by key-only auth — see the row below, which is what makes this survivable. |
-| **SSH key-only enforcement — needs TWO directives** | ✅ done | ⚠ **`PasswordAuthentication no` is NOT sufficient.** `KbdInteractiveAuthentication` defaults to **yes** and offers its **own** password path on Windows OpenSSH — the box was in exactly this state (password brute-force against `Administrator` would have been reachable the moment 22 opened). Both are now `no`. ⚠ **Placement matters:** `sshd_config` ends with a `Match Group administrators` block, so a directive appended at the end lands **inside** it and does nothing globally — both live in the **global** section, next to each other. ⚠ **Verify on the wire, not from the file or even `sshd -T`:** `ssh -v -o PubkeyAuthentication=no Administrator@94.72.121.4` must answer `Authentications that can continue: publickey` and nothing else. Backups: `sshd_config.bak-kbd*`. ⚠ For **admin** accounts Windows OpenSSH ignores `~/.ssh/authorized_keys` and reads only `C:\ProgramData\ssh\administrators_authorized_keys` (strict ACLs: Administrators + SYSTEM only, or sshd silently rejects it). |
+| **SSH key-only enforcement — needs TWO directives** | ✅ done | ⚠ **`PasswordAuthentication no` is NOT sufficient.** `KbdInteractiveAuthentication` defaults to **yes** and offers its **own** password path on Windows OpenSSH — the box was in exactly this state (password brute-force against `Administrator` would have been reachable the moment 22 opened). Both are now `no`. ⚠ **Placement matters:** `sshd_config` ends with a `Match Group administrators` block, so a directive appended at the end lands **inside** it and does nothing globally — both live in the **global** section, next to each other. ⚠ **Verify on the wire, not from the file or even `sshd -T`:** `ssh -v -o PubkeyAuthentication=no gf-vps` must answer `Authentications that can continue: publickey` and nothing else (`gf-vps` = the `~/.ssh/config` alias — snippet in [[vps-three-ips-dont-confuse-vnc-with-vm]]). Backups: `sshd_config.bak-kbd*`. ⚠ For **admin** accounts Windows OpenSSH ignores `~/.ssh/authorized_keys` and reads only `C:\ProgramData\ssh\administrators_authorized_keys` (strict ACLs: Administrators + SYSTEM only, or sshd silently rejects it). |
 | **P1.1 WinRM 5986 → closed** | ✅ done | service stopped+disabled, `WinRM-HTTPS-Block-In` rule, built-in WinRM allows disabled. Verified externally OPEN→closed. Leftover `0.0.0.0:5986` http.sys sslcert is inert (optional `netsh http delete sslcert ipport=0.0.0.0:5986`). |
 | P1.2 NLA | ✅ done | `UserAuthentication=1`. `SecurityLayer` was already `2` (TLS-only) and working — left as-is. |
 | P1.3 Account lockout | ✅ done | threshold 10 / 15 / 15. Built-in Administrator exempt on 2019 (auto-logon safe). |
@@ -40,20 +54,21 @@ adversarially-reviewed analysis). Every apply-to-production command below was ch
 
 ## Out-of-band safety net (read first)
 Every firewall/TLS/RDP change below can, if mistyped, drop your RDP session. Your recovery path
-is the **Contabo VNC console `144.126.146.144:63019`** — it bypasses Windows Firewall and Schannel
-entirely. **Confirm you can log into the VNC console BEFORE running any P0/P1 step.** Keep a second
-RDP session open as a live canary while changing remote-access settings.
+is the **Contabo VNC console `<vnc-console-ip>:<vnc-port>`** (address + 8-char VNC password in the
+gitignored `tools/ops.local.json`; also reachable from the Contabo panel) — it bypasses Windows
+Firewall and Schannel entirely. **Confirm you can log into the VNC console BEFORE running any P0/P1
+step.** Keep a second RDP session open as a live canary while changing remote-access settings.
 
 ---
 
 ## What the audit measured (baseline, 2026-06-29)
 | Area | Finding |
 |---|---|
-| Open ports on `94.72.121.4` | 80, 443, **3389 (RDP)**, **5986 (WinRM-HTTPS)** all internet-open. 3000 (RCON tool) correctly closed. ⚠ **No SSH yet at audit time** — 22 was opened later for the git-pull deploy pipeline and is scoped to the admin IP; see the as-applied table above. This row is a dated snapshot, not current state. |
+| Open ports on `94.72.121.4` <!-- ip-ok --> | 80, 443, **3389 (RDP)**, **5986 (WinRM-HTTPS)** all internet-open. 3000 (RCON tool) correctly closed. ⚠ **No SSH yet at audit time** — 22 was opened later for the git-pull deploy pipeline and is scoped to the admin IP; see the as-applied table above. This row is a dated snapshot, not current state. |
 | Web server | IIS 10. HTTP **not** redirected to HTTPS; **no HSTS**; **zero** security headers; `Server` header leaks IIS. |
 | TLS | Cert good (Let's Encrypt, `gunfight.us`+`www`, exp **2026-09-27**). **TLS 1.0 + 1.1 accepted**; **TLS 1.3 not offered**. Renewal automation **unconfirmed**. |
 | DNS (GoDaddy) | No CAA, no DNSSEC, no SPF/DMARC/null-MX. `www` is a 2nd A record. |
-| Secret leak | RCON password `aBHguGlfMQA9NcqEO1YJ5WKm` was hardcoded in the committed RCON panel + is in git history (commit `43f79da`). |
+| Secret leak | RCON password (`aBHgu…`, redacted here — it is 24 chars, and it is in **public** git history) was hardcoded in the committed RCON panel + is in git history (commit `43f79da`). ⚠ Redacting this row is hygiene, **not** remediation: the value is still recoverable from history and P0.1 rotation is still owed. The commit hash is the actionable part. ⚠ One live copy of the literal is kept **on purpose** — `tools/deploy.ps1`'s `$WebSecretPatterns` denylist, the fatal-if-found scan that stops `deploy.ps1 -Web` publishing it into `site\wwwroot`. Do not "clean up" that one; it disarms the guard for the exact string most likely to reappear, and it goes away by itself once the password is rotated. |
 
 ---
 
@@ -81,6 +96,9 @@ sufficient and safe.
 
 # STEP 1 — on YOUR LOCAL machine, find your public IP:
 #   (Invoke-RestMethod 'https://api.ipify.org')   ->  e.g. 203.0.113.45
+# This is the value the docs call <admin-home-ip>; record it in the gitignored tools/ops.local.json
+# (NEVER paste the literal back into a tracked file — the pre-commit hook will block it, by design).
+# ⚠ Read it LIVE, don't trust the stored copy: a home IP rotates, and a stale one locks you out.
 $MyIP = '<YOUR.PUBLIC.IP.HERE>'   # single IP = /32
 
 # STEP 2 — create/update ONE scoped allow rule for RDP (idempotent):
@@ -91,7 +109,7 @@ if (Get-NetFirewallRule -DisplayName 'RDP-AdminOnly-In' -ErrorAction SilentlyCon
     -Protocol TCP -LocalPort 3389 -RemoteAddress $MyIP -Action Allow -Profile Any
 }
 
-# STEP 3 — HARD GATE: open a SECOND brand-new RDP session to 94.72.121.4. It MUST connect.
+# STEP 3 — HARD GATE: open a SECOND brand-new RDP session to 94.72.121.4. It MUST connect.  (ip-ok)
 #          Keep both sessions open. DO NOT proceed until this works.
 
 # STEP 4 — disable every OTHER inbound rule that opens 3389 broadly (no Block rule, by design):
@@ -124,8 +142,8 @@ New-NetFirewallRule -DisplayName 'WinRM-HTTPS-Block-In' -Direction Inbound `
   -Protocol TCP -LocalPort 5986 -RemoteAddress Any -Action Block -Profile Any -Enabled True
 Get-NetFirewallRule -DisplayName 'Windows Remote Management*' | Disable-NetFirewallRule
 # Verify from your CLIENT machine (not the VPS):
-#   Test-NetConnection 94.72.121.4 -Port 5986   # expect False
-#   Test-NetConnection 94.72.121.4 -Port 3389   # expect True  (RDP still up)
+#   Test-NetConnection 94.72.121.4 -Port 5986   # expect False           (ip-ok)
+#   Test-NetConnection 94.72.121.4 -Port 3389   # expect True  (RDP up)  (ip-ok)
 ```
 (If you ever want WinRM, instead scope the built-in `Windows Remote Management (HTTPS-In)` rule's
 `-RemoteAddress` to `$MyIP` — do NOT stack a broad Block, it beats the Allow.)
@@ -326,6 +344,12 @@ Only add the null-MX if no other MX exists (RFC 7505). If you ever add a real se
   → Domain lock = ON.
 - **2FA** (authenticator app + backup codes) on the **GoDaddy account AND `klazerson@gmail.com`** —
   the registrar/email account is a single point of total domain takeover.
+  > ⚠ **The ops mailbox is deliberately NOT redacted** (unlike the IPs above). It is already
+  > world-readable in public DNS — it is the `iodef` value of the CAA record and the `rua` value of
+  > the DMARC record set in P2.1/P2.2, both one `dig` away — so a placeholder here would hide it from
+  > nobody who is actually looking while making the runbook's own DNS steps unfollowable. Redact it
+  > only as part of moving those records to a role address; a half-redaction that leaves it printed
+  > two sections above is worse than either choice.
 
 ---
 

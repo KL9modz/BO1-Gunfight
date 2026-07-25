@@ -7,7 +7,7 @@ metadata:
   originSessionId: c905da21-6ae3-4ada-9b8d-ae5ddf701a0b
 ---
 
-After `deploy.ps1 -Mod` (SSH in: `ssh -i ~/.ssh/gf_vps Administrator@94.72.121.4`, PowerShell shell), the live mod loads from `C:\Users\Administrator\AppData\Local\Plutonium\storage\t5\mods\mp_gunfight` (Administrator's LOCALAPPDATA storage — the authoritative path). The console line "Searching for files required to download mod" also lists `C:\gameserver\T5\mods\mp_gunfight`, but that folder DOES NOT EXIST — it's just a fallback search root, not a second live copy. Confirm the deploy landed by checking a changed `.gsc` for a new marker + LastWrite in the storage path.
+After `deploy.ps1 -Mod` (SSH in: `ssh gf-vps`, PowerShell shell), the live mod loads from `C:\Users\Administrator\AppData\Local\Plutonium\storage\t5\mods\mp_gunfight` (Administrator's LOCALAPPDATA storage — the authoritative path). The console line "Searching for files required to download mod" also lists `C:\gameserver\T5\mods\mp_gunfight`, but that folder DOES NOT EXIST — it's just a fallback search root, not a second live copy. Confirm the deploy landed by checking a changed `.gsc` for a new marker + LastWrite in the storage path.
 
 Two logs, DIFFERENT jobs (checked one, missed the other, more than once):
 - `...\mods\mp_gunfight\console_mp.log` — engine console. **GSC compile/runtime errors show HERE** ("script error", "unknown function", "****"). Clean tail (only benign dvar-domain warnings like `bg_shock_viewKick*`) = compiled OK. Note the boot dumps ~2994 dvars, so grep for real error phrases, not dvar *names* containing "error"/"round".

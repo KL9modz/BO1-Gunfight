@@ -11,13 +11,26 @@ The `address` column of the Plutonium T5 `status` reply prints the client's port
 **negative** port:
 
 ```
-8  126 65 6718240 6foot1geek^7   0  69.244.29.108:524      -25022 25000   ← :524     positive
-3    0 80 6426391 MalachiLabs^7  50 172.56.108.235:-12558  -29608 25000   ← :-12558  NEGATIVE
+8  126 65 1000001 PlayerOne^7    0  203.0.113.40:524       -25022 25000   ← :524     positive  (pii-ok)
+3    0 80 1000002 PlayerTwo^7    50 198.51.100.7:-12558    -29608 25000   ← :-12558  NEGATIVE  (pii-ok)
 ```
 
 `52978 - 65536 = -12558` — the port wrapped. (The `qport` column already shows this openly:
-`-24036`, `-29608`, `-25022`.) **The IP itself is always valid** (`172.56.108.235`); only the
+`-24036`, `-29608`, `-25022`.) **The IP itself is always valid** (`198.51.100.7`); only the
 port field carries the sign.
+
+⚠ **The two rows above are SANITIZED — and any `status` paste must be.** A raw `status` reply
+pairs a real player's **gamertag + GUID + routable IP** on one line: third-party PII, and the one
+leak class in this repo nobody screens for, because it is not a credential. Substituted here are
+the names, the GUIDs and the addresses (RFC 5737 documentation ranges); **verbatim, because they
+are the whole point,** are both ports and every `qport`. Sanitize a `status` paste before it lands
+in a tracked file.
+
+⚠ The trailing **`(pii-ok)`** is the per-line opt-out for the status-roster guard (`tools/hooks/
+pre-commit` + its `tools/release_common.ps1` deploy twin — change one, change both). That rule
+matches a roster row by its **shape**, and this note preserves the shape on purpose: the shape *is*
+the subject. Same token syntax and word-boundary rule as the IP guard's `ip-ok`. It exempts these
+two lines and nothing else — a real paste still gets caught.
 
 **The bug (FIXED 2026-07-24).** Every box-side `status` consumer validated the address with
 `^\d{1,3}(\.\d{1,3}){3}:\d+$`, and `\d+` rejects the `-`. A rejected row is classified

@@ -7,13 +7,13 @@ metadata:
   originSessionId: ff936017-7de8-4abc-86bb-9aed0ff575bb
 ---
 
-Connecting the local RCON web tool (`tools/rcon/server.js`) to the live VPS server (94.72.121.4).
+Connecting the local RCON web tool (`tools/rcon/server.js`) to the live VPS server.
 
-**Architecture:** the tool is a local Node web app on the DESKTOP at `127.0.0.1:3000`; it sends UDP rcon packets to whatever Host/Port you type in the UI. "Connecting to the VPS" = point it at `94.72.121.4:28960` with the rcon_password. The loopback Host-header guard in server.js only restricts who can open the *web UI*; it does NOT restrict the rcon target, so aiming at the VPS works unchanged. RCON rides the same UDP port as the game (net_port 28960).
+**Architecture:** the tool is a local Node web app on the DESKTOP at `127.0.0.1:3000`; it sends UDP rcon packets to whatever Host/Port you type in the UI. "Connecting to the VPS" = pick the panel's built-in `VPS` profile (host/port come from the panel's own server list, port 28960) and supply the rcon_password. The loopback Host-header guard in server.js only restricts who can open the *web UI*; it does NOT restrict the rcon target, so aiming at the VPS works unchanged. RCON rides the same UDP port as the game (net_port 28960).
 
 **ROOT CAUSE of "every rcon times out" (cost a long debug session):** Plutonium truncates `rcon_password` at 23 chars and a value >23 chars **silently never authenticates — no reply at all** (not even "Bad rconpassword"). The VPS live value was 24 chars (`aBHgu…`, redacted) → every rcon packet silently dropped, on loopback AND remote, regardless of what password the client sent. Fix: use a password <=23 chars. `dedicated.cfg` holds a valid 20-char one; setting that value live via the server console makes rcon work immediately.
 
-**The network path was NEVER the problem** (chased it for hours — don't repeat): Windows Firewall has inbound UDP 28960 ALLOW (there's a pre-existing `Plutonium T5 28960 UDP` rule + the `BO1 Gunfight UDP 28960` one I added), outbound DefaultAction = allow, public IP `94.72.121.4` is direct on the NIC (no Contabo NAT). Firewall drop-logging (`Set-NetFirewallProfile -LogAllowed`) confirmed inbound rcon packets arrive and are `ALLOW...RECEIVE`. So if rcon is silent, suspect the PASSWORD (length/value/loaded-vs-file), not the firewall.
+**The network path was NEVER the problem** (chased it for hours — don't repeat): Windows Firewall has inbound UDP 28960 ALLOW (there's a pre-existing `Plutonium T5 28960 UDP` rule + the `BO1 Gunfight UDP 28960` one I added), outbound DefaultAction = allow, the public IP is direct on the NIC (no Contabo NAT). Firewall drop-logging (`Set-NetFirewallProfile -LogAllowed`) confirmed inbound rcon packets arrive and are `ALLOW...RECEIVE`. So if rcon is silent, suspect the PASSWORD (length/value/loaded-vs-file), not the firewall.
 
 **Diagnostic that nails it:** in the server console window (`PlutoniumT5 MP - Gunfight - Seattle`, prompt `Plutonium rNNNN >`) type `rcon_password` — prints the *actually loaded* live value. Don't trust the cfg file; the live value drifts from it. A PowerShell loopback rcon test (UdpClient -> 127.0.0.1:28960, packet = 4x0xFF + `rcon <pw> status`) bypasses all firewalls and isolates server/password from network.
 

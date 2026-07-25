@@ -40,7 +40,7 @@ now ALSO runs ON the VPS as a boot-start SYSTEM task, bound **loopback-only** `1
 (never public - no firewall rule, and server.js has a Host-header allowlist). Set up by
 `tools/rcon/setup_rcon_vps.ps1` (installs **Node LTS - v24 now on the box**, was Node-less;
 writes `secrets.local.json` profile `Local (listen)` from dedicated.cfg's rcon_password). Reach it
-from a workstation via SSH tunnel: `ssh -i ~/.ssh/gf_vps -L 3000:127.0.0.1:3000 Administrator@94.72.121.4`
+from a workstation via SSH tunnel: `ssh -L 3000:127.0.0.1:3000 gf-vps`
 then `http://localhost:3000` (pick the "Local (listen)" profile). RCON stays on the box (no
 plaintext-password-over-internet like the laptop→VPS setup in [[rcon-tool-vps-connect-23char-cap]]).
 Local port 3000 must be free for the tunnel (stop any laptop server.js first). Deliberately NOT a

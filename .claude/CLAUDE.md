@@ -129,7 +129,15 @@ wins** takes the match.
   going level-wide. ([[intro-sting-killed-by-underscore-shared-channel]])
 - **Minimap compass doesn't show wager (zoomed) size on some DLC maps** — inherent to the resident-art
   whitelist excluding First Strike/Escalation maps.
-- **SECURITY:** rotate the leaked RCON password (VPS `dedicated.cfg`) + the exposed Plutonium server key.
+- **SECURITY: rotate the two burned secrets — still OPEN, and it is the ONLY thing that closes them.**
+  Run **`tools/rotate_secrets.ps1` on the box** for the RCON password (dry-run by default; enforces the
+  ≤23 cap; recycles `GF-StatusService` + `GF-JoinNotify`, which cache it at process start, and drops a
+  watchdog maintenance window first so the escalation ladder can't bounce the server mid-rotation). The
+  **server key is manual-only** at platform.plutonium.pw and needs a **full bat restart** — `set key=`
+  runs above `:server`, so a bootstrapper kill relaunches with the old `%key%`. ⚠ Reuse the key's exact
+  current label or the server renames itself for every player. The two leaked *passwords* are in git
+  history; the *key* never was — see the Secrets section for which route each took and why history is
+  deliberately not rewritten.
 - **Prevent a duplicate launcher from squatting port 28960 after a reboot** (root cause of the reported
   "FF/settings revert on restart"). Related, root-caused 2026-07-20: **the LAPTOP's dedicated server is
   launcher-started with NO `+exec dedicated.cfg`** — that file (and the panel's 💾 Save, which writes it)
@@ -1367,9 +1375,55 @@ content), so `git checkout main` after cloning and push `main` with `tools/push_
 (VPS `rcon_password`/`g_password` in `dedicated.cfg`; panel password in `secrets.local.json`; server key
 in launch config); (2) `.gitignore`; (3) the tracked pre-commit hook `tools/hooks/pre-commit` (enable
 once per clone: `git config core.hooksPath tools/hooks`). ⚠ `rcon_password` must be **≤23 chars**
-(Plutonium truncates on login — [[rcon-tool-vps-connect-23char-cap]]). **The old leaked RCON password +
-server key are in public git history and must be rotated once** — the layers only prevent future leaks.
-Security runbook status → `docs/VPS_HARDENING.md`, [[gunfight-us-security-audit]].
+(Plutonium truncates on login — [[rcon-tool-vps-connect-23char-cap]]). **Two burned secrets still need
+rotating once, and they leaked by DIFFERENT routes** — the layers only prevent future leaks, and
+rotation (not history scrubbing) is what closes either one:
+- **Two RCON passwords ARE in `main`'s public git history**: `aBHguGlfMQA9NcqEO1YJ5WKm` (commits
+  `43f79da`/`af1707b`/`035c74a`) and `s5ZrXQDfmSPp` (`43f79da`/`79e335e`/`eeca62d`), both from the same
+  two now-deleted call sites (the panel's hardcoded `<input value=…>` and a `setDvar("rcon_password", …)`
+  in `gf.gsc`). Only the first survives at HEAD, deliberately, as a `tools/deploy.ps1` scan pattern.
+  Neither ever reached `release`.
+- ⚠ **The Plutonium server key was NEVER in git** — every reachable blob was searched; the only
+  key-shaped strings are the placeholder and `%key%`. It leaked via a **pasted process command line**
+  (`+set key SVrs…`) in a session transcript, 2026-07-02 ([[vps-server-provisioned]]). So git scrubbing
+  could not have helped it even in principle. ⚠ Its label **is** the in-game browser name, so a
+  replacement key must reuse the **exact** current label ([[plutonium-serverkey-sets-browser-name]]).
+⚠ **History is deliberately NOT rewritten — settled, do not re-open.** `main` has been public for
+months, so every clone, fork, unreachable-object retention and code-search index already holds the
+values; a force-push edits only your branch tips. Rotation makes the leaked thing worthless, which is
+the only outcome available. Rewriting would also break the VPS deploy clone's `git pull --ff-only`,
+dangle the SHAs cited in `docs/VPS_HARDENING.md`, and delete `deploy.ps1`'s own detector.
+Rotation runbook → `tools/rotate_secrets.ps1` (dry-run by default, enforces the ≤23 cap; the server
+key is manual-only at platform.plutonium.pw). Security runbook status → `docs/VPS_HARDENING.md`,
+[[gunfight-us-security-audit]].
+
+**A fourth class rides those same three layers: ADDRESSES.** `main` is pushed and world-readable, so
+an IP in a doc is *published* — and the two worst leaks this repo has had were not passwords at all: a
+pasted `status` reply put a **player's** real IP + GUID into `docs/notes/`, and the firewall runbook
+printed the **owner's home egress IP**. Neither is a "secret" any password scanner would catch. Three
+tiers, by who is hurt:
+- **Redacted — placeholder-only in every tracked file:** the **home/admin egress IP**
+  (`<admin-home-ip>`, it identifies a house) and the **Contabo VNC console**
+  (`<vnc-console-ip>:<vnc-port>`, which bypasses Windows Firewall entirely). Real values live in the
+  gitignored **`tools/ops.local.json`** (template `tools/ops.local.json.example`). ⚠ That file is a
+  **crib sheet, not config — nothing at runtime reads it**; the panel's runtime host/port list is the
+  separate `tools/rcon/servers.local.json`.
+- **Published, but declared ONCE:** the box's **own** public IPv4/IPv6. They are already in the
+  in-game server browser and one `dig gunfight.us` away, and a runbook step run under pressure must
+  stay copy-pasteable — so `docs/VPS_DEPLOY.md`'s *Target box* table is their **single canonical
+  declaration**, and only the two runbooks (`VPS_DEPLOY`/`VPS_HARDENING`) spell them out, in facts
+  tables and executable steps. ⚠ **Every other file uses the `gf-vps` SSH alias, a pointer to that
+  table, or `<vps-ip>`** — never a fresh literal. A restatement in a note buys nothing and is pure
+  migration-drift surface.
+- **Never in any file, tracked or not:** a **player's** IP or GUID. Doc examples use RFC 5737
+  (`203.0.113.x` / `198.51.100.x`) with invented names and GUIDs.
+
+⚠ **The pre-commit hook enforces this, not discipline** — it blocks any staged **public** IPv4/IPv6
+literal (loopback/private/CGNAT/RFC-5737/doc ranges excluded) and any pasted `status` roster row
+(4 integer columns + a `^N`-coloured name). A deliberate keep needs the token **`ip-ok`** in a comment
+on that line — which is why the runbooks' kept literals carry a trailing `<!-- ip-ok -->` — or an entry
+in `tools/hooks/ip-allow.txt`. ⚠ **Never allowlist the home IP, the VNC console, or a player address:**
+those are precisely the leaks the rule exists to stop, and an allowlist entry is forever.
 
 ## VPS & box services
 
@@ -1381,9 +1435,10 @@ in-game browser name comes from the Plutonium **server key label**, not `sv_host
 **Remote access: SSH (22) is open to ANY IP; RDP (3389) is pinned to the home IP.** SSH carries the
 travel/ops path — rule `SSH-Any-In (travel)`, **additive** (the older `OpenSSH home` /
 `OpenSSH (scoped to home IP)` rules are left in place, so it reverts with a single
-`Disable-NetFirewallRule`). **RDP is still `RDP-AdminOnly-In` → `76.167.246.191` only**, so from a
-non-home network the routes are SSH or the **Contabo VNC console `144.126.146.144:63019`** (which
-bypasses the firewall).
+`Disable-NetFirewallRule`). **RDP is still `RDP-AdminOnly-In` → `<admin-home-ip>` only**, so from a
+non-home network the routes are SSH or the **Contabo VNC console `<vnc-console-ip>:<vnc-port>`** (which
+bypasses the firewall). ⚠ Both placeholders are deliberate — the real values live in the gitignored
+`tools/ops.local.json` (see *Secrets*), never in a tracked file.
 
 ⚠ **Public SSH is safe ONLY because sshd is key-only — and that takes TWO directives, not one.**
 `PasswordAuthentication no` **and** `KbdInteractiveAuthentication no`. Kbd-interactive offers its **own**

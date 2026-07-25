@@ -93,8 +93,8 @@ memory folder as a second copy — it drifts ([[site-css-js-cache-bust-version-q
 - [deploy-restart-wedges-on-plutonium-updater](deploy-restart-wedges-on-plutonium-updater.md) — `plutonium.exe -update-only` can hang forever. Manual fix = `Stop-Process -Name plutonium`.
 
 ## VPS / infra
-- [vps-three-ips-dont-confuse-vnc-with-vm](vps-three-ips-dont-confuse-vnc-with-vm.md) — 3 IPs: your own egress IP, the VM's real IP (94.72.121.4, answers SSH/RDP/game), the Contabo VNC console (144.126.146.144:63019, VNC-ONLY, not a gateway). Confusing VNC-for-VM burned a session chasing a fake firewall bug. Use the `gf-vps` SSH alias, never hand-type the IP.
-- [vps-server-provisioned](vps-server-provisioned.md) — Contabo VPS (94.72.121.4, Win Server 2019). `ssh -i ~/.ssh/gf_vps Administrator@94.72.121.4`.
+- [vps-three-ips-dont-confuse-vnc-with-vm](vps-three-ips-dont-confuse-vnc-with-vm.md) — 3 IPs in 3 roles: your own egress IP, the VM's real IP (answers SSH/RDP/game), the Contabo VNC console (VNC-ONLY, not a gateway). Confusing VNC-for-VM burned a session chasing a fake firewall bug. Use the `gf-vps` SSH alias, never hand-type the IP.
+- [vps-server-provisioned](vps-server-provisioned.md) — Contabo VPS (Win Server 2019); the box's own IPs are declared once, in `docs/VPS_DEPLOY.md`. `ssh gf-vps`.
 - [vps-launch-bat-and-maxclients-latch](vps-launch-bat-and-maxclients-latch.md) — live launcher = C:\gameserver\T5\start_mp_server.bat; sv_maxclients lives ONLY there, needs a full bat restart.
 - [vps-prematch-slowmo-framehitch](vps-prematch-slowmo-framehitch.md) — GF_HITCH is game-time dilation; 99.3% prematch, FLAT across bot count → it's the ENGINE's map_restart, not our bots/HUD. Do NOT raise sv_fps.
 - [what-the-democlient-is-for](what-the-democlient-is-for.md) — match recording (Theater), gated by `demo_enabled`. The KILLCAM does NOT depend on it.

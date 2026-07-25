@@ -1,6 +1,6 @@
 ---
 name: gunfight-us-security-audit
-description: "gunfight.us is a static IIS page served FROM the game VPS (94.72.121.4, Win Server 2019); 2026-06-29 audit found RDP+WinRM internet-open, TLS1.0/1.1 enabled, no HTTPS redirect/headers, leaked RCON pw in git history. MOST hardening APPLIED 2026-06-29 (RDP scoped, WinRM closed, IIS headers+redirect+dir-listing off, cert-renew confirmed, DNSSEC/CAA/SPF/DMARC, TLS1.0/1.1 disabled). 2026-07-03 INTERIOR RE-CHECK (via SSH): web headers/redirect/no-Server-leak/cert GOOD; WinRM+SMB+RPC+RCON-tool closed; TLS1.0/1.1 registry-CONFIRMED disabled (Enabled=0). Gaps found AND FIXED same day: (1) SSH port 22 was open to Any — broad 'OpenSSH SSH Server (sshd)' rule DISABLED, 22 now scoped to home IP only; (2) HSTS raised 300s -> max-age=31536000; includeSubDomains (live-verified); (3) Windows Admin Center v2 UNINSTALLED (unused, was Disabled w/ lingering 6601/6602 procs). OpenSSH 9.5 left as-is (scoped+key-only; PQ warning cosmetic). Runbook = VPS_HARDENING.md"
+description: "gunfight.us is a static IIS page served FROM the game VPS (Win Server 2019); 2026-06-29 audit found RDP+WinRM internet-open, TLS1.0/1.1 enabled, no HTTPS redirect/headers, leaked RCON pw in git history. MOST hardening APPLIED 2026-06-29 (RDP scoped, WinRM closed, IIS headers+redirect+dir-listing off, cert-renew confirmed, DNSSEC/CAA/SPF/DMARC, TLS1.0/1.1 disabled). 2026-07-03 INTERIOR RE-CHECK (via SSH): web headers/redirect/no-Server-leak/cert GOOD; WinRM+SMB+RPC+RCON-tool closed; TLS1.0/1.1 registry-CONFIRMED disabled (Enabled=0). Gaps found AND FIXED same day: (1) SSH port 22 was open to Any — broad 'OpenSSH SSH Server (sshd)' rule DISABLED, 22 now scoped to home IP only; (2) HSTS raised 300s -> max-age=31536000; includeSubDomains (live-verified); (3) Windows Admin Center v2 UNINSTALLED (unused, was Disabled w/ lingering 6601/6602 procs). OpenSSH 9.5 left as-is (scoped+key-only; PQ warning cosmetic). Runbook = VPS_HARDENING.md"
 metadata: 
   node_type: memory
   type: project
@@ -9,9 +9,10 @@ metadata:
 
 Live security audit of **gunfight.us** on 2026-06-29. The site is a harmless *static* IIS 10
 landing page, but it is served by **IIS on the same Contabo VPS as the BO1 game server**
-(`94.72.121.4`), so "securing the website" is really VPS remote-access hardening.
+(IP in `docs/VPS_DEPLOY.md`'s *Target box* table), so "securing the website" is really VPS
+remote-access hardening.
 
-Measured exposure (TCP on 94.72.121.4): 80, 443, **3389 RDP**, **5986 WinRM-HTTPS** all
+Measured exposure (TCP on the VPS): 80, 443, **3389 RDP**, **5986 WinRM-HTTPS** all
 internet-open; 3000 (RCON tool) correctly closed. No HTTP→HTTPS redirect, no HSTS, zero security
 headers, `Server` header leaks IIS. **TLS 1.0 + 1.1 accepted**, TLS 1.3 not offered. Cert is fine
 (Let's Encrypt, exp 2026-09-27) but renewal automation unconfirmed. GoDaddy DNS has no CAA/DNSSEC/
@@ -24,7 +25,7 @@ panel and is in git history (commit `43f79da`). MUST be rotated via `package_ser
 
 **APPLIED 2026-06-29** (walked through live on the VPS): OS confirmed Win Server 2019 (build 17763,
 NOT 2025 → TLS 1.3 unsupported, `AllowAdministratorLockout` N/A). Done: RDP scoped to admin IP
-`76.167.246.191` (broad allows disabled, via a 15-min auto-rollback scheduled task as safety net);
+`<admin-home-ip>` (broad allows disabled, via a 15-min auto-rollback scheduled task as safety net);
 WinRM 5986 closed (verified externally); NLA on; lockout 10/15/15; **IIS web.config** deployed
 (URL Rewrite 2.1 installed; merged file keeps FastDL MIME maps, directoryBrowse OFF, adds
 HTTPS-redirect + HSTS + CSP + headers + removeServerHeader + GET/HEAD-only — all externally
@@ -34,11 +35,11 @@ verified externally: 1.0/1.1 rejected, 1.2 accepted, site 200; Server 2019 so 1.
 REMAINING: confirm GoDaddy domain-lock + 2FA; RCON pw rotation (P0.1) DEFERRED by user — still leaked.
 Game server needs a MANUAL bat relaunch after any reboot (auto-start-on-reboot not configured).
 
-**2026-07-03 INTERIOR re-check (SSH `ssh -i ~/.ssh/gf_vps Administrator@94.72.121.4`):** box
+**2026-07-03 INTERIOR re-check (SSH `ssh gf-vps`):** box
 REBOOTED 5:36 AM (Windows Update batch: KB5012170/5094123/5094143/5087061/4577586). Auto-recovery
 GOOD: game server (`plutonium-bootstrapper-win32`) auto-started 5:37 + UDP 28960 listening; IIS
 (W3SVC) up. `cloudbase-init` + `WindowsAdminCenter` services now **Disabled**. STILL GOOD: RDP
-scoped to 76.167.246.191; WinRM(5985/5986)+SMB(445)+RPC(135)+RCON(3000) closed; HTTP→HTTPS 301 +
+scoped to `<admin-home-ip>`; WinRM(5985/5986)+SMB(445)+RPC(135)+RCON(3000) closed; HTTP→HTTPS 301 +
 full header set; no `Server` leak; LE cert valid to 2026-09-27. **TLS 1.0/1.1 registry-CONFIRMED
 DISABLED** (`SCHANNEL\Protocols\TLS 1.x\Server` Enabled=0, DisabledByDefault=1; 1.2 Enabled=1) —
 so the 06-29 P1.5 hardening is intact; no TLS regression. No failed logons (4625) since boot.
@@ -84,7 +85,8 @@ surface is the shared VPS's management ports.
 **How to apply:** full prioritized + lockout-checked runbook is in repo `VPS_HARDENING.md` (P0 rotate
 RCON + scope RDP; P1 WinRM/NLA/lockout/web.config/TLS/cert-renewal; P2 DNS). Windows Firewall gotcha:
 an explicit Block beats a narrower Allow — scope RDP with an Allow + disable broad allows, never a
-"block all others" rule. Always confirm the Contabo VNC console (144.126.146.144:63019) works before
+"block all others" rule. Always confirm the Contabo VNC console (`<vnc-console-ip>:<vnc-port>`, real
+value in the gitignored `tools/ops.local.json`) works before
 firewall/TLS changes. The local RCON tool (`tools/rcon/server.js`) was hardened in this session
 (CORS wildcard dropped, Host/Origin guard, body-size cap, savecfg path pinned + sanitized). Relates
 to [[t5-clients-must-install-mod-no-autodownload]] and [[vps-server-provisioned]].

@@ -9,15 +9,25 @@ official Plutonium docs (https://plutonium.pw/docs/server/t5/setting-up-a-server
 | | |
 |---|---|
 | Plan | Contabo Cloud VPS 10 SSD - 4 vCPU / 8 GB RAM / 150 GB SSD / 200 Mbit/s |
-| Public IPv4 | `94.72.121.4` |
-| IPv6 | `2605:a141:2340:4923::1` |
+| Public IPv4 | `94.72.121.4` <!-- ip-ok --> |
+| IPv6 | `2605:a141:2340:4923::1` <!-- ip-ok --> |
 | Location | Seattle (US West) |
 | OS | Windows Server 2025 Datacenter (64-bit) |
-| VNC console | `144.126.146.144:63019` (out-of-band access if RDP breaks) |
+| VNC console | `<vnc-console-ip>:<vnc-port>` - out-of-band access if RDP breaks; real value in the gitignored `tools/ops.local.json` (template `tools/ops.local.json.example`) |
 | Game UDP port | `28960` |
 
 A BO1 server is light and largely single-thread; 4 cores / 8 GB is plenty for a
 small Gunfight lobby with headroom.
+
+> **This table is the single canonical declaration of the box's own addresses.** They are public by
+> necessity (the in-game server browser hands the IPv4 out, and `dig gunfight.us` returns it), and a
+> runbook step has to stay copy-pasteable - so this file and `VPS_HARDENING.md` spell them out, and
+> **every other file in the repo uses the `gf-vps` SSH alias or points back here** rather than
+> restating a literal. Migrating the box is then a one-row edit. The `<placeholder>` values above are
+> the opposite case: the VNC console bypasses Windows Firewall entirely, so it is redacted from every
+> tracked file, exactly like the admin home IP in `VPS_HARDENING.md`. The `<!-- ip-ok -->` markers are
+> the pre-commit hook's per-line opt-out (`tools/hooks/pre-commit`) - it blocks any other public IP
+> literal from being staged, so a concrete address in this repo is always a deliberate, marked choice.
 
 ## How T5 connectivity works (read first)
 
@@ -47,8 +57,9 @@ small Gunfight lobby with headroom.
 
 ## Phase 1 - First login & harden
 
-1. RDP to `94.72.121.4`, user `Administrator`, password from Contabo's email.
-   (Fallback: VNC console `144.126.146.144:63019`.)
+1. RDP to `94.72.121.4` <!-- ip-ok --> (the Target-box table above), user `Administrator`, password
+   from Contabo's email.
+   (Fallback: VNC console `<vnc-console-ip>:<vnc-port>` - real value in `tools/ops.local.json`.)
 2. Change the Administrator password immediately (Ctrl+Alt+End -> Change a password).
 3. Run Windows Update -> reboot.
 4. Server Manager -> Local Server -> set **IE Enhanced Security Config = Off**
@@ -151,7 +162,7 @@ small Gunfight lobby with headroom.
     the server started.
 16. From your home Plutonium client, open the **server browser** and find
     "Gunfight | Seattle" (your `sv_hostname`). Join from there. (Remember: remote
-    `connect 94.72.121.4:28960` will NOT work on T5.)
+    `connect 94.72.121.4:28960` <!-- ip-ok --> will NOT work on T5.)
 17. On the VPS itself you can smoke-test locally with `connect 127.0.0.1:28960`.
 18. Test RCON from your RCON client/panel with the rotated password (e.g. `status`,
     `map_rotate`). With no `rconWhitelistAdd` lines active, any IP may send RCON but the
