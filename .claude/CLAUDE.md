@@ -1378,11 +1378,17 @@ once per clone: `git config core.hooksPath tools/hooks`). ⚠ `rcon_password` mu
 (Plutonium truncates on login — [[rcon-tool-vps-connect-23char-cap]]). **Two burned secrets still need
 rotating once, and they leaked by DIFFERENT routes** — the layers only prevent future leaks, and
 rotation (not history scrubbing) is what closes either one:
-- **Two RCON passwords ARE in `main`'s public git history**: `aBHguGlfMQA9NcqEO1YJ5WKm` (commits
-  `43f79da`/`af1707b`/`035c74a`) and `s5ZrXQDfmSPp` (`43f79da`/`79e335e`/`eeca62d`), both from the same
-  two now-deleted call sites (the panel's hardcoded `<input value=…>` and a `setDvar("rcon_password", …)`
-  in `gf.gsc`). Only the first survives at HEAD, deliberately, as a `tools/deploy.ps1` scan pattern.
-  Neither ever reached `release`.
+- **Two RCON passwords ARE in `main`'s public git history**: a 24-char one in commits
+  `43f79da`/`af1707b`/`035c74a`, and a 12-char one in `43f79da`/`79e335e`/`eeca62d`. Both came from the
+  same two now-deleted call sites (the panel's hardcoded `<input value=…>` and a
+  `setDvar("rcon_password", …)` in `gf.gsc`); neither ever reached `release`. ⚠ **Do not paste either
+  literal back into a tracked file to "document" it.** The 24-char one survives at HEAD in exactly one
+  place — `tools/deploy.ps1`'s scan denylist — because a detector needs the value it detects; that is
+  the *only* justified copy, and the 12-char one needs none. Naming the commits is enough: `git log -S`
+  recovers a value when a rotation actually needs it, whereas a literal in this file turns "dig through
+  history" into "read one indexed line" for a credential that is still live. ⚠ Note the guards **cannot**
+  catch this for you — every password rule keys on adjacency to `rcon_password`/`g_password`, so a bare
+  credential in prose commits clean.
 - ⚠ **The Plutonium server key was NEVER in git** — every reachable blob was searched; the only
   key-shaped strings are the placeholder and `%key%`. It leaked via a **pasted process command line**
   (`+set key SVrs…`) in a session transcript, 2026-07-02 ([[vps-server-provisioned]]). So git scrubbing
