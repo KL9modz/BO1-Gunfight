@@ -342,6 +342,8 @@ a:hover { color: var(--accent); text-decoration: underline; text-underline-offse
   display: grid;
   gap: 12px;
 }
+/* breathing room between the card's lead line and step 1's border */
+.card .lead + .steps { margin-top: 14px; }
 .steps li {
   display: flex;
   gap: 14px;

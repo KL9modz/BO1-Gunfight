@@ -531,6 +531,29 @@ must **yield before its first roster read** (it runs from the tail of `onStartGa
 restores the life and re-drives `spawnClient` ([[stock-teamswitch-suicide-no-life-restore]]).
 `scr_gf_load_grace` (non-restart path) keeps round-1 grace open for a still-loading straggler.
 
+**Match → match teams (carry + staging) ride the SAME plan pipeline.** Between matches the map change
+wipes `pers[]` and ranked connect re-runs `[[level.autoassign]]` for everyone — and a reconnect wave is
+never lopsided, so `gf_autoJoinBalance` falls through to stock `menuAutoAssign`, whose equal-counts
+branch is `pickTeamFromScores` → 0-0 fresh map → **`randomInt(2)`: a per-player coin flip**.
+`gf_team_nextmatch` (`stock`|`keep`|`shuffle`, default stock) puts it under policy: **keep** snapshots
+teams at match end (`gf_writeNextMatchPlan`, called from `gf_onRoundEndGame` — stock invokes that
+callback at exactly one site, `_globallogic.gsc:985` **after `startNextRound` declined**, so it fires
+only when the match is genuinely over and on EVERY end path, including the bridge END ROUND buttons
+whose `sd_endGame` bypasses `gf_endRound`) into `gf_teamplan` + the **`gf_teamcarry`** marker;
+**shuffle** writes the same-shape plan but Fisher-Yates deals the seated humans onto a random
+**balanced** split (`gf_writeShuffledTeamPlan` — fresh teams every match, off-by-1-even by
+construction, odd extra on a random side, deliberate spectators left spectating); **`gf_teamstage`** (same `<guid>:<a|x|s>,…`
+format, written by the panel's NEXT MATCH staging as ONE raw `set`, no bridge verb) is one-shot and
+**wins over both** at the next match start wherever it comes from (map rotate, lobby release, bridge
+`matchrestart`). Consumption is `gf_consumeTeamPlan` on the consuming match's first
+`gf_waitForLoadingClients` pass — armed branch passes `requireCarry=false` (its plan was just written),
+the plain map-load branch `true` (a marker-less plan is stale residue); all three dvars are cleared
+there, so an abandoned stage/carry dies at the very next match start. Seating reuses the connect-time
+pre-spawn path (no sequenced suicide/respawn, no prematch flicker), composes with the lobby (carried
+seating is what the lobby shows; its release re-snapshots), and bots need no plan (the reconciler
+re-pads from `gf_fill_n`). Ties can't end a match and a watchdog `map_rotate` writes nothing — both
+degrade to stock.
+
 ### Pre-match warmup — `g_pregame_enabled` (100% stock, zero mod GSC)
 BO1 ships a **pre-match lobby gametype**: a playable no-XP free-for-all on the map while the server
 waits for players, which then hands itself off into the real match. It is fully native and we own
@@ -1088,7 +1111,12 @@ single self-scheduling `pollTick` → `/api/tick` (chains `status;gf_state;gf_ro
 ([[rcon-panel-queue-saturation]]). Panel UI: FAVORITES (landing tab) / DASHBOARD / MAPS (live
 `sv_maprotation` editor — [[rcon-map-rotation-editor]]) / ADVANCED / CONSOLE tabs; explicit-flex
 `layoutColumns` (not CSS multicolumn); a dead-dvar cache silences "Unknown cmd" probing
-([[rcon-connect-sweep-unknown-cmd-spam]]). **FAVORITES** is a pinboard: a ☆ pins either a single
+([[rcon-connect-sweep-unknown-cmd-spam]]). The sidebar also carries the **NEXT MATCH** staging block
+(dedicated-only, humans-only): stage each player Allies/Axis/Spec (or ⬇ prefill from current teams),
+Commit writes the whole plan as **one raw `set gf_teamstage "<guid>:<code>,…"`** (no bridge verb, no
+per-click writes — one paced rcon slot per commit), restored on connect/↻ Read via `readTeamStage`;
+the stock/keep policy row (`gf_team_nextmatch`) lives in ADVANCED → TEAMS (single home — the sidebar
+never duplicates a settings control). **FAVORITES** is a pinboard: a ☆ pins either a single
 **row** (on any DASHBOARD/ADVANCED settings row) or a **whole block** (on its section title — the only
 way the non-row controls reach the pinboard, e.g. BOTS' Add Bot / Kick All / per-team ± / difficulty
 buttons, which are not settings rows and have no star of their own). Either way the pin is the **same
@@ -1182,7 +1210,9 @@ tables → `docs/REFERENCE.md`.
 |---|---|---|
 | `gf_perk_on` / `gf_perk_off` | "" | Comma-separated perk lists added/removed after the base set. |
 | `gf_admin_guids` | "" | GUID allowlist for private bridge command feedback. |
-| `gf_teamplan` / `gf_botplan` / `gf_matchArmed` | "" / "" / "" | Lobby→match transfer + loop-break plumbing (dvars because `map_restart(false)` wipes `game[]`). |
+| `gf_team_nextmatch` | stock | **Next-match team policy.** `stock` = the engine's random autoassign between matches (per-player coin flip); `keep` = carry current teams across the map change: `gf_writeNextMatchPlan` (from `gf_onRoundEndGame`, which stock invokes only at true match end — all end paths incl. bridge END ROUND) snapshots humans by GUID into `gf_teamplan` + the `gf_teamcarry` marker; `shuffle` = fresh random **balanced** teams every match (`gf_writeShuffledTeamPlan`: Fisher-Yates deal of the seated humans, off-by-1-even, random odd side; deliberate spectators stay). Either plan is consumed by the next match's first pass (`gf_consumeTeamPlan`) — seated at connect, pre-spawn, no flicker. Panel row: ADVANCED → TEAMS. |
+| `gf_teamstage` | "" | **Staged next-match teams** — `<guid>:<a\|x\|s>,…` written by the panel (one raw `set`, no bridge verb). One-shot: wins over any carried/armed `gf_teamplan` at the next match start (rotate, lobby release, `matchrestart` alike), cleared on consume. Empty = no stage. |
+| `gf_teamplan` / `gf_botplan` / `gf_matchArmed` / `gf_teamcarry` | "" / "" / "" / "" | Lobby→match transfer + loop-break + carry-marker plumbing (dvars because `map_restart(false)` — and a match→match map change — wipe `game[]`). `gf_teamcarry "1"` marks `gf_teamplan` as a carried end-of-match snapshot; a marker-less plan on a plain map load is ignored as stale. |
 | `gf_vis_*` (`vision`/`ambient`/`gridint`/`gridcon`/`hdr`/`fog`) | "" | RCON visual tweaks; client-side, unreliable on dedicated. |
 | `gf_expbullets_radius` | 200 | RCON explosive-bullets blast radius. |
 

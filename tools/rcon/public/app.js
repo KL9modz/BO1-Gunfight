@@ -363,7 +363,7 @@ async function doConn(){
   const btn=g('cBtn');btn.disabled=true;btn.textContent='…';
   try{
     const d=await fetchStatus();
-    if(d.ok){setLive(true);tick(d);actLog('Connected to '+(_activeProfile||activeHost())+' ('+activeHost()+')','ok');reqNotifyPerm();pushAdminGuid();seedCmdSeq();readServerDvars();readMatchDvars();readBridgeState();loadRotation();}
+    if(d.ok){setLive(true);tick(d);actLog('Connected to '+(_activeProfile||activeHost())+' ('+activeHost()+')','ok');reqNotifyPerm();pushAdminGuid();seedCmdSeq();readServerDvars();readMatchDvars();readBridgeState();readTeamStage();loadRotation();}
     else{
       toast('Failed: '+d.error,'err');
       // A wrong rcon_password draws NO reply from Plutonium, so an auth failure and a dead server
@@ -413,7 +413,7 @@ function updateSyncUI(){
 // fresh=true (the ↻ Read button) tells the server to CLEAR its cached "unregistered dvar" set for
 // this profile and re-probe every name — so a dvar that became registered since connect is picked
 // back up. Connect (doConn) calls the no-arg readServerDvars/readMatchDvars → cached (quiet).
-function readAllFromServer(fresh){ readServerDvars(fresh); readMatchDvars(fresh); readBridgeState(fresh); }
+function readAllFromServer(fresh){ readServerDvars(fresh); readMatchDvars(fresh); readBridgeState(fresh); readTeamStage(fresh); }
 function disconnect(){
   setLive(false);
   _roster={};_rosterSig='';_lastPlayers=[];_grouped=false;_playersSig='';
@@ -536,7 +536,7 @@ function buildPlayers(ps){
 function renderPlayers(){
   const tb=g('ptbody');
   const ps=_lastPlayers;
-  if(!ps||!ps.length){tb.innerHTML='<tr class="empty"><td colspan="6">No players</td></tr>';_grouped=false;return;}
+  if(!ps||!ps.length){tb.innerHTML='<tr class="empty"><td colspan="6">No players</td></tr>';_grouped=false;stageRender();return;}
   const groups={allies:[],axis:[],spectator:[],unknown:[]};
   for(const p of ps){ const t=(_roster[p.num]||{}).team||'unknown'; (groups[t]||groups.unknown).push(p); }
   _grouped = !!(groups.allies.length||groups.axis.length||groups.spectator.length);
@@ -555,6 +555,7 @@ function renderPlayers(){
   }
   tb.innerHTML=html;
   paintTeams();
+  stageRender();   // staging rows mirror the roster; sigs don't cover plan state, so repaint here
 }
 // The BOT tag shows GROUND TRUTH where we have it: gf_roster carries a per-client bot flag the
 // server derived from istestclient(). p.bot is only the status-text heuristic — a guess, and one
@@ -597,6 +598,113 @@ function paintTeams(){
   document.querySelectorAll('#ptbody .tm-slot').forEach(sl=>{
     sl.innerHTML=teamBadgeHtml(parseInt(sl.getAttribute('data-tm')));
   });
+}
+
+// ─── NEXT MATCH team staging (sidebar block) ─────────────────────────────────
+// Local working plan (guid -> 'a'|'x'|'s'), committed as ONE raw `set gf_teamstage "<plan>"`
+// — one paced rcon slot per Commit, never per-click writes (the 850ms lane is shared with the
+// poll tick). The mod consumes the dvar ONE-SHOT at the next match start and clears it; there
+// is deliberately NO poller watching it (hard rule: the tick is the only poller) — _stageLive
+// mirrors the last value we know reached the server, refreshed on connect / ↻ Read via
+// readTeamStage. Humans only, positive-claim test (same as showCtx): bot flags can be absent,
+// a guid of '0' is a bot/demo client. Bots need no staging — the reconciler pads from gf_fill_n.
+let _stage={}, _stageLive='', _stageNames={};
+function stageSer(){return Object.keys(_stage).sort().map(gd=>gd+':'+_stage[gd]).join(',');}
+function stageParse(v){
+  const o={};
+  if(!v)return o;
+  for(const e of String(v).split(',')){
+    const kv=e.split(':');
+    if(kv.length===2&&kv[0]&&(kv[1]==='a'||kv[1]==='x'||kv[1]==='s'))o[kv[0]]=kv[1];
+  }
+  return o;
+}
+// Restore the committed plan from the server (connect / ↻ Read). A null read (old mod without
+// the gf_teamstage seed, or the name dead-cached) leaves local state alone rather than wiping it.
+async function readTeamStage(fresh){
+  const r=await fetchDvars(['gf_teamstage'],fresh);
+  if(!r||!r.ok)return;
+  const v=r.values['gf_teamstage'];
+  if(v===null||v===undefined)return;
+  _stage=stageParse(v);
+  _stageLive=stageSer();
+  stageRender();
+}
+function stageSet(guid,code){
+  if(code)_stage[guid]=code;else delete _stage[guid];
+  stageRender();
+}
+// Prefill from the CURRENT teams (gf_roster telemetry) — arrange-from-live instead of from scratch.
+function stageFromCurrent(){
+  let n=0;
+  for(const p of _lastPlayers){
+    const r=_roster[p.num],bot=(r&&r.bot===true)||p.bot===true;
+    if(bot||!p.guid||p.guid==='0'||!r||!r.team)continue;
+    const code=r.team==='allies'?'a':r.team==='axis'?'x':r.team==='spectator'?'s':'';
+    if(code){_stage[p.guid]=code;n++;}
+  }
+  if(!n){toast('No team data to copy yet (roster not read)','wn');return;}
+  stageRender();
+  toast('Copied current teams for '+n+' player(s) — adjust, then Commit','info');
+}
+async function stageCommit(){
+  const val=stageSer();
+  const r=await rcon(val?`set gf_teamstage "${val}"`:`set gf_teamstage ""`);
+  if(!r||!r.ok){toast((r&&r.error)||'send failed','err');return;}
+  const err=dvarWriteError(r.response);
+  if(err){toast('gf_teamstage — '+err,'err');actLog('✗ gf_teamstage: '+err,'err');return;}
+  _stageLive=val;
+  const n=Object.keys(_stage).length;
+  actLog(val?('Staged next-match teams ('+n+' player'+(n===1?'':'s')+')'):'Cleared the staged next-match plan','ok');
+  toast(val?'Next-match plan committed':'Staged plan cleared','ok');
+  stageRender();
+}
+function stageClear(){_stage={};stageRender();stageCommit();}
+// Render the staging rows: every connected HUMAN, plus staged guids that already left (kept in
+// the plan — they may reconnect; the mod ignores absentees). Called from renderPlayers (both
+// the status and roster ticks repaint through there) and after every local staging action.
+function stageRender(){
+  const el=g('stageList');if(!el)return;
+  if(_listenServer){
+    el.innerHTML='<div class="dm" style="font-size:10px">Dedicated servers only (needs the roster telemetry)</div>';
+    const st=g('stageStatus');if(st)st.textContent='';
+    stageTabBadge(0,false);
+    return;
+  }
+  const rows=[],seen={};
+  for(const p of _lastPlayers){
+    const r=_roster[p.num],bot=(r&&r.bot===true)||p.bot===true;
+    if(bot||!p.guid||p.guid==='0')continue;
+    _stageNames[p.guid]=p.name;seen[p.guid]=true;
+    rows.push({guid:p.guid,name:p.name,here:true});
+  }
+  for(const gd of Object.keys(_stage))if(!seen[gd])rows.push({guid:gd,name:_stageNames[gd]||gd,here:false});
+  if(!rows.length){
+    el.innerHTML='<div class="dm" style="font-size:10px">No players to stage</div>';
+  }else{
+    el.innerHTML=rows.map(rw=>{
+      const c=_stage[rw.guid]||'';
+      const b=(code,lbl,cls)=>`<button class="stgb ${cls}${c===code?' on':''}" title="Stage ${lbl==='SP'?'Spectator':lbl==='A'?'Allies':'Axis'}" onclick="stageSet('${rw.guid}','${code}')">${lbl}</button>`;
+      return `<div class="stage-row${rw.here?'':' gone'}"${rw.here?'':' title="Left the server — still in the staged plan"'}>`+
+        `<span class="stage-nm">${x(rw.name)}</span>`+
+        b('a','A','sa')+b('x','X','sx')+b('s','SP','ss')+
+        `<button class="stgb${c?'':' on'}" title="Unstage (engine decides)" onclick="stageSet('${rw.guid}','')">—</button></div>`;
+    }).join('');
+  }
+  const st=g('stageStatus'),cb=g('stageCommitBtn');
+  const n=Object.keys(_stage).length,dirty=stageSer()!==_stageLive;
+  if(st)st.textContent=n?(n+' staged · '+(dirty?'uncommitted':'committed')):( _stageLive?'clear pending · uncommitted':'');
+  if(cb)cb.classList.toggle('dirty',dirty);
+  stageTabBadge(n,dirty);
+}
+// A plan is invisible while the PLAYERS tab is up, so the tab itself carries the count (and a ! when
+// there are uncommitted edits the server hasn't got yet).
+function stageTabBadge(n,dirty){
+  const b=g('sbtabStageBadge');if(!b)return;
+  const show=n>0||dirty;
+  b.style.display=show?'':'none';
+  b.textContent=show?(n>0?String(n)+(dirty?'!':''):'!'):'';
+  b.title=dirty?'Staged plan has uncommitted changes':'Staged plan committed';
 }
 function x(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;')}
 
@@ -744,6 +852,23 @@ function tab(n){
   if(n==='fav') favBuild();   // borrow the pinned rows in (needs the panel active to measure columns)
   layoutColumns(g('p-'+n));   // first reveal of a settings panel lays out its columns
   if(n==='maps' && live) loadRotation();
+}
+
+// Sidebar roster tabs (PLAYERS / NEXT MATCH) — two views of the same roster in one card.
+// Pane swap only: both panes stay in the DOM, so renderPlayers()/stageRender() keep painting the
+// hidden one and there is nothing to rebuild on switch. The choice is per-browser (a view
+// preference, not a server setting), so localStorage — unlike the pinboard, which is server-side.
+let _sbTab='players';
+function sbTab(n){
+  _sbTab=(n==='stage')?'stage':'players';
+  document.querySelectorAll('.sbtabs .sbtab').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.sbpane').forEach(p=>p.classList.remove('active'));
+  const b=g('sbtab-'+_sbTab), p=g('sbpane-'+_sbTab);
+  if(b)b.classList.add('active');
+  if(p)p.classList.add('active');
+  const h=g('sbTabHint');
+  if(h)h.textContent=_sbTab==='players'?'(right-click for actions)':'one-shot · next match start';
+  try{ localStorage.setItem('gf_sbtab',_sbTab); }catch(_){}
 }
 
 // ─── FAVORITES (landing tab) ──────────────────────────────────────────────────
@@ -2145,6 +2270,11 @@ const SRV_SECTIONS = [
     { n:'scr_player_suicidespawndelay',lbl:'Suicide Penalty (s)',    type:'num', def:'0',   tip:'scr_player_suicidespawndelay\nExtra respawn delay after suiciding.' },
   ]},
   { title: 'TEAMS', eff: 'live', per: 'dvar', vars: [
+    // Next-match team policy (mod dvar, read by gf_writeNextMatchPlan at the match-ending round).
+    // The sidebar NEXT MATCH block only mirrors/stages — THIS row is the policy's single control.
+    { n:'gf_team_nextmatch',          lbl:'Next-Match Teams',        type:'sel', def:'stock',
+      opts:[['stock','Stock (random autoassign)'],['keep','Keep current teams'],['shuffle','Shuffle (random balanced)']],
+      tip:'gf_team_nextmatch\nWhat happens to TEAMS at the map change between matches.\n\nstock (default): the engine re-autoassigns everyone — with balanced counts that is a per-player coin flip (pickTeamFromScores → randomInt(2)), so match-to-match teams reshuffle randomly.\n\nkeep: on the match-ending round the mod snapshots every human\'s team by GUID and re-seats them at the next map\'s connect wave — pre-spawn, no suicide/respawn, no lobby flicker. Leavers simply drop out; the boundary balancer / bot fill absorb any size gap.\n\nshuffle: fresh random teams EVERY match, but always balanced — the seated humans are Fisher-Yates dealt onto an off-by-1-even split (odd extra lands on a random side). Deliberate spectators stay spectating. Same pre-spawn seating as keep.\n\nA committed NEXT MATCH staged plan (sidebar) wins over all of these for that one match.' },
     // Max Players / Team and Friendly Fire moved to DASHBOARD → GAMEPLAY (single home).
     // NOTE: scr_teamchange / scr_autobalanceteams / scr_teamup were removed 2026-07-06 — they are
     // CoD4/WaW dvar names that do NOT exist in Black Ops (T5). Nothing reads them (setting is a
@@ -2903,6 +3033,11 @@ initResizers();    // restore + wire the sidebar-width / activity-height drag ha
 let _tab0='fav';
 try{ const _t=new URLSearchParams(location.search).get('tab'); if(_t&&TABS.indexOf(_t)>=0) _tab0=_t; }catch(_){}
 tab(_tab0);
+// Sidebar roster tab — restore the last view (PLAYERS by default). Runs unconditionally so the
+// hint text is seeded even on the default tab.
+let _sbTab0='players';
+try{ if(localStorage.getItem('gf_sbtab')==='stage') _sbTab0='stage'; }catch(_){}
+sbTab(_sbTab0);
 favSyncFromServer();   // adopt THIS panel's pinboard (localStorage above was only the first paint)
 
 let _gtVal = 'gf';

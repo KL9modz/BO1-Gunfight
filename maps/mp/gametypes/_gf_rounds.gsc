@@ -654,18 +654,34 @@ gf_waitForLoadingClients()
         // are re-padded by the fill reconciler. Then fall through to a normal prematch -> gunfight.
         level.forceAutoAssign = true;
 
-        // Parse the snapshot ONCE into a level array (consume the dvar here so the NEXT lobby writes a
+        // Parse the snapshot ONCE into a level array (consume the dvars here so the NEXT lobby writes a
         // fresh plan). Both gf_autoassignPlanned and the gf_applyTeamPlan backstop read this array. The
         // autoassign override is already installed (gf.gsc) and reads this at connect time, so no
         // separate install here — a re-save of level.autoassign would capture OUR override and recurse.
-        plan = getDvar( "gf_teamplan" );
-        setDvar( "gf_teamplan", "" );
-        if ( plan != "" )
-            level.gf_teamPlanEntries = strTok( plan, "," );
+        // A pending gf_teamstage (panel next-match staging) overrides the snapshot inside the consume,
+        // so a staged layout wins even when the match starts via the lobby release / bridge matchrestart.
+        gf_consumeTeamPlan( false );
 
         level thread gf_applyTeamPlan();
         level thread gf_applyBotPlan();          // re-seat manually-arranged bots (fill-off); inert when gf_fill_n > 0
         return;
+    }
+
+    // Plain match start (a match->match map change, or boot): seat arriving humans per a carried
+    // end-of-match snapshot (gf_team_nextmatch "keep", written by gf_writeNextMatchPlan on the
+    // match-ending round) or a panel-staged layout (gf_teamstage) — one-shot, both empty on a
+    // stock start -> no-op and the engine's normal random autoassign runs. Seating happens at
+    // CONNECT (pre-spawn: gf_autoassignPlanned via the installed autoassign override — no
+    // suicide/respawn, none of the prematch flicker a live correction costs); gf_applyTeamPlan
+    // is the straggler backstop through prematch. Deliberately BEFORE the hold logic below:
+    // humans reconnect DURING the hold, and in an Auto/Manual lobby the carried seating is then
+    // what the lobby shows (its release re-snapshots live teams into gf_teamplan), so a plan
+    // survives straight through a lobby pass too.
+    gf_consumeTeamPlan( true );
+    if ( isDefined( level.gf_teamPlanEntries ) )
+    {
+        level.forceAutoAssign = true;            // returning humans skip the team menu (ranked already does)
+        level thread gf_applyTeamPlan();
     }
 
     // This one pre-prematch hold serves THREE release conditions (min-players folded
@@ -1078,6 +1094,132 @@ gf_writeBotPlan()
         else if ( t == "axis" )   x++;
     }
     setDvar( "gf_botplan", a + "," + x );
+}
+
+// ─── Next-match team policy (carry + staging) ────────────────────────────────────────────
+// Between MATCHES the engine runs a full map change: game[]/pers[] are wiped, every client
+// reconnects with pers["team"] undefined, and rankedMatch forces [[level.autoassign]] at
+// connect (_globallogic_player.gsc:327). During a reconnect wave the human split is never
+// lopsided (each connect balances the next), so gf_autoJoinBalance falls through to stock
+// menuAutoAssign — whose equal-counts branch is pickTeamFromScores, a 0-0 fresh map, i.e.
+// teams[randomInt(2)]: match-to-match teams are a per-player coin flip. These paths put that
+// under policy control, reusing the existing plan pipeline (gf_teamplan ->
+// gf_autoassignPlanned at connect + gf_applyTeamPlan backstop), which seats players PRE-SPAWN:
+//   - CARRY / SHUFFLE: gf_team_nextmatch "keep" -> gf_writeNextMatchPlan snapshots
+//     end-of-match teams into gf_teamplan (marked by gf_teamcarry) so the next map reproduces
+//     them; "shuffle" instead deals every SEATED human onto a random BALANCED split
+//     (gf_writeShuffledTeamPlan — new random teams every match, sizes still off-by-1-even).
+//     "stock" = today's random autoassign.
+//   - STAGE: the panel writes gf_teamstage ("<guid>:<a|x|s>,...", one raw `set`, no bridge
+//     round-trip) any time mid-match; it is one-shot and WINS over any carried/armed plan at
+//     the next match start, whatever starts it (map rotate, lobby release, bridge matchrestart).
+// All three dvars are consumed (cleared) by gf_consumeTeamPlan on the consuming match's first
+// pass, so an abandoned stage or carry dies at the very next match start instead of leaking
+// into a later, unrelated match. Bots need no plan — the fill reconciler re-pads from gf_fill_n.
+
+// Called from gf_onRoundEndGame — whose ONLY caller is stock endGame's match-end tail
+// (_globallogic.gsc:985, after startNextRound declined), so "the match is ending" is a
+// property of the call site and needs no score re-derivation here. That site covers every
+// end path: gf_endRound's funnel, the bridge END ROUND buttons (sd_endGame, which bypasses
+// gf_endRound entirely), forfeit. A watchdog map_rotate skips endGame → writes nothing →
+// stock autoassign; the bridge matchrestart carries its own snapshot — both correct.
+gf_writeNextMatchPlan()
+{
+    mode = getDvar( "gf_team_nextmatch" );
+    if ( mode == "keep" )
+    {
+        gf_writeTeamPlan();                      // snapshot humans by guid (bots: reconciler re-pads)
+        setDvar( "gf_teamcarry", "1" );          // marker: gf_teamplan is a carried snapshot
+        return;
+    }
+    if ( mode == "shuffle" )
+    {
+        gf_writeShuffledTeamPlan();              // random balanced re-deal of the seated humans
+        setDvar( "gf_teamcarry", "1" );
+        return;
+    }
+    setDvar( "gf_teamcarry", "" );               // stock: no carry, and no stale marker either
+}
+
+// Shuffle-mode writer: deal every SEATED human (allies/axis) onto a random BALANCED split —
+// fresh teams every match without the engine coin flip's lopsided possibilities. Spectating
+// humans keep "s": a deliberate spectate (user choice via the team menu, the lock queue) is
+// not the shuffle's to override — same treatment keep mode gives them. Fisher-Yates over the
+// seated list (the loadout-pool idiom), then alternate seats from a RANDOM starting side so
+// an odd count's extra body doesn't always land on allies. The result is off-by-1 balanced by
+// construction, so the boundary balancer finds nothing to move and bots pad per gf_fill_n.
+gf_writeShuffledTeamPlan()
+{
+    seated = [];
+    plan   = "";
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( !isDefined( p ) )
+            continue;
+        if ( !gf_isHuman( p ) )
+            continue;
+        t = p.pers["team"];
+        if ( !isDefined( t ) )
+            continue;
+        if ( t == "allies" || t == "axis" )
+        {
+            seated[seated.size] = p;
+        }
+        else if ( t == "spectator" )
+        {
+            g = "" + p getGuid();
+            if ( plan != "" )
+                plan += ",";
+            plan += g + ":s";
+        }
+    }
+
+    for ( i = seated.size - 1; i > 0; i-- )      // Fisher-Yates
+    {
+        j = randomInt( i + 1 );
+        tmp = seated[i];
+        seated[i] = seated[j];
+        seated[j] = tmp;
+    }
+
+    side = randomInt( 2 );                       // random first side -> unbiased odd-count extra
+    for ( i = 0; i < seated.size; i++ )
+    {
+        code = "a";
+        if ( ( ( i + side ) % 2 ) == 1 )
+            code = "x";
+        g = "" + seated[i] getGuid();
+        if ( plan != "" )
+            plan += ",";
+        plan += g + ":" + code;
+    }
+    setDvar( "gf_teamplan", plan );
+}
+
+// One-shot consume of the next-match team plan into level.gf_teamPlanEntries (read by the
+// connect-time gf_autoassignPlanned override + the gf_applyTeamPlan backstop). A staged plan
+// (gf_teamstage — an explicit admin layout) wins over gf_teamplan. requireCarry gates
+// gf_teamplan on the gf_teamcarry marker: the plain map-load path passes true (a marker-less
+// plan there is stale residue, not a plan), the armed fast-restart path passes false (its plan
+// was written moments ago by the lobby release / bridge matchrestart and carries no marker).
+// All three dvars are cleared here so the next consumer starts clean.
+gf_consumeTeamPlan( requireCarry )
+{
+    stage = getDvar( "gf_teamstage" );
+    plan  = getDvar( "gf_teamplan" );
+    carry = getDvar( "gf_teamcarry" );
+    setDvar( "gf_teamstage", "" );
+    setDvar( "gf_teamplan", "" );
+    setDvar( "gf_teamcarry", "" );
+
+    if ( requireCarry && carry != "1" )
+        plan = "";
+    if ( stage != "" )
+        plan = stage;                            // an explicit staged layout beats a carry
+    if ( plan != "" )
+        level.gf_teamPlanEntries = strTok( plan, "," );
 }
 
 // Re-apply the gf_teamplan snapshot after the lobby fast-restart. Threaded from the gf_matchArmed
@@ -4093,8 +4235,19 @@ gf_botSetGoal( origin, radius )
 
 // Called by _globallogic to determine the overall match leader at round end.
 // Must compare cumulative roundswon — NOT the single-round result.
+// ⚠ Stock invokes this at exactly ONE site (_globallogic.gsc:985), AFTER startNextRound()
+// declined — i.e. only when the MATCH is genuinely over, on every end path: gf_endRound's
+// funnel, the bridge END ROUND buttons (sd_endGame, which bypasses gf_endRound), forfeit.
+// That guarantee is what the next-match hook below leans on — do not call this elsewhere.
 gf_onRoundEndGame()
 {
+    // #strip-begin - next-match team carry/staging (dev/main only; public keeps stock autoassign)
+    // The match is ending (see above): write the next map's team plan per gf_team_nextmatch.
+    // Synchronous, inside stock endGame's tail — players are frozen but still connected, so
+    // pers["team"] is intact for the snapshot; the map change consumes it (gf_consumeTeamPlan).
+    gf_writeNextMatchPlan();
+    // #strip-end
+
     if ( game["roundswon"]["allies"] == game["roundswon"]["axis"] )
         return "tie";
     else if ( game["roundswon"]["axis"] > game["roundswon"]["allies"] )

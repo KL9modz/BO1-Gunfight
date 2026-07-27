@@ -595,6 +595,9 @@ gf_roundSeedDvars()
     gf_seedDvar( "scr_gf_latespawn", "1" );       // 1 = a joiner/mover may spawn INTO a live round while their team has >=1 alive (never in OT); 0 = spectate until next round
     gf_seedDvar( "gf_team_reclaim", "1" );        // 1 = at each boundary, re-seat a human the untraced mis-seater stranded in spectator (reason UNTRACED) onto the lighter side, so they aren't forced to the ranked team/class menu; 0 = leave them (diagnostic-only)
     gf_seedDvar( "gf_teamplan", "" );             // lobby->match transfer: "<guid>:<a|x|s>,..." snapshot written pre-restart, re-applied post-restart (survives map_restart(false))
+    gf_seedDvar( "gf_teamstage", "" );            // NEXT-MATCH staging: same "<guid>:<a|x|s>,..." format, written by the panel (one raw set); one-shot — wins over gf_teamplan at the next match start, cleared on consume
+    gf_seedDvar( "gf_teamcarry", "" );            // "1" marks gf_teamplan as a carried end-of-match snapshot (written with it by gf_writeNextMatchPlan; consumed together — a marker-less plan on a plain map load is stale and ignored)
+    gf_seedDvar( "gf_team_nextmatch", "stock" );  // next-match team policy: "stock" = engine random autoassign (the BO1 coin flip), "keep" = carry current teams across the map change, "shuffle" = random BALANCED re-deal of the seated humans every match
     // #strip-end
 
     // Register scr_team_maxsize with its documented default (0 = no cap) so it always exists

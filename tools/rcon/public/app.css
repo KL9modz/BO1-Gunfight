@@ -90,6 +90,17 @@ body.resizing.rowres{cursor:row-resize}
 /* Players */
 .player-card{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0}
 .ptable-wrap{flex:1;overflow-y:auto}
+/* Sidebar roster tabs (PLAYERS / NEXT MATCH) — same card, two views of the one roster. Styled
+   off .ctitle (the card headers they replaced), not off the main .tab bar, so the sidebar keeps
+   its smaller type. Panes are display-swapped; the active one owns the card's flexible height. */
+.sbtabs{display:flex;align-items:center;gap:2px;margin-bottom:8px;border-bottom:1px solid var(--bd)}
+.sbtab{background:none;border:none;border-bottom:2px solid transparent;color:var(--dm);padding:2px 8px 6px;margin-bottom:-1px;font:700 10px var(--fn);letter-spacing:.12em;cursor:pointer;white-space:nowrap;transition:color .15s,border-color .15s}
+.sbtab:hover{color:var(--tx)}
+.sbtab.active{color:var(--ac);border-bottom-color:var(--ac)}
+.sbtab-b{display:inline-block;margin-left:5px;padding:0 4px;border-radius:7px;font-size:9px;font-weight:700;letter-spacing:0;background:rgba(255,214,10,.14);color:var(--wn);border:1px solid rgba(255,214,10,.35)}
+.sbtab-hint{flex:1;min-width:0;text-align:right;font-size:10px;color:var(--dm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-bottom:4px}
+.sbpane{display:none;min-height:0}
+.sbpane.active{display:flex;flex-direction:column;flex:1}
 table{width:100%;border-collapse:collapse}
 th{font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--dm);padding:4px;text-align:left;border-bottom:1px solid var(--bd)}
 td{padding:3px 4px;font-size:12px;border-bottom:1px solid var(--bd)}
@@ -116,6 +127,20 @@ tr.grp-x td{color:#ff8a7a;border-left-color:#ff5a5a}
 tr.grp-s td{color:#a0a0b4;border-left-color:#8c8ca0}
 tr.grp-u td{color:var(--dm);border-left-color:var(--bd)}
 .grp-n{margin-left:8px;opacity:.65;font-weight:600}
+/* NEXT MATCH staging (roster card, NEXT MATCH tab) — palette matches the .tm-* team badges above.
+   The list takes the pane's spare height (the buttons under it stay put); min-height keeps a
+   usable list when the sidebar is dragged short. */
+#stageList{display:flex;flex-direction:column;gap:2px;flex:1;min-height:60px;overflow-y:auto}
+.stage-row{display:flex;align-items:center;gap:3px;padding:1px 2px}
+.stage-row.gone .stage-nm{opacity:.45;text-decoration:line-through}
+.stage-nm{flex:1;min-width:0;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stgb{font-size:9px;font-weight:700;padding:1px 6px;background:var(--sf2);border:1px solid var(--bd);color:var(--dm);border-radius:3px;cursor:pointer;letter-spacing:.04em}
+.stgb:hover{border-color:#5a6478;color:#cfd6e4}
+.stgb.on{color:#cfd6e4;border-color:#8c8ca0;background:rgba(150,150,170,.12)}
+.stgb.sa.on{background:rgba(90,150,255,.14);color:#7ab4ff;border-color:rgba(90,150,255,.55)}
+.stgb.sx.on{background:rgba(255,90,90,.14);color:#ff8a7a;border-color:rgba(255,90,90,.55)}
+.stgb.ss.on{background:rgba(150,150,170,.12);color:#a0a0b4;border-color:rgba(150,150,170,.5)}
+#stageCommitBtn.dirty{box-shadow:0 0 0 1px var(--wn) inset}
 
 /* Activity log — height is drag-resizable (var set by JS from localStorage; --alh default 220). */
 .actlog{height:var(--alh,220px);flex-shrink:0;border-top:1px solid var(--bd);padding:8px 10px;overflow-y:auto;font-size:11px}

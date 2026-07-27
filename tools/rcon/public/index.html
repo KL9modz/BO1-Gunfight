@@ -94,13 +94,43 @@
   </div><!-- /sb-top-r -->
   </div><!-- /sb-top -->
 
-  <div class="card player-card">
-    <div class="ctitle">PLAYERS <span class="dm" style="font-weight:400;font-size:10px">(right-click for actions)</span></div>
-    <div class="ptable-wrap">
-      <table>
-        <thead><tr><th>#</th><th>Name</th><th>Sc</th><th>Ping</th><th>IP</th><th>GUID</th></tr></thead>
-        <tbody id="ptbody"><tr class="empty"><td colspan="6">Not connected</td></tr></tbody>
-      </table>
+  <!-- ROSTER — one card, two tabs over the SAME set of players: the live PLAYERS table and the
+       NEXT MATCH staging plan (they are two views of one roster, so they share the sidebar's
+       flexible height instead of competing for it). Tab state is sbTab() in app.js; the pane
+       swap is display-only, so #ptbody / #stageList keep their ids and their renderers are
+       untouched. Deliberately NOT a .block — no .btitle, so the delegated collapse handler and
+       the ★ pinboard never see it (sidebar content is never pinnable). -->
+  <div class="card player-card" id="rosterCard">
+    <div class="sbtabs">
+      <button class="sbtab active" id="sbtab-players" onclick="sbTab('players')">PLAYERS</button>
+      <button class="sbtab" id="sbtab-stage" onclick="sbTab('stage')">NEXT MATCH<span class="sbtab-b" id="sbtabStageBadge" style="display:none"></span></button>
+      <span class="sbtab-hint" id="sbTabHint">(right-click for actions)</span>
+    </div>
+
+    <div class="sbpane active" id="sbpane-players">
+      <div class="ptable-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Name</th><th>Sc</th><th>Ping</th><th>IP</th><th>GUID</th></tr></thead>
+          <tbody id="ptbody"><tr class="empty"><td colspan="6">Not connected</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- NEXT MATCH — stage per-player teams for the next map (writes the one-shot gf_teamstage
+         dvar as ONE raw set; the mod consumes it at the next match start and seats everyone at
+         connect, pre-spawn — no mid-lobby team switching). The stock/keep POLICY dvar
+         (gf_team_nextmatch) is a normal settings row in ADVANCED → TEAMS, not here (single home). -->
+    <div class="sbpane" id="sbpane-stage">
+      <div class="dm" id="stageHint" style="font-size:10px;margin:0 0 6px">Stage teams for the <b>next</b> map — applied at match start, before anyone spawns. One-shot: the plan clears itself once used. Beats a <i>Keep current teams</i> carry (ADVANCED → TEAMS).</div>
+      <div id="stageList"></div>
+      <div class="two" style="margin-top:6px">
+        <button class="b-gh ctrl ded-only" data-tip="Prefill the plan from the CURRENT teams (as grouped in PLAYERS), then adjust and Commit." onclick="stageFromCurrent()">⬇ From Current</button>
+        <button class="b-ok ctrl ded-only" id="stageCommitBtn" data-tip="set gf_teamstage &lt;plan&gt; — one raw set, no bridge round-trip.&#10;One-shot: applied at the next match start (map rotate, lobby release or MATCH RESTART all honor it), then cleared by the mod. Wins over the gf_team_nextmatch carry for that one match." onclick="stageCommit()">✔ Commit</button>
+      </div>
+      <div class="two" style="margin-top:4px">
+        <button class="b-gh ctrl ded-only" data-tip="set gf_teamstage &quot;&quot;&#10;Removes a pending staged plan (local and server-side)." onclick="stageClear()">✕ Clear</button>
+        <span class="dm" id="stageStatus" style="font-size:10px;align-self:center;text-align:right"></span>
+      </div>
     </div>
   </div>
 
