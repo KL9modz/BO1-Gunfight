@@ -105,11 +105,11 @@ a:hover { color: var(--accent); text-decoration: underline; text-underline-offse
   filter: drop-shadow(0 3px 16px rgba(255,122,26,0.5));
 }
 
-/* monospace HUD-style status chip (brand/platform tag, not live telemetry) */
+/* monospace HUD-style pill; sits under the hero sub-line ("Free to play on PC") */
 .chip {
   position: relative; z-index: 1;
   display: inline-flex; align-items: center; gap: 8px;
-  margin: 0 0 18px;
+  margin: 14px 0 0;
   padding: 5px 13px 5px 11px;
   border: 1px solid var(--edge);
   border-radius: 999px;
