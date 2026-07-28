@@ -677,9 +677,15 @@ gf_yawDelta( a, b )
     return d;
 }
 
-gf_probeSpawnYaw( intendedYaw, source )
+// Both axes now (pitch/yaw), and the DECISIVE sample is at GO-LIVE, not during the countdown.
+// gf_lockSpawnYaw stopped policing the frozen countdown (that fought held input and shook the view),
+// so a carried view is left uncorrected DURING the countdown and only snapped back the instant
+// control returns at prematch_over. That means a large countdown delta (d1) is now EXPECTED and is
+// NOT the failure — the failure is a large LIVE delta. `intended`, `d1`, `live` all print yaw/pitch.
+gf_probeSpawnYaw( intended, source )
 {
     self endon( "disconnect" );
+    level endon( "game_ended" );
 
     if ( getDvarInt( "gf_debug_spawnyaw" ) <= 0 )
         return;
@@ -689,29 +695,35 @@ gf_probeSpawnYaw( intendedYaw, source )
 
     org = self.origin;
 
-    wait 0.05;
-    d0 = gf_yawDelta( intendedYaw, self getPlayerAngles()[1] );
-
+    // Countdown sample (informational): the carried revert lands in this window, uncorrected now.
     wait 1.0;
-    d1 = gf_yawDelta( intendedYaw, self getPlayerAngles()[1] );
+    a1  = self getPlayerAngles();
+    d1y = gf_yawDelta( intended[1], a1[1] );
+    d1p = gf_yawDelta( intended[0], a1[0] );
 
-    // Log every spawn, not just the bad ones: the baseline is what proves a flagged line is real.
-    // A rare bug needs the boring lines around it to be trustworthy.
-    flag = "";
-    if ( abs( d0 ) > 60 )
-        flag = "  ENGINE_DROPPED_ANGLES";
-    else if ( abs( d1 ) > 60 )
-        flag = "  CLIENT_VIEW_OVERRODE";
+    // GO-LIVE sample — the one that matters. Wait out the countdown, then let gf_lockSpawnYaw's
+    // go-live re-assert settle before reading.
+    tstart = getTime();
+    while ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
+    {
+        if ( getTime() - tstart > 25000 )
+            break;
+        wait 0.1;
+    }
+    wait 0.4;
+    a2  = self getPlayerAngles();
+    d2y = gf_yawDelta( intended[1], a2[1] );
+    d2p = gf_yawDelta( intended[0], a2[0] );
 
     // Concatenating an undefined into a string is a runtime error, so resolve the flag first.
-    prematch = 0;
-    if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
-        prematch = 1;
+    flag = "";
+    if ( abs( d2y ) > 60 || abs( d2p ) > 60 )
+        flag = "  GO_LIVE_WRONG";
 
     logPrint( "GF_SPAWNYAW: " + self.name + " src=" + source
-              + " intended=" + int( intendedYaw )
-              + " d0=" + int( d0 ) + " d1=" + int( d1 )
-              + " prematch=" + prematch
+              + " intended=" + int( intended[1] ) + "/" + int( intended[0] )
+              + " d1=" + int( d1y ) + "/" + int( d1p )
+              + " live=" + int( d2y ) + "/" + int( d2p )
               + " org=" + int( org[0] ) + "," + int( org[1] ) + "," + int( org[2] )
               + flag + "\n" );
 }

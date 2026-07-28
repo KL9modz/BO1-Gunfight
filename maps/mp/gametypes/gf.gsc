@@ -955,7 +955,7 @@ onSpawnPlayer( teamOverride )
             self spawn( customSpawn["origin"], customSpawn["angles"], "gf" );
             self thread gf_lockSpawnYaw( customSpawn["angles"] );
             // #strip-begin - spawn-yaw probe (dev/main only; stripped from public release)
-            self thread maps\mp\gametypes\_gf_debug::gf_probeSpawnYaw( customSpawn["angles"][1], "curated" );
+            self thread maps\mp\gametypes\_gf_debug::gf_probeSpawnYaw( customSpawn["angles"], "curated" );
             // #strip-end
             return;
         }
@@ -989,7 +989,7 @@ onSpawnPlayer( teamOverride )
     self spawn( spawnPoint.origin, spawnPoint.angles, "gf" );
     self thread gf_lockSpawnYaw( spawnPoint.angles );
     // #strip-begin - spawn-yaw probe (dev/main only; stripped from public release)
-    self thread maps\mp\gametypes\_gf_debug::gf_probeSpawnYaw( spawnPoint.angles[1], "startspawn" );
+    self thread maps\mp\gametypes\_gf_debug::gf_probeSpawnYaw( spawnPoint.angles, "startspawn" );
     // #strip-end
 }
 
@@ -1006,32 +1006,45 @@ onSpawnPlayer( teamOverride )
 // has no switching-sides carryover. setPlayerAngles writes a snapshot field replicated every frame
 // regardless, NOT a reliable command, so re-asserting costs nothing against the command budget.
 // Ships in the public build (this is a real gameplay bug) — stock builtins only, no dev dependency.
+// Corrects the spawn facing (pitch AND yaw) on the ONE thing that matters — the moment the round
+// goes live — instead of policing the frozen countdown. Covers both axes despite the "Yaw" name.
+//
+// Why not police the countdown: re-asserting the angle while the player is frozen fights their own
+// look input. A held turn shakes the yaw; a held-down stick pins pitch near -85 deg and a gate
+// snaps it 0->snap->0 at 20 Hz — a big pitch shake (the "spawn facing the ground while holding down"
+// report was the pitch half of the carried-input bug, invisible to the old yaw-only gate). The
+// countdown is only a waiting screen, so leave it alone: no fight, no shake, look wherever.
+//
+// The carried-camera revert (switching-sides / killcam view) is a one-shot that lands early in the
+// countdown and settles, so by go-live the view is stable and a single authoritative set sticks.
+// The re-assert is DIVERGENCE-GATED (> 45 deg on either axis) so it only snaps a badly-carried view
+// back to the curated facing and never yanks a player already on target or making fine aim
+// adjustments; the short post-go-live window also beats a revert that lands a hair after control
+// returns. A player who KEEPS holding the stick past go-live is genuine live input and looks where
+// they point once the window ends — that is the stick working, not the bug.
+//
+// Ships in the public build (this is a real gameplay bug) — stock builtins only, no dev dependency.
 gf_lockSpawnYaw( angles )
 {
     self endon( "disconnect" );
     self endon( "death" );
     level endon( "game_ended" );
 
+    // Wait out the frozen countdown. A late/mid-round spawn (inPrematchPeriod already false) skips
+    // straight to the correction — it has no switching-sides carryover, so the gate no-ops anyway.
     start = getTime();
-    for ( ;; )
+    while ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
     {
-        // DIVERGENCE-GATED, not unconditional. The carried-camera revert is a one-shot that lands
-        // within ~1s and then settles (proven: with the old 0.2s burst, d1 settled at the wrong
-        // angle and STAYED), and it is always large (every CLIENT_VIEW_OVERRODE was 100 deg+). So
-        // only re-assert when the view has been dragged well off the intended facing — that snaps
-        // the revert back while leaving small look adjustments alone. Re-applying the angle every
-        // tick regardless (the first fix) fought the player's own mouse input and re-issued a
-        // redundant fixangle 20x/s, which read as a camera shake during the countdown.
-        if ( abs( gf_yawDiff( angles[1], self getPlayerAngles()[1] ) ) > 45 )
+        if ( getTime() - start > 25000 )   // safety: never wait past a sane prematch
+            break;
+        wait 0.05;
+    }
+
+    for ( i = 0; i < 4; i++ )
+    {
+        cur = self getPlayerAngles();
+        if ( abs( gf_yawDiff( angles[1], cur[1] ) ) > 45 || abs( gf_yawDiff( angles[0], cur[0] ) ) > 45 )
             self setPlayerAngles( angles );
-
-        if ( !( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod ) )
-            return;
-
-        // Safety: never outlive a sane prematch, so a stuck flag can't loop forever.
-        if ( getTime() - start > 25000 )
-            return;
-
         wait 0.05;
     }
 }
