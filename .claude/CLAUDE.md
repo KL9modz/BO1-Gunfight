@@ -16,6 +16,7 @@ wins** takes the match.
 
 ## TODO
 
+- Migrate to new LA host
 - Map/mode vote
 - Website screenshots
 
@@ -297,6 +298,7 @@ checkpoint, which the sampler cannot see.
 | `docs/REFERENCE.md` | Authoritative present-tense per-system prose, the full gameplay dvar/var tables, and a per-function reference for the gameplay files. |
 | `docs/DEV.md` | Repo layout, GSC include graph, `build_ff.ps1`, branch/release model + strip markers, deploy pipeline, dev tooling (RCON/bots/debug). |
 | `docs/VPS_DEPLOY.md` | 11-phase VPS provisioning + deploy runbook (FastDL, git-pull deploy). |
+| `docs/MIGRATION.md` | Box-to-box migration runbook — the **delta** VPS_DEPLOY doesn't rebuild: what state is box-local and must be carried, what to rotate, cutover order + acceptance checklist. |
 | `docs/VPS_HARDENING.md` | Security runbook (RDP/WinRM/TLS/IIS `web.config`/DNS) with as-applied status. |
 | `docs/GETTING_STARTED.md` | Player-facing install / settings / ADS-fix / join guide. |
 | `docs/notes/` | Hard-won single-incident deep-dives, one file per finding + `README.md` index. Committed to the repo (so they reach the VPS), NOT auto-loaded — open the one you need. |

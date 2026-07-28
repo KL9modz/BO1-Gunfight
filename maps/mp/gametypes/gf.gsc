@@ -953,6 +953,7 @@ onSpawnPlayer( teamOverride )
             self.lastSpawnPoint = spawn( "script_origin", customSpawn["origin"] );
 
             self spawn( customSpawn["origin"], customSpawn["angles"], "gf" );
+            self thread gf_lockSpawnYaw( customSpawn["angles"] );
             // #strip-begin - spawn-yaw probe (dev/main only; stripped from public release)
             self thread maps\mp\gametypes\_gf_debug::gf_probeSpawnYaw( customSpawn["angles"][1], "curated" );
             // #strip-end
@@ -986,9 +987,32 @@ onSpawnPlayer( teamOverride )
     }
 
     self spawn( spawnPoint.origin, spawnPoint.angles, "gf" );
+    self thread gf_lockSpawnYaw( spawnPoint.angles );
     // #strip-begin - spawn-yaw probe (dev/main only; stripped from public release)
     self thread maps\mp\gametypes\_gf_debug::gf_probeSpawnYaw( spawnPoint.angles[1], "startspawn" );
     // #strip-end
+}
+
+// Re-assert the spawn angles across the first few frames to defeat the deltaangles race.
+// self spawn() snaps the client by setting deltaangles = intendedAngle - cmd.angles — computed
+// against whatever mouse input the client last reported. If the player was moving the camera
+// during the round-end / switching-sides screen (killcam cam + free-look scoreboard), that
+// carried-over input leaks into the final facing: the GF_SPAWNYAW "CLIENT_VIEW_OVERRODE" case
+// (t0 delta ~0, t1 large). setPlayerAngles issues a fresh fixangle each frame, so re-asserting
+// over the first ~0.2s flushes the stale input. On a round boundary the player is frozen through
+// prematch, so this only ever overrides carried-over input, never a real turn; a mid-round
+// late-spawner isn't turning a camera, so the brief lock is imperceptible. Ships in the public
+// build (this is a real gameplay bug) — stock builtins only, no dev dependency.
+gf_lockSpawnYaw( angles )
+{
+    self endon( "disconnect" );
+    self endon( "death" );
+
+    for ( i = 0; i < 4; i++ )
+    {
+        self setPlayerAngles( angles );
+        wait 0.05;
+    }
 }
 
 onSpawnPlayerUnified()
