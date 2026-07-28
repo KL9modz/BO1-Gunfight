@@ -677,15 +677,12 @@ gf_yawDelta( a, b )
     return d;
 }
 
-// Both axes now (pitch/yaw), and the DECISIVE sample is at GO-LIVE, not during the countdown.
-// gf_lockSpawnYaw stopped policing the frozen countdown (that fought held input and shook the view),
-// so a carried view is left uncorrected DURING the countdown and only snapped back the instant
-// control returns at prematch_over. That means a large countdown delta (d1) is now EXPECTED and is
-// NOT the failure — the failure is a large LIVE delta. `intended`, `d1`, `live` all print yaw/pitch.
+// Both axes (pitch/yaw). gf_lockSpawnYaw holds the facing correct THROUGH the countdown, so the
+// decisive sample is d1 (+1s, mid-countdown): a large d1 means the carried revert beat the hold.
+// d0 (+0.05s) proves the initial spawn snap took. `intended`, `d0`, `d1` all print as yaw/pitch.
 gf_probeSpawnYaw( intended, source )
 {
     self endon( "disconnect" );
-    level endon( "game_ended" );
 
     if ( getDvarInt( "gf_debug_spawnyaw" ) <= 0 )
         return;
@@ -695,35 +692,32 @@ gf_probeSpawnYaw( intended, source )
 
     org = self.origin;
 
-    // Countdown sample (informational): the carried revert lands in this window, uncorrected now.
+    wait 0.05;
+    a0  = self getPlayerAngles();
+    d0y = gf_yawDelta( intended[1], a0[1] );
+    d0p = gf_yawDelta( intended[0], a0[0] );
+
     wait 1.0;
     a1  = self getPlayerAngles();
     d1y = gf_yawDelta( intended[1], a1[1] );
     d1p = gf_yawDelta( intended[0], a1[0] );
 
-    // GO-LIVE sample — the one that matters. Wait out the countdown, then let gf_lockSpawnYaw's
-    // go-live re-assert settle before reading.
-    tstart = getTime();
-    while ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
-    {
-        if ( getTime() - tstart > 25000 )
-            break;
-        wait 0.1;
-    }
-    wait 0.4;
-    a2  = self getPlayerAngles();
-    d2y = gf_yawDelta( intended[1], a2[1] );
-    d2p = gf_yawDelta( intended[0], a2[0] );
-
     // Concatenating an undefined into a string is a runtime error, so resolve the flag first.
     flag = "";
-    if ( abs( d2y ) > 60 || abs( d2p ) > 60 )
-        flag = "  GO_LIVE_WRONG";
+    if ( abs( d0y ) > 60 || abs( d0p ) > 60 )
+        flag = "  ENGINE_DROPPED_ANGLES";
+    else if ( abs( d1y ) > 60 || abs( d1p ) > 60 )
+        flag = "  CLIENT_VIEW_OVERRODE";
+
+    prematch = 0;
+    if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
+        prematch = 1;
 
     logPrint( "GF_SPAWNYAW: " + self.name + " src=" + source
               + " intended=" + int( intended[1] ) + "/" + int( intended[0] )
+              + " d0=" + int( d0y ) + "/" + int( d0p )
               + " d1=" + int( d1y ) + "/" + int( d1p )
-              + " live=" + int( d2y ) + "/" + int( d2p )
+              + " prematch=" + prematch
               + " org=" + int( org[0] ) + "," + int( org[1] ) + "," + int( org[2] )
               + flag + "\n" );
 }

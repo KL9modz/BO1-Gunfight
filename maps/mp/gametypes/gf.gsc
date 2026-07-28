@@ -993,58 +993,52 @@ onSpawnPlayer( teamOverride )
     // #strip-end
 }
 
-// Re-assert the spawn angles until the round goes live, to defeat carried camera input.
-// self spawn() snaps the view once by setting deltaangles = intendedAngle - cmd.angles, but the
-// camera turn the player made on the round-end / switching-sides / killcam screen is a stale
-// client-side view that REVERTS the snap within ~1s. Proven on the VPS: every bad GF_SPAWNYAW
-// line is d0=0 (the snap took) / d1 large / prematch=1 — the CLIENT_VIEW_OVERRODE case. A one-shot
-// re-assert (or a short burst) is therefore not enough: the revert lands after it stops. Instead
-// hold the intended yaw across the whole frozen prematch countdown and release the instant control
-// returns at prematch_over (stock clears level.inPrematchPeriod, _globallogic.gsc:1539). The player
-// is frozen through the countdown, so holding the fight-facing yaw is harmless and correct for a
-// gunfight; a late/mid-round spawn (inPrematchPeriod already false) asserts once and returns — it
-// has no switching-sides carryover. setPlayerAngles writes a snapshot field replicated every frame
-// regardless, NOT a reliable command, so re-asserting costs nothing against the command budget.
-// Ships in the public build (this is a real gameplay bug) — stock builtins only, no dev dependency.
-// Corrects the spawn facing (pitch AND yaw) on the ONE thing that matters — the moment the round
-// goes live — instead of policing the frozen countdown. Covers both axes despite the "Yaw" name.
+// Hold the spawn facing (pitch AND yaw, despite the "Yaw" name) correct for the WHOLE prematch
+// countdown, so the player never sees a wrong view and there is no snap when the round goes live.
 //
-// Why not police the countdown: re-asserting the angle while the player is frozen fights their own
-// look input. A held turn shakes the yaw; a held-down stick pins pitch near -85 deg and a gate
-// snaps it 0->snap->0 at 20 Hz — a big pitch shake (the "spawn facing the ground while holding down"
-// report was the pitch half of the carried-input bug, invisible to the old yaw-only gate). The
-// countdown is only a waiting screen, so leave it alone: no fight, no shake, look wherever.
+// self spawn() snaps the view once (deltaangles = intendedAngle - cmd.angles), but the camera turn
+// the player made on the round-end / switching-sides / killcam screen is a stale client view that
+// REVERTS the snap ~0.2-1s later (proven: with a one-shot set, d0=0 then d1 large). So the snap has
+// to be HELD through that window, not set once. We re-assert until control returns at prematch_over
+// (stock clears level.inPrematchPeriod, _globallogic.gsc:1539), then release so live aim is free.
 //
-// The carried-camera revert (switching-sides / killcam view) is a one-shot that lands early in the
-// countdown and settles, so by go-live the view is stable and a single authoritative set sticks.
-// The re-assert is DIVERGENCE-GATED (> 45 deg on either axis) so it only snaps a badly-carried view
-// back to the curated facing and never yanks a player already on target or making fine aim
-// adjustments; the short post-go-live window also beats a revert that lands a hair after control
-// returns. A player who KEEPS holding the stick past go-live is genuine live input and looks where
-// they point once the window ends — that is the stick working, not the bug.
+// DIVERGENCE-GATED (> 45 deg on either axis): only re-assert when the view has been dragged well off
+// the curated facing — the carried revert. This is what stops the shake. Re-applying the angle every
+// tick regardless (an earlier version) fought the player's own small look input and re-issued a
+// redundant fixangle 20x/s. Gated, a still or lightly-adjusting player is never touched, so the
+// common carried-swing case corrects once, early, and then holds quiet for the rest of the countdown.
 //
-// Ships in the public build (this is a real gameplay bug) — stock builtins only, no dev dependency.
+// The one irreducible edge: a player who ACTIVELY holds a look input (e.g. the stick pinned fully
+// down) past the 45 deg gate will be pulled back each time it crosses — a gentle fight — because
+// "keep the countdown facing correct" and "let the player hold the view off-target" are contradictory
+// goals. Not reachable by normal play (you do not hold the look stick during the countdown); the
+// alternative would be to not correct at all.
+//
+// setPlayerAngles writes a snapshot field replicated every frame regardless, NOT a reliable command,
+// so re-asserting costs nothing against the command budget. Ships in the public build (this is a real
+// gameplay bug) — stock builtins only, no dev dependency.
 gf_lockSpawnYaw( angles )
 {
     self endon( "disconnect" );
     self endon( "death" );
     level endon( "game_ended" );
 
-    // Wait out the frozen countdown. A late/mid-round spawn (inPrematchPeriod already false) skips
-    // straight to the correction — it has no switching-sides carryover, so the gate no-ops anyway.
     start = getTime();
-    while ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
-    {
-        if ( getTime() - start > 25000 )   // safety: never wait past a sane prematch
-            break;
-        wait 0.05;
-    }
-
-    for ( i = 0; i < 4; i++ )
+    for ( ;; )
     {
         cur = self getPlayerAngles();
         if ( abs( gf_yawDiff( angles[1], cur[1] ) ) > 45 || abs( gf_yawDiff( angles[0], cur[0] ) ) > 45 )
             self setPlayerAngles( angles );
+
+        // Release the instant control returns; a late/mid-round spawn (already past prematch) makes
+        // one gated check and returns — it has no switching-sides carryover, so the gate no-ops.
+        if ( !( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod ) )
+            return;
+
+        // Safety: never outlive a sane prematch, so a stuck flag can't loop forever.
+        if ( getTime() - start > 25000 )
+            return;
+
         wait 0.05;
     }
 }
