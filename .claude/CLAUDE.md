@@ -533,6 +533,37 @@ the one hold: **LOAD** (everyone off the loading screen, ceiling `scr_gf_load_wa
 **MIN-PLAYERS** (`scr_gf_min_players` humans present; ceiling `scr_gf_minplayers_timer`, default 0 =
 never auto-start; a 0-human lobby always releases), and **LOBBY MODE**.
 
+**ROSTER EXPECTATION (`scr_gf_load_expect`, default 0) — a refinement of LOAD, not a fourth gate.**
+The tracker can only wait for clients it has *seen*: the gate is already exact for anyone whose connect
+packet landed (it releases the instant `stillLoading == 0` — `scr_gf_load_wait` is purely a ceiling),
+and there is **no engine read for "clients still connecting"** (`level.players` holds only begun
+clients, the `"connecting"` notify is the deepest signal the VM gets, and `raw/maps/mp` has no
+connected-count builtin), so the blind 3s arrival floor is all that covers a client who hasn't spoken
+yet. The only available *target* number is the previous map's roster: `gf_writeExpectCount` snapshots
+the human headcount into **`gf_expectcount`** at every match end (unconditionally — it is a count, not
+a seating policy, so unlike the team plan it ignores `gf_team_nextmatch`), and the next match's gate
+consumes it. Release then also requires `humans >= expected`, and — the actual win —
+**positive roster evidence bypasses the 3s floor**: expected roster present *and* loaded starts the
+match immediately, so a 2-player server whose players both reconnect in 400ms starts in 400ms instead
+of paying 3s.
+⚠ **It needs its own short deadline (`scr_gf_load_expect_wait`, 6s) and that is load-bearing.** A
+player who left between matches never sends a connect packet, so there is *no signal at all* — the
+expectation can never be reached, and a raw wait would pay the **full 20s load ceiling on the most
+routine event there is**, making the common case worse than no feature. After the expect deadline the
+gate falls back to today's rule. A genuinely returning player reconnects in ~1-3s (they already hold
+the map + `mod.ff`), so the deadline is sized to cover that and nothing more.
+⚠ Three guards make a wrong count harmless, and all three are required: the expect deadline is
+**clamped to `loadDeadline`** (`scr_gf_load_wait` stays the single ceiling), **`humans == 0` releases
+unconditionally** (an empty/bot-only lobby never waits on a snapshot of players who all left — this is
+also why the count needs no timestamp), and the dvar is **one-shot consumed** (`gf_consumeExpectCount`),
+so an abandoned snapshot dies at the next match start rather than leaking into a later match. Gated on
+`loadGateOn`, so `scr_gf_load_wait 0` turns it off too.
+⚠ **Gate on the COUNT, not the GUID list.** If one player leaves and another joins, the room is equally
+ready; identity matching would refuse the substitute for no benefit. ⚠ A human who connects mid-hold and
+then drops is subtracted (`humansGone`) or the gate re-stalls after having been satisfied — and that
+subtraction reads a **latched** `level.gf_loadGateHuman[i]` flag, set while the entity is still there to
+classify, because a kicked *bot* must never shrink a HUMAN expectation.
+
 `scr_gf_lobby`: **0 = Normal** (in-place hold, no restart), **1 = Auto** (release on load+min, then
 fast-restart), **2 = Manual** (hold until an admin's START click, then fast-restart;
 `scr_gf_lobby_timer` auto-start backstop, default 600s). The fast-restart is **`map_restart(false)`** —
@@ -1221,6 +1252,8 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_min_players` | 1 | Min **humans** to start (1 = off); a release condition on the pre-prematch hold. |
 | `scr_gf_minplayers_timer` | 0 | Min-players "start anyway" ceiling (s); **0 = never auto-start**. |
 | `scr_gf_load_wait` | 20 | Max s to hold the prematch for still-loading clients — a **ceiling**, not a duration (releases the moment the last loader is off its loading screen). `0` = off. ⚠ Any non-zero value **arms the hold**, and the 3s arrival floor is then unconditional: every match start pays 3s even with nobody loading (the floor exists so a poll running before the engine has delivered the first connect callbacks can't wave the gate through on an empty tracker). |
+| `scr_gf_load_expect` | 0 | **1 = the load gate also waits for the HEADCOUNT the last match ended with** (`gf_expectcount`, written unconditionally by `gf_writeExpectCount` at match end, one-shot consumed by the next match's gate), instead of only for whoever connected inside the blind 3s arrival floor. The server cannot see a client that hasn't sent its connect packet, so the previous map's roster is the only available target number. Also lets a **fully-accounted-for room bypass the 3s floor** (start in 400ms, not 3s). ⚠ A player who LEFT between matches gives no signal at all → the count is never reached and the start is held for `scr_gf_load_expect_wait` before falling back; that ceiling is what keeps the common case from costing the full 20s. Requires `scr_gf_load_wait > 0` (this refines that gate and its ceiling always wins); `humans == 0` always releases. Panel: ADVANCED → MATCH START → *Wait for Full Roster*. |
+| `scr_gf_load_expect_wait` | 6 | Seconds the roster expectation waits before falling back to "every client we HAVE seen is loaded". **Keep it short** — a returning player reconnects in ~1-3s (already holds the map + `mod.ff`), while a leaver costs the full value every match start. Clamped 0-60, capped by `scr_gf_load_wait`. Inert unless `scr_gf_load_expect 1`. |
 | `scr_gf_load_grace` | 20 | s past prematch_over to keep round-1 grace open for a straggler loader (0 = off). |
 | `scr_gf_lobby` | 0 | Match Start: **0 Normal** / **1 Auto** / **2 Manual** (Auto/Manual fast-restart via `map_restart(false)`). |
 | `scr_gf_lobby_timer` | 600 | Manual-lobby auto-start ceiling (s); 0 = never auto-start. |
@@ -1249,6 +1282,7 @@ tables → `docs/REFERENCE.md`.
 | `gf_admin_guids` | "" | GUID allowlist for private bridge command feedback. |
 | `gf_team_nextmatch` | stock | **Next-match team policy.** `stock` = the engine's random autoassign between matches (per-player coin flip); `keep` = carry current teams across the map change: `gf_writeNextMatchPlan` (from `gf_onRoundEndGame`, which stock invokes only at true match end — all end paths incl. bridge END ROUND) snapshots humans by GUID into `gf_teamplan` + the `gf_teamcarry` marker; `shuffle` = fresh random **balanced** teams every match (`gf_writeShuffledTeamPlan`: Fisher-Yates deal of the seated humans, off-by-1-even, random odd side; deliberate spectators stay). Either plan is consumed by the next match's first pass (`gf_consumeTeamPlan`) — seated at connect, pre-spawn, no flicker. Panel row: ADVANCED → TEAMS. |
 | `gf_teamstage` | "" | **Staged next-match teams** — `<guid>:<a\|x\|s>,…` written by the panel (one raw `set`, no bridge verb). One-shot: wins over any carried/armed `gf_teamplan` at the next match start (rotate, lobby release, `matchrestart` alike), cleared on consume. Empty = no stage. |
+| `gf_expectcount` | "" | Roster expectation: humans at the last match end, written unconditionally by `gf_writeExpectCount` and **one-shot consumed** by the next match's load gate (`gf_consumeExpectCount`). Read only when `scr_gf_load_expect 1`; a dvar because a map change wipes `game[]`/`pers[]`. Not a panel row — telemetry the gate owns. |
 | `gf_teamplan` / `gf_botplan` / `gf_matchArmed` / `gf_teamcarry` | "" / "" / "" / "" | Lobby→match transfer + loop-break + carry-marker plumbing (dvars because `map_restart(false)` — and a match→match map change — wipe `game[]`). `gf_teamcarry "1"` marks `gf_teamplan` as a carried end-of-match snapshot; a marker-less plan on a plain map load is ignored as stale. |
 | `gf_vis_*` (`vision`/`ambient`/`gridint`/`gridcon`/`hdr`/`fog`) | "" | RCON visual tweaks; client-side, unreliable on dedicated. |
 | `gf_expbullets_radius` | 200 | RCON explosive-bullets blast radius. |

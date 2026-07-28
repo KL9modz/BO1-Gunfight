@@ -582,6 +582,12 @@ gf_armLoadGate()
     // so a gate thread orphaned by a mid-hold restart can detect it is stale.
     level notify( "gf_load_gate_reset" );
     level.gf_loadGateSeen = [];
+    // Parallel to gf_loadGateSeen, same indices: latched true the first time entry i is
+    // OBSERVED as a begun human. Only the roster-expectation gate reads it — it needs to tell
+    // "a human who arrived then dropped" (decrement what we're still waiting for) from "a bot
+    // was kicked" (must NOT decrement a HUMAN count). Once the entity is gone there is nothing
+    // left to classify, so the flag has to be latched while it is still there.
+    level.gf_loadGateHuman = [];
     level.gf_loadGateGen  = gettime();
     level thread gf_loadGateTracker();
 }
@@ -715,6 +721,11 @@ gf_waitForLoadingClients()
         return;
     if ( !isDefined( level.gf_loadGateSeen ) )   // arm didn't run — nothing tracked, nothing to wait on
         return;
+    // The arm sets both together, so this can't fire today — but an INDEX READ on an undefined
+    // array is a runtime error, and the poll loop below indexes this one, so don't leave that
+    // depending on a second variable staying in sync.
+    if ( !isDefined( level.gf_loadGateHuman ) )
+        level.gf_loadGateHuman = [];
 
     myGen         = level.gf_loadGateGen;
     start         = gettime();
@@ -735,6 +746,32 @@ gf_waitForLoadingClients()
     lobbyTimer    = int( gf_cfgFloat( "scr_gf_lobby_timer", 600, 0, 3600 ) );
     lobbyDeadline = start + ( lobbyTimer * 1000 );
     floorEnd      = start + 3000;                       // arrival floor — see block comment
+
+    // ROSTER EXPECTATION (scr_gf_load_expect) — wait for the count the PREVIOUS match ended
+    // with, not just for whoever happens to have connected inside the blind 3s arrival floor.
+    // gf_expectcount is written at every match end (gf_writeExpectCount, from gf_onRoundEndGame)
+    // and consumed here: dvars are the only state that survives a map change, and a one-shot
+    // consume means at most ONE match start can ever act on a given snapshot.
+    //
+    // ⚠ It is a REFINEMENT OF THE LOAD GATE, not a gate of its own: gated on loadGateOn, and its
+    // deadline is clamped to loadDeadline below, so scr_gf_load_wait remains the single ceiling
+    // on how long a match start can be held for arrivals. Turning the load gate off turns this
+    // off with it.
+    //
+    // ⚠ Why it needs its OWN short deadline: a player who left between matches never sends a
+    // connect packet, so the server gets no signal at all — "expected" can never be reached and
+    // a raw wait would pay the FULL load ceiling (20s) on what is a routine occurrence. The
+    // expect deadline (default 6s) is the whole cost of a leaver; a genuinely returning player
+    // reconnects in ~1-3s (they already hold the map + mod.ff) and lands well inside it. After
+    // it, the gate falls back to today's rule (every client the tracker HAS seen is loaded).
+    expectOn   = loadGateOn && ( int( gf_cfgFloat( "scr_gf_load_expect", 0, 0, 1 ) ) == 1 );
+    expectWait = gf_cfgFloat( "scr_gf_load_expect_wait", 6, 0, 60 );
+    expected   = 0;
+    if ( expectOn )
+        expected = gf_consumeExpectCount();
+    expectDeadline = start + int( expectWait * 1000 );
+    if ( expectDeadline > loadDeadline )                 // the load ceiling always wins
+        expectDeadline = loadDeadline;
 
     // Stock look: the exact "waiting for teams" element matchStartTimer() shows
     // while its (stubbed) waitForPlayers() would wait, plus a live
@@ -836,11 +873,22 @@ gf_waitForLoadingClients()
 
         stillLoading = 0;
         humans       = 0;
+        humansGone   = 0;
         for ( i = 0; i < level.gf_loadGateSeen.size; i++ )
         {
             p = level.gf_loadGateSeen[i];
             if ( !isDefined( p ) )        // dropped while loading
+            {
+                // A human who connected during the hold and then left is one body that will
+                // never arrive — subtract them from the expectation below, or it would re-stall
+                // after having been satisfied. Only latched-human entries count: a bot the fill
+                // reconciler kicked must not shrink a HUMAN expectation. A client that dropped
+                // BEFORE begin was never latched, so it isn't subtracted and that expectation
+                // rides out its deadline instead — rare, and bounded by design.
+                if ( isDefined( level.gf_loadGateHuman[i] ) && level.gf_loadGateHuman[i] )
+                    humansGone++;
                 continue;
+            }
             if ( isDefined( p.statusicon ) && p.statusicon == "hud_status_connecting" )
             {
                 // Still loading. istestclient() is only stock-precedented on begun
@@ -857,6 +905,7 @@ gf_waitForLoadingClients()
             else if ( gf_isHuman( p ) )
             {
                 humans++;
+                level.gf_loadGateHuman[i] = true;   // latch while the entity is still here to classify
             }
         }
 
@@ -926,14 +975,26 @@ gf_waitForLoadingClients()
             // click still force-releases (start now, even below min-players).
             loadOk = ( !loadGateOn ) || ( stillLoading == 0 ) || ( now >= loadDeadline );
             minOk  = ( !minGateOn ) || ( humans >= minP ) || ( humans == 0 ) || ( minTimerOn && now >= minDeadline );
+            // Roster expectation: how many of the previous match's humans we are still short.
+            // humans == 0 releases unconditionally — an empty or pure-bot lobby must never wait
+            // on a snapshot of players who are all gone (this is also what makes a stale count
+            // harmless on a server that sat empty through a map change).
+            need     = expected - humansGone;
+            expectOk = ( need <= 0 ) || ( humans >= need ) || ( humans == 0 ) || ( now >= expectDeadline );
+            // POSITIVE roster evidence beats the blind arrival floor. The 3s floor exists only
+            // because a poll can run before the engine has delivered any connect callback, so an
+            // empty tracker is indistinguishable from an empty server. "The whole expected roster
+            // is here AND off its loading screen" is strictly better evidence than the floor's
+            // absence of it — so a full 2-player room that reconnects in 400ms starts in 400ms.
+            rosterMet = ( need > 0 && humans >= need && stillLoading == 0 );
             if ( startClicked )
             {
                 logPrint( "GF_LOBBY_END: auto - admin START clicked after " + ( now - start ) + "ms\n" );
                 break;
             }
-            if ( now >= floorEnd && loadOk && minOk )
+            if ( ( rosterMet || now >= floorEnd ) && loadOk && minOk && expectOk )
             {
-                logPrint( "GF_LOBBY_END: auto - gates satisfied (loadOk=" + loadOk + " minOk=" + minOk + " humans=" + humans + " stillLoading=" + stillLoading + ") after " + ( now - start ) + "ms\n" );
+                logPrint( "GF_LOBBY_END: auto - gates satisfied (loadOk=" + loadOk + " minOk=" + minOk + " expectOk=" + expectOk + " rosterMet=" + rosterMet + " humans=" + humans + " expected=" + expected + " need=" + need + " gone=" + humansGone + " stillLoading=" + stillLoading + ") after " + ( now - start ) + "ms\n" );
                 break;
             }
         }
@@ -1016,7 +1077,7 @@ gf_waitForLoadingClients()
             level.gracePeriod = loadGrace;
     }
 
-    logPrint( "GF_LOADGATE: released after " + ( gettime() - start ) + "ms, " + stillLoading + " client(s) still loading\n" );
+    logPrint( "GF_LOADGATE: released after " + ( gettime() - start ) + "ms, " + stillLoading + " client(s) still loading, expected=" + expected + " (roster expectation " + expectOn + ")\n" );
 
     for ( i = 0; i < elems.size; i++ )
     {
@@ -1139,6 +1200,44 @@ gf_writeNextMatchPlan()
         return;
     }
     setDvar( "gf_teamcarry", "" );               // stock: no carry, and no stale marker either
+}
+
+// Snapshot how many HUMANS the match is ending with, for the next match's load gate to wait for
+// (scr_gf_load_expect). Written from gf_onRoundEndGame alongside the team plan — same call site
+// guarantee (the match is genuinely over) and the same reason it must be a dvar: a map change
+// wipes game[]/pers[], dvars are all that survive.
+//
+// ⚠ Written UNCONDITIONALLY, unlike the team plan — it is a count, not a seating policy, so it
+// has nothing to do with gf_team_nextmatch and must be there even on "stock".
+//
+// Deliberately NOT timestamped. The gate CONSUMES it (gf_consumeExpectCount), so at most one
+// match start can act on any snapshot, and the gate's own humans == 0 release means a count left
+// behind by players who all quit during the map change costs nothing. Staleness therefore has no
+// reachable failure mode worth a clock — and gettime()'s behaviour across a full map CHANGE (not
+// a map_restart) is not something this needs to depend on.
+gf_writeExpectCount()
+{
+    n = 0;
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( isDefined( p ) && gf_isHuman( p ) )
+            n++;
+    }
+    setDvar( "gf_expectcount", "" + n );
+}
+
+// One-shot read of the roster expectation: returns the count and CLEARS the dvar, so an
+// abandoned snapshot dies at the very next match start instead of leaking into a later,
+// unrelated one (same discipline as gf_consumeTeamPlan).
+gf_consumeExpectCount()
+{
+    n = getDvarInt( "gf_expectcount" );          // 0 when empty/unset — not int(getDvar()), which has to parse ""
+    setDvar( "gf_expectcount", "" );
+    if ( n < 0 )
+        n = 0;
+    return n;
 }
 
 // Shuffle-mode writer: deal every SEATED human (allies/axis) onto a random BALANCED split —
@@ -4263,6 +4362,9 @@ gf_onRoundEndGame()
     // Synchronous, inside stock endGame's tail — players are frozen but still connected, so
     // pers["team"] is intact for the snapshot; the map change consumes it (gf_consumeTeamPlan).
     gf_writeNextMatchPlan();
+    // Roster expectation for the next match's load gate (scr_gf_load_expect). Unconditional —
+    // it is a headcount, not a seating policy, so it is written on "stock" too.
+    gf_writeExpectCount();
     // #strip-end
 
     if ( game["roundswon"]["allies"] == game["roundswon"]["axis"] )
