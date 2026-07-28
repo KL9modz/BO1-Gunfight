@@ -73,6 +73,7 @@ memory folder as a second copy — it drifts ([[site-css-js-cache-bust-version-q
 - [invalid-weapon-finger-gun-fallback](invalid-weapon-finger-gun-fallback.md) — an invalid token silently gives the engine's default "finger gun", not an error.
 - [python-combo-weapon-precache-errors](python-combo-weapon-precache-errors.md) — stock data gap; fixed with stub combo files in raw/weapons/mp.
 - [spawn-wrong-facing-usestartspawns-gate](spawn-wrong-facing-usestartspawns-gate.md) — small mode short-circuits to curated points. Curated branch MUST set lastSpawnTime/lastSpawnPoint.
+- [spawn-yaw-carried-camera-input](spawn-yaw-carried-camera-input.md) — DIFFERENT from the above (that's the spawn POINT; this is the VIEW angle): camera input on the switch/killcam screen makes spawn() snap the view then the stale client view REVERTS it ~0.2-1s later (d0=0 / d1 large). Fix = divergence-gated (>45°) re-assert of BOTH axes held through prematch, released at prematch_over. Dead ends: 0.2s burst (too early), unconditional hold (SHAKES), yaw-only gate (misses pitch), go-live snap (visible jump — rejected). Held input during countdown is the irreducible edge.
 - [firingrange-intentional-bigmap-default](firingrange-intentional-bigmap-default.md) — omitting a map from _gf_locations IS the opt-out. Don't "fix" it.
 - [spawn_recorder](spawn_recorder.md) — how to use the `gf_debug_spawns` spawn-recorder dev tool (ActionSlot binds, per-map capture flow).
 

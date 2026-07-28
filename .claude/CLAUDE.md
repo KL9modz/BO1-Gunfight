@@ -1044,6 +1044,18 @@ map is the supported opt-out ([[firingrange-intentional-bigmap-default]]). ⚠ T
 for grenade spawn-protection) and does a `positionWouldTelefrag` scan (spawning onto an occupied point
 kills the occupant).
 
+**Spawn-VIEW angle vs spawn point — a separate carried-input fix.** The curated point sets the right
+*facing*, but moving the camera (or holding the look stick) on the round-end **killcam / switching-sides**
+screen made the player spawn looking the wrong way next round — a distinct bug from the point-selection one
+above. `self spawn()` snaps the view once (a fixangle), but the stale client-side view from that screen
+**reverts** the snap ~0.2–1s later (client-authoritative view; `GF_SPAWNYAW d0=0, d1 large`). Fix:
+`gf_lockSpawnYaw` (threaded after each `self spawn()` in `onSpawnPlayer`) re-asserts `setPlayerAngles` on
+**both** axes, **divergence-gated at 45°** (only a badly-carried view, so a still/adjusting player is never
+fought → no camera shake) and **held through the whole prematch**, released at `prematch_over`. Ships public
+(stock builtins only). The one edge: actively holding a look input off-target for the whole countdown gets a
+gentle pull-back — inherent, not reachable in normal play. Dev probe: `gf_debug_spawnyaw`
+([[spawn-yaw-carried-camera-input]]).
+
 **Wager zone without the wager framework:** small mode uses stock `mp_wager_spawn` entities and **keeps
 the baked wager blocker entities** (map ents tagged `script_gameobjectname "gun oic hlnd shrp"`) by
 adding those four tags to the `_gameobjects::main` allow-list (`["gf","dom"]` + the four in small mode;
