@@ -993,24 +993,37 @@ onSpawnPlayer( teamOverride )
     // #strip-end
 }
 
-// Re-assert the spawn angles across the first few frames to defeat the deltaangles race.
-// self spawn() snaps the client by setting deltaangles = intendedAngle - cmd.angles — computed
-// against whatever mouse input the client last reported. If the player was moving the camera
-// during the round-end / switching-sides screen (killcam cam + free-look scoreboard), that
-// carried-over input leaks into the final facing: the GF_SPAWNYAW "CLIENT_VIEW_OVERRODE" case
-// (t0 delta ~0, t1 large). setPlayerAngles issues a fresh fixangle each frame, so re-asserting
-// over the first ~0.2s flushes the stale input. On a round boundary the player is frozen through
-// prematch, so this only ever overrides carried-over input, never a real turn; a mid-round
-// late-spawner isn't turning a camera, so the brief lock is imperceptible. Ships in the public
-// build (this is a real gameplay bug) — stock builtins only, no dev dependency.
+// Re-assert the spawn angles until the round goes live, to defeat carried camera input.
+// self spawn() snaps the view once by setting deltaangles = intendedAngle - cmd.angles, but the
+// camera turn the player made on the round-end / switching-sides / killcam screen is a stale
+// client-side view that REVERTS the snap within ~1s. Proven on the VPS: every bad GF_SPAWNYAW
+// line is d0=0 (the snap took) / d1 large / prematch=1 — the CLIENT_VIEW_OVERRODE case. A one-shot
+// re-assert (or a short burst) is therefore not enough: the revert lands after it stops. Instead
+// hold the intended yaw across the whole frozen prematch countdown and release the instant control
+// returns at prematch_over (stock clears level.inPrematchPeriod, _globallogic.gsc:1539). The player
+// is frozen through the countdown, so holding the fight-facing yaw is harmless and correct for a
+// gunfight; a late/mid-round spawn (inPrematchPeriod already false) asserts once and returns — it
+// has no switching-sides carryover. setPlayerAngles writes a snapshot field replicated every frame
+// regardless, NOT a reliable command, so re-asserting costs nothing against the command budget.
+// Ships in the public build (this is a real gameplay bug) — stock builtins only, no dev dependency.
 gf_lockSpawnYaw( angles )
 {
     self endon( "disconnect" );
     self endon( "death" );
+    level endon( "game_ended" );
 
-    for ( i = 0; i < 4; i++ )
+    start = getTime();
+    for ( ;; )
     {
         self setPlayerAngles( angles );
+
+        if ( !( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod ) )
+            return;
+
+        // Safety: never outlive a sane prematch, so a stuck flag can't loop forever.
+        if ( getTime() - start > 25000 )
+            return;
+
         wait 0.05;
     }
 }
