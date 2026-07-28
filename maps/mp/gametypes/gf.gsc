@@ -1015,7 +1015,15 @@ gf_lockSpawnYaw( angles )
     start = getTime();
     for ( ;; )
     {
-        self setPlayerAngles( angles );
+        // DIVERGENCE-GATED, not unconditional. The carried-camera revert is a one-shot that lands
+        // within ~1s and then settles (proven: with the old 0.2s burst, d1 settled at the wrong
+        // angle and STAYED), and it is always large (every CLIENT_VIEW_OVERRODE was 100 deg+). So
+        // only re-assert when the view has been dragged well off the intended facing — that snaps
+        // the revert back while leaving small look adjustments alone. Re-applying the angle every
+        // tick regardless (the first fix) fought the player's own mouse input and re-issued a
+        // redundant fixangle 20x/s, which read as a camera shake during the countdown.
+        if ( abs( gf_yawDiff( angles[1], self getPlayerAngles()[1] ) ) > 45 )
+            self setPlayerAngles( angles );
 
         if ( !( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod ) )
             return;
@@ -1026,6 +1034,18 @@ gf_lockSpawnYaw( angles )
 
         wait 0.05;
     }
+}
+
+// Signed shortest angular difference a-b, wrapped to (-180, 180]. Local copy so the fix ships in
+// the public build (the dev-only _gf_debug::gf_yawDelta is stripped from the release).
+gf_yawDiff( a, b )
+{
+    d = a - b;
+    while ( d > 180 )
+        d -= 360;
+    while ( d <= -180 )
+        d += 360;
+    return d;
 }
 
 onSpawnPlayerUnified()
