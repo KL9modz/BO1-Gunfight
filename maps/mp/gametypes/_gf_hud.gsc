@@ -735,6 +735,18 @@ gf_showWeaponHUD( load )
     if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
         level waittill( "prematch_over" );
 
+    // Then hold until the player is demonstrably PRESENT, and only then start their second.
+    // MEASURED (GF_LOADGAP, VPS 2026-07-28) — go-live to first input:
+    //   established client, 12 samples: 50-800ms, median ~100  -> this is a ~no-op for them
+    //   joined at MATCH START (round 1, 20s countdown):    100  -> the countdown absorbs the load tail
+    //   joined MID-MATCH (round 3, 7s countdown):         1800  -> missed the panel outright
+    //   LATE SPAWN (spawn2live=0, no countdown at all):   3800  -> missed it by a mile
+    // So the gap is real but confined to mid-match joins and late spawns, and the fix is NOT a bigger
+    // fixed wait: a panel parked over first contact on a 42s one-life round costs everyone to rescue a
+    // minority. Gating on presence self-tunes instead — ~1.1s total for a loaded client, as long as it
+    // takes for a joiner.
+    self gf_waitForPlayerPresent( 5000 );
+
     wait 1;
 
     // Slide back out + fade (off 0 -> 70, alpha 1 -> 0) over 0.5s. This is a ~13 reliable-command/human/round
@@ -747,6 +759,69 @@ gf_showWeaponHUD( load )
     // clock question — see CLAUDE.md "Menu-owned loadout slide-out animation".
     self gf_slideLoadout( 0, 70, 1, 0, 0.5 );
     self setClientDvar( "ui_gf_lo_show", 0 );
+}
+
+// Block until this player gives evidence their client is actually up and they are present, or
+// `timeoutMs` elapses. Called (not threaded) so the caller's endons — gf_kill_loadout_hud /
+// disconnect / game_ended — govern it; it must never outlive the spawn that started it.
+//
+// ⚠ THE SERVER CANNOT SEE "THE CLIENT IS RENDERING". statusicon/"begin"
+// (_globallogic_player.gsc:19-21) is the deepest readiness signal GSC gets and it fires at cgame
+// init — the first rendered frame, Plutonium's in-place engine rebuild and the Demonware resync all
+// land after it, invisibly (stock doesn't even try: T5's waitForPlayers() is an empty stub). So this
+// watches a PROXY — the usercmd stream, which only flows once cgame is running. Measure the real
+// distribution with gf_debug_loadgap (GF_LOADGAP).
+//
+// ⚠ CALL THIS ONLY AFTER GO-LIVE. During the frozen prematch a still player is indistinguishable
+// from a client sending nothing, so there is no signal to read; it would just burn the timeout.
+//
+// ⚠ FAILS SAFE, AND THAT IS WHY IT IS USABLE HERE. "No input" never means "not ready" — it only
+// means "no evidence" (a player can simply have their hands off the sticks). Here that costs one
+// player a slightly longer panel, so an ambiguous negative is harmless. Do NOT reuse this as a
+// release condition for the match-start LOAD GATE: there the same ambiguity makes the whole lobby
+// pay the ceiling because one person didn't fidget, and it cannot see the pre-"begin" clients that
+// are the gate's actual subject anyway. `begin` is a definite one-way signal; this is a proxy with
+// no negative form. (The GF_LOADGAP data also says the gate doesn't need it — a match-start joiner
+// already lands at ~100ms, because the 20s round-1 countdown absorbs the load tail.)
+//
+// Builtins only, all verified present in the MP VM (raw/maps/mp hits + the live GF_LOADGAP probe):
+// getPlayerAngles, abs, gettime, Attack/Jump/MeleeButtonPressed. ⚠ NOT GetNormalizedMovement — that
+// one is SP-only and fails the whole server with `unknown function`; movement is an origin delta off
+// a baseline instead, and self.origin is a plain field with no registration risk.
+//
+// Angle compare is a naive subtraction on purpose: for CHANGE detection it cannot produce a false
+// negative (a naive delta is 0 only when the angles are numerically equal, and numerically-close
+// angles are angularly close), so the 0/360 wrap can only ever inflate a delta into a detection —
+// never hide one. That is what lets this file skip a yaw-wrap helper, which would otherwise be a
+// third copy of one (gf.gsc::gf_yawDiff, _gf_debug::gf_yawDelta) forced by the one-way include graph.
+gf_waitForPlayerPresent( timeoutMs )
+{
+    ceiling = gettime() + timeoutMs;
+    baseAng = self getPlayerAngles();
+    baseOrg = self.origin;
+
+    while ( gettime() < ceiling )
+    {
+        // Died / left the round — no longer a question worth asking, and holding the panel for a
+        // spectator is pointless.
+        if ( self.sessionstate != "playing" )
+            return;
+
+        // View first: a present player looks around before they do anything else, so this is the
+        // signal that fires earliest. 2 degrees is above float/quantisation noise.
+        a = self getPlayerAngles();
+        if ( abs( a[0] - baseAng[0] ) > 2 || abs( a[1] - baseAng[1] ) > 2 )
+            return;
+
+        o = self.origin;
+        if ( abs( o[0] - baseOrg[0] ) > 1 || abs( o[1] - baseOrg[1] ) > 1 || abs( o[2] - baseOrg[2] ) > 1 )
+            return;
+
+        if ( self AttackButtonPressed() || self JumpButtonPressed() || self MeleeButtonPressed() )
+            return;
+
+        wait 0.05;
+    }
 }
 
 // Linear slide+fade of the overview over `dur` seconds (0.05s frames). The menu
