@@ -703,9 +703,12 @@
 		}
 
 		// -- Equipment row --------------------------------------------------
-		// Lethal | Tactical | Equipment. The third column (icon4/name4) is gated on
-		// ui_gf_lo_show4 as well: a loadout can carry "none" equipment, and then that
-		// slot is left empty (the bracket underneath still spans all three columns).
+		// Lethal | Tactical | Equipment. Each column's icon+name carries its own gate on
+		// top of ui_gf_lo_show — ui_gf_lo_show2 (lethal), _show3 (tactical), _show4
+		// (equipment) — because a slot can be absent two ways: the loadout carries "none"
+		// equipment, or the admin switched that whole slot off server-wide (scr_gf_lethals /
+		// scr_gf_tacticals / scr_gf_equipment). Either way only the icon + name are hidden:
+		// the bracket below still spans all three columns, so the block never reflows.
 		itemDef
 		{
 			rect			0 0 94 1 HORIZONTAL_ALIGN_RIGHT VERTICAL_ALIGN_CENTER
@@ -764,7 +767,7 @@
 			exp				material( dvarString( "ui_gf_lo_icon2" ) );
 			forecolor		1 1 1 1
 			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
-			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) && dvarInt( "ui_gf_lo_show2" ) )
 			decoration
 		}
 		itemDef
@@ -780,7 +783,7 @@
 			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
 			forecolor		1 1 1 1
 			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
-			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) && dvarInt( "ui_gf_lo_show2" ) )
 			decoration
 		}
 		itemDef
@@ -793,7 +796,7 @@
 			exp				material( dvarString( "ui_gf_lo_icon3" ) );
 			forecolor		1 1 1 1
 			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
-			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) && dvarInt( "ui_gf_lo_show3" ) )
 			decoration
 		}
 		itemDef
@@ -809,7 +812,7 @@
 			textstyle		ITEM_TEXTSTYLE_SHADOWEDMORE
 			forecolor		1 1 1 1
 			exp				forecolor A( dvarFloat( "ui_gf_lo_alpha" ) )
-			visible			when( dvarInt( "ui_gf_lo_show" ) )
+			visible			when( dvarInt( "ui_gf_lo_show" ) && dvarInt( "ui_gf_lo_show3" ) )
 			decoration
 		}
 		itemDef

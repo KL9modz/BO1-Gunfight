@@ -214,18 +214,27 @@ gf_giveCustomLoadout()
     // (Bandolier) max stockpile.
     self gf_bumpReserveAmmo( load["primary"]   );
     self gf_bumpReserveAmmo( load["secondary"] );
-    self GiveWeapon( load["lethal"] );
-    lethalCount = 1;                                 // 1 of each lethal on spawn...
-    if ( load["lethal"] == "hatchet_mp" )
-        lethalCount = 2;                             // ...except Tomahawks, which get 2
-    self setWeaponAmmoClip( load["lethal"], lethalCount );
-    self SwitchToOffhand( load["lethal"] );
-    self GiveWeapon( load["tactical"] );
-    self setWeaponAmmoClip( load["tactical"], 1 );   // 1 tactical on spawn
+    // Admin slot switches (scr_gf_lethals / _tacticals / _equipment, all default 1). Read HERE
+    // rather than cached on level, so a panel toggle lands on the very next spawn without waiting
+    // for onStartGameType — three getDvar calls on a path that already does a dozen gives.
+    if ( gf_slotOn( "scr_gf_lethals" ) )
+    {
+        self GiveWeapon( load["lethal"] );
+        lethalCount = 1;                                 // 1 of each lethal on spawn...
+        if ( load["lethal"] == "hatchet_mp" )
+            lethalCount = 2;                             // ...except Tomahawks, which get 2
+        self setWeaponAmmoClip( load["lethal"], lethalCount );
+        self SwitchToOffhand( load["lethal"] );          // only meaningful once the lethal exists
+    }
+    if ( gf_slotOn( "scr_gf_tacticals" ) )
+    {
+        self GiveWeapon( load["tactical"] );
+        self setWeaponAmmoClip( load["tactical"], 1 );   // 1 tactical on spawn
+    }
     isBot = isDefined( self.pers["isBot"] ) && self.pers["isBot"];
     // "none" = an equipment-less loadout. GiveWeapon of a token the engine doesn't know
     // hands out the finger gun rather than nothing, so the slot must be skipped outright.
-    if ( !isBot && !gf_slotEmpty( load["equip"] ) )
+    if ( !isBot && !gf_slotEmpty( load["equip"] ) && gf_slotOn( "scr_gf_equipment" ) )
     {
         self GiveWeapon( load["equip"] );
         self SetActionSlot( 1, "weapon", load["equip"] );
@@ -554,6 +563,20 @@ gf_buildPerkDB()
 gf_slotEmpty( token )
 {
     return !isDefined( token ) || token == "" || token == "none";
+}
+
+// Admin switch for a whole loadout SLOT (scr_gf_lethals / scr_gf_tacticals / scr_gf_equipment).
+// Unset/empty reads as ON, so the mod behaves exactly as it always did on a server that has never
+// touched these (and a panel read before gf.gsc's seed can't turn a slot off by accident). Only
+// "0" is off — anything else is on.
+//
+// The pool is NOT rebuilt when one of these flips: the loadout still CARRIES its lethal/tactical/
+// equipment, the give is simply skipped, so flipping a slot back on mid-match restores the exact
+// same items. _gf_hud reads the same dvars to hide the matching overview slots (it can't call in
+// here — the include graph is one-way, loadouts -> hud).
+gf_slotOn( dvar )
+{
+    return getDvar( dvar ) != "0";
 }
 
 // Resolve a weapon token -> { w:token, n:displayName, s:hudShader }.

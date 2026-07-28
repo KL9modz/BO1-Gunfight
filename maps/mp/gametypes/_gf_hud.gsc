@@ -673,12 +673,26 @@ gf_showWeaponHUD( load )
     if ( load["secondaryShader"] == "hud_death_suicide" )
         w1 = 36;
 
-    // Equipment slot gate. A "none" equipment loadout gives no equipment at all, so its
-    // icon + name itemDefs are hidden (the equipment row's bracket stays — the slot is
-    // simply empty). Ordered BEFORE ui_gf_lo_show so the block never flashes a filled slot —
-    // and since the whole group lands as one command, that ordering now holds within a frame.
+    // Equipment-row slot gates (lethal / tactical / equipment). Two independent reasons a slot
+    // is hidden, and the hide is icon + name only — the row's bracket still spans all three
+    // columns, so a disabled slot reads as empty rather than reflowing the block:
+    //   • the loadout carries no equipment at all ("none" -> load["equipNone"]);
+    //   • the admin switched that whole slot off for the server (scr_gf_lethals /
+    //     scr_gf_tacticals / scr_gf_equipment, read live — same dvars _gf_loadouts skips the
+    //     give on. Read here rather than passed on the loadout because the include graph is
+    //     one-way: loadouts -> hud, so this file cannot call gf_slotOn).
+    // ⚠ Ordered BEFORE ui_gf_lo_show (its own trailing push) so the block is never revealed
+    // for a frame with a slot the player doesn't actually have.
+    show2 = 1;
+    if ( getDvar( "scr_gf_lethals" ) == "0" )
+        show2 = 0;
+    show3 = 1;
+    if ( getDvar( "scr_gf_tacticals" ) == "0" )
+        show3 = 0;
     show4 = 1;
     if ( isDefined( load["equipNone"] ) && load["equipNone"] )
+        show4 = 0;
+    if ( getDvar( "scr_gf_equipment" ) == "0" )
         show4 = 0;
 
     // Anchor: center-right column. cx = column center (px left of the right safe
@@ -686,13 +700,19 @@ gf_showWeaponHUD( load )
     // a map_restart — no mod.ff rebuild (only the item sizes/spacing are baked in).
     // INTRO ANIM DISABLED (snap in) — testing whether the HUD just being there on spawn looks cleaner.
     // Was: self gf_slideLoadout( 70, 0, 0, 1, gf_REVEAL_TIME() );  // slide+fade in. Outro below is kept.
+    // Two groups, not one: the three slot gates pushed the group to 10 pairs, past the <=8-pair
+    // batching rule. Splitting on ui_gf_lo_show is the right seam — every gate/anchor value lands
+    // first, then ONE command reveals the block, so the reveal can never race a stale gate. Cost
+    // is one extra reliable command per human per spawn (4 total for the whole overview).
     self setClientDvars( "ui_gf_lo_w1",    w1,
+                         "ui_gf_lo_show2", show2,
+                         "ui_gf_lo_show3", show3,
                          "ui_gf_lo_show4", show4,
                          "ui_gf_lo_cx",    -104,
                          "ui_gf_lo_cy",    -6,
                          "ui_gf_lo_off",   0,
-                         "ui_gf_lo_alpha", 1,
-                         "ui_gf_lo_show",  1 );
+                         "ui_gf_lo_alpha", 1 );
+    self setClientDvar( "ui_gf_lo_show",  1 );
 
     wait 8;
 

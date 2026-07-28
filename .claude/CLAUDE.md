@@ -790,7 +790,9 @@ try to bundle the `.iwi` → build error.
   members but must SKIP bodies on their way out (`.gf_displacePending` / `gf_parkPending`) — a
   displaced bot's pers lies for the ~2s its suicide-park settles, and a panel seeded mid-churn showed
   "3 players / 300" on a 2-human team ([[health-hud-counts-mid-displacement-bodies]]).
-- **Self health bar**, **loadout overview** (icons via `ui_gf_lo_*`; 3 hardcoded perk icons), and two
+- **Self health bar**, **loadout overview** (icons via `ui_gf_lo_*`; 3 hardcoded perk icons; the
+  equipment row's three columns each carry their own gate — `ui_gf_lo_show2`/`3`/`4` — for a `"none"`
+  equipment loadout or an admin slot switch, hiding icon+name only so the bracket doesn't reflow), and two
   separate menuDefs — **pregame lobby** (`gf_lobby_hud`) and the admin **pause banner** (`gf_pause_hud`,
   "MATCH PAUSED", gated on `ui_gf_paused`) — both gated `!BIT_IN_KILLCAM` not `BIT_HUD_VISIBLE`
   (the lobby cam clears hud_visible, and a pause can land in a state that has too).
@@ -1179,6 +1181,7 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_scorelimit` | 6 | Round wins to win the match (the real match-end threshold). |
 | `scr_gf_roundswitch` | 2 | Rounds between side switches. |
 | `scr_gf_roundsperloadout` | 2 | Rounds before the shared loadout rotates (clamp 1-9). |
+| `scr_gf_lethals` / `scr_gf_tacticals` / `scr_gf_equipment` | 1 / 1 / 1 | **Per-slot admin switches** — `0` turns that whole loadout slot off server-wide (nobody gets a lethal / tactical / placed equipment, on any loadout), and `_gf_hud` hides the matching overview column (`ui_gf_lo_show2`/`3`/`4`; the row's bracket still spans all three, so the block never reflows). Read **live at each spawn's loadout build** (`_gf_loadouts::gf_slotOn`, empty = on), so a panel flip lands on the next spawn — the next round for anyone already alive. **No pool rebuild**: the loadout still carries the item, only the give is skipped, so flipping one back on restores exactly what it was giving. Composes with, and never overrides, the two existing narrower skips — a loadout authored with `"none"` equipment (`gf_slotEmpty`) and the bot equipment exclusion. Panel: DASHBOARD → GUNFIGHT → *Loadout Slots*. Plain dvar rows, **no bridge verb** (nothing to apply — the give site is the reader). |
 | `scr_gf_timelimit` / `_large` | 0.7 / 1.5 | Round length in minutes, small / large mode (0.7 = 42s). |
 | `scr_gf_overtimelimit` / `_large` | 15 / 30 | Overtime seconds, small / large; `0` = OT off (HP decides now). |
 | `gf_capture_time` / `_large` | 3.5 / 5 | OT zone hold-to-capture seconds, small / large. |
@@ -1387,7 +1390,8 @@ content), so `git checkout main` after cloning and push `main` with `tools/push_
   dvar-tunable version strip-marked behind it. A public server owner still gets the core knobs:
   `scr_gf_scorelimit` / `_timelimit(_large)` / `_overtimelimit(_large)` / `_roundswitch` /
   `_roundsperloadout` / `_teamspawnmode` / `gf_capture_time(_large)` / `scr_gf_flinch` /
-  `scr_gf_jump_fatigue` / `scr_gf_sprint_unlimited` / `scr_team_maxsize`.
+  `scr_gf_jump_fatigue` / `scr_gf_sprint_unlimited` / `scr_gf_lethals` / `scr_gf_tacticals` /
+  `scr_gf_equipment` / `scr_team_maxsize`.
   ⚠ Two functions are deliberately kept OUTSIDE the strip regions because **live-round code still
   calls them**: `gf_anyTrackedClientLoading()` (called by `gf_roundWatchdog` + `gf_closeGraceEarly`;
   already returns false when the tracker never armed, so it degrades to "nobody is loading") and
