@@ -998,9 +998,40 @@ gf_welcomeMessage()
 {
     self endon( "disconnect" );
 
-    // Let the spawn moment settle (loadout overview slide-in, gametype hint).
+    // Let the spawn moment settle: the loadout overview, the gametype hint, and stock's own team-name
+    // splash — which rides the SAME oldNotifyMessage queue we do (_globallogic_spawn.gsc:222), so
+    // without this we would simply serialize behind it and land at an unpredictable time anyway.
     wait 10;
 
+    // PREFERRED WINDOW — still inside the frozen countdown. The player is frozen, has nothing to do
+    // and is reading the screen: the ideal moment for a greeting. It is also the only window a 7s
+    // splash actually FITS, since only round 1's countdown is 20s (rounds 2+ are 7s).
+    //
+    // ⚠ Presence-gating is deliberately NOT applied on this path, even though it is available.
+    // gf_waitForPlayerPresent only works AFTER go-live: inside a frozen prematch movement is disabled
+    // so only view input arrives, and a player watching a countdown may never move their view — the
+    // check would burn its whole ceiling and shove the splash out of the very window we wanted it in.
+    // Consequence, accepted: a round-1 joiner whose client comes up very late in the countdown can
+    // still miss this. That is irreducible, not an oversight — no server-side signal can see a frozen
+    // player's client come up (see gf_waitForPlayerPresent's header).
+    if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
+    {
+        self gf_showWelcomeSplash();
+        return;
+    }
+
+    // The countdown is gone — a mid-match join, a late spawn (no countdown at all), or a loader slow
+    // enough that the wait above outlived round 1's countdown. We are in live play on every one of
+    // those, so a 7s centre splash was going to spill into gameplay no matter what we did — which is
+    // exactly what makes presence-gating FREE here: the only question left is whether they SEE it.
+    // Measured (GF_LOADGAP): mid-match join 1800ms, late spawn 3800ms — both well inside the ceiling.
+    self gf_waitForPlayerPresent( 5000 );
+    self gf_showWelcomeSplash();
+}
+
+// The splash itself. Split out so both delivery paths above share one copy of the wording/styling.
+gf_showWelcomeSplash()
+{
     self maps\mp\gametypes\_hud_message::oldNotifyMessage(
         "Welcome " + self.name + "!",          // title line (big, decode FX)
         "visit us at ^5gunfight.us",           // ^5 = cyan; ^3 orange, ^4 blue
