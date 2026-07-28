@@ -289,8 +289,28 @@ public, and a kept call into stripped code is an `unknown function` that fails t
 checkpoint, which the sampler cannot see.
 
 **Dev-only dvars:** `gf_trace_teams`, `gf_debug_popup` (per-death score share, default 0),
-`gf_debug_spawns`, `gf_debug_hud_pool`, `gf_debug_elem_probe`, `gf_debug_spawnyaw`, `gf_hitch_pct`
+`gf_debug_spawns`, `gf_debug_hud_pool`, `gf_debug_elem_probe`, `gf_debug_spawnyaw`, `gf_debug_loadgap`
+(client-readiness gap, `GF_LOADGAP` — see below), `gf_hitch_pct`
 (threshold %, code-default 25), `gf_hitch_debug`, `gf_endgap_ms`, `gf_force_loadout`, `gf_force_camo`.
+
+**`GF_LOADGAP` — the client-readiness probe** (`_gf_debug::gf_probeLoadGap`, dvar `gf_debug_loadgap`,
+default **0**). On a fresh connect a player spawns on the SERVER before their client is drawing
+("round 1, camera isn't loaded yet"), so anything the server times from that spawn can play to a black
+screen. ⚠ **The server cannot see "the client is rendering"** — `statusicon`/`"begin"`
+(`_globallogic_player.gsc:19-21`) is the deepest signal GSC gets and it fires at cgame init; the first
+rendered frame, Plutonium's in-place engine rebuild and the Demonware resync all land after it,
+invisibly (stock doesn't even try — T5's `waitForPlayers()` is an empty stub). So the probe measures a
+**proxy**: the usercmd stream, which only flows once cgame runs (view divergence / origin delta /
+Attack-Jump-Melee). ⚠ It samples from **`prematch_over`, not spawn** — during the countdown the player
+is frozen and still, indistinguishable from a client sending nothing, and it is also when
+`gf_lockSpawnYaw` releases so nothing of ours is writing angles. The decisive field is **`live2input`**
+(ms from go-live to first evidence of presence): `<1000` = the loadout overview's go-live +1s anchor
+already covers it; `2000-5000` = an input-gated tail with a ceiling (NOT a bigger fixed number — a panel
+over first contact on a 42s one-life round is a real cost); huge/`NO_INPUT` = the gap outlives the round
+and the lever is a post-`begin` settle delay on the load gate, which fixes the overview, the welcome
+splash, the spawn-yaw hold and the intro sting at once. ⚠ **`NO_INPUT` is ambiguous by design** — a
+player who touches nothing logs the same line as one still black-screened; it only ever makes the gap
+look worse, the safe direction for a probe that gates spending.
 
 ### Companion docs (NOT auto-loaded — open them for depth)
 | Doc | Owns |
@@ -1592,6 +1612,18 @@ and the engine disables regen itself.
 *inside* the named function — scan every call within it for (a) a T5-incompatible builtin, (b) a helper
 in an un-`#include`d file, (c) a bare builtin called with a method prefix, or (d) **a function you
 deleted from a stock script you override**. Causes (b)/(c) → [[vector-scale-in-common-scripts-utility]].
+
+⚠ **For (a): the raw dump proves a builtin EXISTS, not that it exists in the MP VM — grep
+`raw/maps/mp` specifically, never all of `raw/`.** Builtins are registered per-VM, and the dump mixes
+SP/ZM/MP freely, so a name with hits only in `maps/_rockclimb.gsc` / `maps/_zombiemode.gsc` /
+`maps/_utility.gsc` is SP/ZM evidence and tells you nothing about MP. Cost a real compile error
+2026-07-27: **`GetNormalizedMovement()`** (hits: `_rockclimb`, `_horse` — **zero** under `raw/maps/mp`)
+failed the whole server with `unknown function @ _gf_debug::gf_probeloadgap`. Proven MP-safe for input
+polling: `AttackButtonPressed` / `JumpButtonPressed` / `MeleeButtonPressed` / `UseButtonPressed` /
+`FragButtonPressed` (all have `raw/maps/mp` hits). ⚠ Note the button-poll list further down this file
+includes **`AdsButtonPressed`**, which has **no** `raw/maps/mp` hits — unverified in MP, so don't reach
+for it without testing. When no MP hit exists, prefer a plain **field** read (`self.origin`,
+`getPlayerAngles()`) over a builtin: a field carries no registration risk at all.
 
 ⚠ **(d) — overriding a stock script means keeping its ENTIRE public surface.** GSC resolves symbols at
 **compile** time, so a stock caller links against your file *unconditionally* — even from inside a

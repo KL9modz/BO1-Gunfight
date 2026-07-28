@@ -622,6 +622,17 @@ gf_roundSeedDvars()
     gf_seedDvar( "gf_capture_time", "3.5" );
     gf_seedDvar( "gf_capture_time_large", "5" );
 
+    // LOADOUT SLOT SWITCHES — turn a whole grenade/equipment slot off server-wide (1 = give it,
+    // the default and stock Gunfight; 0 = nobody gets that slot). Public build keeps these: they
+    // are core gametype knobs, like scr_gf_flinch, not dev wiring. Read live at each spawn's
+    // loadout build (_gf_loadouts::gf_slotOn), so a change lands on the NEXT spawn — i.e. the next
+    // round for anyone already alive — with no pool rebuild: the loadout still carries the item,
+    // the give is simply skipped, so flipping one back on restores exactly what it was giving.
+    // _gf_hud reads the same three to hide the matching overview slots.
+    gf_seedDvar( "scr_gf_lethals", "1" );         // lethal grenade slot   (frag / Semtex / Tomahawk)
+    gf_seedDvar( "scr_gf_tacticals", "1" );       // tactical slot         (flash / stun / smoke / gas / decoy)
+    gf_seedDvar( "scr_gf_equipment", "1" );       // equipment slot        (claymore / C4 / camera spike / jammer / motion sensor)
+
     // #strip-begin - dev debug dvars: seed to 0 so the RCON panel's DEBUG section reads them
     // cleanly (they're otherwise read via getDvarInt, which never registers them → "Unknown cmd"
     // on the panel's bare-name sweep). Dev-only; the reader blocks are strip-wrapped too.
@@ -629,6 +640,10 @@ gf_roundSeedDvars()
     gf_seedDvar( "gf_debug_hud_pool", "0" );
     gf_seedDvar( "gf_debug_elem_probe", "0" );
     gf_seedDvar( "gf_debug_spawnyaw", "0" );
+    // Client-readiness / load-gap probe (GF_LOADGAP). Default 0: it logs one line per human per
+    // spawn, and games_mp.log has no live rotation on the VPS. Turn on for a measurement run, read
+    // the live2input distribution, turn back off.
+    gf_seedDvar( "gf_debug_loadgap", "0" );
     // Team-write tracer (GF_TEAMTRACE). Seeded to 2 = FULL history, unlike every other debug dvar
     // here: it exists to catch the untraced mis-seater, which is rare and unreproducible on demand,
     // so anything less than always-on-with-full-history loses the one occurrence that mattered.

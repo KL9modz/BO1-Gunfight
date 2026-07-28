@@ -2318,6 +2318,13 @@ gf_playerSpawnedCB()
     if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
         self thread gf_parkStockScorePopup();
 
+    // #strip-begin - client-readiness / load-gap probe (dev/main only; stripped from public release)
+    // Measures how long after go-live this client actually becomes present (GF_LOADGAP). Log-only,
+    // gated off by default. Threaded for every spawn, not just first-connect ones — the established-
+    // client lines are the baseline that makes a fresh-connect line mean anything.
+    self thread maps\mp\gametypes\_gf_debug::gf_probeLoadGap();
+    // #strip-end
+
     // One-time welcome splash, once per CONNECTION (pers[] resets on disconnect,
     // so a rejoiner is greeted again; the between-round map_restart is not a
     // re-greet). Humans only — bots draw no HUD and their names would burn
@@ -2371,9 +2378,19 @@ gf_playerSpawnedCB()
     self.pers["gf_spawnedRound"] = game["roundsplayed"];
 
     // Level-side stats publisher — start once per round; the player panels read its output.
-    // Skipped during the pregame lobby hold (no panels are shown then, and it would leave an orphaned
-    // update loop across the map_restart(false) release); the match's first spawn starts it fresh.
-    if ( !isDefined( level.gf_inLobbyHold ) || !level.gf_inLobbyHold )
+    // Skipped during the RESTART lobby hold (no panels are shown for that throwaway frozen spawn,
+    // and it would leave an orphaned update loop across the map_restart(false) release). Gated on
+    // gf_lobbyRestartHold, NOT the broad gf_inLobbyHold, for the same reason gf_runHealthHUD/
+    // gf_showWeaponHUD are (see 6bfc3cb): a non-restart Normal-mode hold (scr_gf_lobby 0) can
+    // frozen-spawn a player — one who finishes loading mid-hold — whose spawn IS the match spawn
+    // and is never rebuilt. Keying this off the broad flag meant that if EVERY player happened to
+    // spawn while the hold was still open (nobody left to trigger a fresh post-release spawn), this
+    // publisher never armed for the whole round: level.gf_hpAllies/gf_hpAxis got one partial seed
+    // from whichever gf_runHealthHUD ran first and then NEVER refreshed again (the periodic thread
+    // never started and gf_queueHealthHUDUpdate's notify had no listener) — every player's panel
+    // frozen at that stale snapshot for all of round 1. Rare: it only bites when nobody spawns after
+    // the hold releases.
+    if ( !isDefined( level.gf_lobbyRestartHold ) || !level.gf_lobbyRestartHold )
     {
         if ( !isDefined( level.gf_healthHudStartRound ) || level.gf_healthHudStartRound != game["roundsplayed"] )
         {

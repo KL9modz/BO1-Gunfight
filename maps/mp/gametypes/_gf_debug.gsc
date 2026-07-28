@@ -722,6 +722,169 @@ gf_probeSpawnYaw( intended, source )
               + flag + "\n" );
 }
 
+// ─── Client-readiness / load-gap probe (GF_LOADGAP) ────────────────────────
+//
+// THE QUESTION: on a fresh connect a player spawns on the SERVER before their client is drawing
+// (round-1 "camera isn't loaded yet"). Anything the server times from that spawn — the loadout
+// overview, the welcome splash, the intro sting, the spawn-yaw hold — can play to a black screen.
+// Nobody knows HOW BIG the gap is, so every candidate fix is a blind guess at a number. This probe
+// measures it, and nothing else: log-only, changes no behavior.
+//
+// ⚠ THE SERVER CANNOT SEE "THE CLIENT IS RENDERING". statusicon/"begin" (_globallogic_player.gsc:19-21)
+// is the deepest readiness signal GSC gets, and it fires at cgame init — the first RENDERED frame,
+// Plutonium's in-place engine rebuild and the Demonware resync all land after it, invisibly. Stock does
+// not even try (T5's waitForPlayers() is an empty stub). So this measures a PROXY: the client's usercmd
+// stream, which only flows once cgame is actually running. Observable as view/movement/button input.
+//
+// ⚠ WHY THE SAMPLE STARTS AT prematch_over, NOT AT SPAWN. During the countdown the player is FROZEN and
+// still, which is indistinguishable from a client sending nothing — the proxy has no signal there. At
+// go-live controls unfreeze, so input becomes meaningful. It is also exactly when gf_lockSpawnYaw
+// releases its hold, so nothing of ours is writing angles while we watch them.
+//
+// THE NUMBER THAT DECIDES THE DESIGN is live2input: ms from go-live to first evidence the player is
+// present. The loadout overview now holds to go-live +1s (_gf_hud::gf_showWeaponHUD), so:
+//   live2input consistently < ~1000  -> the +1s anchor already covers it; build nothing more.
+//   live2input routinely 2000-5000   -> the fix is NOT a bigger fixed number (a panel over first
+//                                      contact on a 42s one-life round is a real cost) but an
+//                                      input-gated tail with a ceiling.
+//   live2input huge / NO_INPUT       -> the gap outlives the round; the lever is the load gate's
+//                                      settle delay, which fixes every downstream symptom at once.
+//
+// ⚠ NO_INPUT IS AMBIGUOUS ON PURPOSE — read it as "no evidence", never as "client was dead". A player
+// who genuinely touches nothing for the whole ceiling logs the same line as one still black-screened.
+// Rare at a one-life round start (everyone moves immediately), and the ambiguity only ever makes the
+// gap look WORSE than it is, which is the safe direction for a probe that gates spending.
+//
+// Bots are skipped (the AI inputs every frame — every sample would read 0 and dilute the distribution).
+// Log EVERY spawn, not just slow ones: the boring baseline lines from established clients are what make
+// a fresh-connect line trustworthy (same lesson as GF_SPAWNYAW). Separate the two with first=<0|1>.
+//
+// set gf_debug_loadgap 1. Grep GF_LOADGAP in logs/games_mp.log.
+gf_probeLoadGap()
+{
+    self endon( "disconnect" );
+
+    if ( getDvarInt( "gf_debug_loadgap" ) <= 0 )
+        return;
+
+    if ( maps\mp\gametypes\_gf_rounds::gf_isRealBot( self ) )
+        return;
+
+    myGen     = level.gf_roundGen;
+    spawnTime = gettime();
+
+    round = 0;
+    if ( isDefined( game["roundsplayed"] ) )
+        round = game["roundsplayed"] + 1;
+
+    // First spawn of this CONNECTION — the case the question is actually about. pers[] survives
+    // map_restart(true) but resets on disconnect, which is exactly the scope we want (a rejoiner is a
+    // fresh connect and gets measured again).
+    first = 0;
+    if ( !isDefined( self.pers["gf_loadgapSeen"] ) )
+    {
+        first = 1;
+        self.pers["gf_loadgapSeen"] = true;
+    }
+
+    // ⚠ Gate the waittill on the FLAG, never waittill unconditionally: a mid-round late spawn
+    // (scr_gf_latespawn) happens after prematch_over already fired and would park here until
+    // game_ended, logging nothing. Race-free in the safe direction — stock clears inPrematchPeriod
+    // (_globallogic.gsc:1539) before firing the notify (:1507). Same idiom as gf_playerUnderscore.
+    if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
+        level waittill( "prematch_over" );
+
+    // A lobby map_restart(false) does not fire game_ended and threads survive it, so a stale thread
+    // from the pre-restart round can wake here alongside the real one.
+    if ( maps\mp\gametypes\_gf_rounds::gf_roundGenChanged( myGen ) )
+        return;
+
+    liveTime = gettime();
+
+    // Baseline the view the instant control is granted. Divergence from THIS is the primary signal:
+    // a client that is not sending usercmds cannot move it, and a present player moves it within a
+    // fraction of a second of gaining control. Origin is baselined here too (movement signal below).
+    base    = self getPlayerAngles();
+    baseOrg = self.origin;
+
+    // Ceiling so the poll is bounded (CLAUDE.md: no unbounded loops). 15s comfortably exceeds a 42s
+    // round's opening, and a gap beyond it is already the "load gate settle delay" verdict.
+    ceiling = liveTime + 15000;
+    via     = "none";
+
+    while ( gettime() < ceiling )
+    {
+        // Not endon("game_ended") — that fires at every ROUND end, and losing the line for a player
+        // who never became present would delete the single most interesting sample. The gen check
+        // below retires the thread instead, and still logs what it saw.
+        if ( maps\mp\gametypes\_gf_rounds::gf_roundGenChanged( myGen ) )
+        {
+            via = "roundend";
+            break;
+        }
+
+        // Died / went to spectator before giving any input. Not evidence either way — a player killed
+        // in the opening seconds tells us nothing about when their client came up.
+        if ( self.sessionstate != "playing" )
+        {
+            via = "notplaying";
+            break;
+        }
+
+        a = self getPlayerAngles();
+        if ( abs( gf_yawDelta( a[1], base[1] ) ) > 2 || abs( gf_yawDelta( a[0], base[0] ) ) > 2 )
+        {
+            via = "view";
+            break;
+        }
+
+        // Secondary signals for a player who is present but has not turned yet. Movement first (most
+        // likely at a round start), then the buttons a live player hits early.
+        //
+        // ⚠ Movement is read as an ORIGIN DELTA, not via GetNormalizedMovement(): that builtin is
+        // SP-only (raw hits are _rockclimb/_horse — ZERO under raw/maps/mp) and calling it fails the
+        // WHOLE server with "unknown function @ _gf_debug::gf_probeloadgap". self.origin is a plain
+        // field, so it carries no registration risk. 1 unit is above float noise and far below a real
+        // step. Same reason AdsButtonPressed() is absent — also SP/ZM-only, despite being listed in
+        // CLAUDE.md's button-poll line. Only Attack/Jump/Melee are proven under raw/maps/mp.
+        o = self.origin;
+        if ( abs( o[0] - baseOrg[0] ) > 1 || abs( o[1] - baseOrg[1] ) > 1 || abs( o[2] - baseOrg[2] ) > 1 )
+        {
+            via = "move";
+            break;
+        }
+
+        if ( self AttackButtonPressed() || self JumpButtonPressed() || self MeleeButtonPressed() )
+        {
+            via = "button";
+            break;
+        }
+
+        wait 0.05;
+    }
+
+    live2input = gettime() - liveTime;
+
+    // Concatenating an undefined into a string is a runtime error, so resolve the flag first.
+    flag = "";
+    if ( via == "none" )
+        flag = "  NO_INPUT";
+    else if ( via == "roundend" || via == "notplaying" )
+        flag = "  INCONCLUSIVE";
+    else if ( live2input > 1500 )
+        flag = "  PAST_LOADOUT_WINDOW";   // the go-live +1s anchor did not cover this player
+
+    // spawn2live = how much frozen countdown this player actually got (0 for a late spawn). A small
+    // value with a large live2input is the signature of a client that arrived late AND slow.
+    spawn2live = liveTime - spawnTime;
+
+    logPrint( "GF_LOADGAP: " + self.name + " first=" + first + " round=" + round
+              + " spawn2live=" + spawn2live
+              + " live2input=" + live2input
+              + " via=" + via
+              + flag + "\n" );
+}
+
 // SMALL-MODE CURATED-SPAWN FALLBACK DIAGNOSTIC. gf_getCustomSpawnPoint returning undefined sends the
 // spawner down gf.gsc's stock mp_tdm_spawn_<team>_start path — correct side, but not the fight-facing
 // curated point small mode exists to deliver. That degradation was completely silent: nothing in any

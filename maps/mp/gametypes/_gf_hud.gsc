@@ -714,12 +714,35 @@ gf_showWeaponHUD( load )
                          "ui_gf_lo_alpha", 1 );
     self setClientDvar( "ui_gf_lo_show",  1 );
 
-    wait 8;
+    // Hold the overview through the whole countdown, then one beat into the live round — NOT a fixed
+    // timer from spawn. This spawn is the FROZEN PREMATCH spawn, so a flat wait runs on a clock the
+    // player may not be on yet. Round 1's countdown is 20s (level.prematchPeriod, gf.gsc), so the old
+    // `wait 8` retired the panel ~12s BEFORE go-live for EVERYONE, and a client still finishing its
+    // first-connect load could miss it outright: statusicon/"begin" clears at cgame init
+    // (_globallogic_player.gsc:19-21) — the deepest readiness signal GSC gets — but the first RENDERED
+    // frame, Plutonium's in-place engine rebuild and the Demonware resync all land after it, invisibly.
+    // The ui_gf_lo_* pushes themselves are safe across that gap (plain client dvars read by menu
+    // itemDefs: they land and persist on a client that isn't drawing yet, and render on its first
+    // frame), so only the dismissal needed re-anchoring.
+    // Rounds 2+ (7s countdown) land at 7+1 = 8s — exactly the old behavior, so this is surgical to
+    // round 1 by construction.
+    // ⚠ Gate the waittill on the FLAG, never waittill unconditionally: a mid-round late spawn
+    // (scr_gf_latespawn) happens after prematch_over already fired, and a bare waittill would park
+    // forever and weld the panel on. The read is race-free in the safe direction — stock clears
+    // inPrematchPeriod (_globallogic.gsc:1539) BEFORE firing the notify (:1507), so a thread that
+    // still sees the flag set is guaranteed to register its waittill ahead of the notify. Same idiom
+    // as _gf_rounds::gf_playerUnderscore.
+    if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
+        level waittill( "prematch_over" );
+
+    wait 1;
 
     // Slide back out + fade (off 0 -> 70, alpha 1 -> 0) over 0.5s. This is a ~13 reliable-command/human/round
-    // stream (the densest the mod emits) — but it fires ~8s into the round, mid-gameplay, NOT in the
+    // stream (the densest the mod emits) — but it fires ~1s past go-live, mid-gameplay, NOT in the
     // map_restart(false) lobby-START stall where the reliable-command overflow actually bites (that needs a
     // burst AND a frozen client). So it is a purity cost, not a live-problem cost, and the slide is worth it.
+    // (The go-live anchor above only strengthens this: the stream now lands even further from the stall,
+    // and it can no longer overlap the round-start spawn-wave push burst that gf_hudRevealStagger spreads.)
     // The zero-cost path is a menu-owned animation (milliseconds() in an exp), blocked on the client-local-
     // clock question — see CLAUDE.md "Menu-owned loadout slide-out animation".
     self gf_slideLoadout( 0, 70, 1, 0, 0.5 );
