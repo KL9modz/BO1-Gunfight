@@ -151,6 +151,16 @@ gf_stampTeamWriter( who, team )
 gf_setTeamFields( who, team )
 {
     self gf_stampTeamWriter( who, team );
+    // Seating on a REAL team drops any spectate breadcrumb (pers["gf_specReason"]) here, at the one
+    // choke point every sanctioned writer passes through. It used to be cleared only by
+    // gf_seatJoinTeam, so a human re-seated by any other path (quiet move, pteam, movePending
+    // consumption) kept a stale "user"/"moved" tag — and a LATER genuine untraced strand then read
+    // as intentional and was skipped by _bot::gf_reclaimStrandedHumans, defeating the reclaim net.
+    // Spectator writes are deliberately untouched: their reason is set AT the call site immediately
+    // before this call (gf_menuTeamChoice "user", gf_seqTeamMove "moved", maxsize), and a clear
+    // here would stomp it. Inert in the public build, like the stamp (nothing reads it there).
+    if ( team != "spectator" )
+        self.pers["gf_specReason"] = undefined;
     self.pers["team"]  = team;
     self.team          = team;
     self.sessionteam   = team;
@@ -1509,7 +1519,14 @@ gf_stockAutoassignStamped()
 {
     self [[level.gf_stockAutoassign]]();
     if ( isDefined( self.pers["team"] ) )
+    {
         self gf_stampTeamWriter( "stockauto", self.pers["team"] );
+        // Stock wrote pers["team"] itself, bypassing gf_setTeamFields — mirror its real-team
+        // breadcrumb clear here or an Auto Assign onto a team (the KL9 stockauto path) keeps a
+        // stale spectate tag that later misclassifies a genuine strand for the reclaim net.
+        if ( self.pers["team"] != "spectator" )
+            self.pers["gf_specReason"] = undefined;
+    }
 }
 
 // Seat `self` on `want` while pre-spawn (spectator/dead), mirroring menuAutoAssign's tail
@@ -1519,8 +1536,7 @@ gf_stockAutoassignStamped()
 // autoassign (gf_autoJoinBalance).
 gf_seatJoinTeam( want )
 {
-    self.pers["gf_specReason"] = undefined;    // seated on a real team: drop any spectate breadcrumb
-    self gf_setTeamFields( "seatjoin", want );
+    self gf_setTeamFields( "seatjoin", want );   // real-team write -> drops any spectate breadcrumb there
     self.pers["class"]      = undefined;
     self.class              = undefined;
     self.pers["weapon"]     = undefined;

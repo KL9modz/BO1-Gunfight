@@ -324,6 +324,17 @@ onStartGameType()
     // builtin call per round, so guard it and move on.
     gf_resetTimeScale();
 
+    // #strip-begin - admin-pause leak net (dev/main only; the pause itself is dev-only)
+    // Same shape as the timescale net above: gf_pauseMatch freezes bots via the BotWarfare dvar
+    // bots_play_move=0, and gf_resumeMatch is the only writer that puts it back — but a round can
+    // END mid-pause (OT capture still accrues for a player already in the zone; the bridge's END
+    // ROUND buttons work while paused), and a DVAR survives map_restart, so the 0 leaked into the
+    // next round: every bot pinned in place with no banner saying why. level.gf_matchPaused and
+    // the client banner self-heal across the restart (level.* wiped; gf_pushPauseBanner clears on
+    // next spawn) — the dvar is the one leak, so this is the whole fix.
+    setDvar( "bots_play_move", 1 );
+    // #strip-end
+
     // #strip-begin - pre-prematch hold (dev/main only; stripped from public release)
     // Pre-prematch load gate — MUST be the last statement: the engine threads
     // startGame() (prematch countdown -> prematch_over) the moment this callback
