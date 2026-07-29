@@ -794,8 +794,12 @@ async function ctxAction(act,ev){
     // The GSC writes its answer to the gf_perkdump dvar; read it back and show it.
     await bridge(`pperkdump_${num}`,'Dump perks → '+name);
     const r = await rcon('gf_perkdump', true);
-    const m = String(r||'').match(/"([^"]*)"/g);           // rcon echoes: "gf_perkdump" is: "3:18:movefaster,..."
-    const val = m && m.length>1 ? m[1].replace(/"/g,'') : String(r||'').trim();
+    // rcon() resolves to {ok, response} — stringifying the OBJECT here (the old bug) always gave
+    // "[object Object]", so this button never once showed a real dump. Parse the response text.
+    if(!r||!r.ok){toast('Perk dump read failed','err');return;}
+    const txt = String(r.response||'');
+    const m = txt.match(/"([^"]*)"/g);                     // rcon echoes: "gf_perkdump" is: "3:18:movefaster,..."
+    const val = m && m.length>1 ? m[1].replace(/"/g,'') : txt.trim();
     const parts = val.split(':');
     const list  = parts.length>2 ? parts.slice(2).join(':') : val;
     const count = parts.length>2 ? parts[1] : '?';
