@@ -1596,7 +1596,11 @@ async function broadcastMsg(){
 // gets these). Keep in sync with that SetPerk list — a base perk renders checked and unchecking it
 // adds it to gf_perk_off to remove it; a non-base perk checked adds it to gf_perk_on.
 // ⚠ specialty_bulletflinch is NOT base (it double-reduces flinch under scr_gf_flinch — sniper/heavy only).
-const BASE_PERKS=['specialty_movefaster','specialty_fallheight','specialty_longersprint','specialty_unlimitedsprint','specialty_armorvest','specialty_flakjacket','specialty_shades','specialty_stunprotection','specialty_loudenemies','specialty_fastmeleerecovery'];
+// ⚠ specialty_movefaster is NOT base either (dropped from the GSC set 2026-07-16 — the +7% speed made
+// 42s rounds twitchy; only its Pro half fallheight is granted). Listing it here anyway made the panel's
+// Lightweight checkbox a dead control: checked-and-"base" pushes to NEITHER gf_perk_on nor gf_perk_off,
+// so an admin opting the speed back in silently changed nothing, and Reset checked a box nobody honors.
+const BASE_PERKS=['specialty_fallheight','specialty_longersprint','specialty_unlimitedsprint','specialty_armorvest','specialty_flakjacket','specialty_shades','specialty_stunprotection','specialty_loudenemies','specialty_fastmeleerecovery'];
 async function perkTog(){
   const on=[],off=[];
   document.querySelectorAll('[data-perk]').forEach(cb=>{

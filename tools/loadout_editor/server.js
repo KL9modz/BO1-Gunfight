@@ -94,8 +94,12 @@ const PERK_TOKENS = new Set( PERKS.map( p => p.t ) );
 // meaningfully be removed by a loadout (UnSetPerk on a perk nobody has is a no-op), so the
 // editor's "remove" pickers are built from exactly this list.
 // ⚠ Keep in lockstep with the SetPerk block in _gf_loadouts.gsc.
+// ⚠ specialty_movefaster is NOT in the base set (dropped 2026-07-16 — the +7% speed made 42s rounds
+// twitchy; only the Pro half fallheight is granted). Listing it here offered a "remove Lightweight"
+// picker for a perk nobody has — a dead UnSetPerk — and, worse, hid the real opt-IN route (a loadout's
+// 8th field or gf_perk_on can add it, which this editor should model as an ADD, not a base).
 const BASE_PERKS = [
-    "specialty_movefaster", "specialty_fallheight",       // Lightweight + Pro
+    "specialty_fallheight",                               // Lightweight Pro (no-fall-damage half only)
     "specialty_longersprint", "specialty_unlimitedsprint",// Marathon + Pro
     "specialty_flakjacket",                               // Flak Jacket
     "specialty_armorvest",                                // Body Armor (-20% bullet, non-BO1 token)

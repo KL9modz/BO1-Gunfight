@@ -900,8 +900,10 @@ animates (`gf_slideLoadout`). Related: [[menu-rendered-loadout-overview]]. Full 
 ### Damage scoring, friendly fire, flinch, vision
 - **Score = total damage dealt** (`gf_onPlayerDamage`), capped per hit at the victim's current HP (no
   overkill inflation), pushed silently (bypasses the stock rank-popup so score doesn't flash each hit).
-- **Rank XP is 5× stock and lives ONLY in `registerScoreInfo`** (`gf.gsc onStartGameType`): **kill 500**,
-  **headshot +500** (both fire on a headshot kill → 1000), **assist 100**, and the win/loss/tie **match-bonus
+- **Rank XP is ~5× stock and lives ONLY in `registerScoreInfo`** (`gf.gsc onStartGameType`): **kill 500**,
+  **headshot 150** (stacks on the kill → 650 on a headshot kill), **assist 200** (the flat tier
+  `gf_onPlayerKilled` pays every damager; the `assist_25/50/75` tiers are registered but unreachable),
+  **capture 500** (OT flag — wired, see below), and the win/loss/tie **match-bonus
   scalars 5 / 2.5 / 3.75** (stock 1 / 0.5 / 0.75 — these are multipliers on stock's
   `scalar × (timeLimit × SPM) × timePlayedFrac`, not flat XP). XP and score are **fully decoupled**:
   `level.overridePlayerScore = true` makes `_globallogic_score::givePlayerScore` return on its first line, so
@@ -914,8 +916,9 @@ animates (`gf_slideLoadout`). Related: [[menu-rendered-loadout-overview]]. Full 
   ⚠ **Kill XP flows from `Callback_PlayerKilled` → `giveKillStats`, NOT from our `level.onPlayerKilled` hook**,
   so it needs no wiring. **Assists do** — `gf_onPlayerKilled` must call `_rank::giveRankXP("assist")`
   **directly**, because stock's assist/capture/defend XP all routes through the dead `givePlayerScore` path.
-  Same reason the OT flag capture pays **no** XP (stock `capture` 300 is unreachable) — wire it directly if
-  we ever want it. ⚠ The end-of-match bonus is gated on `game["timepassed"]`, which only accrues while
+  The OT flag capture is wired the same way — `gf_awardOvertimeCapture` (`_gf_rounds.gsc`) calls
+  `giveRankXP("capture")` directly (500), because stock's capture score path is equally dead under
+  `overridePlayerScore`. ⚠ The end-of-match bonus is gated on `game["timepassed"]`, which only accrues while
   `!level.timerStopped` — and our round clock holds `pauseTimer()` all round ([[paused-timer-freezes-gettimepassed]]),
   so it may never fire. **Unverified** (`logString` output does not reach `games_mp.log` on this server, so the
   log can't answer it) — combat XP above is deliberately the load-bearing path.
