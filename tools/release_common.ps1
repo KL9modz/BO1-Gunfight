@@ -55,7 +55,27 @@ $script:StrippedDvars = @(
     "gf_trace_teams",
     # Previously unguarded: only readers are in dropped files today, so nothing leaked, but the
     # checker was not actually covering them.
-    "gf_debug_spawnyaw", "gf_endgap_ms", "gf_endprobe_t0", "gf_endprobe_last"
+    "gf_debug_spawnyaw", "gf_endgap_ms", "gf_endprobe_t0", "gf_endprobe_last",
+    # Team system (balancer / lock+queue / self-switch / late spawn / reclaim) — all readers live
+    # in _bot.gsc (dropped) or strip regions of _gf_rounds.gsc/gf.gsc; the public build keeps stock
+    # autoassign + stock team menus. Backfilled 2026-07-28: none of these were covered, so a strip
+    # hole around any of them would have passed the verifier silently.
+    "gf_team_balance", "gf_team_lock", "gf_team_switch", "scr_gf_latespawn", "gf_team_reclaim",
+    # Match-to-match team carry/staging + the roster-expectation load gate — plan plumbing dvars
+    # written/consumed only by the match-start hold machinery (strip-marked).
+    "gf_team_nextmatch", "gf_teamcarry", "gf_teamstage", "gf_expectcount",
+    "scr_gf_load_expect", "scr_gf_load_expect_wait",
+    # Debug probes / bot-difficulty selector added after the original list was written.
+    "gf_debug_loadgap", "gf_bot_difficulty"
+)
+
+# Dev-only dvar PREFIXES. The gf_sv_* bot-tuning mirrors are one per engine dvar (13+ names,
+# growing with _gf_bridge::gf_bridgeServerDvarList) and mostly reach the scanner as computed
+# strings anyway — but any LITERAL "gf_sv_..." read surviving into a shipped file is a strip
+# hole by definition, so the verifier matches the family by prefix rather than chasing an
+# exact-name list that would drift the day the allowlist grows.
+$script:StrippedDvarPrefixes = @(
+    "gf_sv_"
 )
 
 # Remove every "// #strip-begin ... // #strip-end" region (dev wiring) inclusive.
