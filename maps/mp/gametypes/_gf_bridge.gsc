@@ -59,9 +59,12 @@
 //                        mechanism), so a fighting player is never suicided, friendly-fire teams
 //                        are never flipped mid-round, and nothing races the re-begin spawn wave.
 //                        Over-cap moves (scr_team_maxsize) are refused with feedback.
-//   pteamforce_<num>_<allies|axis|spec> - same, but applied IMMEDIATELY even mid-round (stock
-//                        switch -> respawns the player, costing them the round). Admin override
-//                        for the next-round defer; cap still enforced. Panel: Shift+click a move.
+//   pteamforce_<num>_<allies|axis|spec> - same, but applied IMMEDIATELY even mid-round via
+//                        _gf_rounds::gf_seqTeamMove (the SEQUENCED suicide->settle->reassign->
+//                        respawn primitive — never the racy stock switch, which was the
+//                        enemy-spawns/1hp bug): an alive player dies and late-spawns onto the new
+//                        team when the round admits it. Admin override for the next-round defer;
+//                        cap still enforced. Panel: Shift+click a move.
 //
 // FUN / SILLY (mined from EnCoReV8 + iMCSx mod menus):
 //   vision_<set>       - VisionSetNaked all players: normal/enhance/bw/berserk/
@@ -405,6 +408,24 @@ gf_bridgeTeamShort( team )
 
 // --- Dispatcher --------------------------------------------------------------
 
+// Prefix-anchored verb tail: the text after `prefix` when cmd STARTS WITH it, else
+// undefined. Replaces the old isSubStr + hand-counted getSubStr pairs, which carried two
+// independent drift hazards nothing checked: isSubStr matches at ANY position (a future
+// verb merely CONTAINING another's prefix mid-string would hijack it), and every offset
+// was a hand count of the prefix length (a renamed prefix silently truncated or shifted
+// every tail). Anchoring also retires the old ordering constraints for real — "pteam_"
+// cannot match "pteamforce_..." at position 0 — though read-before-write ordering is kept
+// below as documentation convention. An exact-prefix cmd with no tail returns "" (defined);
+// handlers treat that like any other bad value.
+gf_bridgeTail( cmd, prefix )
+{
+    if ( cmd.size < prefix.size )
+        return undefined;
+    if ( getSubStr( cmd, 0, prefix.size ) != prefix )
+        return undefined;
+    return getSubStr( cmd, prefix.size, cmd.size );
+}
+
 gf_bridgeDispatch( cmd )
 {
     if ( cmd == "pause"  ) { gf_bridgePause();  return; }
@@ -446,13 +467,13 @@ gf_bridgeDispatch( cmd )
     // visgamma_ was removed: r_gamma is a SAVED client dvar and Plutonium blocks
     // servers from writing those (the push never applied).
     if ( cmd == "visreset" ) { gf_bridgeVisReset(); return; }
-    if ( isSubStr( cmd, "visfog_"        ) ) { gf_bridgeVisSet( "r_fog",                getSubStr( cmd, 7,  cmd.size ) ); return; }
-    if ( isSubStr( cmd, "visambient_"    ) ) { gf_bridgeVisSet( "r_lightTweakAmbient",  getSubStr( cmd, 11, cmd.size ) ); return; }
-    if ( isSubStr( cmd, "visgridint_"    ) ) { gf_bridgeVisSet( "r_lightGridIntensity", getSubStr( cmd, 11, cmd.size ) ); return; }
-    if ( isSubStr( cmd, "visgridcon_"    ) ) { gf_bridgeVisSet( "r_lightGridContrast",  getSubStr( cmd, 11, cmd.size ) ); return; }
-    if ( isSubStr( cmd, "vishdr_"        ) ) { gf_bridgeVisSet( "r_fullHDRrendering",   getSubStr( cmd, 7,  cmd.size ) ); return; }
-    if ( isSubStr( cmd, "viscrosshair_"  ) ) { gf_bridgeVisSet( "cg_drawCrosshair",     getSubStr( cmd, 13, cmd.size ) ); return; }
-    if ( isSubStr( cmd, "visnames_"      ) ) { gf_bridgeVisSet( "cg_drawCrosshairNames",getSubStr( cmd, 9,  cmd.size ) ); return; }
+    t = gf_bridgeTail( cmd, "visfog_"       );   if ( isDefined( t ) ) { gf_bridgeVisSet( "r_fog",                t ); return; }
+    t = gf_bridgeTail( cmd, "visambient_"   );   if ( isDefined( t ) ) { gf_bridgeVisSet( "r_lightTweakAmbient",  t ); return; }
+    t = gf_bridgeTail( cmd, "visgridint_"   );   if ( isDefined( t ) ) { gf_bridgeVisSet( "r_lightGridIntensity", t ); return; }
+    t = gf_bridgeTail( cmd, "visgridcon_"   );   if ( isDefined( t ) ) { gf_bridgeVisSet( "r_lightGridContrast",  t ); return; }
+    t = gf_bridgeTail( cmd, "vishdr_"       );   if ( isDefined( t ) ) { gf_bridgeVisSet( "r_fullHDRrendering",   t ); return; }
+    t = gf_bridgeTail( cmd, "viscrosshair_" );   if ( isDefined( t ) ) { gf_bridgeVisSet( "cg_drawCrosshair",     t ); return; }
+    t = gf_bridgeTail( cmd, "visnames_"     );   if ( isDefined( t ) ) { gf_bridgeVisSet( "cg_drawCrosshairNames",t ); return; }
     // HUD element toggles
     if ( cmd == "selfbar_on"  ) { gf_bridgeSelfBar( true );  return; }
     if ( cmd == "selfbar_off" ) { gf_bridgeSelfBar( false ); return; }
@@ -473,30 +494,30 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "radar_off"       ) { gf_bridgeRadar( false );       return; }
     if ( cmd == "headshots_on"    ) { gf_bridgeHeadshots( true );    return; }
     if ( cmd == "headshots_off"   ) { gf_bridgeHeadshots( false );   return; }
-    if ( isSubStr( cmd, "flinch_" ) ) { gf_bridgeFlinch( getSubStr( cmd, 7, cmd.size ) ); return; }
-    if ( isSubStr( cmd, "jumpfatigue_" ) ) { gf_bridgeJumpFatigue( getSubStr( cmd, 12, cmd.size ) ); return; }
-    if ( isSubStr( cmd, "sprintunlimited_" ) ) { gf_bridgeSprintUnlimited( getSubStr( cmd, 16, cmd.size ) ); return; }
+    t = gf_bridgeTail( cmd, "flinch_"          );   if ( isDefined( t ) ) { gf_bridgeFlinch( t );          return; }
+    t = gf_bridgeTail( cmd, "jumpfatigue_"     );   if ( isDefined( t ) ) { gf_bridgeJumpFatigue( t );     return; }
+    t = gf_bridgeTail( cmd, "sprintunlimited_" );   if ( isDefined( t ) ) { gf_bridgeSprintUnlimited( t ); return; }
 
     // --- Team system toggles (the boundary reconciler + menu wrappers read these live) ---
-    if ( isSubStr( cmd, "balance_"    ) ) { gf_bridgeTeamToggle( "gf_team_balance",  getSubStr( cmd, 8,  cmd.size ), "Human auto-balance" );     return; }
-    if ( isSubStr( cmd, "teamlock_"   ) ) { gf_bridgeTeamToggle( "gf_team_lock",     getSubStr( cmd, 9,  cmd.size ), "Team-size lock" );         return; }
-    if ( isSubStr( cmd, "teamswitch_" ) ) { gf_bridgeTeamToggle( "gf_team_switch",   getSubStr( cmd, 11, cmd.size ), "Player team switching" );  return; }
-    if ( isSubStr( cmd, "latespawn_"  ) ) { gf_bridgeTeamToggle( "scr_gf_latespawn", getSubStr( cmd, 10, cmd.size ), "Mid-round late spawn" );   return; }
-    if ( isSubStr( cmd, "reclaim_"    ) ) { gf_bridgeTeamToggle( "gf_team_reclaim",  getSubStr( cmd, 8,  cmd.size ), "Stranded-human reclaim" ); return; }
+    t = gf_bridgeTail( cmd, "balance_"    );   if ( isDefined( t ) ) { gf_bridgeTeamToggle( "gf_team_balance",  t, "Human auto-balance" );     return; }
+    t = gf_bridgeTail( cmd, "teamlock_"   );   if ( isDefined( t ) ) { gf_bridgeTeamToggle( "gf_team_lock",     t, "Team-size lock" );         return; }
+    t = gf_bridgeTail( cmd, "teamswitch_" );   if ( isDefined( t ) ) { gf_bridgeTeamToggle( "gf_team_switch",   t, "Player team switching" );  return; }
+    t = gf_bridgeTail( cmd, "latespawn_"  );   if ( isDefined( t ) ) { gf_bridgeTeamToggle( "scr_gf_latespawn", t, "Mid-round late spawn" );   return; }
+    t = gf_bridgeTail( cmd, "reclaim_"    );   if ( isDefined( t ) ) { gf_bridgeTeamToggle( "gf_team_reclaim",  t, "Stranded-human reclaim" ); return; }
 
     // Cheat-protected SERVER dvars, written from GSC so they work with sv_cheats 0 (the only
     // correct value on a dedicated server). Format: svset_<dvar>=<value>. See gf_bridgeServerDvarSet.
-    if ( isSubStr( cmd, "svset_" ) ) { gf_bridgeServerDvarSet( getSubStr( cmd, 6, cmd.size ) ); return; }
+    t = gf_bridgeTail( cmd, "svset_" );   if ( isDefined( t ) ) { gf_bridgeServerDvarSet( t ); return; }
     // svsync — copy EVERY gf_* mirror onto its real dvar in one shot. The panel's Set All / 💾 Save
     // write the plain mirrors over rcon (which is allowed) and then fire this once.
     if ( cmd == "svsync" ) { gf_bridgeApplyServerDvars(); gf_bridgeNotify( "^2Server dvars applied" ); return; }
 
     // --- Fun / silly (EnCoReV8 + iMCSx) ---
-    if ( isSubStr( cmd, "vision_"      ) ) { gf_bridgeVision( getSubStr( cmd, 7,  cmd.size ) ); return; }
-    if ( isSubStr( cmd, "thirdperson_" ) ) { gf_bridgeVisSet( "cg_thirdPerson",    getSubStr( cmd, 12, cmd.size ) ); return; }
-    if ( isSubStr( cmd, "fps_"         ) ) { gf_bridgeVisSet( "cg_drawFPS",        getSubStr( cmd, 4,  cmd.size ) ); return; }
-    if ( isSubStr( cmd, "killfeed_"    ) ) { gf_bridgeVisSet( "con_gameMsgWindow0MsgTime", getSubStr( cmd, 9, cmd.size ) ); return; }
-    if ( isSubStr( cmd, "longknife_"   ) ) { gf_bridgeVisSet( "aim_automelee_range", getSubStr( cmd, 10, cmd.size ) ); return; }
+    t = gf_bridgeTail( cmd, "vision_"      );   if ( isDefined( t ) ) { gf_bridgeVision( t );                                return; }
+    t = gf_bridgeTail( cmd, "thirdperson_" );   if ( isDefined( t ) ) { gf_bridgeVisSet( "cg_thirdPerson",             t ); return; }
+    t = gf_bridgeTail( cmd, "fps_"         );   if ( isDefined( t ) ) { gf_bridgeVisSet( "cg_drawFPS",                 t ); return; }
+    t = gf_bridgeTail( cmd, "killfeed_"    );   if ( isDefined( t ) ) { gf_bridgeVisSet( "con_gameMsgWindow0MsgTime",  t ); return; }
+    t = gf_bridgeTail( cmd, "longknife_"   );   if ( isDefined( t ) ) { gf_bridgeVisSet( "aim_automelee_range",        t ); return; }
 
     if ( cmd == "expbullets_on"  ) { gf_bridgeExpBullets( true );  return; }
     if ( cmd == "expbullets_off" ) { gf_bridgeExpBullets( false ); return; }
@@ -509,18 +530,21 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "saymsg"         ) { gf_bridgeBroadcast();         return; }
 
     // Per-player commands: pgod_<num>, pfreeze_<num>, punfreeze_<num>, pperks_<num>
-    if ( isSubStr( cmd, "pgod_"      ) ) { gf_bridgePlayerCmd( "god",      getSubStr( cmd, 5,  cmd.size ) ); return; }
-    if ( isSubStr( cmd, "pfreeze_"   ) ) { gf_bridgePlayerCmd( "freeze",   getSubStr( cmd, 8,  cmd.size ) ); return; }
-    if ( isSubStr( cmd, "punfreeze_" ) ) { gf_bridgePlayerCmd( "unfreeze", getSubStr( cmd, 10, cmd.size ) ); return; }
-    // Read BEFORE write: "pperkdump_3" does not contain "pperks_", but check the reader first anyway
-    // so a future rename can't silently turn a query into a mutation.
-    if ( isSubStr( cmd, "pperkdump_" ) ) { gf_bridgeDumpPerks( getSubStr( cmd, 10, cmd.size ) ); return; }
-    if ( isSubStr( cmd, "pperks_"    ) ) { gf_bridgePlayerCmd( "perks",    getSubStr( cmd, 7,  cmd.size ) ); return; }
+    t = gf_bridgeTail( cmd, "pgod_"      );   if ( isDefined( t ) ) { gf_bridgePlayerCmd( "god",      t ); return; }
+    t = gf_bridgeTail( cmd, "pfreeze_"   );   if ( isDefined( t ) ) { gf_bridgePlayerCmd( "freeze",   t ); return; }
+    t = gf_bridgeTail( cmd, "punfreeze_" );   if ( isDefined( t ) ) { gf_bridgePlayerCmd( "unfreeze", t ); return; }
+    // Reader kept above the writer as convention (a query should never be one rename away from a
+    // mutation) — though with anchored prefixes the order no longer decides anything: "pperkdump_3"
+    // cannot match the "pperks_" prefix at position 0.
+    t = gf_bridgeTail( cmd, "pperkdump_" );   if ( isDefined( t ) ) { gf_bridgeDumpPerks( t );            return; }
+    t = gf_bridgeTail( cmd, "pperks_"    );   if ( isDefined( t ) ) { gf_bridgePlayerCmd( "perks",   t ); return; }
 
     // Team move: pteam_<num>_<team> (deferred to next round if unsafe) or pteamforce_<num>_<team>
-    // (applied NOW even mid-round — respawns the player). Check the longer prefix first.
-    if ( isSubStr( cmd, "pteamforce_" ) ) { gf_bridgeTeamCmd( getSubStr( cmd, 11, cmd.size ), true  ); return; }
-    if ( isSubStr( cmd, "pteam_"      ) ) { gf_bridgeTeamCmd( getSubStr( cmd, 6,  cmd.size ), false ); return; }
+    // (applied NOW even mid-round — respawns the player, via _gf_rounds::gf_seqTeamMove, the
+    // sequenced primitive — never the racy stock switch). Longer prefix listed first purely for
+    // readability; anchoring means "pteam_" can no longer swallow a pteamforce_ command anyway.
+    t = gf_bridgeTail( cmd, "pteamforce_" );   if ( isDefined( t ) ) { gf_bridgeTeamCmd( t, true  ); return; }
+    t = gf_bridgeTail( cmd, "pteam_"      );   if ( isDefined( t ) ) { gf_bridgeTeamCmd( t, false ); return; }
 }
 
 // --- Pause / Resume ----------------------------------------------------------
@@ -1165,7 +1189,9 @@ gf_bridgeFindPlayer( pNum )
 gf_bridgePlayerCmd( action, numStr )
 {
     target = gf_bridgeFindPlayer( int( numStr ) );
-    if ( !isDefined( target ) ) return;
+    // Say WHY nothing happened (mirror gf_bridgeDumpPerks) — a silent ack on a stale client num
+    // reads as "the button is broken" and sends the admin hunting the wrong thing.
+    if ( !isDefined( target ) ) { gf_bridgeNotify( "^1No player with client num " + numStr ); return; }
 
     name = target.name;
     if ( action == "god"      ) { target enableInvulnerability(); gf_bridgeNotify( "^3God: "      + name ); }
@@ -1274,17 +1300,28 @@ gf_bridgeTeamCmd( arg, force )
     if ( !isDefined( force ) )
         force = false;
 
+    // Every early-out reports (mirror gf_bridgeDumpPerks): a silent ack on a malformed arg or a
+    // stale client num reads as "the move button is broken" and hides the real cause.
     parts = strTok( arg, "_" );
     if ( parts.size < 2 )
+    {
+        gf_bridgeNotify( "^1Bad team-move arg '" + arg + "' (want <num>_<allies|axis|spec>)" );
         return;
+    }
 
     team = gf_bridgeTeamCode( parts[1] );
     if ( team == "" )
+    {
+        gf_bridgeNotify( "^1Unknown team '" + parts[1] + "' (want allies|axis|spec)" );
         return;
+    }
 
     target = gf_bridgeFindPlayer( int( parts[0] ) );
     if ( !isDefined( target ) )
+    {
+        gf_bridgeNotify( "^1No player with client num " + parts[0] );
         return;
+    }
 
     name = target.name;
 
