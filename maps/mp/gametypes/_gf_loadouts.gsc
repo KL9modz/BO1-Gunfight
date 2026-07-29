@@ -165,8 +165,8 @@ gf_initLoadouts()
 // Loadout changes every level.gf_cfg_roundsPerLoadout rounds.
 gf_pickLoadout()
 {
-    if ( !isDefined( game["gf_pool"] ) )
-        return;
+    if ( !isDefined( game["gf_pool"] ) || game["gf_pool"].size == 0 )
+        return;   // empty pool: leave gf_currentLoad unset (stock class survives) rather than modulo-by-zero every round
 
     idx = int( game["roundsplayed"] / level.gf_cfg_roundsPerLoadout ) % game["gf_pool"].size;
     // #strip-begin
