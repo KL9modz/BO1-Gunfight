@@ -87,5 +87,14 @@ dedicated_sp.cfg
 server/*.cfg
 !server/*.cfg.example
 gsc resources/
-raw/
+# raw/ is ignored as a class (engine-dump copies, build_ff staging residue) — but the mod's OWN
+# custom FX sources live at raw/fx/misc/*.efx and MUST be tracked (they exist nowhere else; a
+# fresh clone rebuilds mod.ff from them). A bare `!raw/fx/misc/*.efx` would be dead — git never
+# descends into an ignored directory — so each parent dir is re-included on the way down.
+raw/*
+!raw/fx/
+raw/fx/*
+!raw/fx/misc/
+raw/fx/misc/*
+!raw/fx/misc/*.efx
 tools/ff_extract/
