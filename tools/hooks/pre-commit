@@ -297,9 +297,33 @@ if [ -n "$bad_status" ]; then
   echo "  -> if the row is already sanitized and must keep its shape: put 'pii-ok' on the line" >&2
 fi
 
+# 6) Data-table validators — run only when their inputs are staged, so a docs-only
+#    commit stays instant. Every failure mode these catch is SILENT at runtime (an
+#    unknown weapon/perk token is a GiveWeapon/SetPerk no-op; a short spawn set just
+#    makes spawns feel wrong weeks later), which is why they gate the commit rather
+#    than run ad hoc. ⚠ They validate the WORKING-TREE file, not the staged blob —
+#    identical for the normal whole-file stage; a partial `git add -p` of these data
+#    tables is not a workflow this repo uses.
+repo_root=$(git rev-parse --show-toplevel)
+staged=$(git diff --cached --name-only)
+run_ps1() {   # $1 = tools/verify_*.ps1 (repo-relative)
+  if command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$repo_root/$1" >&2 \
+      || note "$1 failed -- the staged data table would misbehave silently at runtime"
+  else
+    echo "  pre-commit: WARNING powershell.exe not found; $1 NOT run" >&2
+  fi
+}
+if printf '%s\n' "$staged" | grep -qE '(_gf_loadouts\.gsc|loadout_editor/server\.js|weapon_tokens_mp\.txt)$'; then
+  run_ps1 "tools/verify_loadouts.ps1"
+fi
+if printf '%s\n' "$staged" | grep -qE '_gf_locations\.gsc$'; then
+  run_ps1 "tools/verify_locations.ps1"
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo "" >&2
-  echo "  Commit blocked to keep secrets out of git. Fix the lines above," >&2
+  echo "  Commit blocked (secret/PII guard or data-table validation). Fix the lines above," >&2
   echo "  or bypass with:  git commit --no-verify  (only if truly a false positive)." >&2
   exit 1
 fi
