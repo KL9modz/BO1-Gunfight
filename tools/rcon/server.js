@@ -1219,10 +1219,26 @@ const server = http.createServer(async (req, res) => {
   res.writeHead(404); res.end('Not found');
 });
 
-seedLoopbackPasswords();   // one shot, before we listen — never throws, never overwrites
+// Start the panel only when run directly (`node server.js`). Under require() — the test
+// suite (test/server.test.js, node:test) — nothing binds and nothing opens a browser, so
+// the pure functions below are testable without a live panel. Module init still reads the
+// two box-local caches (harmless), but no socket is opened on this path.
+if (require.main === module) {
+  seedLoopbackPasswords();   // one shot, before we listen — never throws, never overwrites
 
-server.listen(WEB_PORT, '127.0.0.1', () => {
-  const addr = `http://127.0.0.1:${WEB_PORT}`;
-  console.log(`\n  GF RCON Tool  →  ${addr}\n`);
-  try { cp.exec(`start ${addr}`); } catch (_) {}
-});
+  server.listen(WEB_PORT, '127.0.0.1', () => {
+    const addr = `http://127.0.0.1:${WEB_PORT}`;
+    console.log(`\n  GF RCON Tool  →  ${addr}\n`);
+    try { cp.exec(`start ${addr}`); } catch (_) {}
+  });
+}
+
+// Pure-function surface for the test suite. Every export encodes a past live incident
+// (spaced bot names miscounted as humans, the signed 16-bit port dropping half of real
+// players' IPs, the bot-flag polarity kicking real players, smart-quote bytes corrupting
+// sv_maprotation on save) — the tests are the regression net those incidents never had.
+// Exporting is behaviour-neutral: nothing reads module.exports at runtime.
+module.exports = {
+  parseStatusText, parseGfRoster, parseGfState, parseMapRotation,
+  parseDvarValue, parseRconResponse, stripColors, upsertCfg, resolveConnParams,
+};
