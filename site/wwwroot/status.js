@@ -51,7 +51,14 @@ function hhmm(iso){
 }
 
 function renderRoster(parent, teamKey, label, players){
-  var group = players.filter(function(p){ return p.team === teamKey; });
+  // The spectator bucket is "everyone NOT on a team" — the same predicate the caller's
+  // show-the-card gate uses. The box emits team 'unknown' when gf_roster is stale (e.g. during
+  // the stock pregame warmup, where no mod GSC runs); a strict === 'spectator' filter made those
+  // players trigger the Spectators card and then render in NO list at all (invisible).
+  var group = players.filter(function(p){
+    if (teamKey === 'spectator') return p.team !== 'allies' && p.team !== 'axis';
+    return p.team === teamKey;
+  });
   var box = el('div');
   var head = el('div', 'rhead ' + (teamKey==='allies'?'allies':teamKey==='axis'?'axis':'spec'));
   head.appendChild(el('span', null, label));

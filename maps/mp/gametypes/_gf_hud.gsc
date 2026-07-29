@@ -631,10 +631,12 @@ gf_showWeaponHUD( load )
     // command limits) and NEVER expand a batch back into individual pushes.
     // Icons (materials). All precached — weapons/equipment in gf.gsc, perks in stock
     // _class.gsc:421 — so the menu's material(dvarString) resolves every one.
-    // icon5/6/7 are the 3 perk slots, resolved per-loadout at pool build (gf_load): this
-    // loadout's added perks first, then padded from the base set minus anything it removed.
-    // A pre-perks pool (an in-flight map_restart across a GSC edit) has no perkShader keys —
-    // fall back to the old fixed trio rather than pushing an undefined dvar value.
+    // icon5/6/7 are the 3 perk slots. ⚠ Code truth (see gf_load): they are the SAME fixed
+    // trio for every loadout — Flak Jacket / Hardened / Marathon Pro, one representative per
+    // tier color — because the kit is shared; an older comment here described a per-loadout
+    // adds-then-base-padding algorithm that was never what shipped. The keys still ride on
+    // the loadout (perkShader0-2), so a pre-perks pool (an in-flight map_restart across a GSC
+    // edit) has none — fall back to the legacy trio below rather than push an undefined value.
     if ( isDefined( load["perkShader0"] ) )
     {
         pIcon0 = load["perkShader0"];  pName0 = load["perkName0"];

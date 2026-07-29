@@ -215,7 +215,7 @@ days of stable HTTPS + confirmed cert renewal.
         <add name="X-Frame-Options" value="DENY" />
         <add name="Referrer-Policy" value="no-referrer" />
         <add name="Permissions-Policy" value="geolocation=(), microphone=(), camera=(), payment=(), usb=(), interest-cohort=()" />
-        <add name="Content-Security-Policy" value="default-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; frame-src https://discord.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests" />
+        <add name="Content-Security-Policy" value="default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; frame-src https://discord.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests" />
       </customHeaders>
     </httpProtocol>
 
@@ -246,10 +246,14 @@ days of stable HTTPS + confirmed cert renewal.
 > origin inside the frame). The pre-existing `X-Frame-Options: DENY` + `frame-ancestors 'none'` only
 > stop **our** page from being framed by others; they don't affect us embedding Discord.
 >
-> `status.html` also drives its live server readout with an inline `<script>` + a same-origin
-> `fetch('live/status.json')`, so shipping it needs `script-src 'self' 'unsafe-inline'` and
-> `connect-src 'self'` **in addition** to the `frame-src` above. `index.html` and `setup.html` stay
-> pure-static and need none of these. (The page is 404 on live until deployed.)
+> `status.html` drives its live readout with an EXTERNAL same-origin script (`status.js` — the old
+> inline `<script>` was refactored out) plus same-origin `fetch`es of `live/status.json` /
+> `live/activity.json`, so the sample above carries `script-src 'self'` and `connect-src 'self'`.
+> ⚠ Both are load-bearing: under `default-src 'none'` an OMITTED directive falls back to 'none',
+> and an earlier revision of this sample omitted them — a fresh box provisioned from it served a
+> status page that silently loaded no script at all. `script-src` needs no `'unsafe-inline'`
+> (nothing inline ships; adding it back would only weaken the header). `index.html` and
+> `setup.html` stay pure-static and need neither directive.
 
 **Apply & test (from a separate machine):**
 ```

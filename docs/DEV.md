@@ -23,10 +23,12 @@ mp_gunfight/                          (GitHub: KL9modz/BO1-Gunfight)
   .claude/CLAUDE.md                   project instructions / engine notes
   mod.csv                             build manifest the linker reads
   mp/gametypesTable.csv               registers the 'gf' gametype row in the UI
-  localizedstrings/gf.str             localized UI strings
+  localizedstrings/gf.str             localized UI strings (assets named GF_<REFERENCE>)
+  localizedstrings/cgame.str          OVERRIDES of stock engine strings (SB_SCORE, the banner blank)
   ui_mp/
     hud_gf.txt                        menufile loader (loadMenu hud_gf_health.menu)
-    hud_gf_health.menu                all mod HUD (health panel, loadout overview, self bar)
+    hud_gf_health.menu                all mod HUD (health panel, loadout overview, self bar, lobby)
+    mod.txt / mod_ingame.txt          empty {} stubs (kill a ~4.6s missing-asset stall on mod load)
   maps/mp/gametypes/
     gf.gsc                            ENTRY POINT: main(), callbacks, precache, spawn pipeline
     _gf_rounds.gsc                    round lifecycle, overtime, damage/score, team-size mode
@@ -48,16 +50,23 @@ The entry point is `gf.gsc::main()` — there is no `mp_gunfight.gsc`.
 
 T5 does **not** support transitive includes: if A includes B and B includes C, A still cannot call C's functions. Every `.gsc` must `#include` every other file whose functions it calls **directly**, or you get an `unknown function` compile error attributed to the calling function.
 
-The current graph (each file includes exactly what it calls):
+The current graph (regenerated 2026-07-28 from the actual `#include` headers — verify against
+`grep -n "^#include" maps/mp/gametypes/*.gsc` before trusting it in an investigation; this table
+has drifted silently before):
 
-| File | Includes (mod files) |
-|---|---|
-| `gf.gsc` | `_gf_locations`, `_gf_rounds`, `_gf_loadouts`, `_gf_wager_zones` (+ `_gf_bridge` dev) |
-| `_gf_rounds.gsc` | `_gf_hud` (+ `_gf_debug` dev) |
-| `_gf_loadouts.gsc` | `_gf_hud` |
-| `_gf_hud.gsc` | stock `_hud_util` only |
+| File | Mod includes | Stock includes |
+|---|---|---|
+| `gf.gsc` | `_gf_locations`, `_gf_rounds`, `_gf_loadouts`, `_gf_wager_zones` (+ dev `_gf_bridge`, `_gf_debug`) | `maps\mp\_utility`, `_hud_util` |
+| `_gf_rounds.gsc` | `_gf_hud` (+ dev `_gf_debug`) | `_hud_util` |
+| `_gf_loadouts.gsc` | `_gf_hud` | — |
+| `_gf_hud.gsc` | — | `_hud_util` |
+| `_gf_locations.gsc` | — | — (engine builtins only) |
+| `_gf_wager_zones.gsc` | — | (fully-qualified stock calls, no includes) |
+| `_gf_bridge.gsc` (dev) | `_gf_rounds` | `maps\mp\_utility`, `_globallogic_utils` |
+| `_bot.gsc` (dev) | `maps\mp\bots\_bot_utility` | `common_scripts\utility`, `maps\mp\_utility`, `_hud_util` |
 
-Plus the stock engine scripts (`maps\mp\_utility`, `maps\mp\gametypes\_hud_util`, etc.) where used.
+(Fully-qualified calls — `maps\mp\gametypes\_x::fn()` — need no include; the table lists only
+the bare-call `#include` dependencies.)
 
 ### T5 GSC gotchas (most common compile traps)
 
@@ -66,10 +75,12 @@ These are the calls that differ from T6/T7 and bite most often. The full list is
 | Broken in T5 mods | Correct T5 form |
 |---|---|
 | `getPlayers()` | `level.players` |
-| `spawnStruct()` | associative array `s = []; s["k"] = v;` |
-| `player isAlive()` / `isAlive(player)` | `player.health > 0` |
+| `player isAlive()` (METHOD form) | `isAlive(player)` — the free-function form IS registered and live in shipped code; `player.health > 0` also works |
 | `player.team` | `player.pers["team"]` (`"allies"` / `"axis"` / `"spectator"`) |
 | `level.onGiveLoadout` | does not exist — use `level.giveCustomLoadout` |
+
+(`spawnstruct()` used to be listed here as broken — it is NOT: shipped code calls it live on a
+hot path. Settled 2026-07-28; see the cheatsheet note in `.claude/CLAUDE.md`.)
 
 When the compiler throws `unknown function: @ scripts/mp/<file>::<func>`, the broken call is **inside** that named function — scan its body for the cases above and for a missing `#include`.
 
