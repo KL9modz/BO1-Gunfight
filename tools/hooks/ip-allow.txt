@@ -35,3 +35,16 @@
 160.79.104.0     # Base of Anthropic's PUBLISHED egress CIDR 160.79.104.0/21.
                  # Cited in docs/DEV.md as the range that LOOKS like the cloud-sandbox
                  # SSH answer and is not. Vendor-published, nobody's address.
+
+# -- Test fixtures for tools/tests/guards.Tests.ps1: the Pester suite that regression-
+#    tests THESE VERY GUARDS needs a handful of public-SHAPED literals as inputs (an
+#    address the guard must flag, one it must skip, one per boundary case). None is real
+#    infrastructure and none belongs to anyone this repo talks to. Listed here (not
+#    ip-ok-marked in the test file) per the recurrence rule above -- each appears on
+#    several source lines. The suite itself is unaffected: it calls Find-LeakHits WITHOUT
+#    an -AllowFile, so in-test these still flag exactly as the assertions require.
+51.68.200.10     # guards.Tests.ps1 fixture (flagged-address case)
+51.68.200.11     # guards.Tests.ps1 fixture (ip-ok-skipped case)
+51.68.200.12     # guards.Tests.ps1 fixture (unscanned-extension case)
+1.2.3.21         # guards.Tests.ps1 fixture (one-octet-over-20 boundary of the version-string concession)
+2607:5300:60:80::1   # guards.Tests.ps1 fixture (global-unicast IPv6 case)
