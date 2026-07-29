@@ -886,6 +886,13 @@ gf_clearAllMovePending()
 			p.pers["gf_movePending"] = undefined;
 		if(isDefined(p.gf_displacePending))
 			p.gf_displacePending = undefined;
+		// gf_balanceMoved is THIS-pass-only ("planned this pass, pers hasn't flipped yet" — see
+		// gf_balanceHumans), but it is an ENTITY field gen-stamped with level.gf_fillGen, which is
+		// level.* and so re-inits to the SAME small values every round (map_restart wipes level[]).
+		// Left in place, a round-1 stamp collides with round 2's identical gen and the pick loop
+		// skips that human forever — gf_team_balance silently degraded over a match until this sweep.
+		if(isDefined(p.gf_balanceMoved))
+			p.gf_balanceMoved = undefined;
 	}
 }
 
