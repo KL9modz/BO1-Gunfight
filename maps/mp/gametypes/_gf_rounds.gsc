@@ -2554,7 +2554,10 @@ gf_playerSpawnedCB()
 
     // #strip-begin - spawn recorder + HUD-pool overlays (dev/main only; stripped from public release)
     if ( getDvarInt( "gf_debug_spawns" ) == 1 )
+    {
         self thread gf_startSpawnRecorder();
+        self thread gf_startCoordsHUD();   // the recorder's promised companion (live X/Y/Z + yaw readout); was never wired
+    }
 
     if ( getDvarInt( "gf_debug_hud_pool" ) == 1 )
     {

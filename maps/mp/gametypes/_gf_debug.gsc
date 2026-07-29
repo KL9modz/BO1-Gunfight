@@ -20,25 +20,36 @@ gf_startCoordsHUD()
 {
     self endon( "disconnect" );
     level endon( "game_ended" );
+    // Threaded per spawn (next to the recorder in _gf_rounds::gf_playerSpawnedCB) — collapse to
+    // one live copy, and REUSE the elem across re-threads within a round: a killed thread cannot
+    // destroy its elem, and a fresh one per re-thread would leak into the ~17-per-client DRAWN
+    // render cap. map_restart wipes hud elems with all entities, so the isDefined check re-creates
+    // it each round naturally.
+    self notify( "gf_coords_hud" );
+    self endon( "gf_coords_hud" );
 
-    elem = newClientHudElem( self );
-    elem.horzAlign    = "left";
-    elem.vertAlign    = "bottom";
-    elem.alignX       = "left";
-    elem.alignY       = "bottom";
-    elem.x            = 10;
-    elem.y            = -10;
-    elem.font         = "smallfixed";
-    elem.fontScale    = 1.0;
-    elem.color        = ( 0.9, 0.9, 0.6 );
-    elem.foreground   = true;
-    elem.hidewheninmenu = false;
+    if ( !isDefined( self.gf_coordsElem ) )
+    {
+        elem = newClientHudElem( self );
+        elem.horzAlign    = "left";
+        elem.vertAlign    = "bottom";
+        elem.alignX       = "left";
+        elem.alignY       = "bottom";
+        elem.x            = 10;
+        elem.y            = -10;
+        elem.font         = "smallfixed";
+        elem.fontScale    = 1.0;
+        elem.color        = ( 0.9, 0.9, 0.6 );
+        elem.foreground   = true;
+        elem.hidewheninmenu = false;
+        self.gf_coordsElem = elem;
+    }
 
     while ( true )
     {
         org = self.origin;
         yaw = int( self.angles[1] );
-        elem setText( int( org[0] ) + "  " + int( org[1] ) + "  " + int( org[2] ) + "  yaw:" + yaw );
+        self.gf_coordsElem setText( int( org[0] ) + "  " + int( org[1] ) + "  " + int( org[2] ) + "  yaw:" + yaw );
         wait 0.1;
     }
 }

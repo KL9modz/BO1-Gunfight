@@ -15,10 +15,12 @@ gf_initCustomLocations()
     // level.gf_customSpawnCursor), so the game[]/level[] shared reference is read-only in play.
     if ( !isDefined( game["gf_customLocCached"] ) )
     {
-        level.gf_customSpawns           = gf_getCustomSpawnLocations();
-        level.gf_customOvertimeLocation = gf_getCustomOvertimeLocation();
+        // Build the ~550-line table ONCE and hand it to both getters — each used to call
+        // gf_locationsTable() itself, so a cold cache built the whole thing twice.
+        t = gf_locationsTable();
+        level.gf_customSpawns           = gf_getCustomSpawnLocations( t );
+        level.gf_customOvertimeLocation = gf_getCustomOvertimeLocation( t );
 
-        gf_normalizeCustomSpawnLocations();
         gf_validateCustomLocations();
         gf_validateCustomOvertimeLocation();
 
@@ -37,27 +39,27 @@ gf_initCustomLocations()
     level.gf_customSpawnCursor = [];
 }
 
-gf_getCustomSpawnLocations()
+// Both getters take the PRE-BUILT table (gf_initCustomLocations builds it once) — each used to
+// build its own copy. The old result also carried empty flat "allies"/"axis" arrays, a legacy
+// data format nothing ever populated; the dead normalize/promote pipeline that existed to
+// service it is deleted (see gf_validateCustomLocations).
+gf_getCustomSpawnLocations( t )
 {
     mapname = getDvar( "mapname" );
 
     result = [];
-    result["sets"]   = [];
-    result["allies"] = [];
-    result["axis"]   = [];
+    result["sets"] = [];
 
-    t = gf_locationsTable();
     if ( isDefined( t[mapname] ) && isDefined( t[mapname]["sets"] ) )
         result["sets"] = t[mapname]["sets"];
 
     return result;
 }
 
-gf_getCustomOvertimeLocation()
+gf_getCustomOvertimeLocation( t )
 {
     mapname = getDvar( "mapname" );
 
-    t = gf_locationsTable();
     if ( isDefined( t[mapname] ) && isDefined( t[mapname]["ot"] ) )
         return t[mapname]["ot"];
 
@@ -747,32 +749,10 @@ gf_getCustomSpawnPoint( team )
     return undefined;
 }
 
-gf_normalizeCustomSpawnLocations()
-{
-    if ( !isDefined( level.gf_customSpawns ) )
-    {
-        level.gf_customSpawns = [];
-        level.gf_customSpawns["sets"] = [];
-        return;
-    }
-
-    if ( !isDefined( level.gf_customSpawns["sets"] ) )
-        level.gf_customSpawns["sets"] = [];
-
-    if ( level.gf_customSpawns["sets"].size > 0 )
-        return;
-
-    alliesCount = gf_getCustomSpawnCount( "allies" );
-    axisCount   = gf_getCustomSpawnCount( "axis" );
-
-    if ( alliesCount <= 0 || axisCount <= 0 )
-        return;
-
-    set = gf_spawnSet();
-    set["allies"] = level.gf_customSpawns["allies"];
-    set["axis"]   = level.gf_customSpawns["axis"];
-    level.gf_customSpawns["sets"][0] = set;
-}
+// (gf_normalizeCustomSpawnLocations is deleted: it existed to promote a flat allies/axis point
+// list into set 0, but the flat arrays were empty by construction — the table getter only ever
+// filled "sets" — so every branch of it was unreachable. Same for gf_getCustomSpawnCount, its
+// only reader.)
 
 gf_validateCustomLocations()
 {
@@ -806,19 +786,9 @@ gf_validateCustomLocations()
     level.gf_customSpawns["sets"] = validSets;
 
     if ( validSets.size > 0 )
-    {
         logPrint( "Gunfight custom spawn sets loaded for " + getDvar( "mapname" ) + ": sets=" + validSets.size + " allies=" + totalAllies + " axis=" + totalAxis + "\n" );
-        return;
-    }
-
-    alliesCount = gf_getCustomSpawnCount( "allies" );
-    axisCount   = gf_getCustomSpawnCount( "axis" );
-
-    if ( alliesCount > 0 || axisCount > 0 )
-        logPrint( "Gunfight custom spawns ignored for " + getDvar( "mapname" ) + ": both allies and axis need at least one point.\n" );
-
-    level.gf_customSpawns["allies"] = [];
-    level.gf_customSpawns["axis"]   = [];
+    // No valid sets = an unlisted map (the supported opt-out) — stock spawns take over silently.
+    // The old flat-array fallback that sat here was dead: those arrays were empty by construction.
 }
 
 gf_validateCustomOvertimeLocation()
@@ -834,17 +804,6 @@ gf_validateCustomOvertimeLocation()
 
     logPrint( "Gunfight custom overtime flag ignored for " + getDvar( "mapname" ) + ": missing origin or angles.\n" );
     level.gf_customOvertimeLocation = undefined;
-}
-
-gf_getCustomSpawnCount( team )
-{
-    if ( !isDefined( level.gf_customSpawns ) )
-        return 0;
-
-    if ( !isDefined( level.gf_customSpawns[team] ) )
-        return 0;
-
-    return level.gf_customSpawns[team].size;
 }
 
 gf_getCustomSpawnSetCount( set, team )

@@ -873,20 +873,9 @@ gf_getPerkShader( specialty )
     return "white";
 }
 
-gf_destroyLoadoutHUD()
-{
-    // The overview is menu-rendered now (no client hudelems), so teardown is just
-    // hiding it. The legacy client-elem cleanup is kept to tolerate any stale state.
-    if ( isDefined( self.gf_loadoutHudElems ) )
-    {
-        for ( i = 0; i < self.gf_loadoutHudElems.size; i++ )
-            if ( isDefined( self.gf_loadoutHudElems[i] ) )
-                self.gf_loadoutHudElems[i] destroyElem();
-        self.gf_loadoutHudElems = undefined;
-    }
-
-    self setClientDvar( "ui_gf_lo_show", 0 );
-}
+// (gf_destroyLoadoutHUD is deleted: zero callers, and its "legacy client-elem cleanup" walked
+// self.gf_loadoutHudElems, a field nothing has written since the overview moved to the menu
+// layer. Teardown is gf_slideLoadout / the ui_gf_lo_show dvar, owned by the callers.)
 
 // ─── Score popup ─────────────────────────────────────────────────────────────
 // "Elimination" / "Assist" center-screen popup, on our OWN element (gf_popupElem —

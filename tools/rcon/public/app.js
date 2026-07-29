@@ -1383,12 +1383,16 @@ function reportWrite(dv,v,r){
 }
 
 // ─── Gunfight ────────────────────────────────────────────────────────────────
-async function sdv(dv,id){
-  const v=g(id).value;
-  return reportWrite(dv,v,await rcon(`set ${dv} ${v}`));
-}
+// One sanitizer for EVERY rcon `set` writer that carries panel-typed text. A `;` in the value
+// (or the custom-dvar row's NAME field) chains a second console command in the same packet —
+// `set foo 1; map_rotate` is one send — and quotes/CR/LF break the value out of its position.
+// Same character class /api/savecfg strips server-side (plus backslash, a superset), so the
+// live write and the persisted cfg can never disagree about a value. (sdv(id) is deleted:
+// zero callers — every row routes through sdve/sdvv.)
+function cleanTok(s){return String(s).replace(/[";\r\n\\]/g,'').trim()}
 async function sdvv(dv,v){
-  return reportWrite(dv,v,await rcon(`set ${dv} ${v}`));
+  dv=cleanTok(dv); v=cleanTok(v);
+  return reportWrite(dv,v,await rcon(`set ${dv} "${v}"`));
 }
 // Server dvars owned by the bot Difficulty preset (+ timescale) go through the GSC bridge — NOT
 // because rcon cannot set them (cheat protection is a CLIENT-side check; a plain rcon `set` lands
@@ -1418,7 +1422,8 @@ async function bridgeSvSet(dv,id){
 // e.g. Friendly Fire = scr_team_fftype + the scr_gf_team_fftype live override — the engine
 // re-polls the override every ~5s, so the change lands mid-match without a restart).
 async function sdvv2(dv,dv2,v){
-  const r=await batchCmds([`set ${dv} ${v}`,`set ${dv2} ${v}`],50);
+  dv=cleanTok(dv); dv2=cleanTok(dv2); v=cleanTok(v);
+  const r=await batchCmds([`set ${dv} "${v}"`,`set ${dv2} "${v}"`],50);
   r&&r.ok?(toast(dv+'='+v,'ok'),actLog(dv+' + '+dv2+' → '+v,'ok')):toast('Set failed','err');
 }
 // Toggle that owns BOTH a sticky dvar and a live GSC-bridge flag (killstreaks, headshots,
