@@ -88,6 +88,10 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\map_names.ps1')
 # Shared path helpers + Get-RconPassword.
 . (Join-Path $PSScriptRoot '..\common.ps1')
+# ConvertFrom-GfStatus + Remove-GfColors: the shared `status` parser (PS twin of the panel's
+# status_parse.js). Only the panel-down FALLBACK below parses status text at all - the happy
+# path consumes the panel's already-parsed /api/tick JSON, which carries the same player shape.
+. (Join-Path $PSScriptRoot '..\status_parse.ps1')
 if ([string]::IsNullOrEmpty($IgnoreFile)) { $IgnoreFile = Join-Path $PSScriptRoot '..\ignore.local.json' }
 
 # storage\t5 (…\mods\mp_gunfight\tools\common.ps1 resolves it, independent of this subdir).
@@ -147,44 +151,14 @@ function Send-Rcon {
     return $sb.ToString()
 }
 
-function Strip-Color { param([string]$s) return ($s -replace '\^[0-9]', '') }
-
 # --- Parsers ------------------------------------------------------------------
+# (Status-text parsing lives in the shared ..\status_parse.ps1 dot-sourced above.)
 # Read one dvar's value out of a chained "name" is:"value" reply.
 function Get-DvarValue {
     param([string]$reply, [string]$name)
     $m = [regex]::Match($reply, ('"{0}"\s+is:\s*"([^"]*)"' -f [regex]::Escape($name)))
-    if ($m.Success) { return (Strip-Color $m.Groups[1].Value) }
+    if ($m.Success) { return (Remove-GfColors $m.Groups[1].Value) }
     return ''
-}
-
-# status -> hashtable num -> @{ name; ping }  (IP intentionally dropped)
-function Parse-StatusPlayers {
-    param([string]$text)
-    $byNum = @{}
-    foreach ($line in ($text -split "`n")) {
-        $t = $line.Trim()
-        if ($t -eq '' -or $t -notmatch '^\d+\s') { continue }
-        $tok = $t -split '\s+'
-        if ($tok.Count -lt 8) { continue }
-        $num  = $tok[0]
-        $guid = $tok[3]
-        $ping = $tok[2]
-        $address = $tok[$tok.Count - 3]
-        $nameEnd = $tok.Count - 5
-        $name = ''
-        if ($nameEnd -ge 4) { $name = ($tok[4..$nameEnd] -join ' ') }
-        $name = (Strip-Color $name).Trim()
-        if ($name -eq '') { continue }
-        # Port may be NEGATIVE (Plutonium prints it as a signed 16-bit value): a source port
-        # >32767 shows as `ip:-NNNNN`, so `-?` on the port is required or ~half of real players
-        # fail this check and vanish from the activity feed. IP keeps its :port here; consumers
-        # strip it before geo (see line ~293), so the sign is dropped where the bare IP is used.
-        $isHuman = ($address -match '^\d{1,3}(\.\d{1,3}){3}:-?\d+$')
-        $ip = if ($isHuman) { $address } else { '' }
-        $byNum[$num] = @{ name = $name; ping = [int]$ping; bot = (-not $isHuman); ip = $ip; guid = $guid }
-    }
-    return $byNum
 }
 
 # gf_roster -> hashtable num -> @{ team; alive }
@@ -396,13 +370,15 @@ while ($true) {
         if ($tick) {
             $online = $true
             $mapRaw = [string]$tick.map
-            # Same shapes the text parsers produce: STRING num keys; ip carries addr:port for
-            # humans / '' for bots; missing roster num -> team 'unknown'.
+            # Projection shared with the fallback branch below: STRING num keys; bot stays
+            # THREE-STATE ($null = unclassifiable, falsy everywhere it is read); ip carries
+            # addr:port only for a POSITIVE human claim (bot -eq $false, never a truthiness
+            # test) / '' otherwise; missing roster num -> team 'unknown'.
             foreach ($p in @($tick.players)) {
                 if ($null -eq $p) { continue }
-                $players[[string]$p.num] = @{ name = [string]$p.name; ping = [int]$p.ping; bot = [bool]$p.bot;
+                $players[[string]$p.num] = @{ name = [string]$p.name; ping = [int]$p.ping; bot = $p.bot;
                                               guid = [string]$p.guid;
-                                              ip = $(if ($p.bot) { '' } else { [string]$p.addr }) }
+                                              ip = $(if ($p.bot -eq $false) { [string]$p.addr } else { '' }) }
             }
             foreach ($e in @($tick.roster)) {
                 if ($null -eq $e) { continue }
@@ -425,12 +401,18 @@ while ($true) {
             $statusReply = Send-Rcon -ipHost $RconHost -port $RconPort -password $rconPw -command 'status' -timeoutMs $RecvTimeoutMs
             if ($statusReply -match 'map:') {
                 $online = $true
-                $mm = [regex]::Match($statusReply, 'map:\s*(\S+)')
-                if ($mm.Success) { $mapRaw = $mm.Groups[1].Value }
+                $st     = ConvertFrom-GfStatus $statusReply
+                $mapRaw = [string]$st.map
                 $state   = Get-DvarValue $dvarReply 'gf_state'
                 $rosterV = Get-DvarValue $dvarReply 'gf_roster'
                 $roster  = Parse-Roster $rosterV
-                $players = Parse-StatusPlayers $statusReply
+                # Same projection as the /api/tick branch above (that branch consumes the
+                # panel's parse of the SAME shared parser, so the two paths cannot drift).
+                foreach ($p in @($st.players)) {
+                    $players[[string]$p.num] = @{ name = $p.name; ping = [int]$p.ping; bot = $p.bot;
+                                                  guid = [string]$p.guid;
+                                                  ip = $(if ($p.bot -eq $false) { [string]$p.addr } else { '' }) }
+                }
                 $sf = $state -split ':'
                 $alliesWins = if ($sf.Count -ge 1 -and $sf[0] -ne '') { [int]$sf[0] } else { 0 }
                 $axisWins   = if ($sf.Count -ge 2 -and $sf[1] -ne '') { [int]$sf[1] } else { 0 }

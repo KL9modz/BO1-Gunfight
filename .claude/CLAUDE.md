@@ -1223,7 +1223,12 @@ because names can contain spaces (a bot "MCG Gordon" would otherwise leak in as 
 [[status-parser-name-spaces-bot-miscount]]), and the address-column **port is signed 16-bit** so a
 real client can show `ip:-NNNNN` — every `status` address regex allows a negative port (`-?\d+`), or
 ~half of real players silently lose their IP + join alert + connection-history row
-([[status-address-port-is-signed-16bit-can-be-negative]]).
+([[status-address-port-is-signed-16bit-can-be-negative]]). The `status` parser is **single-sourced
+per language**: `tools/status_parse.js` (required by the panel and `join-notify.js`) with PS twin
+`tools/status_parse.ps1` (dot-sourced by `status_service.ps1` + `join-notify.ps1`, reached only on
+their panel-down fallback — the happy path consumes the panel's parsed JSON), both pinned to one
+shared fixture (`tools/tests/fixtures/status_reply.txt`) by the two test suites. Extend the shared
+module; never copy the parsing form into a new consumer.
 
 ---
 

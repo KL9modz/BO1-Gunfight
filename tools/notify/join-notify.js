@@ -25,6 +25,11 @@ const https = require('https');
 const fs    = require('fs');
 const path  = require('path');
 
+// The shared `status` parser (END-ANCHORED columns, three-state bot claim, signed 16-bit
+// port — doctrine in its header). Same module the RCON panel uses, so the notifier and the
+// panel can never drift on how a row classifies. Needs a full checkout (tools/ intact).
+const { parseStatusText } = require('../status_parse.js');
+
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ─── Config ─────────────────────────────────────────────────────────────────
@@ -132,53 +137,6 @@ function parseRconResponse(buf) {
   const s = buf.toString('utf8');
   const nl = s.indexOf('\n');
   return nl === -1 ? s.slice(4) : s.slice(nl + 1).trimEnd();
-}
-
-function stripColors(s) { return String(s).replace(/\^[0-9a-zA-Z]/g, '').trim(); }
-
-// Parse map/gametype + the human players out of `status`. Bot = a POSITIVE match on the ADDRESS
-// column (guid 0 at a non-routable address); a row we can't read is null, NOT a bot — see below.
-// Player names CAN contain spaces (e.g. the bot "MCG Gordon"), so name is not a single token:
-// index the fixed trailing columns from the END and take everything between guid and lastmsg as
-// the name. The old fixed p[4]/p[6] split misread a spaced name AND shifted the address column,
-// leaking spaced-name bots in as humans (the "MCG joined" false alert).
-function parseStatus(text) {
-  const lines = text.split('\n');
-  const out = { map: '', gametype: '', players: [] };
-  for (const raw of lines) {
-    const line = raw.trim();
-    let m = line.match(/^map:\s*(.+)/i);      if (m) { out.map = stripColors(m[1]); continue; }
-    m = line.match(/^gametype:\s*(.+)/i);      if (m) { out.gametype = stripColors(m[1]); continue; }
-  }
-  const sepIdx = lines.findIndex(l => /^---/.test(l.trim()));
-  if (sepIdx !== -1) {
-    for (let i = sepIdx + 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      const p = line.split(/\s+/);
-      if (p.length < 8 || !/^\d+$/.test(p[0])) continue;
-      const addr = p[p.length - 3];                          // address = 3rd-from-last
-      const name = stripColors(p.slice(4, p.length - 4).join(' '));   // between guid and lastmsg
-      if (!name) continue;
-      // Bot = a POSITIVE identification (guid 0 at a non-routable address), never a fallback.
-      // This was `!(isLocal || isIpPort(addr))` — "not provably human ⇒ bot" — so every row we
-      // couldn't read (above all a STILL-CONNECTING client: guid 0, with the address column
-      // holding a lastmsg value) came back bot=true. Announcing is unaffected either way — the
-      // filter below wants positively-identified humans and a mid-connect player should not be
-      // pushed to a phone until they're actually in — but the same flag on the RCON panel drove
-      // "Kick All Bots", and there it kicked REAL PLAYERS. The flag is now three-state so no
-      // consumer can inherit that footgun: null means "couldn't tell", and it is never actionable.
-      // Port may be NEGATIVE (Plutonium prints it as a signed 16-bit value): a source port
-      // >32767 shows as `ip:-NNNNN`, so `-?` on the port is required or ~half of real joiners
-      // classify as bot=null and never push. IP extraction ignores the port, so it's harmless.
-      const isHuman = addr === 'loopback' || addr === 'local' || /^\d{1,3}(\.\d{1,3}){3}:-?\d+$/.test(addr);
-      const isBot   = !isHuman && p[3] === '0' && /^(unknown|bot|0\.0\.0\.0(:\d+)?)$/i.test(addr);
-      const bot     = isHuman ? false : (isBot ? true : null);
-      const ping  = /^\d+$/.test(p[2]) ? parseInt(p[2], 10) : null;   // "CNCT"/"ZMBI" → null
-      out.players.push({ num: parseInt(p[0], 10), guid: p[3], name, addr, ping, bot });
-    }
-  }
-  return out;
 }
 
 // ─── ntfy push ──────────────────────────────────────────────────────────────
@@ -296,7 +254,7 @@ let lastCtx = '';      // last "map / gametype" string (for message context)
 async function tick(cfg) {
   let st;
   try {
-    st = parseStatus(parseRconResponse(await sendRcon(cfg.host, cfg.port, cfg.password, 'status')));
+    st = parseStatusText(parseRconResponse(await sendRcon(cfg.host, cfg.port, cfg.password, 'status')));
   } catch (e) {
     log('status poll failed (' + e.message + ') — keeping last baseline');
     return;   // don't reset baseline on a transient miss → no false joins on recovery

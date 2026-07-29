@@ -34,13 +34,24 @@ three-state**: `true` = guid 0 at a non-routable addr, `false` = a real ip:port/
 `null` = couldn't classify (never actionable). Full incident + the kick rules →
 [[kick-all-bots-kicked-real-players]].
 
-Applied to the three still-naive parsers: `tools/rcon/server.js::parseStatusText`,
-`tools/notify/join-notify.ps1::Parse-Status`, `tools/notify/join-notify.js::parseStatus`.
-`status_service.ps1` + `conn_logger` (admin.json) were already safe via their own
-end-anchored ip:port check — which is also why the belt-and-suspenders IP filter in
-status_service's main loop kept bad bot flags from `/api/tick` out of the connect log.
+**CONSOLIDATED (2026-07-29): the parser is single-sourced per language — share the module,
+never copy the form.** `tools/status_parse.js` (required by the panel's `server.js` and by
+`join-notify.js`) and its PowerShell twin `tools/status_parse.ps1` (dot-sourced by
+`status_service.ps1` and `join-notify.ps1`) are the only two implementations — change one,
+change both. The two PS services reach their copy ONLY on the panel-down fallback path: the
+happy path consumes the panel's already-parsed `/api/tick` / `/api/status` JSON, so the .js
+copy does the parsing box-wide. Both twins are pinned to ONE fixture
+(`tools/tests/fixtures/status_reply.txt`) by mirrored test suites
+(`tools/rcon/test/server.test.js` + `tools/tests/status_parse.Tests.ps1`) — a one-sided edit
+fails the other side's mirror case. The consolidation also retired the LAST diverged copy:
+`status_service.ps1`'s fallback still carried the banned NEGATIVE polarity
+(`bot = -not isHuman`) and an unguarded `[int]` ping cast that threw the whole poll on a
+non-numeric column. `conn_logger` (admin.json diffing) stays separate — it never parses
+status text, only re-validates address shapes.
 
-RULE: any NEW box-side `status` consumer copies the end-anchored form above. Deploy note:
-the RCON panel ships with `deploy.ps1 -Mod`; the notify/status services are box-side
-(scp + restart the GF-JoinNotify / GF-StatusService tasks), not in the mod mirror.
-Related: [[gf-admin-connection-history]], [[rcon-connect-sweep-unknown-cmd-spam]].
+RULE: any NEW `status` consumer requires/dot-sources the shared parser — never a fresh copy.
+Deploy note (corrected 2026-07-29): ALL of these ship with `deploy.ps1 -Mod` — the
+GF-RconPanel / GF-StatusService / GF-JoinNotify / GF-ConnLogger scheduled tasks execute from
+the MODS-FOLDER MIRROR (verified against the live task definitions), so the deploy's service
+recycle is what loads a parser change; this note's old "scp box-side, not in the mod mirror"
+caveat was stale. Related: [[gf-admin-connection-history]], [[rcon-connect-sweep-unknown-cmd-spam]].

@@ -7,11 +7,14 @@ RCON panel. It polls `status` over loopback RCON, diffs the human-player set by 
 
 **Two implementations, same behavior & config:**
 
-- **`join-notify.ps1`** — native Windows PowerShell 5.1, **no runtime to install**. This is
-  what runs on the VPS (the box has no Node.js).
+- **`join-notify.ps1`** — native Windows PowerShell 5.1. This is what runs on the VPS (the
+  `GF-JoinNotify` scheduled task). When the RCON panel is up it consumes the panel's parsed
+  `/api/status` JSON; direct RCON + local parsing is only the panel-down fallback.
 - **`join-notify.js`** — Node.js version, for a desktop / Linux host that already has Node.
 
-Both read the same `config.json` and `GF_*` env vars. Zero external dependencies.
+Both read the same `config.json` and `GF_*` env vars, and both classify players through the
+shared status parser (`tools/status_parse.js` / `.ps1`, two directories up — run from a full
+checkout so it resolves). Zero external dependencies.
 
 **Events it can push** (each with its own phone priority):
 

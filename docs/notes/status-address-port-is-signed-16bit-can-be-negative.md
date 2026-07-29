@@ -53,13 +53,20 @@ the port is only ever validated, never consumed. The two geo normalizers
 (`server.js::geoNormIp`, `status_service.ps1` line ~293) strip the port *before* validating a
 bare `^\d{1,3}(\.\d{1,3}){3}$`, so they were already immune — leave them.
 
+**Since 2026-07-29 that lockstep set has collapsed:** the status-TEXT parsers are single-sourced
+in `tools/status_parse.js` + `tools/status_parse.ps1` ([[status-parser-name-spaces-bot-miscount]]),
+so the port rule now lives in the twins' two parser regexes, `status_service.ps1`'s
+belt-and-suspenders roster filter, and `conn_logger.ps1`'s admin.json address check (plus the two
+immune geo normalizers).
+
 ⚠ RULE: any address-shape regex in a `status` consumer must allow a **negative** port. This is
 the second column-parsing footgun in the same code, after the spaced-name one
 ([[status-parser-name-spaces-bot-miscount]]); the classifier-null cascade that turns a parse
 miss into a real-player loss is the same failure family as
 [[kick-all-bots-kicked-real-players]].
 
-Deploy: these are **box-side** services (not the mod mirror) — the change reaches the VPS with
-the tree, but the four scheduled tasks must be **restarted** to load it: `GF-RconPanel`
-(server.js), `GF-StatusService` (status_service.ps1), `GF-JoinNotify` (join-notify), and
-`GF-ConnLogger` (conn_logger.ps1). Related: [[gf-admin-connection-history]].
+Deploy (corrected 2026-07-29): the four scheduled tasks — `GF-RconPanel` (server.js),
+`GF-StatusService` (status_service.ps1), `GF-JoinNotify` (join-notify.ps1), `GF-ConnLogger`
+(conn_logger.ps1) — execute from the **mods-folder mirror**, so `deploy.ps1 -Mod` ships the
+change and its service recycle loads it; a tree edit without the recycle changes nothing until
+the next task restart. Related: [[gf-admin-connection-history]].

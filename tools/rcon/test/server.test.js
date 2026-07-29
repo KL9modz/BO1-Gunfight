@@ -12,22 +12,27 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const srv = require('../server.js');
+const shared = require('../../status_parse.js');
 
 // ─── parseStatusText ─────────────────────────────────────────────────────────
-const STATUS = [
-  'map: mp_nuked',
-  'gametype: gf',
-  'num score ping guid   name            lastmsg address               qport rate',
-  '--- ----- ---- --------- --------------- ------- --------------------- ------ -----',
-  '  1     0   12 2223048 KL9                   0 loopback              -20175 25000',
-  '  2   857    0       0 ^1LiMi7ED       1092400 unknown                   42  5000',
-  '  3     0    0       0 MCG Gordon            0 unknown                   43  5000',
-  '  4    10   50 7654321 Player One            5 203.0.113.7:-12558       99 25000',
-  '  5    10   50 7654322 Dude                  5 198.51.100.3:28961       99 25000',
-  '  6     0  999       0 Joining               0 CNCT                     77  5000',
-].join('\n');
+// The fixture is SHARED with the PowerShell twin's suite (tools/tests/status_parse.Tests.ps1
+// parses the same file), so the two implementations are pinned to one input — a one-sided
+// parser edit fails the other side's mirror case. The color-coded row is appended here as a
+// string literal rather than living in the fixture: a bare `^N` roster row in a text file is
+// exactly the shape the pre-commit status-roster guard exists to block.
+const FIXTURE = fs.readFileSync(
+  path.join(__dirname, '..', '..', 'tests', 'fixtures', 'status_reply.txt'), 'utf8');
+const COLOR_ROW = '  2   857    0       0 ^1LiMi7ED       1092400 unknown                   42  5000';
+const STATUS = FIXTURE.trimEnd() + '\n' + COLOR_ROW;
+
+test('parseStatusText: server.js re-exports the SHARED tools/status_parse.js copy (single source)', () => {
+  assert.equal(srv.parseStatusText, shared.parseStatusText);
+  assert.equal(srv.stripColors, shared.stripColors);
+});
 
 test('parseStatusText: map/gametype header', () => {
   const r = srv.parseStatusText(STATUS);
@@ -90,6 +95,21 @@ test('parseStatusText: color codes stripped from names', () => {
 test('parseStatusText: malformed/short rows are skipped, not misread', () => {
   const s = STATUS + '\nnot a row\n  9  12\n';
   assert.equal(srv.parseStatusText(s).players.length, 6);
+});
+
+test('parseStatusText: non-numeric ping ("CNCT") is null, not NaN', () => {
+  const p = srv.parseStatusText(STATUS).players.find(x => x.name === 'Joining');
+  assert.equal(typeof p.ping === 'number' ? 'number' : p.ping, 'number');   // 999 in the fixture
+  const s = STATUS + '\n  8     0 CNCT       0 MidConnect            0 CNCT                     78  5000';
+  const q = srv.parseStatusText(s).players.find(x => x.name === 'MidConnect');
+  assert.equal(q.ping, null);
+});
+
+test('parseStatusText: headerless reply yields empty map (falsy), and map/gametype strip colors', () => {
+  const r = srv.parseStatusText('gametype: gf^7\nno separator here');
+  assert.equal(r.map, '');            // '' — a notifier context check must read it as absent
+  assert.equal(r.gametype, 'gf');     // ^7 stripped
+  assert.equal(r.players.length, 0);
 });
 
 // ─── parseGfState ────────────────────────────────────────────────────────────

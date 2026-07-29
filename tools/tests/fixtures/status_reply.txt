@@ -1,0 +1,9 @@
+map: mp_nuked
+gametype: gf
+num score ping guid   name            lastmsg address               qport rate
+--- ----- ---- --------- --------------- ------- --------------------- ------ -----
+  1     0   12 2223048 KL9                   0 loopback              -20175 25000
+  3     0    0       0 MCG Gordon            0 unknown                   43  5000
+  4    10   50 7654321 Player One            5 203.0.113.7:-12558       99 25000
+  5    10   50 7654322 Dude                  5 198.51.100.3:28961       99 25000
+  6     0  999       0 Joining               0 CNCT                     77  5000

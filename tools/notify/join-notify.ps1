@@ -37,12 +37,13 @@ $script:IgnoreFile = Join-Path $PSScriptRoot '..\ignore.local.json'
 # Resolve-T5Root + Get-RconPassword (shared path/cfg helpers).
 . (Join-Path $PSScriptRoot '..\common.ps1')
 
+# ConvertFrom-GfStatus: the shared `status` parser (PS twin of the panel's status_parse.js).
+# Only the panel-down FALLBACK path below parses text at all - the happy path consumes the
+# panel's already-parsed /api/status JSON, which carries the identical player shape.
+. (Join-Path $PSScriptRoot '..\status_parse.ps1')
+
 function Write-Log($msg) {
   Write-Host ("[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $msg)
-}
-
-function Strip-Colors($s) {
-  return ([regex]::Replace([string]$s, '\^[0-9a-zA-Z]', '')).Trim()
 }
 
 function As-Bool($v, $def) {
@@ -106,57 +107,6 @@ function Parse-RconResponse($s) {
   $nl = $s.IndexOf("`n")
   if ($nl -lt 0) { return $s.Substring([Math]::Min(4, $s.Length)) }
   return $s.Substring($nl + 1).TrimEnd()
-}
-
-# Parse map/gametype + human players from `status`. Bot = a POSITIVE match on the ADDRESS
-# column (guid 0 at a non-routable address); a row we cannot read is $null, NOT a bot — see
-# below. Player names CAN contain spaces (e.g. the bot "MCG Gordon"), so name is not a single
-# token: index the fixed trailing columns from the END and take everything between guid and
-# lastmsg as the name. The old fixed p[4]/p[6] split misread a spaced name AND shifted the
-# address column, leaking spaced-name bots in as humans (the "MCG joined" false phone alert).
-function Parse-Status($text) {
-  $lines   = $text -split "`n"
-  $map = ''; $gt = ''; $sepIdx = -1
-  for ($i = 0; $i -lt $lines.Length; $i++) {
-    $line = $lines[$i].Trim()
-    if ($line -match '^map:\s*(.+)')      { $map = Strip-Colors $Matches[1]; continue }
-    if ($line -match '^gametype:\s*(.+)') { $gt  = Strip-Colors $Matches[1]; continue }
-    if ($sepIdx -lt 0 -and $line -match '^---') { $sepIdx = $i }
-  }
-  $players = New-Object System.Collections.ArrayList
-  if ($sepIdx -ge 0) {
-    for ($i = $sepIdx + 1; $i -lt $lines.Length; $i++) {
-      $line = $lines[$i].Trim()
-      if ($line -eq '') { continue }
-      $p = $line -split '\s+'
-      if ($p.Length -lt 8 -or $p[0] -notmatch '^\d+$') { continue }
-      $addr    = $p[$p.Length - 3]                 # address = 3rd-from-last (name may hold spaces)
-      $nameEnd = $p.Length - 5
-      $name    = ''
-      if ($nameEnd -ge 4) { $name = ($p[4..$nameEnd] -join ' ') }   # name = between guid and lastmsg
-      $name = (Strip-Colors $name)
-      if ($name -eq '') { continue }
-      # Bot = a POSITIVE identification (guid 0 at a non-routable address), never a fallback.
-      # This was `-not (isLocal -or isIpPort)` — "not provably human ⇒ bot" — so every row we could
-      # not read (above all a STILL-CONNECTING client: guid 0, with the address column holding a
-      # lastmsg value) came back bot=true. Announcing is unaffected either way — the filter below
-      # wants positively-identified humans, and a mid-connect player should not be pushed to a
-      # phone until they are actually in — but the same flag on the RCON panel drove "Kick All
-      # Bots", and there it kicked REAL PLAYERS. The flag is now three-state so no consumer can
-      # inherit that footgun: $null means "could not tell", and it is never actionable.
-      # Port may be NEGATIVE (Plutonium prints it as a signed 16-bit value): a source port
-      # >32767 shows as `ip:-NNNNN`, so `-?` on the port is required or ~half of real joiners
-      # classify as bot=null and never push. IP extraction ignores the port, so it's harmless.
-      $isHuman = ($addr -eq 'loopback' -or $addr -eq 'local' -or $addr -match '^\d{1,3}(\.\d{1,3}){3}:-?\d+$')
-      $isBot   = (-not $isHuman) -and ($p[3] -eq '0') -and ($addr -match '^(unknown|bot|0\.0\.0\.0(:\d+)?)$')
-      $bot     = $null; if ($isHuman) { $bot = $false } elseif ($isBot) { $bot = $true }
-      $pg = $null; if ($p[2] -match '^\d+$') { $pg = [int]$p[2] }   # "CNCT"/"ZMBI" -> null
-      [void]$players.Add([pscustomobject]@{
-        num = [int]$p[0]; guid = $p[3]; name = $name; addr = $addr; ping = $pg; bot = $bot
-      })
-    }
-  }
-  return [pscustomobject]@{ map = $map; gametype = $gt; players = $players }
 }
 
 function P-Key($p) {
@@ -319,21 +269,24 @@ $script:lastOnline = 0
 $script:lastCtx    = ''
 
 function Do-Tick($cfg) {
-  # Panel-first (paced/coalesced box-wide rcon queue), direct rcon only if the panel is down.
-  $text = $null
+  # Panel-first (paced/coalesced box-wide rcon queue): consume the panel's already-PARSED
+  # /api/status JSON - the same shared parser (status_parse.js) the whole box uses, so the
+  # notifier and the panel can never drift on how a row classifies. Direct rcon only if the
+  # panel is down, parsed by the shared PS twin (status_parse.ps1). Either way $st carries
+  # the identical shape: map, gametype, players[{num;guid;name;addr;ping;bot;...}].
+  $st = $null
   try {
     $u = 'http://127.0.0.1:{0}/api/status?host={1}&port={2}&password={3}' -f $script:PanelPort, $cfg.host, $cfg.port, [uri]::EscapeDataString([string]$cfg.password)
     $j = Invoke-RestMethod -UseBasicParsing -TimeoutSec 20 -Uri $u
-    if ($j.ok) { $text = [string]$j.raw }
+    if ($j.ok) { $st = $j }
     else { Report-PollFail $cfg "panel reached the server but it did not answer: $($j.error)"; return }
-  } catch { $text = $null }   # panel itself is down -> fall through to direct rcon
-  if ($null -eq $text) {
-    try { $text = Parse-RconResponse (Send-Rcon $cfg.host $cfg.port $cfg.password 'status') }
+  } catch { $st = $null }   # panel itself is down -> fall through to direct rcon
+  if ($null -eq $st) {
+    try { $st = ConvertFrom-GfStatus (Parse-RconResponse (Send-Rcon $cfg.host $cfg.port $cfg.password 'status')) }
     catch { Report-PollFail $cfg "panel down and direct rcon failed: $($_.Exception.Message)"; return }
   }
   Report-PollOk $cfg   # a poll got through: clears the streak, fires the 🟢 if one is outstanding
 
-  $st   = Parse-Status $text
   $now  = Get-Date
   # Bots AND ignored players are filtered out in one place, so everything downstream (the
   # join/leave diff, the "N online" count, wasEmpty, the EMPTY transition, the heartbeat)
