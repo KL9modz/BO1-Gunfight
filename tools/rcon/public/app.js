@@ -570,8 +570,12 @@ function rowHtml(p){
   const tag=bot?'<span class="bot-t">BOT</span>':p.local?'<span class="you-t">YOU</span>':'';
   const pg=bot?'<span class="bot-t">BOT</span>':`<span class="${p.ping<80?'p-ok':p.ping<150?'p-mid':'p-bad'}">${p.ping}ms</span>`;
   const ipCell=p.ip?`<span class="dm" style="font-size:10px">${x(p.ip)}</span>`:`<span class="dm">-</span>`;
-  const guidCell=bot?'<span class="dm">-</span>':`<span class="dm" style="font-size:10px;user-select:all">${p.guid||'-'}</span>`;
-  return`<tr data-num="${p.num}" data-name="${x(p.name)}" data-bot="${bot}" oncontextmenu="showCtx(event,${p.num},'${x(p.name)}',${bot})">
+  const guidCell=bot?'<span class="dm">-</span>':`<span class="dm" style="font-size:10px;user-select:all">${x(p.guid||'-')}</span>`;
+  // No inline oncontextmenu and no name in any attribute: an inline handler entity-decodes before
+  // JS parses it, so NO escaping can make player-derived data safe there (that was an XSS → rcon
+  // chain). The delegated document contextmenu listener reads data-num/data-bot and resolves the
+  // name from _lastPlayers — the data model, not the DOM.
+  return`<tr data-num="${p.num}" data-bot="${bot}">
     <td>${p.num}</td><td>${adminStar}${tag}${bot?x(p.name):`<span class="real-n">${x(p.name)}</span>`}<span class="tm-slot" data-tm="${p.num}"></span></td><td>${p.score}</td><td>${pg}</td><td>${ipCell}</td><td>${guidCell}</td></tr>`;
 }
 // Per-row indicator from the last gf_roster read. When the list is grouped, the team is already
@@ -706,7 +710,13 @@ function stageTabBadge(n,dirty){
   b.textContent=show?(n>0?String(n)+(dirty?'!':''):'!'):'';
   b.title=dirty?'Staged plan has uncommitted changes':'Staged plan committed';
 }
-function x(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;')}
+// HTML-escape for ELEMENT and QUOTED-ATTRIBUTE contexts. The double-quote escape is load-bearing:
+// player names land in data-* attributes, and an unescaped " broke out of the attribute (XSS via a
+// crafted name → this panel can POST /api/rcon). NOT sufficient for inline on*="" handlers — the
+// browser entity-DECODES an attribute before the JS engine parses it, re-arming every quote — so
+// player-derived data must never be interpolated into inline handler strings at all (the roster
+// rows use a delegated contextmenu listener instead).
+function x(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 
 function showCtx(e,num,name,isBot){
   e.preventDefault();
@@ -1192,6 +1202,17 @@ function rowReset(row){
   actLog('Reset '+lbl+' → default','wn');
 }
 document.addEventListener('contextmenu',e=>{
+  // Player roster rows first: their menu used to ride an inline oncontextmenu that interpolated
+  // the player NAME into the handler string — unfixable by escaping (attributes entity-decode
+  // before JS parses), so the name now never touches the DOM as handler code. Resolve it from
+  // _lastPlayers by client num instead.
+  const prow=e.target.closest('#ptbody tr[data-num]');
+  if(prow){
+    const num=parseInt(prow.getAttribute('data-num'));
+    const pl=_lastPlayers.find(p=>p.num===num)||{};
+    showCtx(e,num,pl.name||'',prow.getAttribute('data-bot')==='true');
+    return;
+  }
   const row=e.target.closest('.srow,.slider-row');
   if(!row) return;
   // The CLIENT SETTINGS rows own their right-click already: each carries an inline oncontextmenu that
