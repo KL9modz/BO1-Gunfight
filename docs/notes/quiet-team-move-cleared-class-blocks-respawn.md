@@ -1,7 +1,9 @@
 # Quiet team move cleared `pers["class"]` → next round's spawn blocked behind the class menu
 
 **Date:** 2026-07-20 (live repro: basscar101 on `mp_villa`; same bug as the YooDyl `mp_silo`
-report 2026-07-19). **Status: root-caused and FIXED** (`gf_quietSetTeam` + `gf_forceTeamQuiet`).
+report 2026-07-19). **Status: root-caused and FIXED** (`gf_quietSetTeam` + `gf_forceTeamQuiet` at
+the time; the tier1 refactor has since **folded `gf_forceTeamQuiet` into `gf_quietSetTeam`** — the
+bridge now routes through the one primitive, so today the fix lives in `gf_quietSetTeam` alone).
 
 ## Symptom
 
@@ -29,7 +31,8 @@ until they manually made a selection. Every OTHER player auto-spawned normally.
 
 ## The fix
 
-`gf_quietSetTeam` (`_gf_rounds.gsc`) and its mirror `gf_forceTeamQuiet` (`_gf_bridge.gsc`) now do
+`gf_quietSetTeam` (`_gf_rounds.gsc`) — and, before tier1 folded it in, its since-deleted mirror
+`gf_forceTeamQuiet` (`_gf_bridge.gsc`) — now does
 what `beginClassChoice` would have done: moving to a **real team** under
 `level.oldschool || scr_disable_cac == 1` sets `pers["class"] = level.defaultClass` (instead of
 clearing), so the moved player passes the `:386` gate and auto-spawns like everyone else. Class

@@ -50,7 +50,8 @@ re-autoassign anywhere and insta-spawn wrong-side; the post-restart pass rebuild
 (3) one roster-settle pass after init (waits for `level.players.size` stable ~1.5s — covers empty-
 server pre-fill, the holding lobby, and the post-restart rebuild, where the gate notify never fires
 because the armed pass skips the gate wholesale). Primitives: **quiet pers reassign**
-(`gf_botQuietSetTeam`, mirror of `_gf_bridge::gf_forceTeamQuiet`) for un-"playing" bots; the deferred
+(`gf_botQuietSetTeam`, the bot sibling of `_gf_rounds::gf_quietSetTeam` — its old bridge mirror
+`gf_forceTeamQuiet` was folded into `gf_quietSetTeam` by the tier1 refactor) for un-"playing" bots; the deferred
 `pers["gf_parkPending"]` mark (consumed pre-spawn by `gf_lobbyMaySpawn`) for alive ones — an alive
 "playing" bot (incl. prematch-frozen and the mid-spawn undefined-health window) is NEVER touched;
 kicks; and 0.5s-staggered adds that are **generation-stamped** (`level.gf_fillGen`; a newer pass

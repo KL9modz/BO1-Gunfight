@@ -989,9 +989,11 @@ gf_ensureScorePopupElem()
 // elements and the queue consumer already exist for every connect (stock
 // _globallogic threads _hud_message::init; _persistence inits _popups), so
 // nothing needs creating here. oldNotifyMessage is used instead of
-// notifyMessage(notifyData) on purpose: building notifyData needs
-// spawnStruct(), which is broken in T5 MOD scripts — the stock wrapper builds
-// the struct inside stock code where it works.
+// notifyMessage(notifyData) on purpose: it takes plain args, so there is no
+// notifyData struct to build or get wrong. (An older version of this comment
+// blamed "spawnstruct() is broken in mod scripts" — false: this very file
+// calls spawnstruct() live in gf_getTeamHealthStats. oldNotifyMessage wins on
+// its own merits, not because the alternative can't be constructed.)
 // Caller (gf_playerSpawnedCB) gates to humans + once per connection.
 // Configstring cost: one unique setText string per human joiner — negligible.
 gf_welcomeMessage()

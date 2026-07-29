@@ -29,7 +29,8 @@ wins** takes the match.
   (`_globallogic_player.gsc:386`), and its else-branch `showMainMenuForTeam()` (`:392`) — unlike
   `beginClassChoice` — **ignores `scr_disable_cac`** and unconditionally opens the class menu. Fixed:
   quiet moves to a real team now assign `level.defaultClass` (exactly what `beginClassChoice` would do
-  under disable-cac) in `gf_quietSetTeam` + the bridge mirror `gf_forceTeamQuiet`; `gf_botQuietSetTeam`
+  under disable-cac) in `gf_quietSetTeam` (the bridge routes through it — its old mirror
+  `gf_forceTeamQuiet` was folded in by the tier1 refactor); `gf_botQuietSetTeam`
   deliberately untouched (BotWarfare drives bot class/spawn — demonstrably fine). ⚠ Rule: **any quiet
   team write to a real team must leave `pers["class"]` valid** or its target blocks at the next re-begin.
   `GF_TEAMWATCH`/`GF_RECLAIM` at 0 lines proved the player was never in spectator, killing the old
@@ -68,8 +69,9 @@ wins** takes the match.
   server-side is involved and the hard constraint is vindicated** — the fix was never the floor or `sv_fps`
   (both still off-limits; lowering the floor brings the `CG_DrawDisconnect` plug back, raising `sv_fps`
   truncates the killcam archive ring). `cl_maxpackets` is archived (`seta`), so a player sets it once and
-  it sticks → this is now a **player-facing recommendation** (like `cg_fov`), not an engineering item. TODO:
-  add `cl_maxpackets 100` to `docs/GETTING_STARTED.md`. ([[killcam-slowmo-timescale-usercmd-backlog]])
+  it sticks → this is a **player-facing recommendation** (like `cg_fov`), not an engineering item, and
+  `docs/GETTING_STARTED.md` carries it (`seta cl_maxpackets "100"`, solo line + the one-liner block).
+  ([[killcam-slowmo-timescale-usercmd-backlog]])
 - **Stock weapon-data console warnings — cosmetic, client-side, NOT ours (a whole family).** The mod ships
   **zero** weapon files and no `weaponOptions.csv` (`raw/weapons/` is empty), so every one of these is pure
   Treyarch data that surfaces more here than in vanilla only because the rotating pool hands out
@@ -277,9 +279,12 @@ to choose a team/class" case (a transient spectator flash GF_TEAMWATCH can't cat
 on a strand still present at the NEXT boundary). Built to identify the untraced mis-seater
 behind both open team bugs. GSC cannot hook a field write, so it works by **difference**: every
 sanctioned writer of `pers["team"]` stamps a **single-use token** naming itself and its target
-(`_gf_rounds::gf_stampTeamWriter` — 11 sites: `seatjoin`, `quietset`, `maxsize`, `botquiet`, `bridge`,
-`pteam`, `stockauto`, `stockmenu`,
-`parkpending`, `movepending`, `fillguard`), and the sampler walks the roster at **three checkpoints**
+(`_gf_rounds::gf_stampTeamWriter` — 10 tokens: `seatjoin`, `quietset`, `maxsize`, `botquiet`,
+`pteam`, `stockauto`, `stockmenu`, `parkpending`, `movepending`, `fillguard`; there is no `bridge`
+token — the bridge's moves land as `pteam`/`quietset`/`movepending` through the shared primitives —
+and the tracer's by-difference design makes a drifted token list actively misleading, so verify this
+list against the `gf_setTeamFields`/`gf_stampTeamWriter` call sites before using it in an
+investigation), and the sampler walks the roster at **three checkpoints**
 — `boundary-in`, `boundary-out`, `pre-spawn` — reporting any team change with no matching token as
 `GF_TEAMTRACE: UNTRACED …`. ⚠ The token is **consumed on match** deliberately: left in place, a stock
 autoassign moving someone back onto a team a sanctioned writer used earlier would be absolved forever.
@@ -580,8 +585,9 @@ teams N/M"), forced autoassign. ([[gf-stuck-after-prematch-two-gates]])
 **counts** (`gf_botplan`, inert when `gf_fill_n > 0` — the reconciler owns bots then). `gf_applyTeamPlan`
 must **yield before its first roster read** (it runs from the tail of `onStartGameType` where
 `level.players` is empty). ⚠ A prematch team switch suicides an alive frozen player without restoring
-`pers["lives"]`, so `maySpawn` then denies the respawn → "starts round 1 dead"; `gf_reseatRespawn`
-restores the life and re-drives `spawnClient` ([[stock-teamswitch-suicide-no-life-restore]]).
+`pers["lives"]`, so `maySpawn` then denies the respawn → "starts round 1 dead"; **`gf_seqTeamMove`'s
+restore-life path** owns the fix (its bounded respawn-recovery tail absorbed the old standalone
+`gf_reseatRespawn`, deleted 2026-07-16) ([[stock-teamswitch-suicide-no-life-restore]]).
 `scr_gf_load_grace` (non-restart path) keeps round-1 grace open for a still-loading straggler.
 
 **Match → match teams (carry + staging) ride the SAME plan pipeline.** Between matches the map change
@@ -1636,11 +1642,17 @@ in-memory `recent` ring in that case. Full runbook → `docs/VPS_DEPLOY.md`. Adm
 | Broken in T5 mods | Correct T5 replacement |
 |---|---|
 | `getPlayers()` | `level.players` (engine array, always available) |
-| `spawnStruct()` | Associative array: `s = []; s["key"] = val;` |
-| `player isAlive()` / `isAlive(player)` | `player.health > 0` |
+| `player isAlive()` (METHOD form) | `isAlive(player)` — the **free-function form IS registered in the MP VM** and runs live in shipped code (`_gf_rounds.gsc` ×4, the vendored bots throughout); `player.health > 0` also works. Same method-vs-bare trap as `visionSetNaked` below. This row used to declare BOTH forms broken — retired 2026-07-28, the shipped call sites are the proof. |
 | `player.team` | `player.pers["team"]` → `"allies"`/`"axis"`/`"spectator"` |
 | `level.onGiveLoadout = ::fn` | Does not exist. Loadout is delivered via `level.giveCustomLoadout` (called by `_class::giveLoadout`); lifecycle via `level.playerSpawnedCB`. |
 | `player visionSetNaked(...)` | `visionSetNaked(...)` — a **bare** builtin in the MP VM (global to all clients); the method form throws unknown-function ([[vector-scale-in-common-scripts-utility]]). |
+
+⚠ **`spawnstruct()` WORKS in T5 MP mod scripts** — this table listed it as broken for months while
+shipped code disproved it live (`_gf_hud.gsc::gf_getTeamHealthStats` builds one on the health-stats
+hot path every 0.1s; `_bot_utility.gsc:192` too, 24/7 on the VPS). Associative arrays remain a fine
+substitute, but do not redesign around "spawnstruct is broken" — it isn't. (Settled 2026-07-28; if
+`notifyMessage` genuinely fails, its cause is something else — `oldNotifyMessage` stays preferred on
+its own merits: native FX, serialized, zero mod hudelems.)
 
 `setDvar("scr_player_healthregentime","0")` DOES work — set it before `_healthoverlay::init()` threads
 and the engine disables regen itself.
@@ -1747,8 +1759,8 @@ always renders above client bars regardless of sort.
 separate pool from the ~17 cap). **Animation:** `fadeOverTime(t)` then set `.alpha`; `moveOverTime(t)`
 then set `.x`/`.y`; `.glowColor`/`.glowAlpha`; `fontPulse(player)`. Standard live-element props:
 `archived=false`, `hidewheninmenu=true`. Center-screen splashes: `_hud_message::oldNotifyMessage`
-(native decode/typewriter FX, serialized, zero mod hudelems — use this, not `notifyMessage`, which needs
-the broken `spawnStruct()`).
+(native decode/typewriter FX, serialized, zero mod hudelems — preferred over `notifyMessage` on its
+own merits; note `spawnstruct()` itself is NOT broken, see the cheatsheet table).
 
 ## T5 asset reference
 
