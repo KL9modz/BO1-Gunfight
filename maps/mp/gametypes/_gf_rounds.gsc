@@ -645,43 +645,235 @@ gf_loadGateCountElem( xOfs )
     return e;
 }
 
+// ── Load-gate stage helpers ─────────────────────────────────────────────────
+// gf_waitForLoadingClients grew to ~450 lines mixing six concerns; these carve out the
+// cohesive stages so the hold itself reads as: armed-start? -> config -> HUD -> presentation
+// -> poll(sample -> release-reason) -> teardown. The RELEASE DECISION is deliberately a PURE
+// function returning a reason string ("" = keep holding) — every way the hold can end now
+// produces a GF_LOBBY_END line naming its exact clause and inputs, which is what makes the
+// open "pregame lobby can end on its own" bug self-diagnosing at its next occurrence.
+
+// The fast-restart lobby's post-restart pass: the lobby already ran and restarted the map;
+// this pass is the REAL match. Consume the armed flag + the team/bot plans and return true —
+// the caller skips the whole gate. The flag is a DVAR (survives map_restart(false), which
+// wipes game[]/pers[]); cleared HERE — the last gate touch — so the NEXT match's lobby arms.
+gf_gateConsumeArmedStart()
+{
+    if ( getDvar( "gf_matchArmed" ) != "1" )
+        return false;
+
+    setDvar( "gf_matchArmed", "0" );
+    // Lobby->match team transfer: re-apply the arranged-teams snapshot the lobby wrote before the
+    // fast-restart. forceAutoAssign makes returning humans skip the team-select menu; the seating
+    // itself happens at CONNECT via the connect-time autoassign override (level.gf_autoJoinBalance,
+    // installed every round in gf.gsc onStartGameType — it delegates to gf_autoassignPlanned while
+    // a plan is live), while each player is still spectator/dead — so the stock switch's suicide()
+    // is invisible and no player visibly dies+respawns at match start. gf_applyTeamPlan stays as a
+    // backstop (finds everyone already seated -> no-op; still heals any straggler the override
+    // missed, incl. a rare joiner in the window before gf_teamPlanEntries is parsed below). Bots
+    // are re-padded by the fill reconciler.
+    level.forceAutoAssign = true;
+
+    // Parse the snapshot ONCE into a level array (consume the dvars here so the NEXT lobby writes a
+    // fresh plan). Both gf_autoassignPlanned and the gf_applyTeamPlan backstop read this array. The
+    // autoassign override is already installed (gf.gsc) and reads this at connect time, so no
+    // separate install here — a re-save of level.autoassign would capture OUR override and recurse.
+    // A pending gf_teamstage (panel next-match staging) overrides the snapshot inside the consume,
+    // so a staged layout wins even when the match starts via the lobby release / bridge matchrestart.
+    gf_consumeTeamPlan( false );
+
+    level thread gf_applyTeamPlan();
+    level thread gf_applyBotPlan();          // re-seat manually-arranged bots (fill-off); inert when gf_fill_n > 0
+    return true;
+}
+
+// Stock-look wait HUD: the exact "waiting for teams" element matchStartTimer() shows while
+// its (stubbed) waitForPlayers() would wait, plus a live "loaded / total" readout in the slot
+// the countdown number will take over. Counts are setValue-driven (no dynamic setText —
+// configstring-safe); the "/" is the only new raw string, once per match. In the Auto/Manual
+// lobby the custom lobby HUD (gf_lobby_hud menuDef) owns the readout, so everything starts
+// hidden there (the caller's setValue updates on a 0-alpha element are harmless).
+// Returns r["elems"] (all four, for teardown) + r["loaded"]/r["total"] (the live counters).
+gf_gateCreateWaitElems( restartMode )
+{
+    r = [];
+    elems = [];
+
+    waitText = createServerFontString( "extrabig", 1.5 );
+    waitText setPoint( "CENTER", "CENTER", 0, -40 );
+    waitText.sort           = 1001;
+    waitText.foreground     = false;
+    waitText.hidewheninmenu = true;
+    waitText setText( game["strings"]["waiting_for_teams"] );
+    elems[elems.size] = waitText;
+
+    cntLoaded = gf_loadGateCountElem( -24 );
+    cntSlash  = gf_loadGateCountElem( 0 );
+    cntSlash setText( "/" );
+    cntTotal  = gf_loadGateCountElem( 24 );
+    elems[elems.size] = cntLoaded;
+    elems[elems.size] = cntSlash;
+    elems[elems.size] = cntTotal;
+
+    if ( restartMode )
+        for ( ei = 0; ei < elems.size; ei++ )
+            elems[ei].alpha = 0;
+
+    r["elems"]  = elems;
+    r["loaded"] = cntLoaded;
+    r["slash"]  = cntSlash;
+    r["total"]  = cntTotal;
+    return r;
+}
+
+// Auto/Manual lobby presentation: desaturated pregame vision + the locked bodyless overview
+// cam so the hold reads as a real pregame staging screen instead of players frozen at their
+// spawns. Everything set here is wiped for FREE by the map_restart(false) on release, which
+// is exactly why this is scoped to restartMode (Normal has no restart and would need explicit
+// reversal). Per-flag rationale lives on each line — all verbatim from the pre-split code.
+gf_gateEnterLobbyPresentation()
+{
+    visionSetNaked( "mpIntro", 0 );
+    // Hide the stock spectator overlay ("SPECTATING <name>" + the follow-key instructions) for a
+    // clean lobby — the exact matchflag the stock game-end uses (_globallogic.gsc:685). Level-wide,
+    // one call; restored at the release + reset by the map_restart(false) anyway.
+    setmatchflag( "cg_drawSpectatorMessages", 0 );
+    // Strip the scoreboard to the minimum this builtin can produce for the lobby: NAME + SCORE +
+    // PING. setscoreboardcolumns controls only the 4 MIDDLE columns (Score + Ping are engine-fixed
+    // and can't be removed without editing the scoreboard .menu). No restore call needed — main()
+    // re-runs setscoreboardcolumns("kills","deaths","assists","captures") (gf.gsc) on the
+    // post-restart onStartGameType pass, so the real match gets its normal columns back.
+    setscoreboardcolumns( "none", "none", "none", "none" );
+    // Force teamless connectors to AUTO-ASSIGN instead of popping the team-select menu
+    // (_globallogic_player.gsc:338 -> autoassign when forceAutoAssign is set, else openMenu team).
+    // This lets the lobby cam drop ALL per-tick menu suppression — the old closeMenu()/
+    // g_scriptMainMenu="" swatted the team menu but also killed the ESC/pause overlay every tick.
+    // Nobody needs the team menu in the lobby; the fast-restart does the real pick. Wiped by
+    // map_restart(false) on release, so the real match (Pass 2) keeps normal team behavior.
+    level.forceAutoAssign = true;
+    // Restart-lobby ONLY flag. Gates the throwaway-spawn optimizations (skip the spawn music +
+    // the whole loadout build) — safe here because map_restart(false) rebuilds everything fresh for
+    // the real match. It must NOT key off gf_inLobbyHold: a non-restart Normal-mode hold (load/
+    // min-players gate with scr_gf_lobby 0) frozen-spawns players whose spawn IS the match spawn,
+    // so skipping their loadout would leave them weaponless. map_restart(false) wipes this level var;
+    // the release clears it for the gameEnded / no-restart exits.
+    level.gf_lobbyRestartHold = true;
+    // Suppress the stock "You will respawn next round" lower-third the maySpawn-false spectator path
+    // sets: livesDoNotReset=true makes shouldShowRespawnMessage false (_globallogic_spawn.gsc:572), so
+    // the message is never set (cleaner than clearing it after — the stock auto-clear is aborted by
+    // an "end_respawn" notify, which is why it persisted). Safe: gunfight never uses livesDoNotReset,
+    // the first-connect lives reset is forced by the isDefined() clause (_globallogic_player.gsc:235),
+    // and map_restart(false) wipes level.* + pers[] so the match resets lives normally.
+    level.livesDoNotReset = true;
+    level thread gf_lobbyCamWatcher();
+    level thread gf_lobbyRosterLoop();
+    level thread gf_lobbyIconCycler();
+}
+
+// One poll's walk over the connect tracker. Returns r["humans"] (tracked humans, loaders
+// included), r["stillLoading"], r["humansGone"] (latched humans who dropped during the hold).
+// Side effect: latches level.gf_loadGateHuman[i] for begun humans — set while the entity is
+// still here to classify, because a kicked BOT must never shrink a HUMAN expectation.
+gf_gateSampleRoster()
+{
+    r = [];
+    r["humans"]       = 0;
+    r["stillLoading"] = 0;
+    r["humansGone"]   = 0;
+
+    for ( i = 0; i < level.gf_loadGateSeen.size; i++ )
+    {
+        p = level.gf_loadGateSeen[i];
+        if ( !isDefined( p ) )        // dropped while loading
+        {
+            // A human who connected during the hold and then left is one body that will
+            // never arrive — subtract them from the expectation, or it would re-stall
+            // after having been satisfied. Only latched-human entries count. A client that
+            // dropped BEFORE begin was never latched, so it isn't subtracted and that
+            // expectation rides out its deadline instead — rare, and bounded by design.
+            if ( isDefined( level.gf_loadGateHuman[i] ) && level.gf_loadGateHuman[i] )
+                r["humansGone"]++;
+            continue;
+        }
+        if ( isDefined( p.statusicon ) && p.statusicon == "hud_status_connecting" )
+        {
+            // Still loading. istestclient() is only stock-precedented on begun clients, so
+            // don't classify yet — a pre-begin bot is transient (test clients begin within a
+            // frame) and at worst flickers the readout for one 0.25s poll.
+            r["humans"]++;
+            r["stillLoading"]++;
+        }
+        // begun: drop bots (istestclient) AND server-side demo clients (isdemoclient —
+        // e.g. "[3arc]democlient", guid 0). A demo client is NOT a test client, so without
+        // the isdemoclient check it was wrongly counted as a human, inflating the readout
+        // and satisfying scr_gf_min_players by itself.
+        else if ( gf_isHuman( p ) )
+        {
+            r["humans"]++;
+            level.gf_loadGateHuman[i] = true;   // latch while the entity is still here to classify
+        }
+    }
+    return r;
+}
+
+// THE RELEASE DECISION — pure: reads cfg (deadlines/knobs, built once at hold start) +
+// counts (this poll's roster sample) + now + the admin START flag, returns the reason string
+// for release or "" to keep holding. Every clause names itself and its inputs, so the
+// GF_LOBBY_END log line always says exactly WHY the hold ended (the open "lobby can end on
+// its own" bug is diagnosable from one line). No side effects — safe to call speculatively.
+gf_gateReleaseReason( cfg, counts, now, startClicked )
+{
+    if ( cfg["manualMode"] )
+    {
+        // MANUAL lobby: hold until the admin clicks START (or the auto-start backstop),
+        // regardless of load state / headcount. No 3s floor — a deliberate click starts now.
+        if ( startClicked )
+            return "manual - admin START clicked";
+        if ( cfg["lobbyTimer"] > 0 && now >= cfg["lobbyDeadline"] )
+            return "manual - auto-start timer (scr_gf_lobby_timer=" + cfg["lobbyTimer"] + "s) elapsed";
+        return "";
+    }
+
+    // AUTO / NORMAL: release once everyone is off the loading screen (or the load ceiling
+    // hit) AND enough humans are here (or none to wait for / start-anyway ceiling hit).
+    // humans counts tracked humans whether loaded or still loading; the load condition then
+    // waits for any still loading to finish. An admin START click force-releases (start now,
+    // even below min-players).
+    if ( startClicked )
+        return "auto - admin START clicked";
+
+    humans       = counts["humans"];
+    stillLoading = counts["stillLoading"];
+    loadOk = ( !cfg["loadGateOn"] ) || ( stillLoading == 0 ) || ( now >= cfg["loadDeadline"] );
+    minOk  = ( !cfg["minGateOn"] ) || ( humans >= cfg["minP"] ) || ( humans == 0 ) || ( cfg["minTimerOn"] && now >= cfg["minDeadline"] );
+    // Roster expectation: how many of the previous match's humans we are still short.
+    // humans == 0 releases unconditionally — an empty or pure-bot lobby must never wait on a
+    // snapshot of players who are all gone (also what makes a stale count harmless on a
+    // server that sat empty through a map change).
+    need     = cfg["expected"] - counts["humansGone"];
+    expectOk = ( need <= 0 ) || ( humans >= need ) || ( humans == 0 ) || ( now >= cfg["expectDeadline"] );
+    // POSITIVE roster evidence beats the blind arrival floor. The 3s floor exists only
+    // because a poll can run before the engine has delivered any connect callback, so an
+    // empty tracker is indistinguishable from an empty server. "The whole expected roster is
+    // here AND off its loading screen" is strictly better evidence than the floor's absence
+    // of it — so a full 2-player room that reconnects in 400ms starts in 400ms.
+    rosterMet = ( need > 0 && humans >= need && stillLoading == 0 );
+    if ( ( rosterMet || now >= cfg["floorEnd"] ) && loadOk && minOk && expectOk )
+        return "auto - gates satisfied (loadOk=" + loadOk + " minOk=" + minOk + " expectOk=" + expectOk + " rosterMet=" + rosterMet + " humans=" + humans + " expected=" + cfg["expected"] + " need=" + need + " gone=" + counts["humansGone"] + " stillLoading=" + stillLoading + ")";
+    return "";
+}
+
 // The hold itself — called (not threaded) as the last statement of
 // onStartGameType. See the block comment above for the full design.
 gf_waitForLoadingClients()
 {
     if ( game["roundsplayed"] > 0 )
         return;
-    // Fast-restart lobby post-restart pass: the lobby already ran and fast-restarted the
-    // map; this pass is the REAL match, so CONSUME the flag + skip the gate and let
-    // onStartGameType return into a normal prematch -> gunfight. The flag is a DVAR (survives
-    // map_restart(false), which wipes game[]/pers[]); cleared HERE — the last gate touch — so
-    // the NEXT match's lobby arms again.
-    if ( getDvar( "gf_matchArmed" ) == "1" )
-    {
-        setDvar( "gf_matchArmed", "0" );
-        // Lobby->match team transfer: re-apply the arranged-teams snapshot the lobby wrote before the
-        // fast-restart. forceAutoAssign makes returning humans skip the team-select menu; the seating
-        // itself happens at CONNECT via the connect-time autoassign override (level.gf_autoJoinBalance,
-        // installed every round in gf.gsc onStartGameType — it delegates to gf_autoassignPlanned while
-        // a plan is live), while each player is still spectator/dead — so the stock switch's suicide()
-        // is invisible and no player visibly dies+respawns at match start. gf_applyTeamPlan stays as a
-        // backstop (finds everyone already seated -> no-op; still heals any straggler the override
-        // missed, incl. a rare joiner in the window before gf_teamPlanEntries is parsed below). Bots
-        // are re-padded by the fill reconciler. Then fall through to a normal prematch -> gunfight.
-        level.forceAutoAssign = true;
-
-        // Parse the snapshot ONCE into a level array (consume the dvars here so the NEXT lobby writes a
-        // fresh plan). Both gf_autoassignPlanned and the gf_applyTeamPlan backstop read this array. The
-        // autoassign override is already installed (gf.gsc) and reads this at connect time, so no
-        // separate install here — a re-save of level.autoassign would capture OUR override and recurse.
-        // A pending gf_teamstage (panel next-match staging) overrides the snapshot inside the consume,
-        // so a staged layout wins even when the match starts via the lobby release / bridge matchrestart.
-        gf_consumeTeamPlan( false );
-
-        level thread gf_applyTeamPlan();
-        level thread gf_applyBotPlan();          // re-seat manually-arranged bots (fill-off); inert when gf_fill_n > 0
+    // Fast-restart lobby post-restart pass: the lobby already ran and restarted the map; this
+    // pass is the REAL match — the helper consumes the armed flag + plans, and onStartGameType
+    // returns into a normal prematch -> gunfight.
+    if ( gf_gateConsumeArmedStart() )
         return;
-    }
 
     // Plain match start (a match->match map change, or boot): seat arriving humans per a carried
     // end-of-match snapshot (gf_team_nextmatch "keep", written by gf_writeNextMatchPlan on the
@@ -783,35 +975,27 @@ gf_waitForLoadingClients()
     if ( expectDeadline > loadDeadline )                 // the load ceiling always wins
         expectDeadline = loadDeadline;
 
-    // Stock look: the exact "waiting for teams" element matchStartTimer() shows
-    // while its (stubbed) waitForPlayers() would wait, plus a live
-    // "loaded / total" readout in the slot the countdown number will take over.
-    // Counts are setValue-driven (no dynamic setText — configstring-safe); the
-    // "/" is the only new raw string, once per match.
-    elems = [];
-    waitText = createServerFontString( "extrabig", 1.5 );
-    waitText setPoint( "CENTER", "CENTER", 0, -40 );
-    waitText.sort           = 1001;
-    waitText.foreground     = false;
-    waitText.hidewheninmenu = true;
-    waitText setText( game["strings"]["waiting_for_teams"] );
-    elems[elems.size] = waitText;
+    // Everything the release decision reads, packed once — gf_gateReleaseReason (the pure
+    // predicate) sees exactly this + the per-poll roster sample, nothing else.
+    cfg = [];
+    cfg["manualMode"]     = manualMode;
+    cfg["loadGateOn"]     = loadGateOn;
+    cfg["loadDeadline"]   = loadDeadline;
+    cfg["minGateOn"]      = minGateOn;
+    cfg["minP"]           = minP;
+    cfg["minTimerOn"]     = minTimerOn;
+    cfg["minDeadline"]    = minDeadline;
+    cfg["expected"]       = expected;
+    cfg["expectDeadline"] = expectDeadline;
+    cfg["floorEnd"]       = floorEnd;
+    cfg["lobbyTimer"]     = lobbyTimer;
+    cfg["lobbyDeadline"]  = lobbyDeadline;
 
-    cntLoaded = gf_loadGateCountElem( -24 );
-    cntSlash  = gf_loadGateCountElem( 0 );
-    cntSlash setText( "/" );
-    cntTotal  = gf_loadGateCountElem( 24 );
-    elems[elems.size] = cntLoaded;
-    elems[elems.size] = cntSlash;
-    elems[elems.size] = cntTotal;
-
-    // In the Auto/Manual lobby the custom lobby HUD (gf_lobby_hud menuDef) owns the "waiting" message
-    // + count, so hide this stock load-gate readout to avoid the doubled dead-center text. Keep it in
-    // Normal mode (scr_gf_lobby 0), where it's the only start feedback. The count-update logic below
-    // still runs on the now-invisible elems (harmless — setValue on a 0-alpha element is a no-op look).
-    if ( restartMode )
-        for ( ei = 0; ei < elems.size; ei++ )
-            elems[ei].alpha = 0;
+    hud       = gf_gateCreateWaitElems( restartMode );
+    elems     = hud["elems"];
+    cntLoaded = hud["loaded"];
+    cntSlash  = hud["slash"];
+    cntTotal  = hud["total"];
 
     shownCount   = false;
     lastLoaded   = -1;
@@ -823,51 +1007,11 @@ gf_waitForLoadingClients()
     // show/enable "Start Match" exactly when a hold is up. Cleared the instant we break.
     level.gf_inLobbyHold = true;
 
-    // Auto/Manual lobby: paint it with the desaturated pregame vision (the same "mpIntro"
-    // string the native prematch uses) AND float everyone in the intermission camera (the
-    // locked, bodyless "postgame" map-overview cam) so it reads as a real pregame staging
-    // screen instead of players frozen at their spawns. Both are wiped for FREE by the
-    // map_restart(false) on release (players re-spawn fresh into the match), so no teardown
-    // is needed — which is exactly why this is scoped to restartMode (Normal has no restart
-    // and would need explicit per-player camera reversal).
+    // Auto/Manual lobby: desaturated vision + overview cam + the lobby flags/threads — see
+    // gf_gateEnterLobbyPresentation (everything it sets is wiped free by the release restart,
+    // which is why it's scoped to restartMode; Normal would need explicit reversal).
     if ( restartMode )
-    {
-        visionSetNaked( "mpIntro", 0 );
-        // Hide the stock spectator overlay ("SPECTATING <name>" + the follow-key instructions) for a
-        // clean lobby — the exact matchflag the stock game-end uses (_globallogic.gsc:685). Level-wide,
-        // one call; restored at the release + reset by the map_restart(false) anyway.
-        setmatchflag( "cg_drawSpectatorMessages", 0 );
-        // Strip the scoreboard to the minimum this builtin can produce for the lobby: NAME + SCORE +
-        // PING. setscoreboardcolumns controls only the 4 MIDDLE columns (Score + Ping are engine-fixed
-        // and can't be removed without editing the scoreboard .menu). No restore call needed — main()
-        // re-runs setscoreboardcolumns("kills","deaths","assists","captures") (gf.gsc) on the
-        // post-restart onStartGameType pass, so the real match gets its normal columns back.
-        setscoreboardcolumns( "none", "none", "none", "none" );
-        // Force teamless connectors to AUTO-ASSIGN instead of popping the team-select menu
-        // (_globallogic_player.gsc:338 -> autoassign when forceAutoAssign is set, else openMenu team).
-        // This lets the lobby cam drop ALL per-tick menu suppression — the old closeMenu()/
-        // g_scriptMainMenu="" swatted the team menu but also killed the ESC/pause overlay every tick.
-        // Nobody needs the team menu in the lobby; the fast-restart does the real pick. Wiped by
-        // map_restart(false) on release, so the real match (Pass 2) keeps normal team behavior.
-        level.forceAutoAssign = true;
-        // Restart-lobby ONLY flag. Gates the throwaway-spawn optimizations (skip the spawn music +
-        // the whole loadout build) — safe here because map_restart(false) rebuilds everything fresh for
-        // the real match. It must NOT key off gf_inLobbyHold: a non-restart Normal-mode hold (load/
-        // min-players gate with scr_gf_lobby 0) frozen-spawns players whose spawn IS the match spawn,
-        // so skipping their loadout would leave them weaponless. map_restart(false) wipes this level var;
-        // the release below clears it for the gameEnded / no-restart exits.
-        level.gf_lobbyRestartHold = true;
-        // Suppress the stock "You will respawn next round" lower-third the maySpawn-false spectator path
-        // sets: livesDoNotReset=true makes shouldShowRespawnMessage false (_globallogic_spawn.gsc:572), so
-        // the message is never set (cleaner than clearing it after — the stock auto-clear is aborted by
-        // an "end_respawn" notify, which is why it persisted). Safe: gunfight never uses livesDoNotReset,
-        // the first-connect lives reset is forced by the isDefined() clause (_globallogic_player.gsc:235),
-        // and map_restart(false) wipes level.* + pers[] so the match resets lives normally.
-        level.livesDoNotReset = true;
-        level thread gf_lobbyCamWatcher();
-        level thread gf_lobbyRosterLoop();
-        level thread gf_lobbyIconCycler();
-    }
+        gf_gateEnterLobbyPresentation();
 
     for ( ;; )
     {
@@ -881,43 +1025,9 @@ gf_waitForLoadingClients()
             return;
         }
 
-        stillLoading = 0;
-        humans       = 0;
-        humansGone   = 0;
-        for ( i = 0; i < level.gf_loadGateSeen.size; i++ )
-        {
-            p = level.gf_loadGateSeen[i];
-            if ( !isDefined( p ) )        // dropped while loading
-            {
-                // A human who connected during the hold and then left is one body that will
-                // never arrive — subtract them from the expectation below, or it would re-stall
-                // after having been satisfied. Only latched-human entries count: a bot the fill
-                // reconciler kicked must not shrink a HUMAN expectation. A client that dropped
-                // BEFORE begin was never latched, so it isn't subtracted and that expectation
-                // rides out its deadline instead — rare, and bounded by design.
-                if ( isDefined( level.gf_loadGateHuman[i] ) && level.gf_loadGateHuman[i] )
-                    humansGone++;
-                continue;
-            }
-            if ( isDefined( p.statusicon ) && p.statusicon == "hud_status_connecting" )
-            {
-                // Still loading. istestclient() is only stock-precedented on begun
-                // clients, so don't classify yet — a pre-begin bot is transient
-                // (test clients begin within a frame) and at worst flickers the
-                // readout for one 0.25s poll.
-                humans++;
-                stillLoading++;
-            }
-            // begun: drop bots (istestclient) AND server-side demo clients
-            // (isdemoclient — e.g. "[3arc]democlient", guid 0). A demo client is NOT a
-            // test client, so without the isdemoclient check it was wrongly counted as a
-            // human, inflating the readout and satisfying scr_gf_min_players by itself.
-            else if ( gf_isHuman( p ) )
-            {
-                humans++;
-                level.gf_loadGateHuman[i] = true;   // latch while the entity is still here to classify
-            }
-        }
+        counts       = gf_gateSampleRoster();
+        humans       = counts["humans"];
+        stillLoading = counts["stillLoading"];   // also read AFTER the loop (grace bump + final log)
 
         if ( humans > 0 )
         {
@@ -955,58 +1065,18 @@ gf_waitForLoadingClients()
 
         // The auto-start timer is deliberately INVISIBLE to players: the lobby keeps
         // gf_lobbyCamPut's static "Waiting for the host to start" for its whole life, and the
-        // deadline below fires silently. The countdown is an admin backstop, not a promise to
+        // deadline fires silently. The countdown is an admin backstop, not a promise to
         // the room — a live "auto-starts in M:SS" reads as a commitment the admin can (and
         // does) pre-empt with START. It stays an RCON-side setting (scr_gf_lobby_timer).
         // Bonus: no per-second ui_gf_lobby_status push = one less reliable-command stream.
 
-        if ( manualMode )
+        // ONE decision site: the pure predicate returns the release reason (or "" to hold),
+        // so every possible end of this hold logs a GF_LOBBY_END naming its exact clause.
+        reason = gf_gateReleaseReason( cfg, counts, now, startClicked );
+        if ( reason != "" )
         {
-            // MANUAL lobby: hold until the admin clicks START (or the 10-min backstop),
-            // regardless of load state / headcount. No 3s floor — a deliberate click
-            // starts immediately.
-            if ( startClicked )
-            {
-                logPrint( "GF_LOBBY_END: manual - admin START clicked after " + ( now - start ) + "ms\n" );
-                break;
-            }
-            if ( lobbyTimer > 0 && now >= lobbyDeadline )
-            {
-                logPrint( "GF_LOBBY_END: manual - auto-start timer (scr_gf_lobby_timer=" + lobbyTimer + "s) elapsed after " + ( now - start ) + "ms\n" );
-                break;
-            }
-        }
-        else
-        {
-            // AUTO / NORMAL: release once everyone is off the loading screen (or the load
-            // ceiling hit) AND enough humans are here (or none to wait for / start-anyway
-            // ceiling hit). humans counts tracked humans whether loaded or still loading;
-            // the load condition then waits for any still loading to finish. An admin START
-            // click still force-releases (start now, even below min-players).
-            loadOk = ( !loadGateOn ) || ( stillLoading == 0 ) || ( now >= loadDeadline );
-            minOk  = ( !minGateOn ) || ( humans >= minP ) || ( humans == 0 ) || ( minTimerOn && now >= minDeadline );
-            // Roster expectation: how many of the previous match's humans we are still short.
-            // humans == 0 releases unconditionally — an empty or pure-bot lobby must never wait
-            // on a snapshot of players who are all gone (this is also what makes a stale count
-            // harmless on a server that sat empty through a map change).
-            need     = expected - humansGone;
-            expectOk = ( need <= 0 ) || ( humans >= need ) || ( humans == 0 ) || ( now >= expectDeadline );
-            // POSITIVE roster evidence beats the blind arrival floor. The 3s floor exists only
-            // because a poll can run before the engine has delivered any connect callback, so an
-            // empty tracker is indistinguishable from an empty server. "The whole expected roster
-            // is here AND off its loading screen" is strictly better evidence than the floor's
-            // absence of it — so a full 2-player room that reconnects in 400ms starts in 400ms.
-            rosterMet = ( need > 0 && humans >= need && stillLoading == 0 );
-            if ( startClicked )
-            {
-                logPrint( "GF_LOBBY_END: auto - admin START clicked after " + ( now - start ) + "ms\n" );
-                break;
-            }
-            if ( ( rosterMet || now >= floorEnd ) && loadOk && minOk && expectOk )
-            {
-                logPrint( "GF_LOBBY_END: auto - gates satisfied (loadOk=" + loadOk + " minOk=" + minOk + " expectOk=" + expectOk + " rosterMet=" + rosterMet + " humans=" + humans + " expected=" + expected + " need=" + need + " gone=" + humansGone + " stillLoading=" + stillLoading + ") after " + ( now - start ) + "ms\n" );
-                break;
-            }
+            logPrint( "GF_LOBBY_END: " + reason + " after " + ( now - start ) + "ms\n" );
+            break;
         }
 
         wait 0.25;
