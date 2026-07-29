@@ -15,8 +15,8 @@ condition, bounded by `scr_gf_minplayers_timer`, default 0 = never auto-start; a
 everyone at once. Shows a "Waiting for teams… N/M" readout.
 
 FAST-RESTART LOBBY (added + consolidated 2026-07-05) — the "pregame lobby" T5 lacks natively, folded onto the
-same gate as a release-behavior. ONE dvar `scr_gf_lobby`: `0`=Normal (DEFAULT — no lobby; in-place hold, no restart),
-`1`=Auto (hold for load+min-players, then FAST-RESTART), `2`=Manual (hold until the admin's **START
+same gate as a release-behavior. ONE dvar `scr_gf_lobby`: `0`=Normal (no lobby; in-place hold, no restart),
+`1`=Auto (**DEFAULT since 2026-07-29** — hold for load+min-players, then FAST-RESTART), `2`=Manual (hold until the admin's **START
 MATCH** click → bridge `lobbystart` → `gf_bridgeLobbyStart` sets `level.gf_lobbyStart`, polled every 0.25s →
 then fast-restart). Retired the experimental `scr_gf_lobby_hold`/`scr_gf_lobby_restart`/`_restart_full`.
 KEY MECHANISM — **`map_restart(FALSE)`** is the fast restart that re-inits the match FRESH so the full start

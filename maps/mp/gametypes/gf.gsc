@@ -566,10 +566,10 @@ gf_roundSeedDvars()
     gf_seedDvar( "scr_gf_minplayers_timer", "0" );// min-players "start anyway" ceiling (s). 0 = never auto-start (hold until enough humans / admin START). Was a hardcoded 90s that started too-thin matches
     gf_seedDvar( "scr_gf_load_wait", "20" );      // max s to hold the prematch for map-loading clients (0 = off; a loader that misses the gate still gets scr_gf_load_grace). Non-zero ARMS the hold, so every match start now pays the 3s arrival floor
     gf_seedDvar( "scr_gf_load_grace", "20" );     // s past prematch_over to keep grace open for a still-loading client so it spawns into round 1 (0 = off)
-    gf_seedDvar( "scr_gf_load_expect", "0" );     // 1 = the load gate also waits for the HEADCOUNT the last match ended with (gf_expectcount), not just for whoever connected inside the blind 3s floor. Requires scr_gf_load_wait > 0, which stays the ceiling
+    gf_seedDvar( "scr_gf_load_expect", "1" );     // DEFAULT ON. 1 = the load gate also waits for the HEADCOUNT the last match ended with (gf_expectcount), not just for whoever connected inside the blind 3s floor. Requires scr_gf_load_wait > 0, which stays the ceiling
     gf_seedDvar( "scr_gf_load_expect_wait", "6" );// s to wait for that headcount before falling back to "everyone we HAVE seen is loaded". This is the entire cost of a player who left between matches (no connect packet = no signal), so keep it short
     gf_seedDvar( "gf_expectcount", "" );          // roster expectation: humans at the last match end (gf_writeExpectCount); one-shot, consumed by the next match's load gate
-    gf_seedDvar( "scr_gf_lobby", "0" );           // Match Start: 0 = Normal (default, off), 1 = Auto lobby (min-players -> fast-restart), 2 = Manual lobby (admin START -> fast-restart)
+    gf_seedDvar( "scr_gf_lobby", "1" );           // Match Start: 0 = Normal (in-place hold, no restart), 1 = Auto lobby (DEFAULT: hold on load/min-players -> fast-restart into the full start presentation), 2 = Manual lobby (admin START -> fast-restart)
     gf_seedDvar( "scr_gf_lobby_timer", "600" );   // MANUAL lobby auto-start timer (s). Was the hardcoded 10-min backstop; now RCON-adjustable. 0 = never auto-start (hold until START)
 
     // PRE-MATCH WARMUP — 100% stock, zero mod GSC. g_pregame_enabled is an ENGINE dvar (it lives in

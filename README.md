@@ -53,7 +53,7 @@ Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFER
 
 Black Ops is **free to play** on PC through the CB Servers Launcher.
 
-1. **Get the game + Plutonium** with the **[CB Servers Launcher](https://docs.cbservers.xyz/games/t5)** — one app downloads Black Ops 1 and runs it on Plutonium (a free [Plutonium account](https://forum.plutonium.pw/register) is required).
+1. **Get the game + Plutonium** with the **[CB Servers Launcher](https://github.com/CBServers/cb-launcher)** — one app downloads Black Ops 1 and runs it on Plutonium (a free [Plutonium account](https://forum.plutonium.pw/register) is required).
 2. **Launch & join:** hit **PLAY → Multiplayer**, open the **Server Browser**, and join **`Gunfight`**.
 
 The mod **downloads automatically** when you connect: Plutonium pulls it from the server (FastDL), so there's no manual install. T5 has no direct IP connect — find the server in the in-game **browser** by its name, and keep your client updated (the CB Servers Launcher does this for you) so its build matches the server's.

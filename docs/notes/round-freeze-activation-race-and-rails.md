@@ -30,9 +30,13 @@ is wiped >3s out of grace. Logs `GF_WATCHDOG:` to games_mp.log (should be rare).
 routes through gf_endRound→`gf_round_over` which retires it. See [[gf-timer-prematch-and-pause-model]],
 [[gf-stuck-after-prematch-two-gates]].
 
-CONFIG SAFETY: `scr_gf_lobby` was overridden to `1` (Auto) at RUNTIME via the RCON panel — the cfg on
-disk says `0`. Auto/Manual lobby is the whole fast-restart/stale-activator surface. Keep `scr_gf_lobby 0`
-in dedicated.cfg unless actively arranging teams; a runtime override lingers until reset.
+CONFIG SAFETY (⚠ SUPERSEDED 2026-07-29 — kept for what it explains, not as advice): at the time of the
+freeze `scr_gf_lobby` was overridden to `1` (Auto) at RUNTIME via the RCON panel while the cfg on disk
+said `0`, and the note then advised keeping it at `0`. That advice was a *workaround for the very bug
+FIX #1 above removes* — the stale-activator surface was the `gf_load_gate_reset` endon, not the Auto
+lobby itself. **`scr_gf_lobby` now defaults to `1` (Auto)** and `scr_gf_load_expect` to `1`. What still
+holds: Auto/Manual is the only mode that fast-restarts, so it remains the surface to look at first if a
+round ever freezes again — and a runtime panel override still lingers until reset.
 
 BOX SAFETY RAILS (all box-side, deploy via scp + task restart, NOT the mod mirror unless via deploy.ps1 -Mod):
 - `status_service.ps1` now writes `health.json` beside admin.json (round/roundStuck/lobbyHold/

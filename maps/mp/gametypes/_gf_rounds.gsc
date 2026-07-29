@@ -581,7 +581,7 @@ gf_armLoadGate()
     // aren't in level.players).
     loadOn  = ( gf_cfgFloat( "scr_gf_load_wait", 20, 0, 120 ) > 0 );
     minOn   = ( int( gf_cfgFloat( "scr_gf_min_players", 1, 1, 8 ) ) > 1 );
-    lobbyOn = ( int( gf_cfgFloat( "scr_gf_lobby", 0, 0, 2 ) ) >= 1 );   // Auto or Manual
+    lobbyOn = ( int( gf_cfgFloat( "scr_gf_lobby", 1, 0, 2 ) ) >= 1 );   // Auto (default) or Manual
     if ( !loadOn && !minOn && !lobbyOn )
         return;
 
@@ -936,7 +936,7 @@ gf_waitForLoadingClients()
     // still-loading humans — a loader still counts as "here".
     loadWait    = gf_cfgFloat( "scr_gf_load_wait", 20, 0, 120 );
     minP        = int( gf_cfgFloat( "scr_gf_min_players", 1, 1, 8 ) );
-    lobby       = int( gf_cfgFloat( "scr_gf_lobby", 0, 0, 2 ) );   // 0 = Normal (default), 1 = Auto lobby, 2 = Manual lobby
+    lobby       = int( gf_cfgFloat( "scr_gf_lobby", 1, 0, 2 ) );   // 0 = Normal, 1 = Auto lobby (default), 2 = Manual lobby
     restartMode = ( lobby >= 1 );   // Auto/Manual do the fast map_restart(false) on release
     manualMode  = ( lobby == 2 );   // Manual holds for the admin START click (no min-players auto-release)
     loadGateOn  = ( loadWait > 0 );
@@ -992,7 +992,7 @@ gf_waitForLoadingClients()
     // expect deadline (default 6s) is the whole cost of a leaver; a genuinely returning player
     // reconnects in ~1-3s (they already hold the map + mod.ff) and lands well inside it. After
     // it, the gate falls back to today's rule (every client the tracker HAS seen is loaded).
-    expectOn   = loadGateOn && ( int( gf_cfgFloat( "scr_gf_load_expect", 0, 0, 1 ) ) == 1 );
+    expectOn   = loadGateOn && ( int( gf_cfgFloat( "scr_gf_load_expect", 1, 0, 1 ) ) == 1 );
     expectWait = gf_cfgFloat( "scr_gf_load_expect_wait", 6, 0, 60 );
     expected   = 0;
     if ( expectOn )
@@ -2192,7 +2192,7 @@ gf_lobbyCamPut()
     // (a dedicated server's setDvar doesn't replicate). Rules + ad copy are static text in the menu.
     // Static header — every branding line is pushed in FULL (the typewriter reveal was removed).
     statusText = "The match will begin shortly";
-    if ( int( gf_cfgFloat( "scr_gf_lobby", 0, 0, 2 ) ) == 2 )
+    if ( int( gf_cfgFloat( "scr_gf_lobby", 1, 0, 2 ) ) == 2 )
         statusText = "Waiting for the host to start";
 
     // Batched: two reliable commands, not ten (see _gf_hud.gsc::gf_showWeaponHUD). ui_gf_lobby_show

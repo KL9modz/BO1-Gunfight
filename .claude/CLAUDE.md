@@ -102,7 +102,8 @@ wins** takes the match.
   **Next occurrence: read the `GF_ENDWATCH:` log line — it names the client and the flag.**
   ([[infinite-round-orphaned-killcam-flag]])
 - **Pregame lobby can end on its own** (should end only via the load/min gate or an admin START) — only
-  reachable when `scr_gf_lobby` is Auto/Manual (default Normal has no hold, so masked by default).
+  reachable when `scr_gf_lobby` is Auto/Manual, which is now the **default** (`1` = Auto, changed
+  2026-07-29), so it is no longer masked by the shipped config.
 - **Prematch/intro countdown runs in slow-motion** — NOT transient and NOT a rendering artifact.
   `GF_HITCH` measures **game-time dilation** (`wait` counts game time, `gettime()` counts real time), so
   `750ms vs 500ms` means the whole simulation ran at ~65% speed for that window. The countdown is simply
@@ -538,7 +539,7 @@ the one hold: **LOAD** (everyone off the loading screen, ceiling `scr_gf_load_wa
 **MIN-PLAYERS** (`scr_gf_min_players` humans present; ceiling `scr_gf_minplayers_timer`, default 0 =
 never auto-start; a 0-human lobby always releases), and **LOBBY MODE**.
 
-**ROSTER EXPECTATION (`scr_gf_load_expect`, default 0) — a refinement of LOAD, not a fourth gate.**
+**ROSTER EXPECTATION (`scr_gf_load_expect`, default 1 = ON) — a refinement of LOAD, not a fourth gate.**
 The tracker can only wait for clients it has *seen*: the gate is already exact for anyone whose connect
 packet landed (it releases the instant `stillLoading == 0` — `scr_gf_load_wait` is purely a ceiling),
 and there is **no engine read for "clients still connecting"** (`level.players` holds only begun
@@ -569,8 +570,8 @@ then drops is subtracted (`humansGone`) or the gate re-stalls after having been 
 subtraction reads a **latched** `level.gf_loadGateHuman[i]` flag, set while the entity is still there to
 classify, because a kicked *bot* must never shrink a HUMAN expectation.
 
-`scr_gf_lobby`: **0 = Normal** (in-place hold, no restart), **1 = Auto** (release on load+min, then
-fast-restart), **2 = Manual** (hold until an admin's START click, then fast-restart;
+`scr_gf_lobby`: **0 = Normal** (in-place hold, no restart), **1 = Auto — THE DEFAULT** (release on
+load+min, then fast-restart), **2 = Manual** (hold until an admin's START click, then fast-restart;
 `scr_gf_lobby_timer` auto-start backstop, default 600s). The fast-restart is **`map_restart(false)`** —
 the fresh reset that re-fires full match-start presentation (gun-rack, spawn music, welcome splash);
 `map_restart(true)` deliberately suppresses that. The lobby branch **never returns** (`for(;;) wait 1;`
@@ -1266,10 +1267,10 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_min_players` | 1 | Min **humans** to start (1 = off); a release condition on the pre-prematch hold. |
 | `scr_gf_minplayers_timer` | 0 | Min-players "start anyway" ceiling (s); **0 = never auto-start**. |
 | `scr_gf_load_wait` | 20 | Max s to hold the prematch for still-loading clients — a **ceiling**, not a duration (releases the moment the last loader is off its loading screen). `0` = off. ⚠ Any non-zero value **arms the hold**, and the 3s arrival floor is then unconditional: every match start pays 3s even with nobody loading (the floor exists so a poll running before the engine has delivered the first connect callbacks can't wave the gate through on an empty tracker). |
-| `scr_gf_load_expect` | 0 | **1 = the load gate also waits for the HEADCOUNT the last match ended with** (`gf_expectcount`, written unconditionally by `gf_writeExpectCount` at match end, one-shot consumed by the next match's gate), instead of only for whoever connected inside the blind 3s arrival floor. The server cannot see a client that hasn't sent its connect packet, so the previous map's roster is the only available target number. Also lets a **fully-accounted-for room bypass the 3s floor** (start in 400ms, not 3s). ⚠ A player who LEFT between matches gives no signal at all → the count is never reached and the start is held for `scr_gf_load_expect_wait` before falling back; that ceiling is what keeps the common case from costing the full 20s. Requires `scr_gf_load_wait > 0` (this refines that gate and its ceiling always wins); `humans == 0` always releases. Panel: ADVANCED → MATCH START → *Wait for Full Roster*. |
+| `scr_gf_load_expect` | 1 | **1 = the load gate also waits for the HEADCOUNT the last match ended with** (`gf_expectcount`, written unconditionally by `gf_writeExpectCount` at match end, one-shot consumed by the next match's gate), instead of only for whoever connected inside the blind 3s arrival floor. The server cannot see a client that hasn't sent its connect packet, so the previous map's roster is the only available target number. Also lets a **fully-accounted-for room bypass the 3s floor** (start in 400ms, not 3s). ⚠ A player who LEFT between matches gives no signal at all → the count is never reached and the start is held for `scr_gf_load_expect_wait` before falling back; that ceiling is what keeps the common case from costing the full 20s. Requires `scr_gf_load_wait > 0` (this refines that gate and its ceiling always wins); `humans == 0` always releases. Panel: ADVANCED → MATCH START → *Wait for Full Roster*. |
 | `scr_gf_load_expect_wait` | 6 | Seconds the roster expectation waits before falling back to "every client we HAVE seen is loaded". **Keep it short** — a returning player reconnects in ~1-3s (already holds the map + `mod.ff`), while a leaver costs the full value every match start. Clamped 0-60, capped by `scr_gf_load_wait`. Inert unless `scr_gf_load_expect 1`. |
 | `scr_gf_load_grace` | 20 | s past prematch_over to keep round-1 grace open for a straggler loader (0 = off). |
-| `scr_gf_lobby` | 0 | Match Start: **0 Normal** / **1 Auto** / **2 Manual** (Auto/Manual fast-restart via `map_restart(false)`). |
+| `scr_gf_lobby` | **1** | Match Start: **0 Normal** / **1 Auto (default)** / **2 Manual** (Auto/Manual fast-restart via `map_restart(false)`). Auto is the shipped default so every match start re-fires the full presentation (gun-rack, spawn music, welcome splash) — the in-place Normal hold cannot. ⚠ Public builds strip the whole hold, so this only ever applies to a dev/VPS build. |
 | `scr_gf_lobby_timer` | 600 | Manual-lobby auto-start ceiling (s); 0 = never auto-start. |
 | `g_pregame_enabled` | 0 | **ENGINE** dvar, read at **level load** → **next map only**. `1` = run BO1's stock pre-match warmup lobby (`maps/mp/gametypes/_pregame`) before the match. 100% native; the mod only seeds + exposes it. |
 | `party_minplayers` | 2 | Players the **stock warmup** waits for (its only gate). Counts bots. Unrelated to `scr_gf_min_players`. |
