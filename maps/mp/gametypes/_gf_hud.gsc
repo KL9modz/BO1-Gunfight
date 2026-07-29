@@ -13,8 +13,10 @@
 //   - Each player runs gf_runHealthHUD() (singleton via self notify/endon), which pushes
 //     those totals to per-client dvars (ui_gf_panel_*, ui_gf_rN_*, ui_gf_hp_alpha) every
 //     0.1s and reveals the menu-rendered panel (bg fade + border + 2 team bars + skull
-//     icons + HP numbers). Row 0 = own team (green), row 1 = enemy (red). map_restart wipes
-//     the client-pushed state between rounds; it's re-pushed on the next spawn.
+//     icons + HP numbers). Row 0 = own team (green), row 1 = enemy (red). ⚠ Client-pushed
+//     dvars PERSIST across map_restart (they live on the client, which does not restart) —
+//     that persistence is why the pause banner and chrome-hide have explicit clears; the
+//     per-spawn re-push exists to cover a FRESH client, not to repair a wipe.
 //
 // Loadout HUD: gf_showWeaponHUD() pushes a centered-column create-a-class overview
 //   (primary, secondary, 3 equipment, 3 perks — each icon + bracket + name) via the
@@ -970,7 +972,8 @@ gf_ensureScorePopupElem()
 
 // ─── Welcome message ─────────────────────────────────────────────────────────
 // First-spawn greeting: "Welcome <name>!" / "visit us at gunfight.us" (URL in
-// blue via the ^4 inline color code). Rides the STOCK notify pipeline
+// cyan via the ^5 inline color code — an older comment said blue/^4; the code
+// below is the truth). Rides the STOCK notify pipeline
 // (_hud_message::oldNotifyMessage -> _popups startMessage queue ->
 // showNotifyMessage), so it gets the native BO1 decode/typewriter FX
 // (setCOD7DecodeFX on title + text) and serializes behind any other center

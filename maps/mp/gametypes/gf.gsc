@@ -260,7 +260,7 @@ onStartGameType()
     gf_roundWorldSetup();       // round state flags, objective text, XP, loadouts, spawns, objects
 
     // #strip-begin - RCON bridge + bot init (dev/main only; stripped from public release)
-    thread gf_bridgeInit();   // per-round: re-seeds dvars/flags + re-arms the vision blend (level.* wiped by map_restart); its telemetry/poll/pending-team loops self-guard to once-per-match inside
+    thread gf_bridgeInit();   // per-round: re-seeds dvars/flags + re-arms the vision blend (level.* wiped by map_restart); its telemetry/poll loops collapse to one live copy via gf_bridge_reinit (the old pending-team watcher is deleted — pteam_ now defers via pers["gf_pendingTeam"], consumed in the maySpawn pre-spawn window)
     // The bot manager is once-per-MATCH, NOT once-per-round. onStartGameType re-runs on every
     // map_restart (SD round cycling), but _bot::init() threads PERSISTENT managers (diffBots +
     // the round-boundary fill reconciler) that must survive round cycling; re-threading them

@@ -19,15 +19,18 @@ FILENOTES           ""
 REFERENCE           SB_SCORE
 LANG_ENGLISH        "Damage"
 
-// Blanks the between-rounds "Connection Interrupted" banner. It is drawn by client
-// engine code (CG_DrawDisconnect) and there is NO dvar to disable it - the client has
-// no cg_drawDisconnect - so blanking its localized string is the only lever available.
-// What it was: the SOFT overlay the client draws after ~270ms with no acked snapshot.
-// Stock map_restart(true) round cycling goes snapshot-silent, so it fired on the
-// round-end killcam and read as a server fault when nothing was wrong. The gap itself
-// is the irreducible floor of native SD round cycling (sv_maxRate 25000 + the HUD push
-// stagger already shrink it); this hides the banner, it does not close the gap.
-// TRADE-OFF: this ALSO suppresses the warning for genuine lag / packet loss.
+// Blanks the "Connection Interrupted" banner TEXT. It is drawn by client engine code
+// (CG_DrawDisconnect) and there is NO dvar to disable it - the client has no
+// cg_drawDisconnect - so blanking its localized string is the only lever on the text
+// (the plug ICON still renders and cannot be removed; see [[modff-cannot-embed-new-images]]).
+// ⚠ HISTORY, corrected: an earlier version of this comment called the banner "the
+// irreducible floor of native SD round cycling". That framing is RETIRED - GF_ENDTL
+// measured dark=0ms (the server never goes snapshot-silent between rounds), and the plug
+// players actually saw was the FINAL-KILLCAM timescale dilation starving the usercmd ack
+// rate: a real server-side cause, FIXED by the scr_gf_killcam_slowmo floor (0.6, shipped
+// 2026-07-13; [[killcam-slowmo-timescale-usercmd-backlog]]). This blank stays only as
+// cosmetic cover for GENUINE lag - never cite it as evidence a symptom is unfixable.
+// TRADE-OFF: it ALSO suppresses the warning for genuine lag / packet loss.
 REFERENCE           CONNECTIONINTERUPTED
 LANG_ENGLISH        ""
 

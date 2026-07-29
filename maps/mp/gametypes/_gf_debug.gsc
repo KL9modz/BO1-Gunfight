@@ -907,8 +907,11 @@ gf_probeLoadGap()
 // _gf_locations was written to kill). The lever is capacity, and this line is what tells you whether
 // you need it.
 //
-// logPrint, like every other GF_* diagnostic → games_mp.log (in the MOD folder,
-// mods/mp_gunfight/games_mp.log, NOT main/ and NOT logs/). Grep GF_SPAWNMISS there.
+// logPrint, like every other GF_* diagnostic → the mod's games_mp.log at
+// mods/mp_gunfight/logs/games_mp.log (verified live 2026-07-20: the running config has
+// g_log "logs\games_mp.log"; the mod-ROOT games_mp.log does not exist, and neither is in
+// main/). Grep GF_SPAWNMISS there — an earlier version of this comment said "NOT logs/",
+// which sent the grep to an empty path.
 //
 // ⚠ An earlier version of this comment claimed "logPrint/logString output does not reach
 // games_mp.log on this server" and used PrintLn on that basis. That is FALSE for logPrint and was a

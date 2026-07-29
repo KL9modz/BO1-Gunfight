@@ -1,5 +1,10 @@
 // Gunfight health HUD menu overlay.
 // Tiny HP labels are menu text so they do not consume script HUD elems.
+//
+// ⚠ DEAD SECTION — remove as a ride-along in the NEXT mod.ff rebuild (menu structure needs
+// one; do not burn a rebuild for this alone): the two ui_gf_health_hp* itemDefs below have
+// ZERO GSC writers (the ui_gf_health_hp* dvar family is never pushed), so their visibility
+// gates read 0 forever and they have never rendered. Remnant of a retired experiment.
 
 #include "ui/menudef.h"
 #include "ui_mp/hud_gametypes.inc"
@@ -982,11 +987,12 @@
 			decoration
 		}
 
-		// ── Kill popup (menu-rendered, 0 client hudelems) ────────────────────
-		// "Elimination" / "Assist" center-screen, fading via ui_gf_popup_alpha (pushed + animated by
-		// gf_showScorePopup). 0 client hudelems → works at any player count, unlike the old lazily-
-		// created client hudelem that fell past the per-client DRAWN render cap once the lobby grew.
-		// ui_gf_popup_type: 2 = elim, 1 = assist. Gated by ui_gf_popup_show.
+		// ── Kill popup — ⚠ DEAD SECTION, remove in the NEXT mod.ff rebuild (ride-along) ──
+		// An older comment here claimed gf_showScorePopup pushes + animates ui_gf_popup_* — FALSE:
+		// the live popup renders on self.gf_popupElem (a NewScoreHudElem, its own render-cap-exempt
+		// pool; see _gf_hud.gsc), and the ONLY GSC touch of this dvar family is a defensive
+		// ui_gf_popup_show=0 clear. These itemDefs have never rendered. Do not resurrect them —
+		// the NewScoreHudElem path matches the stock yellow popup exactly and is the kept design.
 
 		// Elimination
 		itemDef
