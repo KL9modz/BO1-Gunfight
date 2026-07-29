@@ -153,8 +153,9 @@ function Send-PanelRcon($command) {
     try {
         $pw = Get-RconPassword -CfgPath $CfgPath   # box-local, never logged (env GF_RCON_PW wins)
         if (-not $pw) { Log "Send-PanelRcon: no rcon password in $CfgPath"; return $false }
-        $body = @{ host = '127.0.0.1'; port = '28960'; password = $pw; command = $command; priority = $true } | ConvertTo-Json -Compress
-        $r = Invoke-RestMethod -Uri "http://127.0.0.1:$PanelPort/api/rcon" -Method Post -ContentType 'application/json' -Body $body -TimeoutSec 12
+        # Shared POST (common.ps1's Invoke-GfPanelRcon); this wrapper owns the policy — password
+        # resolution, the bool return, and logging a failure instead of throwing.
+        $r = Invoke-GfPanelRcon -Pw $pw -Command $command -PanelPort $PanelPort -TimeoutSec 12
         return [bool]$r.ok
     } catch {
         Log "Send-PanelRcon('$command') failed: $($_.Exception.Message)"

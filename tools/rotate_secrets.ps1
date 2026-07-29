@@ -72,7 +72,7 @@ $ErrorActionPreference = "Stop"
 # authenticates -- and it fails identically to a dead network path, which is how a past
 # 24-char password burned a debugging session. 20 alnum chars is ~119 bits and keeps a
 # margin. Alnum only: no quotes, spaces or cfg/shell metacharacters that could break the
-# cfg line or the RCON packet. Same shape as package_server.ps1::New-RconPassword.
+# cfg line or the RCON packet. The generator itself is common.ps1::New-RconPassword.
 $script:RconMaxLen = 23
 
 $script:ExitCode = 0
@@ -84,14 +84,7 @@ function Write-Info { param([string]$m) Write-Host ("        " + $m) }
 function Write-Warn2{ param([string]$m) Write-Host ("  WARN  " + $m) -ForegroundColor Yellow }
 function Write-Bad  { param([string]$m) Write-Host ("  FAIL  " + $m) -ForegroundColor Red }
 
-function New-RconPassword {
-    param([int]$Len = 20)
-    $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'.ToCharArray()
-    $bytes = New-Object 'System.Byte[]' $Len
-    $rng = [System.Security.Cryptography.RNGCryptoServiceProvider]::new()
-    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
-    return (-join ($bytes | ForEach-Object { $chars[ $_ % $chars.Length ] }))
-}
+# New-RconPassword now lives in common.ps1 (was a byte-identical twin of package_server's copy).
 
 function Test-PasswordShape {
     param([string]$Value)
@@ -105,12 +98,12 @@ function Test-PasswordShape {
 # // comment and rotates the password to a 264-char string -- the classic silent drop.
 $script:RconCfgRe = '(?m)^(\s*set\s+rcon_password\s+)"[^"]*"'
 
+# File-ONLY read — deliberately NOT Get-RconPassword: this is the round-trip verifier for
+# Set-CfgRconPassword's write, and the env GF_RCON_PW precedence there would make a failed
+# cfg write look successful. Thin alias over the shared file-only reader.
 function Get-CfgRconPassword {
     param([string]$Path)
-    if (!(Test-Path -LiteralPath $Path)) { return "" }
-    $m = [regex]::Match([System.IO.File]::ReadAllText($Path), '(?im)^\s*set[as]?\s+"?rcon_password"?\s+"([^"]*)"')
-    if ($m.Success) { return $m.Groups[1].Value }
-    return ""
+    return (Get-GfCfgRconPassword -Path $Path)
 }
 
 function Invoke-PanelStatus {
@@ -129,25 +122,18 @@ function Invoke-PanelStatus {
     }
 }
 
+# Delegates to common.ps1's Invoke-GfPanelRcon. The EXPLICIT password stays load-bearing:
+# this script probes with values that are deliberately not the resolved one (the NEW value
+# must succeed and the OLD one must fail), and the panel's presence-beats-profile rule is
+# what keeps an explicit password= working. Do not "finish the migration" by deleting it.
 function Invoke-PanelRcon {
     param([string]$Pw, [string]$Command, [int]$TimeoutSec = 15)
-    # NOTE the panel takes an EXPLICIT password here on purpose. If the panel is later
-    # migrated to profile-based credential resolution, an explicitly PRESENT password
-    # key must keep winning over any profile -- that back-compat rule is what keeps the
-    # box services (and this script) working. Do not "finish the migration" by deleting it.
-    $body = @{ host = '127.0.0.1'; port = 28960; password = $Pw; command = $Command; priority = $true } | ConvertTo-Json -Compress
-    $u = "http://127.0.0.1:{0}/api/rcon" -f $PanelPort
-    return (Invoke-RestMethod -Uri $u -Method Post -ContentType 'application/json' -Body $body -TimeoutSec $TimeoutSec)
+    return (Invoke-GfPanelRcon -Pw $Pw -Command $Command -PanelPort $PanelPort -TimeoutSec $TimeoutSec)
 }
 
 function Set-MaintenanceWindow {
     param([int]$Minutes, [string]$Reason = 'rcon rotation')
-    $dir = Join-Path (Resolve-ModRoot) 'tools\vps_services'
-    if (!(Test-Path -LiteralPath $dir)) { return "" }      # watchdog not deployed on this box
-    $marker = Join-Path $dir 'watchdog_maintenance.json'
-    $obj = @{ until = (Get-Date).AddMinutes($Minutes).ToString('o'); reason = $Reason }
-    ($obj | ConvertTo-Json -Compress) | Set-Content -LiteralPath $marker -Encoding UTF8
-    return $marker
+    return (Write-GfMaintenanceMarker -Dir (Join-Path (Resolve-ModRoot) 'tools\vps_services') -Minutes $Minutes -Reason $Reason)
 }
 
 function Clear-MaintenanceWindow {
@@ -188,15 +174,7 @@ function Set-SecretsStore {
 
 function Restart-BoxService {
     param([string]$Name)
-    if (-not (Get-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue)) { return "absent" }
-    try {
-        Stop-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue
-        Start-Sleep -Milliseconds 400
-        Start-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue
-        return "recycled"
-    } catch {
-        return ("failed: " + $_.Exception.Message)
-    }
+    return (Restart-GfScheduledTask -Name $Name)
 }
 
 function Show-ServerKeyChecklist {
@@ -337,7 +315,7 @@ if ([string]::IsNullOrEmpty($oldPw)) {
 
 # Decide the new value now, so its shape is refused BEFORE anything is touched.
 $newPw = $Password
-if ([string]::IsNullOrEmpty($newPw)) { $newPw = New-RconPassword -Len $Length }
+if ([string]::IsNullOrEmpty($newPw)) { $newPw = New-RconPassword -Length $Length }
 $shapeErr = Test-PasswordShape $newPw
 if (-not [string]::IsNullOrEmpty($shapeErr)) {
     Write-Bad ("the new password is " + $shapeErr)

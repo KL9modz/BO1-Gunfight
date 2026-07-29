@@ -82,6 +82,13 @@ if (!(Test-Path -LiteralPath $ReleaseCommon)) {
 }
 . $ReleaseCommon
 
+# Shared ops primitives (maintenance marker, task recycle). Same fail-closed rule as above.
+$CommonPs1 = Join-Path $PSScriptRoot "common.ps1"
+if (!(Test-Path -LiteralPath $CommonPs1)) {
+    throw "Shared helpers missing: $CommonPs1 (this clone predates them). Pull once by hand, then re-run deploy."
+}
+. $CommonPs1
+
 # Secrets that must never reach the world-readable marketing page. These are
 # FATAL if found anywhere under site\wwwroot.
 $WebSecretPatterns = @(
@@ -326,13 +333,9 @@ function Set-Maintenance {
     # DEPLOYED mod folder ($ModDest), where the SYSTEM watchdog reads it - NOT the clone.
     param([int]$Minutes = 5, [string]$Reason = 'deploy')
     if ($DryRun) { return }
-    $dir = Join-Path $ModDest "tools\vps_services"
-    if (!(Test-Path -LiteralPath $dir)) { return }   # watchdog not deployed on this box
-    $marker = Join-Path $dir "watchdog_maintenance.json"
-    $until  = (Get-Date).AddMinutes($Minutes).ToString('o')
-    (@{ until = $until; reason = $Reason } | ConvertTo-Json -Compress) |
-        Set-Content -LiteralPath $marker -Encoding UTF8
-    Write-Host "Watchdog maintenance window set ($Minutes min) - the planned restart won't page."
+    # Shared writer (common.ps1); the DEPLOYED-folder dir choice is this caller's policy.
+    $marker = Write-GfMaintenanceMarker -Dir (Join-Path $ModDest "tools\vps_services") -Minutes $Minutes -Reason $Reason
+    if ($marker) { Write-Host "Watchdog maintenance window set ($Minutes min) - the planned restart won't page." }
 }
 
 function Test-GamePortUp {
@@ -487,15 +490,9 @@ function Restart-BoxServices {
         return
     }
     foreach ($name in @('GF-StatusService', 'GF-ConnLogger', 'GF-JoinNotify')) {
-        if (-not (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue)) { continue }
-        try {
-            Stop-ScheduledTask  -TaskName $name -ErrorAction SilentlyContinue
-            Start-Sleep -Milliseconds 400
-            Start-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
-            Write-Host "Recycled $name (now on the deployed code)."
-        } catch {
-            Write-Host "$name restart failed (non-fatal): $($_.Exception.Message)" -ForegroundColor Yellow
-        }
+        $r = Restart-GfScheduledTask -Name $name    # shared primitive (common.ps1); never throws
+        if ($r -eq 'recycled')      { Write-Host "Recycled $name (now on the deployed code)." }
+        elseif ($r -ne 'absent')    { Write-Host "$name restart $r (non-fatal)" -ForegroundColor Yellow }
     }
 }
 

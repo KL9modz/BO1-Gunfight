@@ -57,18 +57,9 @@ function Copy-Into {
     Copy-Item -Force -LiteralPath $Source -Destination $Destination
 }
 
-# Cryptographically-random alphanumeric password. Alnum only on purpose: no quotes,
-# spaces, or shell/cfg metacharacters that could break the cfg line or the RCON protocol.
-# Length <= 23: Plutonium truncates the rcon password at 23 chars on login, so any longer
-# value is silently chopped and never matches. 20 keeps a safe margin (~119 bits of entropy).
-function New-RconPassword {
-    param([int]$Length = 20)
-    $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'.ToCharArray()
-    $bytes = New-Object 'System.Byte[]' $Length
-    $rng = [System.Security.Cryptography.RNGCryptoServiceProvider]::new()
-    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
-    -join ($bytes | ForEach-Object { $chars[ $_ % $chars.Length ] })
-}
+# (New-RconPassword now lives in common.ps1, dot-sourced above — this file carried a
+# byte-identical twin of rotate_secrets.ps1's copy. The <=23-char Plutonium truncation
+# rationale is documented on the shared definition.)
 
 # -- Resolve paths ------------------------------------------------------------
 $ModRoot = $WorkspaceRoot                                   # repo root IS the mod folder
