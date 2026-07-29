@@ -387,10 +387,13 @@ gf_applySprintUnlimitedClient()
 //     few ms of stale input nobody can feel. Cosmetic.
 //   CG_DrawDisconnect        = a SEPARATE, much looser backlog threshold. THAT is the plug, and that
 //     is what this floor cleared.
-// Why 32 is still exceeded at an ~80ms gap is genuinely unknown (our model says it would take a
-// >400 fps client). Suspect the count is commands since the last SENT PACKET (cl_maxpackets), not
-// since the last ack — which would make it mostly client-side. Probe it from a CLIENT
-// (cl_maxpackets 100 / com_maxfps 125), never by changing the server. See CLAUDE.md → Open bugs.
+// Why 32 was still exceeded at an ~80ms gap: SETTLED (proven live 2026-07-15, do not re-open).
+// The count is usercmds per OUTGOING PACKET, driven by the client's own send rate — a client at
+// stock cl_maxpackets 30 crams enough queued commands into each packet to cross 32 during the
+// slow-mo ack stall; setting cl_maxpackets 100 ON THAT CLIENT killed the spam outright with
+// com_maxfps untouched. Nothing server-side is involved: the spam is a client-side cosmetic,
+// cl_maxpackets is archived (set once, sticks), and it is now a player-facing recommendation in
+// docs/GETTING_STARTED.md — like cg_fov, not an engineering item. The floor and sv_fps stay put.
 gf_killcamFloor()
 {
     return gf_cfgFloat( "scr_gf_killcam_slowmo", 0.6, 0.25, 1 );   // seeds the dvar if unset
@@ -772,14 +775,17 @@ gf_gateEnterLobbyPresentation()
 
 // One poll's walk over the connect tracker. Returns r["humans"] (tracked humans, loaders
 // included), r["stillLoading"], r["humansGone"] (latched humans who dropped during the hold).
-// Side effect: latches level.gf_loadGateHuman[i] for begun humans — set while the entity is
-// still here to classify, because a kicked BOT must never shrink a HUMAN expectation.
+// Side effect: latches level.gf_loadGateHuman[i] (+ the GUID) for begun humans — set while the
+// entity is still here to classify, because a kicked BOT must never shrink a HUMAN expectation.
 gf_gateSampleRoster()
 {
     r = [];
     r["humans"]       = 0;
     r["stillLoading"] = 0;
     r["humansGone"]   = 0;
+
+    liveGuids = [];   // GUIDs of begun humans present THIS poll — resolves reconnects below
+    goneGuids = [];   // latched GUIDs of dropped entries, resolved after the walk
 
     for ( i = 0; i < level.gf_loadGateSeen.size; i++ )
     {
@@ -791,8 +797,17 @@ gf_gateSampleRoster()
             // after having been satisfied. Only latched-human entries count. A client that
             // dropped BEFORE begin was never latched, so it isn't subtracted and that
             // expectation rides out its deadline instead — rare, and bounded by design.
+            // ⚠ Resolved AFTER the walk against liveGuids, not counted here: a human who
+            // dropped and RECONNECTED during the hold appears as both a latched-gone entry
+            // and a fresh live one — counting the stale entry as gone while also counting
+            // their new body double-credited them and released the gate one player early.
             if ( isDefined( level.gf_loadGateHuman[i] ) && level.gf_loadGateHuman[i] )
-                r["humansGone"]++;
+            {
+                g = "";
+                if ( isDefined( level.gf_loadGateGuid[i] ) )
+                    g = level.gf_loadGateGuid[i];
+                goneGuids[goneGuids.size] = g;
+            }
             continue;
         }
         if ( isDefined( p.statusicon ) && p.statusicon == "hud_status_connecting" )
@@ -811,8 +826,17 @@ gf_gateSampleRoster()
         {
             r["humans"]++;
             level.gf_loadGateHuman[i] = true;   // latch while the entity is still here to classify
+            level.gf_loadGateGuid[i]  = "" + p getGuid();
+            liveGuids[ "" + p getGuid() ] = true;
         }
     }
+
+    // A gone entry whose GUID is live again is a RECONNECT, not a leaver ("" = pre-GUID latch
+    // from an older tracker entry — counted gone, the safe direction: it only holds the gate).
+    for ( i = 0; i < goneGuids.size; i++ )
+        if ( goneGuids[i] == "" || !isDefined( liveGuids[ goneGuids[i] ] ) )
+            r["humansGone"]++;
+
     return r;
 }
 
@@ -928,6 +952,8 @@ gf_waitForLoadingClients()
     // depending on a second variable staying in sync.
     if ( !isDefined( level.gf_loadGateHuman ) )
         level.gf_loadGateHuman = [];
+    if ( !isDefined( level.gf_loadGateGuid ) )   // reconnect-resolution latch (gf_gateSampleRoster)
+        level.gf_loadGateGuid = [];
 
     myGen         = level.gf_loadGateGen;
     start         = gettime();
@@ -1393,10 +1419,26 @@ gf_consumeTeamPlan( requireCarry )
     setDvar( "gf_teamplan", "" );
     setDvar( "gf_teamcarry", "" );
 
+    // GF_TEAMPLAN — log every consume decision. Every outcome here used to be silent, so a
+    // marker-less stale plan, a keep/shuffle/stage that never landed, and a genuinely stock
+    // start all looked identical in the log; one line per match start makes "why did the
+    // teams come out like this" answerable after the fact (one stream, games_mp.log).
     if ( requireCarry && carry != "1" )
+    {
+        if ( plan != "" )
+            logPrint( "GF_TEAMPLAN: DISCARDED marker-less plan (" + strTok( plan, "," ).size + " entries) - stale residue on a plain map load\n" );
         plan = "";
+    }
     if ( stage != "" )
+    {
+        overrideNote = "";
+        if ( plan != "" )
+            overrideNote = " - overriding a carried plan";
+        logPrint( "GF_TEAMPLAN: consuming STAGED layout (" + strTok( stage, "," ).size + " entries)" + overrideNote + "\n" );
         plan = stage;                            // an explicit staged layout beats a carry
+    }
+    else if ( plan != "" )
+        logPrint( "GF_TEAMPLAN: consuming carried plan (" + strTok( plan, "," ).size + " entries, requireCarry=" + requireCarry + ")\n" );
     if ( plan != "" )
         level.gf_teamPlanEntries = strTok( plan, "," );
 }
@@ -1889,7 +1931,15 @@ gf_menuTeamChoice( team )
 
     if ( team != "spectator" )
     {
-        // rcon kill-switch: players stay put (admin pteam/pteamforce route around these wrappers)
+        // rcon kill-switch: players stay put (admin pteam/pteamforce route around these wrappers).
+        // ⚠ KNOWN, ACCEPTED bypass: spectating out is deliberately ungated (a player may always
+        // bench themselves), and a spectator's Auto Assign runs gf_autoJoinBalance, which this
+        // switch does not gate — so spectate -> Auto Assign can land a player on a different
+        // side under gf_team_switch 0. Accepted because the re-seat is the BALANCER's pick
+        // (lighter human side, or the stock pick on a balanced split), never the player's chosen
+        // side — the "exploit" is a re-roll, not a transfer — and gating autoassign itself would
+        // break connect-time seating. If this ever matters competitively, the fix is to gate the
+        // spectator branch below too, at the cost of players no longer being able to bench.
         if ( getDvarInt( "gf_team_switch" ) == 0 )
         {
             self iprintln( "^3Team switching is disabled on this server" );
@@ -2987,7 +3037,13 @@ gf_tryActivateRound()
 
     if ( level.gf_roundActive || gf_roundGenChanged( myGen ) )
     {
-        level.gf_activatingRound = false;
+        // Clear the entry latch ONLY while it is still OUR round's latch. After a gen change
+        // the flag belongs to the FRESH round (map_restart re-initialized it, and that round's
+        // activator may be mid-flight holding it true) — a stale thread clearing it would
+        // reopen the entry gate and let a second fresh activator through to double-commit
+        // the round clock.
+        if ( !gf_roundGenChanged( myGen ) )
+            level.gf_activatingRound = false;
         return;
     }
 
@@ -3009,7 +3065,8 @@ gf_tryActivateRound()
     // Pass-1 activator), or a peer activator already went live — either way, bail cleanly.
     if ( level.gf_roundActive || gf_roundGenChanged( myGen ) )
     {
-        level.gf_activatingRound = false;
+        if ( !gf_roundGenChanged( myGen ) )   // same rule as the dedup bail above: never touch the fresh round's latch
+            level.gf_activatingRound = false;
         return;
     }
 
@@ -3578,6 +3635,15 @@ gf_resumeMatch()
 // Central round-end helper — mirrors sd_endGame().
 // Updates game["teamScores"] so the native score bar HUD reflects the win,
 // then hands off to _globallogic::endGame() for round cycling / win-limit.
+//
+// ⚠ NOT re-entry-safe, BY CONTRACT: the score increment below is unconditional, so a second
+// call for the same round double-scores it. The guard lives at the CALLERS, deliberately —
+// every end path must check level.gf_roundEnding before calling (elimination via
+// gf_onDeadEvent, expiry via gf_onTimeLimit, OT capture, the watchdogs), because only the
+// caller knows whether it is racing another end path or legitimately re-entering (the ONE
+// sanctioned re-entry is gf_resolveOvertime's gf_ot_done -> gf_endRound, which pre-sets
+// gf_roundEnding before the OT clock runs; that is why this function must NOT early-return
+// on the flag itself). If you add a new end path, gate it on gf_roundEnding first.
 gf_endRound( winner )
 {
     if ( gf_resolveOvertime( winner ) )

@@ -852,6 +852,12 @@ gf_reclaimStrandedHumans()
 		if(hA <= hX)
 			want = "allies";
 
+		// ⚠ DELIBERATELY NOT gf_team_lock-gated (unlike the queue seating in stage 1). The lock is
+		// a cap on players CHOOSING a side; an UNTRACED strand means a bug already un-seated
+		// someone who never chose spectator, and leaving them benched to honor a capacity policy
+		// would make the containment net enforce the very outcome it exists to undo. The lighter-
+		// side pick keeps the overshoot to at most one seat, and the boundary's later stages
+		// re-absorb it with bots.
 		// gf_quietSetTeam stamps its own "quietset" writer token, so the pre-spawn/boundary-in
 		// sampler attributes this move (not a fresh UNTRACED write); the GF_RECLAIM line below is
 		// the explicit audit trail. Quiet reassign is safe — a stranded human is never "playing".
@@ -1142,17 +1148,20 @@ diffBots()
 	}
 }
 
-/*
-	Sets the difficulty of the bots
-*/
-bot_set_difficulty( difficulty )
+// Per-difficulty sv_bot* preset table — verified 1:1 against the prior fu/hard/easy/normal
+// branches. One data table + one apply loop replaces four ~25-line if-branches. A difficulty
+// the table doesn't know falls back to "normal" (exactly the old `else`). Iteration order is
+// irrelevant — every entry is an independent SetDvar with no cross-dependency.
+// ⚠ easy deliberately OMITS sv_botMin/MaxGrenadeTime: it forces sv_botAllowGrenades 0, so the
+// grenade times never apply. Do NOT add them — that would be a behavior change.
+// ⚠ CACHED on level.gf_botDiffPresets: bot_set_difficulty runs on diffBots' 1.5s tick, and
+// rebuilding this ~90-entry table ~30x per round was pure churn in the mod's highest-frequency
+// persistent loop. level.* is wiped by map_restart, so the cache self-refreshes once per round.
+gf_botDiffPresetTable()
 {
-	// Per-difficulty sv_bot* preset table — verified 1:1 against the prior fu/hard/easy/normal
-	// branches. One data table + one apply loop replaces four ~25-line if-branches. A difficulty
-	// the table doesn't know falls back to "normal" (exactly the old `else`). Iteration order is
-	// irrelevant — every entry is an independent SetDvar with no cross-dependency.
-	// ⚠ easy deliberately OMITS sv_botMin/MaxGrenadeTime: it forces sv_botAllowGrenades 0, so the
-	// grenade times never apply. Do NOT add them — that would be a behavior change.
+	if ( isDefined( level.gf_botDiffPresets ) )
+		return level.gf_botDiffPresets;
+
 	presets = [];
 
 	presets["fu"] = [];
@@ -1261,6 +1270,17 @@ bot_set_difficulty( difficulty )
 	presets["normal"]["sv_botSprintDistance"]  = "512";
 	presets["normal"]["sv_botMeleeDist"]       = "80";
 
+	level.gf_botDiffPresets = presets;
+	return presets;
+}
+
+/*
+	Sets the difficulty of the bots
+*/
+bot_set_difficulty( difficulty )
+{
+	presets = gf_botDiffPresetTable();
+
 	if ( !isDefined( presets[difficulty] ) )
 		difficulty = "normal";
 
@@ -1331,7 +1351,13 @@ bot_damage_callback( eAttacker, iDamage, sMeansOfDeath, sWeapon, eInflictor, sHi
 watch_grenade()
 {
 	self endon("disconnect");
-		
+	// Collapse to ONE live copy per client: onPlayerConnect threads this on every level
+	// "connected" notify, which RE-FIRES for every client at each map_restart(true) re-begin —
+	// so without this, every client accumulated one extra idle copy per round (~11 by match
+	// end), and each grenade_fire fanned out through all of them.
+	self notify("gf_watch_grenade");
+	self endon("gf_watch_grenade");
+
 	self.bot_scrambled = false;
 	for(;;)
 	{
@@ -1438,7 +1464,11 @@ scramble_player()
 watch_shoot()
 {
 	self endon("disconnect");
-		
+	// Collapse to ONE live copy per client — same re-begin accumulation as watch_grenade above
+	// (every weapon_fired otherwise spawned one doFiringThread per stacked copy).
+	self notify("gf_watch_shoot");
+	self endon("gf_watch_shoot");
+
 	self.bot_firing = false;
 	for(;;)
 	{

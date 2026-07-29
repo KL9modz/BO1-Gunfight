@@ -57,16 +57,29 @@ gf_startCoordsHUD()
 gf_startSpawnRecorder()
 {
     self endon( "disconnect" );
+    // game_ended fires at EVERY round end (not match end), killing this loop mid-killcam; the
+    // next spawn re-threads it. That lifecycle is fine — but the state init below used to be
+    // UNCONDITIONAL, so every round boundary wiped the authoring session's recorded points
+    // (multi-round recording sessions kept losing sets). Entity fields survive map_restart
+    // (the same property behind the old gf_balanceMoved bug — here it works FOR us), so
+    // init-if-undefined keeps the working set across rounds; the HUD elems are re-created
+    // each re-thread because map_restart DOES wipe those.
     level endon( "game_ended" );
+    self notify( "gf_spawn_recorder" );   // collapse to one live copy (a grace-window respawn re-threads this)
+    self endon( "gf_spawn_recorder" );
 
-    self.gf_rec_allies = [];
-    self.gf_rec_axis   = [];
-    self.gf_rec_sets   = [];
-    self.gf_rec_team   = "allies";
+    if ( !isDefined( self.gf_rec_allies ) )
+        self.gf_rec_allies = [];
+    if ( !isDefined( self.gf_rec_axis ) )
+        self.gf_rec_axis = [];
+    if ( !isDefined( self.gf_rec_sets ) )
+        self.gf_rec_sets = [];
+    if ( !isDefined( self.gf_rec_team ) )
+        self.gf_rec_team = "allies";
 
     self gf_recCreateLegend();
     self gf_recUpdateHUD();
-    iPrintLnBold( "^2Spawn Recorder ON" );
+    iPrintLnBold( "^2Spawn Recorder ON  (^7" + self.gf_rec_allies.size + "a/" + self.gf_rec_axis.size + "x pending, " + self.gf_rec_sets.size + " set(s) saved^2)" );
 
     while ( true )
     {

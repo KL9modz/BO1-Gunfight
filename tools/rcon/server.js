@@ -1198,7 +1198,19 @@ const server = http.createServer(async (req, res) => {
     if (body === undefined) return;
     const c = resolveConn(body, res); if (!c) return;
     const { host, password, p } = c;
-    const { commands = [], delayMs = 80 } = body;
+    // Validate + clamp: `commands` must be an array (a stringified list would iterate
+    // CHARACTERS, firing one rcon send per character), capped so one bad request can't
+    // occupy the paced queue for minutes; delayMs clamped for the same reason (60 cmds x
+    // 60s delay = an hour-long handler). Largest legit batch today is the map-change trio +
+    // dvar sweeps well under 50.
+    const rawCmds = body.commands;
+    if (rawCmds !== undefined && !Array.isArray(rawCmds)) {
+      return sendJson(res, { ok: false, error: 'commands must be an array' }, 400);
+    }
+    const commands = (rawCmds || []).slice(0, 64).map(String);
+    let rawDelay = parseInt(body.delayMs, 10);
+    if (isNaN(rawDelay)) rawDelay = 80;                       // absent/garbage -> default; an explicit 0 stays 0
+    const delayMs = Math.min(Math.max(rawDelay, 0), 2000);
     const results = [];
     for (let i = 0; i < commands.length; i++) {
       const command = commands[i];

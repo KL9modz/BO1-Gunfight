@@ -101,6 +101,17 @@ gf_setupWagerZoneCompass( mapname )
 // loads — the art only appears when you set xblive_wagermatch 1, and precaching
 // can't pull it from an unloaded zone. So those stay OFF this list and show their
 // full compass instead of a blank.
+//
+// ⚠ FOUR exclusions are UNVERIFIED, not reasoned (the rationale above covers the others):
+//   - mp_nuked (base): Nuketown was never a wager map, so a compass_map_mp_nuked_wager
+//     image likely doesn't exist at all — but that has not been checked.
+//   - mp_golfcourse / mp_area51 / mp_drivein (Annihilation): their PACK-MATE mp_silo is
+//     whitelisted and demonstrably resident, so residency is per-MAP, not per-pack — these
+//     three may be free zoomed-minimap wins. One-time test per map: load it under gf, run
+//     the bridge's compass apply (or add the name here on a dev build) and LOOK — resident
+//     art renders, unloaded art shows a BLANK compass (that visible blank is the failure
+//     mode this whitelist exists to prevent, and the eye is the only probe; nothing in the
+//     GSC VM can query zone residency).
 gf_getWagerCompassMaterial( mapname )
 {
     if ( mapname == "mp_array"       || mapname == "mp_cairo"       ||

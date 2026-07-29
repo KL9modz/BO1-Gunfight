@@ -718,8 +718,17 @@ gf_buildWeaponDB()
     gf_reg( "nightingale_mp",        "Decoy", "hud_nightingale" );
 }
 
-// ─── Valid T5 MP Weapon Reference ──────────────────────────────────────────
+// ─── Valid T5 MP Weapon Reference (GUIDE — not the authority) ──────────────
+// ⚠ The AUTHORITATIVE token list is tools/weapon_tokens_mp.txt (generated from the engine
+// dump's raw/weapons/mp filenames), enforced at commit time by tools/verify_loadouts.ps1 —
+// which also accepts two-attachment Warlord combos the dump omits (base_a1_a2_mp is valid
+// when BOTH base_a1_mp and base_a2_mp exist; the live pool's m16_elbit_dualclip_mp /
+// spectre_elbit_grip_mp / kiparis_elbit_grip_mp are exactly that class). This hand table is
+// a browsing aid and HAS drifted (it once omitted those three + the whole dual-wield family
+// below); trust the validator, not this comment, for existence.
 // All names require _mp suffix.
+// DUAL-WIELD pistols/SMGs (the pool's sidearm staple): aspdw, cz75dw, hs10dw, kiparisdw,
+//   m1911dw, mac11dw, makarovdw, pm63dw, pythondw (+ hs10_mp exists solo too).
 // KNOWN INVALID: galil_grip_mp, hk21_grip_mp, stoner63_grip_mp, ithaca_mp,
 //                pm63_silencer_mp, mpl_extclip_mp, smoke_grenade_mp
 //                crossbow_mp (use crossbow_explosive_mp)

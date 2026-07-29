@@ -1,13 +1,22 @@
 # `refactor/tier1` — laptop compile + smoke checklist
 
-**Status: not yet run.** This branch (12 commits, `2157485..c73d76d`) was developed and
-reviewed on a box with no map-load capability (no GitHub credentials, and touching the
-live server was off-limits — see `.claude/CLAUDE.md`). Every commit passed
-`tools/verify_release_strip.ps1` (static symbol-resolution proof) and an independent
-review pass re-derived the risky transformations by hand (predicate boolean equivalence,
-seed-pair diffs, bot-preset-table diffs, spawn-coordinate-tuple diffs — see the review
-notes in the PR/commit history). **None of that substitutes for a real compile.** This
-file is the gate before merging to `main`.
+**Status: RESOLVED (recorded 2026-07-28).** The branch (12 commits, `2157485..c73d76d`)
+merged to `main` and has since run live: the dev tree has loaded maps on the laptop and
+served the VPS 24/7 across many deploys with zero `unknown function` / compile errors in
+`console_mp.log` (checked at every deploy), which retro-covers section 2's dev-tree
+compile pass; most of section 3 is implicitly covered by weeks of live play (round
+cycling, team moves, bot difficulty, curated spawns landing on curated points daily).
+**Two items were never formally recorded** and remain the honest gap: the PUBLIC
+(stripped) build has not had its own map load since tier1 (the static verifier now also
+proves marker balance, but a real load of a `package_release.ps1` output is still owed
+before the next public release), and the **spawn-recorder round-trip** (record →
+ActionSlot3 → paste block matches `gf_locationsTable()` format) should be checked at the
+start of the next spawn-authoring session — `tools/verify_locations.ps1` will catch a
+malformed paste at commit time either way.
+
+The reusable half of this file (the post-restructure smoke checklist, old sections 3-4)
+now lives in `docs/DEV.md` → *Post-restructure smoke checklist*, which is the copy to
+update; the text below is kept as the historical record of what tier1's gate asked for.
 
 ## 1. Pull the branch
 

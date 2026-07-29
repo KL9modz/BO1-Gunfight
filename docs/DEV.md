@@ -245,7 +245,50 @@ See the header of `maps/mp/gametypes/_gf_bridge.gsc` for the complete command li
 
 ---
 
+## Post-restructure smoke checklist
+
+The closest thing this GSC codebase can have to a regression suite — run it (dev build, one
+match, `party_minplayers 1`, a few bots) after any structural GSC refactor, alongside the
+static verifiers (`verify_release_strip` / `verify_loadouts` / `verify_locations`). Extracted
+from the tier1 gate (`docs/REFACTOR_TIER1_CHECKLIST.md`, now historical); this is the copy to
+keep current.
+
+- [ ] **Compile**: `loadMod mp_gunfight` + `map_restart`; zero `unknown function` / compile
+      errors in `console_mp.log`. For strip-region changes, ALSO load a `package_release.ps1`
+      output on a second local server — the verifier proves symbols, never a parse.
+- [ ] **Round cycle**: 2+ rounds complete (elimination win, timeout/HP win).
+- [ ] **Team writes**: add/kick a bot, let a boundary pass run; `GF_TEAMTRACE`/`GF_FILLGUARD`
+      lines show team sizes settling with no phantom drift.
+- [ ] **Panel team moves**: `pteam_` (next round) + `pteamforce_` (immediate) on a human — no
+      enemy-spawn / 1-HP spawn.
+- [ ] **Self switch**: mid-round Allies/Axis click = die + sit out; free during prematch.
+- [ ] **Bot difficulty**: cycle the four presets from the panel; behavior visibly changes and
+      `gf_state` field 12 tracks.
+- [ ] **Spawn recorder round-trip**: `gf_debug_spawns 1`, record, ActionSlot3 — the printed
+      block matches `gf_locationsTable()`'s entry format (the recorder↔table codegen contract).
+- [ ] **Curated spawns**: a round on `mp_villa`/`mp_cracked` spawns on the fight-facing curated
+      points, not the stock pool.
+- [ ] **Panel basics**: DASHBOARD live status, pin/unpin, 💾 Save writes `dedicated.cfg`,
+      BOTS tab buttons work.
+
+---
+
 ## Bots (dev / listen-server)
+
+### ⚠ Local edits to the VENDORED files (re-vendor checklist)
+
+`maps/mp/bots/` is vendored third-party code, so the reflex on an update is "replace the folder" —
+which would silently drop the Gunfight-local edits inside it. **Before replacing any of these files,
+re-apply every entry on this list to the new copy** (and when you make a NEW local edit to a vendored
+file, add it here in the same commit — this list is the only thing standing between the edit and a
+future re-vendor losing it):
+
+| File | Edit | Why |
+|---|---|---|
+| `_bot_script.gsc` `bot_on_death()` | The `wantSafeSpawn` set is gated on `!level.gf_roundActive` (comment: *"gunfight: no respawns mid-round; only re-queue between rounds"*) | Stock BotWarfare re-queues a dead bot for respawn immediately; Gunfight is one-life-per-round, so a mid-round re-queue fights `maySpawn` and the fill discipline. |
+
+(`maps/mp/gametypes/_bot.gsc` is NOT on this list — it is a fork, not a vendor: the whole reconciler
+lives there and it is expected to diverge freely.)
 
 The bot framework is vendored under `maps/mp/bots/` (`_bot_loadout`, `_bot_script`, `_bot_utility`; original author INeedGames) and integrated by `maps/mp/gametypes/_bot.gsc`. `_bot::init()` registers the `bots_*` dvars (kept for the vendored AI) and threads `diffBots` (difficulty) plus the Gunfight **round-boundary TEAM reconciler** — the single authority over next-round team composition (see the big header block in `_bot.gsc`). Each boundary pass: (1) seats the team-size-lock queue (spectating humans, join order); (2) evens the **human** split to off-by-1 (`gf_team_balance`, most recent joiner moves via `pers["gf_joinSeq"]`); (3) pads both sides with bots to `max(bigger human side, gf_fill_n)` — `gf_fill_n` is the per-team target (default 2), 0 = no bot fill (stages 1-2 still run). BotWarfare's own managers (`addBots` / `teamBots` / `doNonDediBots`) are **deleted**. It is wired in from `gf.gsc` inside a `#strip-begin … #strip-end` block, so it is **stripped from public builds** — bots and the team system are a development / server-side aid only.
 
