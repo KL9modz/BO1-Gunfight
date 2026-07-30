@@ -1,5 +1,5 @@
 ---
-name: reference-t5-mp-weapons
+name: reference_t5_mp_weapons
 description: "Full verified list of valid T5 MP weapon strings for use in GiveWeapon() calls, including valid attachment variants per weapon. Use when building or validating loadouts."
 metadata: 
   node_type: memory

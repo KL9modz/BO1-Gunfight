@@ -1,5 +1,6 @@
 ---
-name: ""
+name: server-command-overflow-reliable-command-budget
+description: Every setClientDvar is ONE reliable command and the client's ring is FIXED — "Server command overflow" and "CL_CGameNeedsServerCommand ... cycled out" are the SAME budget seen from opposite ends. Fix is setClientDvarS (batched); hunt the O(n²) per-player loop pushing a per-item list.
 metadata: 
   node_type: memory
   originSessionId: 46023d59-7454-43f3-a346-e04b44bedd59

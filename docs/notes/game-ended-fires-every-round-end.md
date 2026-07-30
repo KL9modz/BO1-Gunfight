@@ -1,5 +1,6 @@
 ---
-name: ""
+name: game-ended-fires-every-round-end
+description: The "game_ended" notify fires at the end of EVERY round, not at match end — so an endon("game_ended") on a persistent loop kills it at round 1's end. Killed gf_boundaryListener (bot fill froze, humans never counted); bot_reinit is the only notify allowed to tear these down.
 metadata: 
   node_type: memory
   originSessionId: 79682440-f371-4bd0-a6d4-b22a8ea90457

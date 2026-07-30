@@ -20,11 +20,11 @@ Made by **KL9**. Join us on **[Discord](https://discord.gg/blackops)**.
 
 - **Fully custom HUD** — a built-from-scratch heads-up display with **live health for both teams** and a full loadout preview at the start of every round.
 - **50+ unique loadouts** — a shared, **shuffle-without-repeat** loadout pool with randomized weapon camos; both teams get the same kit each round.
-- **All 24 maps & size scaling** — **all 24 maps** (12 base + 12 DLC), each with hand-placed spawn and overtime points, plus map-size scaling: tighter wager-style sizes for smaller lobbies, full-map sizes for bigger ones.
+- **25 maps & size scaling** — **25 maps** (13 base + 12 DLC), each with hand-placed spawn and overtime points, plus map-size scaling: tighter wager-style sizes for smaller lobbies, full-map sizes for bigger ones.
 - **Overtime flag** — a **hold-to-capture** objective spawns center-map when a round runs long; capture it to steal the round for either team.
 - **Health-based rounds** — if nobody captures the overtime flag, the round is decided on **total remaining health**. Equal health is a draw.
-- **Visual improvements** — tuned game rendering, lighting, and colors for a **cleaner, sharper look**.
-- **Real stats & XP** — a ranked server with real stats and XP tracking. **2XP enabled!**
+- **Visual improvements** — a tuned contrast and color pass over every map for a **cleaner, sharper look**.
+- **Real stats & XP** — a ranked server with real stats and XP tracking, at **5× the XP per kill**.
 - **Full bot support** — **fully functional bots** can be added to any lobby.
 
 **Adjustable (server-side):**

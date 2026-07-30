@@ -6,13 +6,27 @@ deploying is a git push + a `git pull` on the VPS.
 
 ```
 site/
-  wwwroot/          <- mirrored 1:1 to the VPS IIS wwwroot
-    index.html
-    styles.css
-    script.js
-    assets/         <- screenshots / images / favicon
-  README.md         <- this file
+  wwwroot/            <- mirrored 1:1 to the VPS IIS wwwroot
+    index.html        <- landing page (features, how-to-join)
+    setup.html/.js    <- player setup guide (install, settings, ADS fix)
+    status.html/.js   <- live "who's on now" + the 7-day public activity feed
+    admin/            <- admin.html/.js — behind IIS Basic auth + the `.secured` interlock
+    styles.css        <- shared by index + setup ONLY; status/admin carry inline <style>
+    script.js         <- tracked placeholder, loaded by NO page (says so in its own header)
+    assets/           <- screenshots, logo, favicon, flags/ (self-hosted country SVGs)
+  README.md           <- this file
 ```
+
+The JSON the status page reads (`status.json`, `activity.json`, and the gated
+`admin.json`/`health.json`) is **not** in this folder — `GF-StatusService` writes it on the box.
+See `docs/VPS_DEPLOY.md`.
+
+⚠ **IIS long-caches `.css`/`.js` but not `.html`.** After editing an asset, bump the `?v=N` query on
+its `<link>`/`<script>` tag, or a deploy ships new HTML against a stale cached asset — this shipped
+visibly broken once at `v=4` ([[site-css-js-cache-bust-version-query]]). Current state: `styles.css`
+is at `?v=6` (index + setup), `setup.js` at `?v=1`, and **`status.js` / `admin/admin.js` carry no
+`?v=` at all** — so an edit to either relies on the browser revalidating. Add one when you next touch
+them.
 
 This is **not** the RCON admin panel. That lives in [`../tools/rcon/`](../tools/rcon/),
 is loopback-only, and is never deployed to the public site.

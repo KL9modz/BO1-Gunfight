@@ -1,5 +1,5 @@
 ---
-name: gf-match-start-gates
+name: gf-stuck-after-prematch-two-gates
 description: How Gunfight's match-start hold works — ONE pre-prematch gate; scr_gf_lobby (Normal/Auto/Manual, 2026-07-05) fast-restarts via map_restart(false) for a fresh-start presentation; why party_minplayers is irrelevant; stuck-start diagnostics
 metadata:
   node_type: memory

@@ -3,12 +3,18 @@
 Hard-won findings, one file per incident. These were migrated out of the laptop-only `~/.claude` memory
 store into the repo so they travel with a clone (and reach the VPS). **Not auto-loaded** — open the one
 you need. A **`[[slug]]`** reference in `.claude/CLAUDE.md` (or in another note) resolves to
-**`docs/notes/<slug>.md>`** — same slug, same filename.
+**`docs/notes/<slug>.md`** — same slug, same filename.
 
-Adding a finding: write `docs/notes/<slug>.md` (frontmatter + the fact; link related notes as
-`[[slug]]`), then add one line below. Keep it to one line per note. Don't resurrect the `~/.claude`
-memory folder as a second copy — it drifts ([[site-css-js-cache-bust-version-query]] is the analogous
-"two sources diverge" trap).
+Adding a finding: write `docs/notes/<slug>.md`, then add one line below. Keep it to one line per note.
+Don't resurrect the `~/.claude` memory folder as a second copy — it drifts
+([[site-css-js-cache-bust-version-query]] is the analogous "two sources diverge" trap).
+
+**Two file shapes coexist, both fine.** The 87 notes migrated out of the old memory store keep its YAML
+frontmatter (`name:` — which MUST equal the filename — plus `description:` and a dead
+`node_type`/`originSessionId` pair that nothing reads). Notes written natively in the repo since skip
+frontmatter entirely and open with an H1 title + a `**Date:** … **Status:** …` line, which reads better
+in a diff and on GitHub — **prefer that for anything new.** Either way: link related notes as
+`[[slug]]`, and the slug is always the bare filename.
 
 ## Working rules (read first)
 - [read-the-server-not-the-file](read-the-server-not-the-file.md) — a cfg on disk is an INTENTION; the running process is REALITY. Seeds are if-empty and cfg execs FIRST, so a cfg line restating a default silently PINS it. cfg = deviations only.
@@ -64,7 +70,6 @@ memory folder as a second copy — it drifts ([[site-css-js-cache-bust-version-q
 - [menu-milliseconds-client-local-no-per-round-event](menu-milliseconds-client-local-no-per-round-event.md) — `milliseconds()` = CLIENT UI-realtime (main.menu scrolls fog with it pre-connection), NOT server cg.time → server CAN'T stamp the marker. The "free" menu loadout slide is NOT viable. Settled — don't re-run the mod.ff probe.
 - [overtime-icon-2d-3d-coincidence](overtime-icon-2d-3d-coincidence.md) — minimap + flag agree only when driven from the same native _gameobjects path; friendly→defend(green), enemy→capture(red).
 - [ot-icon-team-hudelem-delivery-bug](ot-icon-team-hudelem-delivery-bug.md) — engine bug: newTeamHudElem not delivered when another client connects mid-round.
-- [health_hud_menu_numbers](health_hud_menu_numbers.md) — (older experiment note, now SHIPPED) why team HP numbers moved off script HUD font elems into the menu layer, and the `ui_gf_health_*` dvars that drive them.
 
 ## Weapons / loadouts / spawns
 - [reference_t5_mp_weapons](reference_t5_mp_weapons.md) — verified GiveWeapon() strings + invalid names + attachment variants.
@@ -75,7 +80,13 @@ memory folder as a second copy — it drifts ([[site-css-js-cache-bust-version-q
 - [spawn-wrong-facing-usestartspawns-gate](spawn-wrong-facing-usestartspawns-gate.md) — small mode short-circuits to curated points. Curated branch MUST set lastSpawnTime/lastSpawnPoint.
 - [spawn-yaw-carried-camera-input](spawn-yaw-carried-camera-input.md) — DIFFERENT from the above (that's the spawn POINT; this is the VIEW angle): camera input on the switch/killcam screen makes spawn() snap the view then the stale client view REVERTS it ~0.2-1s later (d0=0 / d1 large). Fix = divergence-gated (>45°) re-assert of BOTH axes held through prematch, released at prematch_over. Dead ends: 0.2s burst (too early), unconditional hold (SHAKES), yaw-only gate (misses pitch), go-live snap (visible jump — rejected). Held input during countdown is the irreducible edge.
 - [firingrange-intentional-bigmap-default](firingrange-intentional-bigmap-default.md) — omitting a map from _gf_locations IS the opt-out. Don't "fix" it.
-- [spawn_recorder](spawn_recorder.md) — how to use the `gf_debug_spawns` spawn-recorder dev tool (ActionSlot binds, per-map capture flow).
+
+> **Spawn recorder** — no note; the tool documents itself. Read the header comment of
+> `maps/mp/gametypes/_gf_debug.gsc` (dvar `gf_debug_spawns 1`, ActionSlot1-4 = record / toggle team /
+> save+print / undo, and the on-screen legend resolves each player's OWN bound keys). It prints a
+> paste-ready `gf_locationsTable()` block to `logs/games_mp.log`; `tools/verify_locations.ps1` gates the
+> paste at commit time. A standalone how-to note existed and was deleted 2026-07-30 — it had drifted to
+> the pre-tier1 if-chain output format and a "13 maps remaining" list, both of which would mislead.
 
 ## Map scripts (stock)
 - [extract-dlc-map-gsc-from-fastfile](extract-dlc-map-gsc-from-fastfile.md) — DLC map scripts are NOT in raw/ but ARE shipped as rawfile SOURCE in zone/Common/mp_*.ff. TWO layers of zlib.
@@ -114,7 +125,12 @@ memory folder as a second copy — it drifts ([[site-css-js-cache-bust-version-q
 - [status-parser-name-spaces-bot-miscount](status-parser-name-spaces-bot-miscount.md) — a spaced name shifts columns. RULE: read name/addr END-anchored.
 - [status-address-port-is-signed-16bit-can-be-negative](status-address-port-is-signed-16bit-can-be-negative.md) — `status` prints the address port as a SIGNED 16-bit value, so a source port >32767 shows as `ip:-NNNNN`. A `:\d+` regex rejected it → ~half of real players lost their IP + join alert + connection-history entry. FIXED: `-?\d+` in all 6 validation sites. RULE: allow a negative port.
 - [kick-all-bots-kicked-real-players](kick-all-bots-kicked-real-players.md) — the bot flag was fail-open and a STILL-CONNECTING client looks like a bot in `status`. A classifier's DEFAULT must never be the destructive class; identity for a kick comes from the SERVER (istestclient), never parsed text.
-- [server_reference](server_reference.md) — older Gunfight dvar cheat-sheet. ⚠ Some defaults are STALE (e.g. scr_gf_timelimit shown as 1) — trust docs/REFERENCE.md + CLAUDE.md's dvar tables over this.
+
+> **Dvar cheat-sheet** — there is deliberately no note. The single sources are CLAUDE.md's *Gametype
+> dvars* tables and `docs/REFERENCE.md`. An older `server_reference.md` was deleted 2026-07-30: a
+> second dvar table cannot be kept in sync, and that one had drifted into contradicting the real ones
+> (`scr_gf_timelimit 1` vs 0.7, no `_large` variants, and a whole `bots_manage_*` section for a family
+> `gf_fill_n` retired).
 
 ## Site / web / players
 - [site-css-js-cache-bust-version-query](site-css-js-cache-bust-version-query.md) — IIS long-caches .css/.js but not .html, so a deploy ships new HTML + STALE cached stylesheet. Edit styles.css/setup.js → bump ?v=N in index.html + setup.html or it looks broken. Bit us live at v=4.

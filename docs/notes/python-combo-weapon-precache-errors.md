@@ -1,5 +1,6 @@
 ---
-name: ""
+name: python-combo-weapon-precache-errors
+description: Stock T5 data gap — some python attachment-combo weapon defs don't exist, so PrecacheItem/GiveWeapon errored; fixed with stub combo files in raw/weapons/mp.
 metadata: 
   node_type: memory
   originSessionId: c987423e-184e-4957-9b88-adbb55e5a2cf

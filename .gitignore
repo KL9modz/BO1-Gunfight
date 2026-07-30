@@ -2,6 +2,13 @@
 mod.ff
 tools/dist/
 
+# Offline research scratch: inflated map fastfiles (hundreds of MB of binary dumps) written by
+# tools/inflate_fastfile_zlib.ps1. The catalogs it FEEDS (tools/wager_spawns, tools/wager_entities)
+# are small JSON and ARE tracked, so the extraction never has to be repeated -- only the raw
+# intermediates are disposable. tools/README.md has claimed this was ignored since 2026-06; it
+# wasn't, until now.
+tools/ff_extract/
+
 # Runtime/log output
 *.log
 *.log.*
