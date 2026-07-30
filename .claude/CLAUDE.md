@@ -1100,9 +1100,7 @@ Curated hand-placed spawns for **25 maps** (`_gf_locations.gsc`, built once/matc
 each map has one set of 5 allies + 5 axis points and one OT flag point. Small mode consumes them via
 `onSpawnPlayer`/`onSpawnPlayerUnified`, which **short-circuits all small-mode spawns to the curated
 points** so late/async spawns (bot fill, late joiners, 60s forceSpawn) keep fight-facing points instead
-of the stock scored pool ([[spawn-wrong-facing-usestartspawns-gate]]). An unlisted map (e.g.
-`mp_firingrange`) gets no curated data and degrades to `mp_tdm_spawn` + native Dom-B OT flag — omitting a
-map is the supported opt-out ([[firingrange-intentional-bigmap-default]]). ⚠ The curated branch must set
+of the stock scored pool ([[spawn-wrong-facing-usestartspawns-gate]]). Any map not in the curated set gets no curated data and degrades to `mp_tdm_spawn` + native Dom-B OT flag — omitting a map is the supported opt-out. ⚠ The curated branch must set
 `self.lastSpawnTime`/`lastSpawnPoint` (stock `Callback_PlayerDamage` does unguarded arithmetic on them
 for grenade spawn-protection) and does a `positionWouldTelefrag` scan (spawning onto an occupied point
 kills the occupant).
