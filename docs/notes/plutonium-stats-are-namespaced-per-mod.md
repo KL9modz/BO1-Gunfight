@@ -38,8 +38,17 @@ HUD and the localized strings.
 `players\mods\mp_gunfight\` once, before joining. It's a snapshot, not a link.
 
 **Why it barely matters here:** rank is cosmetic in Gunfight — shared forced loadouts, `scr_disable_cac 1`,
-no killstreaks, no unlocks. Nothing gated on level. But *"why am I level 1 on your server"* is a
-predictable new-player question → worth a line in `docs/GETTING_STARTED.md`.
+no killstreaks, no unlocks. Nothing gated on level. *"Why am I level 1 on your server"* is a
+predictable new-player question → covered in `docs/GETTING_STARTED.md` (per-mod profile callout in
+§2 + two Troubleshooting rows, added 2026-07-30).
+
+**The profile also carries `config_mp.cfg`, so SETTINGS namespace the same way** — and that is the
+player-facing half that actually bites: a first-timer who sets up graphics/FOV/binds *before* ever
+joining does it all in the vanilla profile, then the first join switches to the mod profile and
+everything looks reset (including the MOUSE2 ADS bind — a likely contributor to "the game stripped my
+bind" reports). The guide's flow is: join once → back out to the main menu (**the mod stays loaded**
+until the game closes or another mod loads — owner-confirmed 2026-07-30) → apply all settings there →
+rejoin. Backing out matters because some graphics/hardware settings can't be changed while connected.
 
 Related: [[read-the-server-not-the-file]], [[xp-scrxpscale-readonly-and-dead-score-path]],
 [[t5-clients-must-install-mod-no-autodownload]].

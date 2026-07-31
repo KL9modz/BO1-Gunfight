@@ -35,6 +35,12 @@ Black Ops Gunfight runs on **[Plutonium](https://plutonium.pw/)**, a free commun
 
 Black Ops is old, but with Plutonium it can be optimized for modern systems. Here are a few critical tweaks to get the game looking sharp and running fast.
 
+> **Do this setup *after* your first join - your settings are saved per mod.** Plutonium keeps a separate settings profile for every mod, and Gunfight is a mod: everything on this page (graphics, FOV, console commands, even the ADS bind) saves into whichever profile is loaded *when you set it*. Set it all up before ever joining and it lands in your vanilla profile - then your first join switches to Gunfight's own profile and everything looks reset.
+>
+> The one-time flow: **[join the server](#3-find--join-gunfight) once**, then **back out to the main menu** and apply everything below from there - the mod stays loaded until you close the game, and some graphics/hardware settings can't be changed while connected anyway. Rejoin and you're done: from then on your settings stick for every visit.
+>
+> Rank works the same way: each mod keeps its own stats, so you start at **level 1** on Gunfight even if you're ranked up elsewhere. Your Gunfight rank is its own track and saves normally.
+
 ### Graphics
 
 | Setting | Recommended |
@@ -102,11 +108,11 @@ bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"
 
 Now you can **ADS without releasing Sprint.** What it does: aiming (`+speed_throw`) also clears the sprint input (`-breath_sprint`) so the engine stops blocking your aim. The trailing `-sprint` is a required no-op - it absorbs the key event so the sprint release actually fires.
 
-The game sometimes strips custom `MOUSE2` binds on restart. If ADS goes dead, just **re-paste the line**.
+The game sometimes strips custom `MOUSE2` binds on restart. If ADS goes dead, just **re-paste the line** - with the Gunfight mod loaded (on the server, or at the menu right after leaving it). A bind saved in vanilla doesn't carry into Gunfight - see the note at the top of this section.
 
 ### Recommended console commands
 
-An **alternate way to apply your settings** - most of these have an in-game menu equivalent (Graphics / Game tabs), but a few have no menu entry at all. Open the console (**`~`**) and paste the block. `seta` both applies a setting **and saves it**, so you only paste once and it sticks across restarts.
+An **alternate way to apply your settings** - most of these have an in-game menu equivalent (Graphics / Game tabs), but a few have no menu entry at all. Open the console (**`~`**) and paste the block. `seta` both applies a setting **and saves it**, so you only paste once and it sticks across restarts. (Like everything on this page, paste it with the mod loaded - see the note at the top of this section.)
 
 ```
 seta com_maxfps          "144"     // frame cap (also Options -> Game -> Max FPS)
@@ -140,6 +146,8 @@ Black Ops Gunfight is a ranked server. Join through the in-game **Server Browser
 4. On the **Ranked** tab, find **`Gunfight | gunfight.us`** (mode **GF**) and join. The mod **downloads automatically** on connect (FastDL) - no manual install needed.
 
 > **First join only:** after the download finishes, the game rebuilds itself around the mod and your screen may go **black for a few minutes**. This is normal - let it finish and it will drop you into the match. Still black after ~5 minutes? Close the game and rejoin: the mod is already downloaded, so the second join is quick. Every join after that is instant.
+>
+> Your settings will also look **reset to defaults** on that first join - they aren't lost; Gunfight keeps its own settings profile. Back out to the main menu (the mod stays loaded), run through [Recommended settings](#2-recommended-settings), and rejoin - a one-time setup.
 
 ![The Server Browser - Gunfight | gunfight.us in the Ranked tab](images/getting-started/server-browser.png)
 *The Server Browser - look for `Gunfight | gunfight.us` (mode GF) on the Ranked tab.*
@@ -153,7 +161,9 @@ Black Ops Gunfight is a ranked server. Join through the in-game **Server Browser
 | Problem | Fix |
 |---|---|
 | **Can't aim down sights** while holding Sprint | Paste the ADS bind from the [Sprint/ADS improvement](#mouse--keyboard-sprintads-improvement) section. |
-| **ADS stopped working** after a restart | Re-paste the `bind MOUSE2 ...` line. |
+| **ADS stopped working** after a restart | Re-paste the `bind MOUSE2 ...` line **with the Gunfight mod loaded** (on the server, or at the menu right after leaving it) - a bind saved in vanilla doesn't carry into Gunfight. |
+| **Settings / FOV reset to defaults** after joining Gunfight | Normal on the very first join - settings are saved **per mod**. Back out to the main menu (the mod stays loaded), apply the [Recommended settings](#2-recommended-settings), and rejoin. One-time setup; they stick from then on. |
+| **Level 1 on Gunfight** despite rank elsewhere | Plutonium keeps a separate stats profile per mod. Your Gunfight rank is its own track and saves normally - nothing in Gunfight is gated on level anyway. |
 | **Game won't launch / bad install** | In the CB Servers Launcher, open **Black Ops -> SETUP** to re-point or re-download your copy, then click **VERIFY**. |
 | **Gunfight isn't in the server list** | Reset all filters, click **Refresh**, and check the **Ranked** tab for `Gunfight | gunfight.us`. |
 | **Black screen after the mod downloads** (first join) | Normal on the very first join - the game is rebuilding itself around the mod. Give it a few minutes and it drops you into the match. Still black after ~5 minutes? Close the game and rejoin - the second join is quick. |
