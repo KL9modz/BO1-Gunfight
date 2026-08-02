@@ -113,7 +113,8 @@ in a diff and on GitHub — **prefer that for anything new.** Either way: link r
 - [gunfight-us-security-audit](gunfight-us-security-audit.md) — technical hardening status; leaked RCON pw rotation still open.
 - [plutonium-serverkey-sets-browser-name](plutonium-serverkey-sets-browser-name.md) — the browser name = the server-key label, NOT sv_hostname.
 - [connection-interrupted-mitigations](connection-interrupted-mitigations.md) — operational cfg facts (sv_maxRate 25000 in the VPS dedicated.cfg; live-vs-decoy cfg paths; HUD stagger). The round-end plug ROOT CAUSE was the killcam timescale dilation — see [[killcam-slowmo-timescale-usercmd-backlog]].
-- [vps-status-log-notify-services](vps-status-log-notify-services.md) — the 3 boot-start box tasks and how status.json / admin.json / ntfy wire together.
+- [vps-status-log-notify-services](vps-status-log-notify-services.md) — the 3 boot-start box tasks and how status.json / admin.json / ntfy wire together; since 2026-08-02 all register_services tasks run through the run_service.ps1 flight recorder (per-task logs in storage\t5\logs\services\).
+- [console-mp-per-round-dvar-dump-flood](console-mp-per-round-dvar-dump-flood.md) — console_mp.log grows ~216MB/day: the ENGINE prints a full 3,078-line DVAR DUMP every round's map_restart (92% of volume). Accept/bound, don't chase. Also: raw\scripts\mp\mp_spawn_fix.gsc is Plutonium's OWN anti-exploit script, not a rogue file.
 
 ## RCON panel / tooling
 - [rcon-wrong-password-is-silent-not-an-error](rcon-wrong-password-is-silent-not-an-error.md) — Pluto drops a wrong password with no reply; looks exactly like a blocked port. `getstatus` is NOT a reachability probe. Compare password LENGTHS first — free, leaks nothing.

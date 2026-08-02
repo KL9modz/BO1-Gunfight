@@ -270,7 +270,10 @@ only a restart rolls it, and the engine's own `.000`–`.00N` roll then archives
 prunes those CLOSED `<log>.NNN` archives** to a per-base budget (`$LogArchiveBudgetMB`, default 400) for
 both `games_mp.log` and `console_mp.log`, and warns if a LIVE file passes `$LiveLogWarnMB` (800) — so a
 flood dvar left on can no longer fill the disk, but it will still bloat the *single live file* until the
-next restart. That is why the per-death `GF_POPUP` line stays dvar-gated **OFF** by default (`gf_debug_popup 0`):
+next restart. ⚠ **`console_mp.log` trips that warn line by DESIGN, not by fault**: the engine prints a
+full 3,078-line dvar dump at every round's `map_restart` (~216MB/day, 92% of the file) — grep the tail
+for `END DVAR DUMP` before suspecting a mod flood ([[console-mp-per-round-dvar-dump-flood]], which also
+identifies `raw\scripts\mp\mp_spawn_fix.gsc` as Plutonium's own anti-exploit script, not a rogue file). That is why the per-death `GF_POPUP` line stays dvar-gated **OFF** by default (`gf_debug_popup 0`):
 the pruning makes a *temporary* investigation safe, not permanent per-hit logging.
 
 **`GF_TEAMTRACE` — the team-write tracer** (`_gf_debug::gf_teamTrace`, dvar `gf_trace_teams`, default
