@@ -128,13 +128,28 @@ function Get-LogPath {
     return (Join-Path $dir ('players_{0}.log' -f (Get-Date -Format 'yyyy-MM-dd')))
 }
 
+# Returns $true only when the line actually reached the day-file. Under the script-wide
+# $ErrorActionPreference='Stop', an unguarded Add-Content here was a process-killer: one
+# transient lock (AV scan, a reader mid-sweep) and the whole service died with no evidence
+# (the 2026-08-02 death). One short retry absorbs the transient case; on a real failure the
+# CALLER leaves $state untouched, so the very same event re-derives from the next tick's
+# diff - a failed write delays the record by one tick, it never loses it.
 function Write-Event {
     param([string]$dir, [string]$verb, [hashtable]$p, [string]$extra = '')
     $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     $line  = '{0}  {1,-8} ip={2}  name="{3}"  guid={4}  ping={5}{6}' -f `
              $stamp, $verb, $p.ip, $p.name, $p.guid, $p.ping, $extra
-    Add-Content -Path (Get-LogPath $dir) -Value $line -Encoding UTF8
-    Write-Host $line
+    foreach ($attempt in 1, 2) {
+        try {
+            Add-Content -Path (Get-LogPath $dir) -Value $line -Encoding UTF8
+            Write-Host $line
+            return $true
+        } catch {
+            if ($attempt -eq 1) { Start-Sleep -Milliseconds 250 }
+            else { Write-Warning ("event write failed ({0}); state untouched, event re-derives next tick: {1}" -f $_.Exception.Message, $line) }
+        }
+    }
+    return $false
 }
 
 # --- Startup ------------------------------------------------------------------
@@ -147,7 +162,10 @@ $hadData   = $true    # only warn on the transition into a no-data stretch
 
 $banner = ('{0}  ----- conn_logger started (source={1} interval={2}s) -----' -f `
            (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $AdminJson, $IntervalSeconds)
-Add-Content -Path (Get-LogPath $LogDir) -Value $banner -Encoding UTF8
+# Best-effort: a locked day-file at startup must not kill the service before its first tick.
+# The Write-Host copy still reaches the per-service log via run_service.ps1 either way.
+try { Add-Content -Path (Get-LogPath $LogDir) -Value $banner -Encoding UTF8 }
+catch { Write-Warning ("startup banner write failed ({0}); continuing" -f $_.Exception.Message) }
 Write-Host $banner
 
 # --- Poll loop ----------------------------------------------------------------
@@ -167,13 +185,16 @@ while ($true) {
     }
     $hadData = $true
 
-    # New connections
+    # New connections. State is updated ONLY on a successful write - a failed write leaves
+    # the player out of $state, so the next tick's diff re-emits the CONNECT (delayed, never
+    # lost). Same pattern for departures below.
     foreach ($key in $current.Keys) {
         if (-not $state.ContainsKey($key)) {
             $p = $current[$key]
             $verb = if ($firstPoll -and $coldStart) { 'ONLINE' } else { 'CONNECT' }
-            Write-Event -dir $LogDir -verb $verb -p $p
-            $state[$key] = @{ key = $key; name = $p.name; ip = $p.ip; guid = $p.guid; firstSeen = (Get-Date).ToString('o') }
+            if (Write-Event -dir $LogDir -verb $verb -p $p) {
+                $state[$key] = @{ key = $key; name = $p.name; ip = $p.ip; guid = $p.guid; firstSeen = (Get-Date).ToString('o') }
+            }
         }
     }
 
@@ -190,11 +211,16 @@ while ($true) {
             } catch { }
         }
         $p = @{ ip = $s.ip; name = $s.name; guid = $s.guid; ping = '-' }
-        Write-Event -dir $LogDir -verb 'LEFT' -p $p -extra $extra
-        $state.Remove($key)
+        if (Write-Event -dir $LogDir -verb 'LEFT' -p $p -extra $extra) {
+            $state.Remove($key)
+        }
     }
 
-    Save-State -path $stateFile -state $state
+    # In-memory state is authoritative; a failed persist just means this tick's bookmark is
+    # stale on disk. Retried naturally next tick - do not let it kill the process (the state
+    # file shares the same transient-lock exposure as the day-file writes above).
+    try { Save-State -path $stateFile -state $state }
+    catch { Write-Warning ("state save failed ({0}); keeping in-memory state, retrying next tick" -f $_.Exception.Message) }
     $firstPoll = $false
     Start-Sleep -Seconds $IntervalSeconds
 }

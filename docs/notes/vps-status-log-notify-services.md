@@ -62,3 +62,23 @@ box-side secrets) so mod deploys don't purge them.
 
 RCON password for all three auto-reads from `dedicated.cfg` at runtime (never stored in a script or
 the logs/JSON). All are self-contained Windows PowerShell 5.1 (the box has no Node).
+
+**Flight recorder (added 2026-08-02):** every task registered by `register_services.ps1` now runs
+through **`tools/vps_services/run_service.ps1`**, which streams ALL of the service's output
+(stdout, Write-Host, warnings, and crucially the TERMINATING error that kills a service under
+their shared `$ErrorActionPreference='Stop'`) into a timestamped per-task log:
+**`storage\t5\logs\services\<TaskName>.log`** (outside the mods mirror, so deploy's `/MIR` can't
+delete it; start-time rollover to `.old` at 4MB). Launcher exits 1 on a service death so Task
+Scheduler's RestartOnFailure still fires. Why: GF-ConnLogger died 2026-08-02 13:45 and the ONLY
+evidence was a 6-min hole in the day-file - `-WindowStyle Hidden` sent every stream to a window
+nobody sees, the Task Scheduler operational log was disabled (register_services now enables it via
+`wevtutil`), and `watchdog_state.json` resets on recovery. The watchdog's own narration
+("DOWN -> restart issued") now lands in `GF-Watchdog.log`, and its every-3-min run leaves a
+heartbeat pair there. ⚠ Pass-through gotcha baked into the launcher: remaining-args arrive as a
+STRING array and array-splatting binds POSITIONALLY, so the launcher parses `-Name value` pairs
+into a named splat - never hand a service an arg value that itself starts with `-<letter>`.
+⚠ **GF-RconPanel is NOT routed** (registered by `setup_rcon_vps.ps1`, node process) - its output
+still vanishes; wire it the same way if its silence ever costs a diagnosis. The same 2026-08-02
+incident also hardened `conn_logger.ps1` itself: the day-file/state-file writes were unguarded
+process-killers; now a failed event write leaves `$state` untouched so the event re-derives from
+the next tick's diff (delayed, never lost), and a failed state save just retries next tick.

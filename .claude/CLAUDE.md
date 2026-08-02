@@ -1599,7 +1599,10 @@ table is in `docs/DEV.md` *Working remotely*. Don't re-run that hunt. Box helper
 `activity.json` plus the `.secured`-gated `admin.json`/`health.json`, all atomically), `GF-ConnLogger`
 (zero RCON — diffs `admin.json`), `GF-JoinNotify` (ntfy alerts), `GF-Watchdog` (short-lived, re-invoked
 every 3 min so it can't exhaust a retry budget; restarts dead tasks, recovers wedges, `map_rotate`s a
-stuck match). ⚠ **`GF-Watchdog` judges the GAME server by the `plutonium-bootstrapper-win32` PROCESS +
+stuck match). Every `register_services.ps1` task runs through the **`run_service.ps1` flight recorder**:
+all service output incl. the terminating error that killed it → `storage\t5\logs\services\<Task>.log`
+(timestamped, size-capped, outside the mirror; `GF-RconPanel` deliberately not routed — different
+registrar). Before 2026-08-02 a dead service left NO evidence ([[vps-status-log-notify-services]]). ⚠ **`GF-Watchdog` judges the GAME server by the `plutonium-bootstrapper-win32` PROCESS +
 `admin.json` liveness, never by `GF-GameServer`'s task State** — a GSC **compile crash** (`SV_Shutdown`)
 drops the game exe while the task's `cmd.exe`/bat wrapper survives, so State reads `Running` while the
 server is DOWN. Escalation ladder in `watchdog.ps1`: **3a** kills a wedged `plutonium.exe` updater

@@ -42,6 +42,16 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $toolsRoot = Split-Path -Parent $PSScriptRoot   # ...\mp_gunfight\tools
+. (Join-Path $toolsRoot 'common.ps1')           # Resolve-T5Root (service-log home below)
+
+# Every service runs THROUGH the flight-recorder launcher (run_service.ps1): all of a
+# service's output - including the terminating error that kills it - lands timestamped in
+# storage\t5\logs\services\<TaskName>.log. Before this, "-WindowStyle Hidden" sent
+# everything to a window nobody sees, so a dead service left no evidence (GF-ConnLogger,
+# 2026-08-02: a 6-minute day-file hole was the entire forensic record). The logs live
+# OUTSIDE the mods mirror so deploy.ps1's /MIR can never delete them.
+$launcher  = Join-Path $PSScriptRoot 'run_service.ps1'
+$svcLogDir = Join-Path (Resolve-T5Root) 'logs\services'
 
 $services = @(
     @{ Name = 'GF-ConnLogger'
@@ -124,6 +134,15 @@ $periodicSettings = New-ScheduledTaskSettingsSet `
 $periodicTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
     -RepetitionInterval (New-TimeSpan -Minutes 3) -RepetitionDuration (New-TimeSpan -Days 3650)
 
+# The Task Scheduler operational event log is OFF by default on Server 2019, which is one of
+# the three reasons the 2026-08-02 GF-ConnLogger death was unexplainable (no start/stop/exit
+# events existed). Enable it whenever services are (re)registered - idempotent, cheap, and it
+# rides register_services.ps1 so a migration rebuild gets it automatically.
+try {
+    & wevtutil.exe sl 'Microsoft-Windows-TaskScheduler/Operational' /e:true 2>$null
+    Write-Host 'Task Scheduler operational event log: enabled.'
+} catch { Write-Warning "could not enable the Task Scheduler operational log: $($_.Exception.Message)" }
+
 foreach ($svc in $services) {
     if (-not (Test-Path $svc.Script)) {
         Write-Warning "Skipping $($svc.Name): script not found ($($svc.Script))."
@@ -133,8 +152,15 @@ foreach ($svc in $services) {
         Write-Warning "Skipping $($svc.Name): needs $($svc.RequiresConfig) (not configured yet)."
         continue
     }
+    if (-not (Test-Path $launcher)) {
+        Write-Warning "Skipping $($svc.Name): launcher not found ($launcher)."
+        continue
+    }
 
-    $argLine = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}"' -f $svc.Script
+    # Route through the flight recorder; the service's own args ride behind the Gf* params
+    # and land in run_service.ps1's -GfServiceArgs (ValueFromRemainingArguments) verbatim.
+    $argLine = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}" -GfScript "{1}" -GfLog "{2}"' -f `
+               $launcher, $svc.Script, (Join-Path $svcLogDir ($svc.Name + '.log'))
     if ($svc.Args) { $argLine += ' ' + $svc.Args }
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $argLine
 
@@ -157,3 +183,4 @@ foreach ($svc in $services) {
 
 Write-Host ''
 Write-Host 'Done. Check status any time with:  register_services.ps1 -List'
+Write-Host ('Per-service output logs: {0}\<TaskName>.log' -f $svcLogDir)

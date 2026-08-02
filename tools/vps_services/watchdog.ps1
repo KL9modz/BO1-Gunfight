@@ -72,6 +72,9 @@ if (-not $ModRootPath)      { $ModRootPath      = Resolve-ModRoot }
 if (-not $CfgPath)          { $CfgPath          = Join-Path (Resolve-T5Root) 'dedicated.cfg' }
 
 function Log($msg) {
+    # Write-Host is not lost: run_service.ps1 (the task launcher since 2026-08-02) captures
+    # every stream to storage\t5\logs\services\GF-Watchdog.log - before that, this narration
+    # went to a hidden window and a restart the watchdog performed left no durable record.
     $t = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     Write-Host "[$t] $msg"
 }
