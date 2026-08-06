@@ -24,7 +24,10 @@
 #          pinned to the home IP", which is the property we actually care about.
 #     7  account/group management (30d)  -> low + high-signal. Per-event is fine.
 #     4  RDP logons (30d)                -> low + high-signal. Per-event is fine.
-#     9  service installs (30d)          -> low. Per-event, low priority.
+#     9  service installs (30d)          -> low volume, BUT the most frequent single source is
+#          Microsoft Defender re-registering its own kernel drivers (KslD, ~00:30 nightly, 3 of
+#          the 10 events on record). Per-event alerting on that is pure fatigue, so section 7
+#          classifies by Authenticode: Microsoft-signed = log only, everything else = push.
 #
 # ⚠ AUDIT POLICY GAPS (auditpol, read live off this box - a detector for these fires NEVER):
 #     "Other Object Access Events"       = No Auditing -> 4698 scheduled-task-created is DEAD.
@@ -307,12 +310,98 @@ if ($failed.Count -ge 5) {
 $new['secRecordId'] = Max-RecordId $secEvents $secBookmark
 
 # ══ 7. service installed (System 7045) - needs no auditpol ═══════════════════
+# This used to push for EVERY 7045 regardless of what installed. Measured cost of that: KslD - a
+# Microsoft Defender kernel driver - is the single most frequent 7045 on this box (3 of the 10
+# events on record: 06-29, 07-08, 08-06) because Defender RE-REGISTERS its demand-start drivers
+# during each platform update, around 00:30 nightly. A watcher that buzzes for routine antivirus
+# churn trains you to swipe it away, and the one alert that matters gets swiped with it.
+#
+# ⚠ Classify by CODE SIGNATURE, never by NAME. A name allowlist ("KslD is fine") is defeated by
+# dropping a hostile KslD.sys at another path - Authenticode is a property of the BYTES, not the
+# filename. Three tiers:
+#   Microsoft-signed + Valid       -> LOG ONLY. Routine platform churn. Still durably recorded in
+#                                     logs\services\GF-SecurityWatch.log via run_service.ps1.
+#   validly signed by anyone else  -> 'default' push. Third-party drivers are legitimate in
+#                                     general, but nothing on THIS box should be installing one.
+#   binary NOT on disk             -> 'default' push. Install-then-delete IS an anti-forensic
+#                                     move, BUT it is also what Defender does every update: it
+#                                     registers a randomly-named temp driver (MpKsld1e30cb9,
+#                                     2026-06-29) and deletes it minutes later. 3 of the 10
+#                                     historical 7045s on this box are vanished binaries, so
+#                                     'high' here would just rebuild the fatigue this fix removes.
+#                                     Report it, don't scream it.
+#   EXISTS but unsigned / invalid  -> 'high' push. THIS is the tier worth waking up for: positive
+#                                     evidence of an unverifiable kernel driver sitting on disk.
+#                                     Defender never produces this case; an attacker does.
+#
+# ⚠ Tiers were calibrated by replaying all 10 real 7045s on this box through the classifier (see
+# the file header's rule: size detectors against MEASURED volume, not intuition). Result: 6 go
+# silent (KslD x3, Defender Core, WdAiNisDrv, OpenSSH), 1 informs (Mozilla), 3 inform-as-vanished
+# (MpKsld temp + Windows Admin Center x2). Zero would have paged. Re-run that replay before
+# changing a tier.
+
+# ImagePath arrives in several shapes: relative to %SystemRoot% ("system32\drivers\wd\KslD.sys"),
+# NT-native ("\??\C:\..." or "\SystemRoot\..."), quoted, and/or with trailing switches. Normalize
+# before touching disk, or every signature check silently fails open.
+function Resolve-ServiceImagePath($raw) {
+    $p = [string]$raw
+    if ([string]::IsNullOrWhiteSpace($p)) { return '' }
+    $p = $p.Trim()
+    if ($p.StartsWith('"')) { $p = ($p -split '"')[1] }        # quoted path wins over trailing args
+    else { $p = ($p -split '\s+-|\s+/')[0].Trim() }            # strip switch-style args
+    $p = $p -replace '^\\\?\?\\', ''                           # NT-native prefix
+    $p = $p -replace '^\\SystemRoot\\', ($env:SystemRoot + '\')
+    if ($p -notmatch '^[A-Za-z]:\\') { $p = Join-Path $env:SystemRoot $p }   # relative to %SystemRoot%
+    return $p
+}
+
+# Never throws: a signature check that errors must degrade to "untrusted" (which alerts), never
+# take the watcher down or silently pass.
+function Get-BinaryTrust($path) {
+    $r = [pscustomobject]@{ exists = $false; status = 'FileMissing'; signer = ''; isMicrosoft = $false }
+    if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path)) { return $r }
+    $r.exists = $true
+    try {
+        $sig = Get-AuthenticodeSignature -LiteralPath $path -ErrorAction Stop
+        $r.status = [string]$sig.Status
+        if ($sig.SignerCertificate) {
+            $r.signer = [string]$sig.SignerCertificate.Subject
+            # Match the ORGANISATION, not the CN: Microsoft signs variously as CN=Microsoft Windows,
+            # CN=Microsoft Corporation, CN=Microsoft Windows Publisher - all carry O=Microsoft Corporation.
+            $r.isMicrosoft = ($r.status -eq 'Valid' -and $r.signer -match 'O=Microsoft Corporation')
+        }
+    } catch { $r.status = "SigCheckFailed: $($_.Exception.Message)" }
+    return $r
+}
+
 $sysBookmark = [int64](State-Get $state 'sysRecordId' 0)
 $sysEvents   = Get-NewEvents 'System' $sysBookmark @(7045)
 foreach ($e in $sysEvents) {
+    $svc  = Xml-Data $e 'ServiceName'
+    $img  = Xml-Data $e 'ImagePath'
+    $type = Xml-Data $e 'ServiceType'
+    $trust = Get-BinaryTrust (Resolve-ServiceImagePath $img)
+    # Full DNs are unreadable on a phone - show the CN only.
+    $who = $trust.signer
+    if ($who -match 'CN=([^,]+)') { $who = $Matches[1] }
+
+    if ($trust.isMicrosoft) {
+        Log "7045 $svc ($img) - Microsoft-signed [$who] - routine, no push"
+        continue
+    }
+
+    $pri = 'default'; $tags = @('gear'); $verdict = "signed by: $who [$($trust.status)]"
+    if (-not $trust.exists) {
+        # Informational, NOT high - see the tier rationale above (Defender's own temp drivers).
+        $tags = @('grey_question')
+        $verdict = 'binary not on disk (transient installer, or removed after install)'
+    } elseif ($trust.status -ne 'Valid') {
+        $pri = 'high'; $tags = @('rotating_light')
+        $verdict = "UNSIGNED / UNVERIFIABLE [$($trust.status)] - treat as compromise until explained"
+    }
     Alert "$($script:srvName) - service installed" `
-          ("$(Xml-Data $e 'ServiceName') at $($e.TimeCreated.ToString('HH:mm:ss'))`n$(Xml-Data $e 'ImagePath')") `
-          'default' @('gear')
+          ("$svc at $($e.TimeCreated.ToString('HH:mm:ss'))`n$img`n$type`n$verdict") `
+          $pri $tags
 }
 $new['sysRecordId'] = Max-RecordId $sysEvents $sysBookmark
 
