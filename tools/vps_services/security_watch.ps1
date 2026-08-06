@@ -30,11 +30,14 @@
 #          classifies by Authenticode: Microsoft-signed = log only, everything else = push.
 #
 # ⚠ AUDIT POLICY GAPS (auditpol, read live off this box - a detector for these fires NEVER):
-#     "Other Object Access Events"       = No Auditing -> 4698 scheduled-task-created is DEAD.
-#                                          Scheduled tasks are THE classic persistence trick, so
-#                                          this is a real blind spot. Enable with:
-#         auditpol /set /subcategory:"Other Object Access Events" /success:enable
-#                                          (it is chatty - measure before trusting it.)
+#     "Other Object Access Events"       = No Auditing -> Security 4698 is dead. ✅ CLOSED
+#                                          2026-08-06 WITHOUT enabling it: section 7b reads task
+#                                          create/delete from the TaskScheduler OPERATIONAL log
+#                                          (106/141) instead, which was already enabled, is
+#                                          precisely scoped, and avoids the COM+ events that
+#                                          share that subcategory. ⚠ Do NOT run the auditpol
+#                                          line that used to be here - it buys nothing now and
+#                                          adds Security-log volume.
 #     "MPSSVC Rule-Level Policy Change"  = No Auditing -> Security 4946-4954 dead. Covered
 #                                          instead by the firewall POSTURE check below.
 #     "Security System Extension"        = No Auditing -> 4697 dead. System/7045 covers it and
@@ -404,6 +407,62 @@ foreach ($e in $sysEvents) {
           $pri $tags
 }
 $new['sysRecordId'] = Max-RecordId $sysEvents $sysBookmark
+
+# ══ 7b. scheduled task REGISTERED / DELETED ══════════════════════════════════
+# Scheduled tasks are THE classic persistence trick and this box runs 8 of them, so "a task
+# appeared" is a detector worth having. The file header long carried a TODO to enable the
+# Security-log route (auditpol "Other Object Access Events" -> 4698). ⚠ DON'T - that route was
+# measured and rejected 2026-08-06 in favour of this one:
+#   * The TaskScheduler OPERATIONAL log already carries the same facts (106 registered, 141
+#     deleted, 140 updated) and has been enabled since 2026-08-02 by register_services.ps1, so
+#     this costs no auditpol change, no extra Security-log volume, and none of the COM+ noise
+#     that shares the "Other Object Access Events" subcategory.
+#   * It needs no privilege change on a box whose whole point is being hard to get into.
+#
+# MEASURED over 2.9 days on this box before writing a line of it:
+#   id 140 (task UPDATED)    120 events = ~41/DAY -> UNUSABLE. Excluded outright. Windows
+#                            rewrites its own maintenance tasks constantly; same lesson as the
+#                            671 "Accepted publickey" lines in the header.
+#   id 106 (REGISTERED)        4 events   |  ALL EIGHT were Windows churning two built-in tasks:
+#   id 141 (DELETED)           4 events   |  UpdateOrchestrator\AC Power Download and
+#                                         |  Windows Defender\Windows Defender Scheduled Scan.
+#
+# So the filter is the built-in NAMESPACE, not a name list: anything under \Microsoft\Windows\ is
+# Windows maintaining itself -> log only. Measured events OUTSIDE that namespace: ZERO. The only
+# expected source is your own register_services.ps1 run, which you initiate and will recognise.
+# That makes a registration outside \Microsoft\Windows\ a near-perfect signal, so it pages.
+#
+# ⚠ Residual, stated honestly: an attacker with admin could create their task INSIDE
+# \Microsoft\Windows\ to land in the log-only tier. Closing that would mean alerting on 41
+# events/day, which trains you to ignore all of them - a strictly worse defence. Admin is already
+# game over for this detector either way; it exists to catch the careless case, which is most.
+# ⚠ The operational log is CIRCULAR at 10MB (~3 days at current churn). If the watcher is down
+# longer than that, rolled-off events are simply missed - the RecordId bookmark stays correct,
+# it just never sees them. Acceptable for a 3-minute cadence.
+$taskBookmark = [int64](State-Get $state 'taskRecordId' 0)
+$taskEvents   = Get-NewEvents 'Microsoft-Windows-TaskScheduler/Operational' $taskBookmark @(106, 141)
+foreach ($e in $taskEvents) {
+    $tn = Xml-Data $e 'TaskName'
+    $by = Xml-Data $e 'UserContext'
+    if ([string]::IsNullOrWhiteSpace($by)) { $by = Xml-Data $e 'UserName' }
+    $what = if ($e.Id -eq 106) { 'registered' } else { 'deleted' }
+
+    # Built-in namespace = Windows maintaining itself. 100% of measured volume.
+    if ($tn -like '\Microsoft\Windows\*') {
+        Log "task $what (builtin, no push): $tn by $by"
+        continue
+    }
+    if ($e.Id -eq 106) {
+        Alert "$($script:srvName) - scheduled task registered" `
+              ("$tn`nby: $by at $($e.TimeCreated.ToString('HH:mm:ss'))`nScheduled tasks are a persistence mechanism. If this was not your deploy (register_services.ps1), investigate now.") `
+              'high' @('rotating_light', 'calendar')
+    } else {
+        Alert "$($script:srvName) - scheduled task deleted" `
+              ("$tn`nby: $by at $($e.TimeCreated.ToString('HH:mm:ss'))") `
+              'default' @('calendar')
+    }
+}
+$new['taskRecordId'] = Max-RecordId $taskEvents $taskBookmark
 
 # ══ 8. firewall POSTURE (not the event stream) ═══════════════════════════════
 # 196 "rule added" events in 30d makes tailing useless. Snapshot the property we care about
