@@ -28,10 +28,16 @@ it), and it's the platform's own promo space. Not a route we take.
 
 **What we DO own instead (the real MOTD surfaces):**
 - **`sv_motd`** — a real, documented Plutonium dvar: custom message on the **join/intel loadscreen**;
-  blank = default intel messages. Already set in `dedicated.cfg`:
-  `set sv_motd "^3Welcome to ^1Gunfight^3! Join us at ^5discord.gg/blackops"`. This is the closest
-  legitimate analogue and it reaches every joining player. (Related engine dvars `motd` / `g_motd` /
-  `cl_motdString` / `scr_motd` exist but are inert here.)
+  blank = default intel messages. This is the closest legitimate analogue and it reaches every joining
+  player. (Related engine dvars `motd` / `g_motd` / `cl_motdString` / `scr_motd` exist but are inert
+  here.) ⚠ **CORRECTED 2026-08-06:** this bullet used to claim it was "already set in `dedicated.cfg`"
+  with a `discord.gg/blackops` value — that was true of the LAPTOP's cfg copy only. The **live box had
+  no `sv_motd` line at all**, so the surface this note calls our best one was blank in production for
+  as long as the claim stood. Now set live and persisted on the box:
+  `set sv_motd "^3Welcome to ^1Gunfight^3! Visit us at ^5gunfight.us"`. Lesson is the standing rule —
+  [[read-the-server-not-the-file]]: a cfg on the laptop is an intention, the running process is reality.
+  Colour codes DO render here (unlike `sv_hostname` — see [[sv-hostname-is-discord-rich-presence]] for
+  the full T5 colour table).
 - **In-game HUD** via the menu layer (`ui_mp/hud_gf_health.menu`) — the persistent "gunfight.us"
   watermark on the TODO. Zero hudelem cost, see [[settext-configstring-exhaustion]].
 - Join splash (`_hud_message::oldNotifyMessage`) / a `say` line under `sv_sayName "Console"`.
