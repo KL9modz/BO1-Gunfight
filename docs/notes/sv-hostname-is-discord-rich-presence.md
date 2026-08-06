@@ -63,6 +63,11 @@ Edit `seta sv_hostname "..."` in both. **Verified live 2026-08-06**: the card ch
 exit** (it round-trips through the archived dvar). So Plutonium's runtime "can only be changed by the
 server" block does **not** intercept the `seta` at config load.
 
+⚠ **The config file is the ONLY route - there is no console one-liner.** Typing
+`sv_hostname "..."` in a client console is refused with
+`Error: sv_hostname can only be changed by the server` (confirmed in-game 2026-08-06; that message is
+not in `t5mp.exe`, so the block is Plutonium's). This is what makes the per-player route expensive to
+distribute: unlike `cl_maxpackets` or `cg_fov`, it cannot be handed out as a paste-this line.
 ⚠ **Edit with the game CLOSED.** The client rewrites these files on exit, so an edit made while it is
 running is silently discarded.
 ⚠ Plain text only - Plutonium strips `^0`-`^9`/`^:`/`^;` before publishing, so `^<` and up would appear
