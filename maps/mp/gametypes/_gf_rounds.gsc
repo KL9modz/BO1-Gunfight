@@ -4645,6 +4645,29 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
     if ( !isDefined( self.pers["team"] ) || !isDefined( eAttacker.pers["team"] ) )
         return iDamage;
 
+    // Killing-blow hitmarker: red on the shot that finishes someone, stock white on every other
+    // hit. This recolors the hudelem STOCK already made for this client at connect
+    // (_damagefeedback::onPlayerConnect -> .hud_damagefeedback), so it adds no element and costs
+    // nothing against the per-client drawn cap, and it is a hudelem field, not a reliable command.
+    // Three things make the one-liner safe, and all three are load-bearing:
+    //   - Ordering: level.onPlayerDamage fires at _globallogic_player.gsc:741, stock does not flash
+    //     the marker until :968, so the colour is on the element before it is shown.
+    //   - setShader does NOT clear .color (stock depends on that ordering itself in
+    //     _hud_util::createPrimaryProgressBar, which colours the bar then re-setShaders it).
+    //   - self.health is still PRE-damage here (finishPlayerDamage runs at :1063) and Body Armor's
+    //     -20% already came off at :677, so iDamage >= health is the real killing-blow test even
+    //     though every player in this mod carries specialty_armorvest.
+    // Placed ABOVE the same-team return on purpose: .color persists on the element, so a
+    // friendly-fire marker (stock draws one — its check at :948 only excludes self-damage) would
+    // otherwise still be wearing the last kill's red. Every marker-drawing hit must re-stamp it.
+    if ( isDefined( eAttacker.hud_damagefeedback ) )
+    {
+        if ( self.pers["team"] != eAttacker.pers["team"] && isDefined( self.health ) && iDamage >= self.health )
+            eAttacker.hud_damagefeedback.color = ( 1, 0.15, 0.15 );
+        else
+            eAttacker.hud_damagefeedback.color = ( 1, 1, 1 );
+    }
+
     if ( self.pers["team"] == eAttacker.pers["team"] )
         return iDamage;
 

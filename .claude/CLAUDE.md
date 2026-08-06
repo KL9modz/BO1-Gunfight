@@ -860,6 +860,20 @@ try to bundle the `.iwi` → build error.
 - **Kill/score popup:** renders "Elimination"/"Assist" on its own `NewScoreHudElem` (`self.gf_popupElem`,
   a separate pool from the ~17 cap), styled to match the stock yellow popup; the engine's own
   `hud_rankscroreupdate` is parked offscreen each spawn so stock "+N" XP pushes can't race ours.
+- **Killing-blow hitmarker (red):** the T5 hitmarker is a **stock GSC hudelem**, not engine-drawn —
+  `_damagefeedback::onPlayerConnect` makes one `.hud_damagefeedback` per client and only ever
+  re-`setShader`s + fades it. So `gf_onPlayerDamage` just writes `.color`: red on the shot that kills,
+  white on everything else. **Adds no element** (nothing against the ~17-20 drawn cap), no reliable
+  command, no `mod.ff` rebuild. Three load-bearing facts: `level.onPlayerDamage` fires at
+  `_globallogic_player.gsc:741` and stock flashes the marker at `:968` (so our write lands first);
+  **`setShader` does not clear `.color`** (stock relies on that in `_hud_util::createPrimaryProgressBar`);
+  and `self.health` is still pre-damage there while Body Armor's −20% already came off at `:677`, so
+  `iDamage >= health` is an accurate kill test despite the base-set `specialty_armorvest`.
+  ⚠ The white `else` branch is **not** cosmetic tidiness — `.color` persists on the element, so every
+  marker-drawing hit must re-stamp it or the last kill's red rides along. That is also why the block
+  sits **above** the same-team return: stock draws a marker for friendly fire too (`:948` only
+  excludes self-damage). ⚠ Known edge, accepted: a shotgun's pellets are separate damage events in one
+  frame, so a non-lethal pellet processed after the lethal one whitens the marker.
 
 ⚠ **Every `setClientDvar` is ONE reliable server command, and the client's ring buffer for them is
 FIXED (`MAX_RELIABLE_COMMANDS`).** Blowing it produces **two different client `Com_Error` disconnects —
