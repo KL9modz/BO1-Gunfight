@@ -28,6 +28,14 @@
 // GENERAL CONFIGURATION                        //
 //////////////////////////////////////////////////
 
+// sv_hostname is NOT the server-browser name (that is the Plutonium server-key label). It IS, however,
+// the line Plutonium's Discord rich presence publishes for every player on the server, so it is a free
+// ad surface: leave it unset and everyone's Discord reads BO1's engine default "BlackOpsPrivate".
+// Discord renders it as PLAIN TEXT -- no colour, no markdown, no clickable link -- and Plutonium
+// strips ^ colour codes before publishing anyway. NO COLOUR CODES HERE: nothing else displays this
+// dvar either (the browser name is the key label), so a ^ code renders nowhere and only shows up
+// literally in the serverinfo and the logs. Keep it short and put the domain in it.
+set sv_hostname "BlackOpsGunfight.com"              // Discord presence + serverinfo name.
 set g_allowvote "0"                                 // Allow Vote.
 set g_inactivity "300"                              // Enable or Disable auto kick feature for idle/AFK players.
 set g_password ""                                   // Password Protected Game. Leave blank if you want players to join.
