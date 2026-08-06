@@ -38,10 +38,11 @@
 set sv_hostname "BlackOpsGunfight.com"              // Discord presence + serverinfo name.
 // Custom message on the join/intel loadscreen -- every joining player reads it while they load, which
 // makes it the strongest message surface we own. Blank = the stock intel messages. Unlike sv_hostname,
-// colour codes DO render here. Codes are indexed off '0', so valid ones run past ^9 into punctuation:
+// colour codes DO render here. The engine's parser is literally `index = char - '0'` with a bound of
+// 17 and a fall-back to white, so valid codes run past ^9 into ASCII punctuation and ^A+ is white:
 // ^1 red ^2 green ^3 pale yellow ^4 blue ^5 cyan ^6 pink ^7/^8/^9 white ^: dark red ^; sea green
 // ^< ORANGE ^= steel blue ^> light grey ^? purple ^@ brown.
-set sv_motd "^3Welcome to ^1Gunfight^3! Visit us at ^5gunfight.us"   // Join/intel loadscreen message.
+set sv_motd "^7Welcome to Gunfight! Visit us at ^5gunfight.us"   // Join/intel loadscreen message.
 set g_allowvote "0"                                 // Allow Vote.
 set g_inactivity "300"                              // Enable or Disable auto kick feature for idle/AFK players.
 set g_password ""                                   // Password Protected Game. Leave blank if you want players to join.

@@ -64,9 +64,24 @@ address rather than by name. The behaviour is settled by observation, not read o
 
 ## Bonus: the real colour-code table
 
-Pulled from `t5mp.exe` at `0x6C2CE8`, 17 entries indexed by the character's offset from `'0'` - which
-is why valid codes run past `^9` into ASCII punctuation. **Orange is `^<`** (`0.97 0.58 0.11` =
-`#F7941C`). `^0` black, `^1` red (1, .2, .2), `^2` green, `^3` pale yellow, `^4` blue, `^5` cyan,
+Pulled from `t5mp.exe` at `0x6C2CE8` (VA `0xAC3AE8`), 17 entries of vec4 float. The parser is the
+19-byte function at file offset `0x14BC70`, and it settles the "is orange real" question outright -
+there is **no digit check at all**:
+
+```asm
+mov   al, [esp+4]      ; the char after '^'
+sub   al, 0x30         ; index = char - '0'
+cmp   al, 0x11         ; 17 = table size
+movzx eax, al
+jb    use_it           ; 0..16 -> real entry
+mov   eax, 7           ; else WHITE fallback
+ret
+```
+
+Its one caller (`0xFC78D`, the only xref to the table) re-checks `cmp eax, 0x11` then
+`shl eax, 4` + table base. So codes run past `^9` into ASCII punctuation, `^A`+ falls back to white,
+and a char below `'0'` wraps unsigned and also lands on white. **Orange is `^<`** (`'<'` = 0x3C, minus
+0x30 = index **12**; `0.97 0.58 0.11` = `#F7941C`). `^0` black, `^1` red (1, .2, .2), `^2` green, `^3` pale yellow, `^4` blue, `^5` cyan,
 `^6` pink, **`^7` `^8` `^9` are all plain white** (forum lists claiming grey/brown are wrong for T5),
 `^:` dark red, `^;` sea green, `^<` **orange**, `^=` steel blue, `^>` light grey, `^?` purple,
 `^@` brown. These render wherever the game draws colour codes (server-key label, `sv_motd`, chat) -
