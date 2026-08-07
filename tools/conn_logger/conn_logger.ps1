@@ -126,11 +126,18 @@ function Get-PanelSnapshot {
 # (missing / locked-mid-write / bad JSON / stale). $null => caller SKIPS the diff.
 function Read-AdminSnapshot {
     param([string]$path, [int]$staleSeconds)
-    if (-not (Test-Path $path)) { return $null }
+    # EVERY filesystem touch is inside the try, Test-Path included. Under this script's
+    # $ErrorActionPreference='Stop' a transient "Access is denied" from Test-Path is TERMINATING,
+    # and that is exactly what killed the service at 2026-08-07 08:29:04 - while the Get-Content
+    # one line below was ALREADY guarded against the same status_service file-swap race. Probing
+    # a file another process is actively replacing can fail just as readily as reading it, so the
+    # probe needs the same guard as the read. Any failure here means the same thing either way:
+    # no trustworthy snapshot this tick, so return $null and let the caller skip the diff.
     try {
+        if (-not (Test-Path -LiteralPath $path)) { return $null }
         $obj = Get-Content -Raw -Path $path -ErrorAction Stop | ConvertFrom-Json
     } catch {
-        return $null   # torn read while status_service swaps the file, or bad JSON
+        return $null   # missing, locked mid-swap, access denied, torn read, or bad JSON
     }
     if ($obj.updated) {
         try {
@@ -173,16 +180,20 @@ function Get-CurrentPlayers {
 function Load-State {
     param([string]$path)
     $state = @{}
-    if (Test-Path $path) {
-        try {
+    # Test-Path INSIDE the try - same reason as Read-AdminSnapshot. A throw here would kill the
+    # process before its first tick, and Task Scheduler's RestartOnFailure would then crash-loop
+    # it. An unreadable state file is harmless: an empty $state just re-emits CONNECT for whoever
+    # is already online, which is strictly better than not starting.
+    try {
+        if (Test-Path -LiteralPath $path) {
             $arr = Get-Content -Raw -Path $path | ConvertFrom-Json
             foreach ($r in $arr) {
                 if ($null -ne $r -and $r.key) {
                     $state[$r.key] = @{ key = $r.key; name = $r.name; ip = $r.ip; guid = $r.guid; firstSeen = $r.firstSeen }
                 }
             }
-        } catch { }
-    }
+        }
+    } catch { }
     return $state
 }
 
@@ -225,9 +236,16 @@ function Write-Event {
 }
 
 # --- Startup ------------------------------------------------------------------
-if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
+# The last two unguarded filesystem probes. These run once per process rather than every 5s, so
+# they are far less likely to hit a race - but a throw here is WORSE than one in the loop: the
+# service dies before its first tick and RestartOnFailure turns that into a crash-loop, retrying
+# 999 times a minute apart. A missing log dir is fatal anyway (Write-Event would fail), so let
+# that one propagate; the coldStart probe is cosmetic and must never be fatal - failing to read
+# it merely mislabels the first batch ONLINE vs CONNECT.
+if (-not (Test-Path -LiteralPath $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
 
-$coldStart = -not (Test-Path $stateFile)
+$coldStart = $true
+try { $coldStart = -not (Test-Path -LiteralPath $stateFile) } catch { $coldStart = $false }
 $state     = Load-State $stateFile
 $firstPoll = $true
 $hadData   = $true    # only warn on the transition into a no-data stretch
