@@ -34,7 +34,17 @@ param(
     [string] $LogDir          = '',
     # Ignore an admin.json older than this many seconds (status_service dead / stuck)
     # so a stale file is not mistaken for the live roster.
-    [int]    $StaleSeconds    = 30
+    [int]    $StaleSeconds    = 30,
+    # Loopback port of the RCON panel. When admin.json is stale/absent this logger asks the
+    # panel's /api/status directly instead of going blind - see the fallback note below. Set 0
+    # to disable the fallback and restore file-only behaviour.
+    [int]    $PanelPort       = 3000,
+    # The panel's /api/status needs the target server + rcon password like any other caller
+    # (it proxies rcon, it does not guess). Password is read from dedicated.cfg at runtime,
+    # never stored here - same contract as status_service and join-notify.
+    [string] $RconHost        = '127.0.0.1',
+    [int]    $RconPort        = 28960,
+    [string] $CfgPath         = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,6 +58,68 @@ $storageT5 = Resolve-T5Root
 if ([string]::IsNullOrEmpty($LogDir)) { $LogDir = Join-Path $storageT5 'logs' }
 
 $stateFile = Join-Path $LogDir '.connstate.json'
+
+# --- Panel fallback: why this exists ------------------------------------------
+# Reading admin.json is the cheap path (zero rcon), but it has a SILENT DATA-LOSS mode. When the
+# file is stale/absent/offline this logger skips its diff (correctly - a missing snapshot must
+# never read as "everyone left"), and a player who joins AND leaves inside that window is never
+# recorded at all. Measured 2026-08-06: 4/9/15/16 blind stretches per day across 08-03..08-06,
+# and 2 of 52 players announced by GF-JoinNotify in that window (AdrianRGamer, "Mr") appear
+# NOWHERE in the day-files. The connect history is the one dataset on this box nothing else
+# reproduces (MIGRATION.md calls it irreplaceable), so a 4% silent loss rate is not acceptable.
+#
+# GF-JoinNotify never went blind through any of it because it reads the panel's /api/status
+# directly. So does this logger now, but ONLY when the file path fails - the file stays the
+# default, and the fallback costs one extra request to a queue that is already coalescing.
+# ⚠ This is NOT a second rcon poller: it goes through the panel's paced/coalescing queue, the
+# same sanctioned route status_service and join-notify use. Never point it at rcon directly.
+# ⚠ The panel PROXIES rcon - it does not guess a target. Called with no query params it falls
+# back to loopback defaults with an EMPTY password, rcon auth fails, and the fallback silently
+# returns nothing (caught end-to-end 2026-08-07: the first cut did exactly this and logged
+# "no data from admin.json OR the panel" while the panel was perfectly healthy). Pass
+# host/port/password explicitly, exactly as join-notify and status_service do.
+if ([string]::IsNullOrEmpty($CfgPath)) { $CfgPath = Join-Path $storageT5 'dedicated.cfg' }
+$script:PanelUrl = ''
+if ($PanelPort -gt 0) {
+    $pw = ''
+    try { $pw = Get-RconPassword -CfgPath $CfgPath } catch { $pw = '' }
+    if ([string]::IsNullOrEmpty($pw)) {
+        Write-Warning "no rcon_password found in $CfgPath - panel fallback DISABLED (file-only, blind windows return)"
+    } else {
+        $script:PanelUrl = 'http://127.0.0.1:{0}/api/status?host={1}&port={2}&password={3}' -f `
+                           $PanelPort, $RconHost, $RconPort, [uri]::EscapeDataString($pw)
+    }
+}
+
+# Shape-convert the panel's /api/status JSON into the same object Read-AdminSnapshot returns, so
+# the diff downstream cannot tell which source it came from. The panel's parsed players carry
+# the identical field names (num/name/ping/guid/bot/addr) via tools\status_parse.js.
+function Convert-PanelStatus {
+    param($panel)
+    if ($null -eq $panel -or -not $panel.ok) { return $null }
+    $players = @()
+    foreach ($p in @($panel.players)) {
+        if ($null -eq $p) { continue }
+        # bot -eq $false is a POSITIVE human claim; $null (unclassifiable) must not be logged.
+        if ($p.bot -ne $false) { continue }
+        $players += ,([pscustomobject]@{
+            num  = $p.num
+            name = [string]$p.name
+            ping = $(if ($null -ne $p.ping) { $p.ping } else { 0 })
+            guid = [string]$p.guid
+            ip   = [string]$p.addr
+        })
+    }
+    return [pscustomobject]@{ updated = (Get-Date).ToString('o'); online = $true; players = $players }
+}
+
+function Get-PanelSnapshot {
+    if ([string]::IsNullOrEmpty($script:PanelUrl)) { return $null }
+    try {
+        $r = Invoke-RestMethod -UseBasicParsing -TimeoutSec 15 -Uri $script:PanelUrl
+        return (Convert-PanelStatus $r)
+    } catch { return $null }   # panel down too -> genuinely no data this tick
+}
 
 # --- Read the admin.json snapshot ---------------------------------------------
 # Returns the parsed object, or $null when there is no trustworthy data this tick
@@ -170,18 +242,40 @@ Write-Host $banner
 
 # --- Poll loop ----------------------------------------------------------------
 while ($true) {
+    $src     = 'admin.json'
     $snap    = Read-AdminSnapshot -path $AdminJson -staleSeconds $StaleSeconds
     $current = Get-CurrentPlayers -snap $snap
 
+    # File path gave nothing usable -> ask the panel before declaring a blind tick. This is the
+    # whole point of the fallback: the old code went blind here and lost sessions outright.
     if ($null -eq $current) {
-        # No fresh, online snapshot this tick. Do NOT diff - skip so a missing/stale
-        # admin.json (status_service down, or server offline) is not read as a mass LEFT.
+        $snap = Get-PanelSnapshot
+        $current = Get-CurrentPlayers -snap $snap
+        if ($null -ne $current) { $src = 'panel' }
+    }
+
+    if ($null -eq $current) {
+        # BOTH sources failed - genuinely no data (server down, or panel down too). Skipping the
+        # diff is still right: a missing snapshot must never read as a mass LEFT.
         if ($hadData) {
-            Write-Warning 'no fresh online admin.json this tick (status_service down or server offline); skipping diff'
+            Write-Warning 'no data from admin.json OR the panel; skipping diff (server offline?)'
             $hadData = $false
+            $script:blindSince = Get-Date
         }
         Start-Sleep -Seconds $IntervalSeconds
         continue
+    }
+    # Recovery was previously SILENT, so a blind stretch had no measurable duration and this
+    # whole data-loss class went unnoticed until a player was spotted missing by hand. Say how
+    # long we were blind - that number is the thing to watch.
+    if (-not $hadData) {
+        $blindFor = 0
+        if ($script:blindSince) { $blindFor = [int]((Get-Date) - $script:blindSince).TotalSeconds }
+        Write-Host ("[{0}] data RECOVERED via {1} after {2}s blind (any session that started AND ended in that window is lost)" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $src, $blindFor)
+        $script:blindSince = $null
+    }
+    if ($src -eq 'panel') {
+        Write-Host ("[{0}] admin.json unusable this tick - roster read from the panel instead" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
     }
     $hadData = $true
 

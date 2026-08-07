@@ -186,7 +186,29 @@ function Write-Snapshot {
     # No-BOM UTF-8: a leading BOM is legal but trips strict JSON consumers (jq, some
     # parsers). Browsers strip it, but keep the served file clean.
     [System.IO.File]::WriteAllText($tmp, $json, (New-Object System.Text.UTF8Encoding($false)))
-    Move-Item -Path $tmp -Destination $path -Force
+    # ⚠ Move-Item -Force is NOT an atomic replace on Windows: it fails outright with "Cannot
+    # create a file when that file already exists" whenever ANOTHER process holds the destination
+    # open without FILE_SHARE_DELETE - which is exactly what conn_logger's Get-Content does, on
+    # its own 5s cycle against this file's 5s cycle. Structural collision, ~1-2 lost writes/day
+    # observed 08-03..08-06, and each loss ages admin.json toward conn_logger's 30s staleness
+    # cutoff, where it stops diffing and silently misses whole sessions.
+    # Retry briefly rather than dropping the write; the reader's handle is open for milliseconds.
+    $moved = $false
+    foreach ($attempt in 1, 2, 3) {
+        try { Move-Item -Path $tmp -Destination $path -Force -ErrorAction Stop; $moved = $true; break }
+        catch { if ($attempt -lt 3) { Start-Sleep -Milliseconds 120 } }
+    }
+    if (-not $moved) {
+        # Last resort: copy over the destination in place (works against an open reader because
+        # it never needs to DELETE the destination), then clean up the temp file.
+        try {
+            [System.IO.File]::WriteAllText($path, $json, (New-Object System.Text.UTF8Encoding($false)))
+            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+            Write-Warning "snapshot move contended on $(Split-Path -Leaf $path) - fell back to in-place write"
+        } catch {
+            Write-Warning "snapshot write FAILED for $(Split-Path -Leaf $path): $($_.Exception.Message)"
+        }
+    }
 }
 
 # Admin snapshot: written ONLY when -AdminOutFile is set AND a ".secured" marker
