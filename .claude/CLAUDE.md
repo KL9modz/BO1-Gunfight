@@ -876,27 +876,32 @@ try to bundle the `.iwi` → build error.
   and `self.health` is still pre-damage there while Body Armor's −20% already came off at `:677`, so
   `iDamage >= health` is an accurate kill test despite the base-set `specialty_armorvest`.
   ⚠ The white `else` branch is **not** cosmetic tidiness — `.color` persists on the element, so every
-  marker-drawing hit must re-stamp it or the last kill's red rides along. That is also why the block
-  sits **above** the same-team return: stock draws a marker for friendly fire too (`:948` only
-  excludes self-damage).
-  ⚠ **The colour write must ride a REAL fade window, and `fadeOverTime( 0 )` is NOT a snap.**
-  `fadeOverTime` arms an interpolation over the hudelem's **whole RGBA**, not just alpha, and stock
-  leaves a **1s** fade running after *every* hit — so a bare `.color` write CROSSFADES, and a body
-  shot followed by the kill inside that second rendered **pink**. The obvious cancel (`fadeOverTime(0)`)
-  was tried and **failed live**: rapid-fire kills still washed out, and stock passes `0` **nowhere** in
-  `raw/maps/mp` — the engine has no zero-fade idiom. The only takeover it honours is stock's own: arm a
-  real window (**0.05s**, one frame — short enough that the lerp is invisible) and let the write land
-  inside it. Two more pieces close the remaining holes: **`gf_snapKillMarkerRed`** re-snaps the colour a
-  frame later and then **re-arms stock's flash** (`alpha=1; fadeOverTime(1); alpha=0`), because stock's
-  `:968` flash re-arms its 1s fade in the *same frame* as our write and would otherwise fold the
-  in-flight colour lerp into the full second; and a **1s red-hold** (`gf_redMarkerUntil`) makes a
-  non-lethal hit inside the window keep stock's alpha re-flash but **skip the white re-stamp**, so
-  spraying on into the next enemy can't wash the kill flash out mid-fade. ⚠ Re-arming the flash in the
-  snap thread is mandatory, not tidiness — the snap re-times the in-flight **alpha** fade too, so
-  without it the marker blinks out a frame later instead of fading over its second.
-  Accepted: any marker inside the red-hold flashes red, friendly fire included
-  ([[hudelem-fadeovertime-lerps-color]]). ⚠ This also **subsumes** the old shotgun caveat — a trailing
-  non-lethal pellet in the same frame now falls inside the hold and no longer whitens the marker.
+  marker-drawing hit re-stamps it (a **same-frame co-hit of a killing blow** is the one sanctioned
+  exception) or the last kill's red rides along. That is also why the block sits **above** the
+  same-team return: stock draws a marker for friendly fire too (`:948` only excludes self-damage).
+  ⚠ **Both damage-frame colour writes are deliberately BARE — never arm a fade window in the damage
+  frame — and the kill's colour is made to stick by a one-frame-later thread.** `fadeOverTime` arms an
+  interpolation over the hudelem's **whole RGBA**, not just alpha, and stock leaves a **1s** fade
+  running after *every* hit — so a bare `.color` write CROSSFADES while that fade is in flight (a body
+  shot followed by the kill inside the second rendered **pink**), `fadeOverTime( 0 )` does **not**
+  cancel the interpolation (tried live; stock passes `0` **nowhere** in `raw/maps/mp`), and ⚠ the
+  seemingly-right fix — riding each write on a real `fadeOverTime( 0.05 )` window — **killed the white
+  markers outright** (live 2026-08-09): stock's `:968` flash runs two statements later in the SAME
+  frame, its `alpha = 1` folds into the still-live window using the marker's CURRENT alpha (0 when
+  idle) as the base, and its own `fadeOverTime(1)` + `alpha = 0` then bury the flash — the marker never
+  reaches visible alpha. So the damage-frame writes stay best-effort bare (instant on an idle marker),
+  and **`gf_snapKillMarkerRed( killAt )`** makes the KILL colour stick: one frame later — a quiet frame,
+  where a private `0.05s` window is safe — it re-snaps the red, then the frame after **re-arms stock's
+  flash** (`alpha=1; fadeOverTime(1); alpha=0`); the re-arm is mandatory, the snap re-times the
+  in-flight **alpha** fade too and the marker would otherwise blink out instead of fading over its
+  second. The **kill stamp** (`gf_redMarkerAt`, the kill's `gettime()`) scopes red priority to the
+  killing blow's **own frame**: a non-lethal co-hit with equal `gettime()` skips the white re-stamp
+  (cures the shotgun caveat — a trailing pellet of the killing blast no longer whitens the marker, in
+  either pellet order), while a white in any LATER frame re-stamps immediately **and clears the
+  stamp** — fresh feedback on a new target beats the old kill's flash, and a dead victim fires no
+  damage events, so only same-frame co-hits can belong to the kill. The stamp doubles as the snap
+  thread's **generation token**: cleared or restamped, the mismatch retires the thread so it never
+  paints red over a marker that has moved on ([[hudelem-fadeovertime-lerps-color]]).
 
 ⚠ **Every `setClientDvar` is ONE reliable server command, and the client's ring buffer for them is
 FIXED (`MAX_RELIABLE_COMMANDS`).** Blowing it produces **two different client `Com_Error` disconnects —
@@ -1291,6 +1296,7 @@ tables → `docs/REFERENCE.md`.
 | `gf_capture_time` / `_large` | 3.5 / 5 | OT zone hold-to-capture seconds, small / large. |
 | `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (auto goes large when a team hits 5+). |
 | `scr_gf_flinch` | 0.5 | Flinch scale (× stock `bg_viewKickScale` 0.2) → **half stock kick**. The **only global flinch reducer**: 1.0 = stock, 0 = none. (The sniper/heavy package's `specialty_bulletflinch` adds a further **0.2×** for those 10 loadouts only — never put it back in the base set.) Pushed **per-client every spawn, unconditionally** — the server dvar alone doesn't replicate, and the push beats a player's own autoexec (clamp 0-3). |
+| `scr_gf_headshot_scale` | 1.0 | Multiplier on **FINAL** headshot damage (clamp 0-3): 1 = stock, 0.5 = half, 0 = headshots void; a positive scale never rounds a hit below 1. The engine folds the weapon file's baked hit-location multiplier into `iDamage` **before** GSC sees it (`MOD_HEAD_SHOT` set at `_globallogic_player.gsc:731-738`, hook at `:741`, return consumed `:742-743`), so this rescales the result globally — it can't set a per-weapon multiplier to an absolute value (that's the custom-weapon-file pass). Applied at the **top** of `gf_onPlayerDamage` so the scaled value flows through score (= damage dealt), the most-HP time-out decision, and the red kill-marker test; FF headshots scale too (engine applies FF damage, never scored). Read live per hit (`gf_headshotScale`) → an RCON `set` lands on the next shot; registered per round from `gf_roundApplyTuning` for the panel sweep. Plain dvar row (DASHBOARD → GUNFIGHT), **no bridge verb**. Interacts with Body Armor's −20% non-headshot cut: lowering this narrows that deliberate headshot premium. |
 | `scr_gf_killcam_slowmo` | 0.6 | The round-end killcam's **timescale FLOOR** (clamp 0.25-1.0) — **not a toggle** (it used to be one; 0/1 no longer mean what they did). `0.25` = stock BO1 cinematic **and the bug**; `1.0` = no slow motion. Stock's 0.25 spaces the server's game frames ~200ms apart, overrunning `MAX_PACKET_USERCMDS` (32) on any client above ~160 fps → the "Connection Interrupted" plug. `0.6` → ~83ms, safe to ~385 fps, still a clear slow-mo. Clamp the **depth, not the length**. ⚠ `sv_fps` is not the lever — it truncates the killcam's frame-sized archive ring. |
 | `scr_gf_jump_fatigue` | 0 | **0 = OFF (the GF default)** / 1 = stock. Drives the engine's `jump_slowdownEnable` (post-jump movement drag — "jump fatigue"). The mod owns it so OFF ships as a default even with no cfg and no panel (`gf_applyJumpFatigue`, re-applied every round). RCON bridge: `jumpfatigue_<0\|1>`. |
 | `scr_gf_sprint_unlimited` | 0 | **0 = stock** / 1 = the sprint meter never empties. Drives the client dvar `player_sprintUnlimited`, **pushed per-client every spawn** — stock's only push is at connect and is ON-only, so a bare `set` on it reaches nobody already in the server and can never turn it back off (`gf_applySprintUnlimited` + `_Client`). RCON bridge: `sprintunlimited_<0\|1>`. |
@@ -1504,8 +1510,8 @@ content), so `git checkout main` after cloning and push `main` with `tools/push_
   dvar-tunable version strip-marked behind it. A public server owner still gets the core knobs:
   `scr_gf_scorelimit` / `_timelimit(_large)` / `_overtimelimit(_large)` / `_roundswitch` /
   `_roundsperloadout` / `_teamspawnmode` / `gf_capture_time(_large)` / `scr_gf_flinch` /
-  `scr_gf_jump_fatigue` / `scr_gf_sprint_unlimited` / `scr_gf_lethals` / `scr_gf_tacticals` /
-  `scr_gf_equipment` / `scr_team_maxsize`.
+  `scr_gf_headshot_scale` / `scr_gf_jump_fatigue` / `scr_gf_sprint_unlimited` / `scr_gf_lethals` /
+  `scr_gf_tacticals` / `scr_gf_equipment` / `scr_team_maxsize`.
   ⚠ Two functions are deliberately kept OUTSIDE the strip regions because **live-round code still
   calls them**: `gf_anyTrackedClientLoading()` (called by `gf_roundWatchdog` + `gf_closeGraceEarly`;
   already returns false when the tracker never armed, so it degrades to "nobody is loading") and

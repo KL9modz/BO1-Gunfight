@@ -210,6 +210,18 @@ gf_flinchScale()
     return gf_cfgFloat( "scr_gf_flinch", 0.5, 0, 3 );
 }
 
+// scr_gf_headshot_scale — multiplier on FINAL headshot damage. The engine applies the weapon
+// file's baked hit-location multiplier before GSC ever sees iDamage, so this rescales that
+// result (1 = stock, 0.5 = half, 0 = headshots deal nothing); it cannot set the underlying
+// multiplier to an absolute value. Single-sourced like the flinch scale: the live consumer is
+// per-hit (gf_onPlayerDamage), so an RCON `set` lands on the very next shot; gf.gsc::
+// gf_roundApplyTuning calls this once per round purely to register the dvar (gf_cfgFloat's
+// seed-if-empty) so the panel's connect-sweep never reads an unregistered name.
+gf_headshotScale()
+{
+    return gf_cfgFloat( "scr_gf_headshot_scale", 1.0, 0, 3 );
+}
+
 gf_applyFlinch()
 {
     scale = gf_flinchScale();
@@ -4633,6 +4645,26 @@ gf_onPlayerDisconnect()
 
 gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeapon, vPoint, vDir, sHitLoc, psOffsetTime )
 {
+    // Headshot damage scale (scr_gf_headshot_scale, default 1 = stock). Stock has already
+    // reclassified the hit before this hook fires (MOD_HEAD_SHOT is set at
+    // _globallogic_player.gsc:731-738, the hook runs at :741, and :742-743 takes our return as
+    // the applied damage), and the engine has already folded in the weapon file's hit-location
+    // multiplier — so this is a scale ON TOP of the final headshot damage. It must sit at the
+    // very top: the red-hitmarker kill test (iDamage >= self.health) and the damage scoring
+    // below both consume iDamage, and score IS damage dealt, so the scaled value is the one
+    // that has to flow through everything (including the FF branch — the engine applies FF
+    // damage even though it is never scored).
+    if ( sMeansOfDeath == "MOD_HEAD_SHOT" )
+    {
+        scale = gf_headshotScale();
+        if ( scale != 1 )
+        {
+            iDamage = int( iDamage * scale );
+            if ( iDamage < 1 && scale > 0 )
+                iDamage = 1;   // a tiny positive scale still lands a hit; only scale 0 voids it
+        }
+    }
+
     if ( iDamage <= 0 )
         return iDamage;
 
@@ -4660,36 +4692,41 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
     // Placed ABOVE the same-team return on purpose: .color persists on the element, so a
     // friendly-fire marker (stock draws one — its check at :948 only excludes self-damage) would
     // otherwise still be wearing the last kill's red. Every marker-drawing hit re-stamps it, with
-    // ONE sanctioned exception: the red-hold window below.
+    // ONE sanctioned exception: a non-lethal co-hit landing in the killing blow's own frame.
     if ( isDefined( eAttacker.hud_damagefeedback ) )
     {
-        // ⚠ fadeOverTime governs a hudelem's whole RGBA, not just its alpha, so a .color write
-        // that lands while a fade is in flight CROSSFADES — white -> red reads as pink/faded red.
-        // ⚠ A ZERO-length fade is NOT a snap: fadeOverTime(0) does not cancel the pending
-        // interpolation (rapid-fire kills still rendered washed out with it in place, and stock
-        // passes 0 nowhere in raw/maps/mp — the engine has no zero-fade idiom). The only takeover
-        // it honours is stock's own: arm a REAL window and let the write complete inside it. One
-        // frame (0.05s) keeps the lerp invisible; gf_snapKillMarkerRed covers the remaining hole,
-        // where stock's :968 flash re-arms fadeOverTime(1) in the SAME frame as this write and
-        // folds the still-in-flight colour lerp into its full 1s fade.
+        // ⚠ fadeOverTime governs a hudelem's whole RGBA, not just its alpha — and it bites BOTH
+        // directions here. (1) A .color write that lands while a fade is in flight CROSSFADES
+        // (white -> red reads as pink/faded red), and fadeOverTime(0) does NOT cancel the pending
+        // interpolation (tried live; stock passes 0 nowhere in raw/maps/mp). (2) ⚠ These
+        // damage-frame writes are deliberately BARE — arming ANY window here killed the white
+        // markers outright (live 2026-08-09): stock's flash at :968 runs two statements later in
+        // this same frame, its alpha = 1 folds into whatever window is still live using the
+        // marker's CURRENT alpha (0 on an idle marker) as the base, and its own fadeOverTime(1)
+        // + alpha = 0 then buries the flash — the marker never reaches visible alpha at all.
+        // So: bare best-effort colour now (instant on an idle marker, briefly crossfaded on a
+        // recently-flashed one), and gf_snapKillMarkerRed makes the KILL colour stick one frame
+        // later, in a quiet frame where a private 0.05s window is safe.
         if ( self.pers["team"] != eAttacker.pers["team"] && isDefined( self.health ) && iDamage >= self.health )
         {
-            eAttacker.hud_damagefeedback fadeOverTime( 0.05 );
             eAttacker.hud_damagefeedback.color = ( 1, 0.15, 0.15 );
 
-            // Red-hold: the killing blow owns the marker's COLOUR for the length of stock's 1s
-            // fade-out. A non-lethal hit inside the window keeps stock's alpha re-flash (hit
-            // feedback intact) but skips the white re-stamp (the else below), so spraying on into
-            // the next enemy — or a trailing shotgun pellet in the same frame — can no longer
-            // wash the kill flash out mid-fade. Accepted: any marker inside the window flashes
-            // red, friendly fire included; past it, whites re-stamp as always.
-            eAttacker.gf_redMarkerUntil = gettime() + 1000;
-            eAttacker thread gf_snapKillMarkerRed();
+            // Kill stamp, two jobs. (1) Co-hit rule: a non-lethal hit in this SAME frame (equal
+            // gettime()) keeps the kill's red instead of re-stamping white — that is what cures
+            // the shotgun edge, a trailing pellet of the killing blast whitening the marker
+            // (either pellet order ends red: white-then-red is last-write-wins in the frame).
+            // (2) Generation token for gf_snapKillMarkerRed's re-asserts. A white in any LATER
+            // frame clears the stamp — fresh feedback on a new target beats the old kill's
+            // flash — and the token mismatch retires the helper mid-flight. A dead victim fires
+            // no damage events, so same-frame co-hits are the ONLY post-kill hits that can
+            // belong to the kill itself; everything later is a genuinely new engagement.
+            eAttacker.gf_redMarkerAt = gettime();
+            eAttacker thread gf_snapKillMarkerRed( eAttacker.gf_redMarkerAt );
         }
-        else if ( !isDefined( eAttacker.gf_redMarkerUntil ) || gettime() >= eAttacker.gf_redMarkerUntil )
+        else if ( !isDefined( eAttacker.gf_redMarkerAt ) || gettime() != eAttacker.gf_redMarkerAt )
         {
-            eAttacker.hud_damagefeedback fadeOverTime( 0.05 );
             eAttacker.hud_damagefeedback.color = ( 1, 1, 1 );
+            eAttacker.gf_redMarkerAt = undefined;
         }
     }
 
@@ -4753,18 +4790,21 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
 // nothing else is writing: re-snap the colour on a fresh one-frame window, then restart the flash
 // — the snap re-times the in-flight alpha fade too, so the flash MUST be re-armed (stock's exact
 // idiom) or the marker would blink out a frame later instead of fading over its second.
-gf_snapKillMarkerRed()
+// killAt is the generation token: if a later white legitimately took the marker (a hit on a new
+// target clears gf_redMarkerAt) or a newer kill superseded this one (restamped it), the mismatch
+// retires this copy — it must never paint red over a marker that has moved on.
+gf_snapKillMarkerRed( killAt )
 {
     self endon( "disconnect" );
 
     wait 0.05;
-    if ( !isDefined( self.hud_damagefeedback ) )
+    if ( !isDefined( self.hud_damagefeedback ) || !isDefined( self.gf_redMarkerAt ) || self.gf_redMarkerAt != killAt )
         return;
     self.hud_damagefeedback fadeOverTime( 0.05 );
     self.hud_damagefeedback.color = ( 1, 0.15, 0.15 );
 
     wait 0.05;
-    if ( !isDefined( self.hud_damagefeedback ) )
+    if ( !isDefined( self.hud_damagefeedback ) || !isDefined( self.gf_redMarkerAt ) || self.gf_redMarkerAt != killAt )
         return;
     self.hud_damagefeedback.alpha = 1;
     self.hud_damagefeedback fadeOverTime( 1 );

@@ -695,6 +695,13 @@ gf_roundApplyTuning()
     // the base perk set for that reason — see gf_applyFlinch in _gf_rounds.gsc.
     gf_applyFlinch();
 
+    // Headshot damage scale — registers scr_gf_headshot_scale (default 1.0 = the weapon file's
+    // stock hit-location multiplier untouched; clamp 0-3) so the RCON panel's connect-sweep never
+    // reads an unregistered name. Registration only: the consumer is per-hit
+    // (_gf_rounds::gf_onPlayerDamage via gf_headshotScale), so an RCON change lands on the very
+    // next shot with nothing to re-apply here.
+    gf_headshotScale();
+
     // Jump fatigue (the engine's post-jump slowdown) — Gunfight ships it OFF.
     // Seeds scr_gf_jump_fatigue (default 0) and applies jump_slowdownEnable each round.
     // RCON bridge: jumpfatigue_<0|1> for a live change.
