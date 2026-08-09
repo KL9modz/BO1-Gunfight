@@ -56,8 +56,12 @@ $svcLogDir = Join-Path (Resolve-T5Root) 'logs\services'
 $services = @(
     @{ Name = 'GF-ConnLogger'
        Script = Join-Path $toolsRoot 'conn_logger\conn_logger.ps1'
-       # Reads status_service's admin.json (no rcon of its own), so it matches that
-       # service's 5s cadence instead of the old 15s direct-rcon poll.
+       # Reads status_service's admin.json, so it matches that service's 5s cadence
+       # instead of the old 15s direct-rcon poll. NOTE it is no longer "no rcon at all":
+       # when admin.json is stale/missing it falls back to the PANEL API (never a direct
+       # rcon socket -- the panel-first rule holds), and that fallback URL carries the
+       # password, cached at process start. So this task must be recycled by
+       # tools\rotate_secrets.ps1 alongside GF-StatusService / GF-JoinNotify.
        Args = '-IntervalSeconds 5'
        RequiresConfig = '' }
     @{ Name = 'GF-JoinNotify'

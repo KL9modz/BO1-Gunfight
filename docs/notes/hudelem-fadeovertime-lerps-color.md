@@ -26,19 +26,39 @@ most of a kill — and the mod's `.color` write is interpolated instead of appli
 The intermittency is the tell, and it is what identified the cause: a colour write is only lerped when
 there is a fade to lerp *along*. With the element idle at alpha 0, the same write is instant.
 
-## The fix
+## The fix that did NOT work: `fadeOverTime( 0 )`
 
-Cancel the pending interpolation with a zero-length fade immediately before the write
-(`_gf_rounds.gsc`, `gf_onPlayerDamage`):
+The obvious cancel — a zero-length fade immediately before the write — was shipped first and is
+**wrong**. It cleared the simple case but **rapid-fire kills still rendered washed-out red**.
+
+⚠ **A zero-length fade does not cancel a pending interpolation.** Corroborating evidence: stock passes
+`0` to `fadeOverTime` **nowhere** in `raw/maps/mp` — the engine has no zero-fade idiom, so there was
+never a reason to expect one to be honoured.
+
+## The fix that works: arm a REAL window, in three parts
+
+The only takeover the engine honours is stock's own idiom — arm a genuine fade window and let the write
+complete inside it (`_gf_rounds.gsc`, `gf_onPlayerDamage`):
 
 ```gsc
-	eAttacker.hud_damagefeedback fadeOverTime( 0 );
+	eAttacker.hud_damagefeedback fadeOverTime( 0.05 );   // one frame - the lerp is invisible
 	eAttacker.hud_damagefeedback.color = ( 1, 0.15, 0.15 );
 ```
 
-⚠ This does **not** disturb stock's fade-out. Stock re-arms `fadeOverTime(1)` itself at `:968`,
-immediately before its own `alpha = 0`, so only our write is snapped — the marker still fades out over
-a full second exactly as it always did.
+That alone still leaves two holes, both closed:
+
+1. **`gf_snapKillMarkerRed()`** — stock's `:968` flash re-arms `fadeOverTime(1)` in the **same frame**
+   as our write, and the engine folds a still-in-flight colour lerp into that newest window, so the red
+   spends stock's whole second crossfading up from white. One frame later nothing else is writing:
+   re-snap the colour on a fresh one-frame window, **then re-arm the flash**
+   (`alpha=1; fadeOverTime(1); alpha=0`). ⚠ Re-arming is **mandatory** — the snap re-times the in-flight
+   *alpha* fade too, so without it the marker blinks out a frame later instead of fading over its second.
+2. **The 1s red-hold (`gf_redMarkerUntil`)** — the killing blow owns the marker's **colour** for the
+   length of stock's fade-out. A non-lethal hit inside that window keeps stock's alpha re-flash (hit
+   feedback intact) but **skips the white re-stamp**, so spraying on into the next enemy can't wash the
+   kill flash out mid-fade. Accepted: any marker inside the window flashes red, friendly fire included.
+   This also **subsumes** the old shotgun caveat — a trailing non-lethal pellet in the same frame now
+   falls inside the hold.
 
 ## Why the ordering works at all
 
@@ -53,7 +73,10 @@ Any mod code that recolours a **stock** hudelem inherits whatever fade state sto
 rules fall out:
 
 1. **Never assume a `.color` write is instant.** If the element is animated by code you do not own,
-   snap it with `fadeOverTime( 0 )` first.
+   give the write its own **short real** fade window (0.05s) — **not** `fadeOverTime( 0 )`, which does
+   not cancel a pending interpolation. And check whether the code you don't own re-arms its fade in the
+   same frame; if it does, a one-frame-later re-snap (plus re-arming its animation) is what actually
+   lands the colour.
 2. **An intermittent wrong-colour bug that depends on RECENCY is this bug.** If the colour is right
    when the element was idle and wrong when it was recently animated, stop looking for a second
    overlapping element — there is only one, and you are watching it crossfade.

@@ -338,7 +338,7 @@ Write-Head "HOLDERS THIS SCRIPT UPDATES"
 Write-Info ("1. dedicated.cfg (sole owner, re-exec'd on every bootstrapper relaunch)  " + $CfgPath)
 Write-Info  "2. the LIVE dvar (set over the panel's rcon queue, no restart, no player drop)"
 Write-Info ("3. panel secret store, every profile                                     " + $SecretsPath)
-Write-Info  "4. GF-StatusService + GF-JoinNotify (both cache the password at process start)"
+Write-Info  "4. GF-StatusService + GF-JoinNotify + GF-ConnLogger (all cache the password at process start)"
 
 Write-Head "HOLDERS YOU MUST UPDATE BY HAND"
 Write-Info  "5. the password manager (the system of record)"
@@ -364,7 +364,7 @@ if (-not $Apply) {
     Write-Info  "  4. flip the LIVE dvar through the panel using the OLD password"
     Write-Info  "  5. verify BOTH ways: new password must answer, old password must NOT"
     Write-Info  "  6. rewrite the panel secret store (UTF-8, no BOM)"
-    Write-Info  "  7. recycle GF-StatusService + GF-JoinNotify"
+    Write-Info  "  7. recycle GF-StatusService + GF-JoinNotify + GF-ConnLogger"
     Write-Info  "  8. post-check admin.json freshness, then clear the maintenance window"
     Show-ServerKeyChecklist
     exit 0
@@ -437,7 +437,14 @@ try {
 Write-Head "7/8  recycle the services that cached the old value"
 if ($SkipServices) { Write-Warn2 "-SkipServices: skipped (they will keep failing until recycled)" }
 else {
-    foreach ($svc in @('GF-StatusService', 'GF-JoinNotify')) {
+    # GF-ConnLogger belongs here even though it is not an rcon poller: its admin.json-stale
+    # PANEL FALLBACK builds a URL carrying the password ONCE at process start, so after a
+    # rotation the fallback authenticates with the old value and silently no-ops (a bad rcon
+    # password draws no reply at all). It degrades safely -- it never corrupts the connect
+    # history -- but the blind window the fallback exists to close would be quietly reopened
+    # for the whole life of the task. The stale-password scan above cannot catch it either:
+    # that keys on a literal -RconPassword ARGUMENT, and this one is read from the cfg.
+    foreach ($svc in @('GF-StatusService', 'GF-JoinNotify', 'GF-ConnLogger')) {
         $r = Restart-BoxService $svc
         if ($r -eq 'recycled')   { Write-Ok ($svc + " recycled") }
         elseif ($r -eq 'absent') { Write-Info ($svc + " not installed here") }

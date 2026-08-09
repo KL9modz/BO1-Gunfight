@@ -4659,23 +4659,38 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
     //     though every player in this mod carries specialty_armorvest.
     // Placed ABOVE the same-team return on purpose: .color persists on the element, so a
     // friendly-fire marker (stock draws one — its check at :948 only excludes self-damage) would
-    // otherwise still be wearing the last kill's red. Every marker-drawing hit must re-stamp it.
+    // otherwise still be wearing the last kill's red. Every marker-drawing hit re-stamps it, with
+    // ONE sanctioned exception: the red-hold window below.
     if ( isDefined( eAttacker.hud_damagefeedback ) )
     {
-        // ⚠ fadeOverTime governs a hudelem's whole RGBA, not just its alpha, so writing .color
-        // while the PREVIOUS marker's 1s fade-out is still in flight makes the engine crossfade
-        // the old colour into the new one — a white marker followed closely by a kill marker
-        // lerps white -> red and reads as PINK for most of the transition (observed live; a lone
-        // kill marker, with no fade running, snaps straight to red and looks correct). A
-        // zero-length fade cancels the pending interpolation so the colour lands instantly.
-        // Safe against stock's sequence at :968 — it re-arms fadeOverTime(1) itself immediately
-        // before its own alpha = 0, so the fade-OUT is untouched and only our write is snapped.
-        eAttacker.hud_damagefeedback fadeOverTime( 0 );
-
+        // ⚠ fadeOverTime governs a hudelem's whole RGBA, not just its alpha, so a .color write
+        // that lands while a fade is in flight CROSSFADES — white -> red reads as pink/faded red.
+        // ⚠ A ZERO-length fade is NOT a snap: fadeOverTime(0) does not cancel the pending
+        // interpolation (rapid-fire kills still rendered washed out with it in place, and stock
+        // passes 0 nowhere in raw/maps/mp — the engine has no zero-fade idiom). The only takeover
+        // it honours is stock's own: arm a REAL window and let the write complete inside it. One
+        // frame (0.05s) keeps the lerp invisible; gf_snapKillMarkerRed covers the remaining hole,
+        // where stock's :968 flash re-arms fadeOverTime(1) in the SAME frame as this write and
+        // folds the still-in-flight colour lerp into its full 1s fade.
         if ( self.pers["team"] != eAttacker.pers["team"] && isDefined( self.health ) && iDamage >= self.health )
+        {
+            eAttacker.hud_damagefeedback fadeOverTime( 0.05 );
             eAttacker.hud_damagefeedback.color = ( 1, 0.15, 0.15 );
-        else
+
+            // Red-hold: the killing blow owns the marker's COLOUR for the length of stock's 1s
+            // fade-out. A non-lethal hit inside the window keeps stock's alpha re-flash (hit
+            // feedback intact) but skips the white re-stamp (the else below), so spraying on into
+            // the next enemy — or a trailing shotgun pellet in the same frame — can no longer
+            // wash the kill flash out mid-fade. Accepted: any marker inside the window flashes
+            // red, friendly fire included; past it, whites re-stamp as always.
+            eAttacker.gf_redMarkerUntil = gettime() + 1000;
+            eAttacker thread gf_snapKillMarkerRed();
+        }
+        else if ( !isDefined( eAttacker.gf_redMarkerUntil ) || gettime() >= eAttacker.gf_redMarkerUntil )
+        {
+            eAttacker.hud_damagefeedback fadeOverTime( 0.05 );
             eAttacker.hud_damagefeedback.color = ( 1, 1, 1 );
+        }
     }
 
     if ( self.pers["team"] == eAttacker.pers["team"] )
@@ -4729,6 +4744,31 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
     }
 
     return iDamage;
+}
+
+// The kill flash's second line of defence, one frame behind the damage-time red write. Stock's
+// :968 flash re-arms fadeOverTime(1) in the same frame that write landed, and the engine folds a
+// still-in-flight colour lerp into the newest window — so the damage-frame red can spend stock's
+// whole 1s fade crossfading up from white (the "faded red" rapid-fire kill). One frame later
+// nothing else is writing: re-snap the colour on a fresh one-frame window, then restart the flash
+// — the snap re-times the in-flight alpha fade too, so the flash MUST be re-armed (stock's exact
+// idiom) or the marker would blink out a frame later instead of fading over its second.
+gf_snapKillMarkerRed()
+{
+    self endon( "disconnect" );
+
+    wait 0.05;
+    if ( !isDefined( self.hud_damagefeedback ) )
+        return;
+    self.hud_damagefeedback fadeOverTime( 0.05 );
+    self.hud_damagefeedback.color = ( 1, 0.15, 0.15 );
+
+    wait 0.05;
+    if ( !isDefined( self.hud_damagefeedback ) )
+        return;
+    self.hud_damagefeedback.alpha = 1;
+    self.hud_damagefeedback fadeOverTime( 1 );
+    self.hud_damagefeedback.alpha = 0;
 }
 
 gf_initDamageScoring()

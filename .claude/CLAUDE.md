@@ -135,7 +135,9 @@ wins** takes the match.
   whitelist excluding First Strike/Escalation maps.
 - **SECURITY: rotate the two burned secrets — still OPEN, and it is the ONLY thing that closes them.**
   Run **`tools/rotate_secrets.ps1` on the box** for the RCON password (dry-run by default; enforces the
-  ≤23 cap; recycles `GF-StatusService` + `GF-JoinNotify`, which cache it at process start, and drops a
+  ≤23 cap; recycles `GF-StatusService` + `GF-JoinNotify` + **`GF-ConnLogger`** — all three cache the
+  password at process start (conn-logger via its admin.json-stale **panel fallback** URL, which is why
+  it counts despite owning no rcon poller of its own) — and drops a
   watchdog maintenance window first so the escalation ladder can't bounce the server mid-rotation). The
   **server key is manual-only** at platform.plutonium.pw and needs a **full bat restart** — `set key=`
   runs above `:server`, so a bootstrapper kill relaunches with the old `%key%`. ⚠ Reuse the key's exact
@@ -876,14 +878,25 @@ try to bundle the `.iwi` → build error.
   ⚠ The white `else` branch is **not** cosmetic tidiness — `.color` persists on the element, so every
   marker-drawing hit must re-stamp it or the last kill's red rides along. That is also why the block
   sits **above** the same-team return: stock draws a marker for friendly fire too (`:948` only
-  excludes self-damage). ⚠ **The `fadeOverTime( 0 )` ahead of the write is load-bearing, not noise:**
+  excludes self-damage).
+  ⚠ **The colour write must ride a REAL fade window, and `fadeOverTime( 0 )` is NOT a snap.**
   `fadeOverTime` arms an interpolation over the hudelem's **whole RGBA**, not just alpha, and stock
-  leaves a **1s** fade running after *every* hit — so without the snap a `.color` write CROSSFADES,
-  and a body shot followed by the kill inside that second rendered **pink** (live, and only when a
-  white marker preceded the red — a lone kill marker was always correct). It does not touch the
-  fade-out: stock re-arms `fadeOverTime(1)` itself right before its own `alpha = 0`
-  ([[hudelem-fadeovertime-lerps-color]]). ⚠ Known edge, accepted: a shotgun's pellets are separate
-  damage events in one frame, so a non-lethal pellet processed after the lethal one whitens the marker.
+  leaves a **1s** fade running after *every* hit — so a bare `.color` write CROSSFADES, and a body
+  shot followed by the kill inside that second rendered **pink**. The obvious cancel (`fadeOverTime(0)`)
+  was tried and **failed live**: rapid-fire kills still washed out, and stock passes `0` **nowhere** in
+  `raw/maps/mp` — the engine has no zero-fade idiom. The only takeover it honours is stock's own: arm a
+  real window (**0.05s**, one frame — short enough that the lerp is invisible) and let the write land
+  inside it. Two more pieces close the remaining holes: **`gf_snapKillMarkerRed`** re-snaps the colour a
+  frame later and then **re-arms stock's flash** (`alpha=1; fadeOverTime(1); alpha=0`), because stock's
+  `:968` flash re-arms its 1s fade in the *same frame* as our write and would otherwise fold the
+  in-flight colour lerp into the full second; and a **1s red-hold** (`gf_redMarkerUntil`) makes a
+  non-lethal hit inside the window keep stock's alpha re-flash but **skip the white re-stamp**, so
+  spraying on into the next enemy can't wash the kill flash out mid-fade. ⚠ Re-arming the flash in the
+  snap thread is mandatory, not tidiness — the snap re-times the in-flight **alpha** fade too, so
+  without it the marker blinks out a frame later instead of fading over its second.
+  Accepted: any marker inside the red-hold flashes red, friendly fire included
+  ([[hudelem-fadeovertime-lerps-color]]). ⚠ This also **subsumes** the old shotgun caveat — a trailing
+  non-lethal pellet in the same frame now falls inside the hold and no longer whitens the marker.
 
 ⚠ **Every `setClientDvar` is ONE reliable server command, and the client's ring buffer for them is
 FIXED (`MAX_RELIABLE_COMMANDS`).** Blowing it produces **two different client `Com_Error` disconnects —
@@ -1302,7 +1315,7 @@ tables → `docs/REFERENCE.md`.
 | `scr_pregame_timelimit` | 0 | Warmup time limit (min). ⚠ Keep **0** — stock registers it seed-if-empty at 5, and its time-out **rotates the map** instead of starting the match. Seeded to 0 by `gf.gsc` (strip-marked) + `dedicated.cfg.example`. |
 
 **Teams & bots** (dev-only reconciler)
-> Bot display names + the orange `^<BOT` clantag come from **`storage/t5/bots.txt`** (native
+> Bot display names + the orange `^<bot^7` clantag come from **`storage/t5/bots.txt`** (native
 > Plutonium, `name,clantag` per line, box-local — above the mod folder, never deployed; carried in
 > `docs/MIGRATION.md`). ⚠ **Read at process start** — mid-process bot reconnects keep the internal
 > random names; only a bootstrapper restart loads a change
