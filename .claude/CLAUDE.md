@@ -138,7 +138,13 @@ wins** takes the match.
   ≤23 cap; recycles `GF-StatusService` + `GF-JoinNotify` + **`GF-ConnLogger`** — all three cache the
   password at process start (conn-logger via its admin.json-stale **panel fallback** URL, which is why
   it counts despite owning no rcon poller of its own) — and drops a
-  watchdog maintenance window first so the escalation ladder can't bounce the server mid-rotation). The
+  watchdog maintenance window first so the escalation ladder can't bounce the server mid-rotation).
+  ⚠ **Run the DEPLOYED copy** (`…\storage\t5\mods\mp_gunfight\tools\rotate_secrets.ps1`), **not the
+  deploy clone's** (`C:\gfdeploy\BO1-Gunfight\tools\`): path resolution walks up from `$PSScriptRoot`
+  and the clone sits outside the storage tree, so from there it hunts `C:\dedicated.cfg`, misses both
+  the cfg and the panel secret store, and pre-flight-fails. Harmless — it refuses to guess and writes
+  nothing — but it costs a round trip. From the deployed copy all 9 checks pass (verified 2026-08-09).
+  Same trap for any `tools/` script that resolves the T5 root from its own location. The
   **server key is manual-only** at platform.plutonium.pw and needs a **full bat restart** — `set key=`
   runs above `:server`, so a bootstrapper kill relaunches with the old `%key%`. ⚠ Reuse the key's exact
   current label or the server renames itself for every player. The two leaked *passwords* are in git
