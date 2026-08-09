@@ -739,12 +739,14 @@ gf_getCustomSpawnPoint( team )
 
     // Every curated point is occupied — possible now that a small-mode side can hold up to 6
     // players on 5 curated points (team size 5-6 / a 4v4-human + late-seat round). Returning
-    // undefined sends the caller (gf.gsc onSpawnPlayer) down its stock mp_tdm_spawn_<team>_start
-    // fallback, whose selectors are telefrag-aware — never spawn ONTO an occupied curated point,
-    // which would kill the frozen occupant (the old raw-cursor fallback did exactly that).
-    // "full" is the one cause worth acting on: it means small mode HAS the data and still couldn't
-    // deliver it, i.e. the side outgrew its curated point count. The fix is capacity (a 6th point,
-    // or a smaller team size), never forcing the spawn.
+    // undefined sends the caller (gf.gsc onSpawnPlayer) down its IN-BOUNDS fallback chain: the
+    // map's own mp_wager_spawn pool first (telefrag-aware NearTeam — inside the wager play area
+    // by construction, so small mode never leaks a spawn past the baked blockers), then the stock
+    // mp_tdm_spawn_<team>_start pool only on maps with no wager pool (which also have no blockers,
+    // so there is no sealed boundary to escape). Never spawn ONTO an occupied curated point —
+    // that kills the frozen occupant (the old raw-cursor fallback did exactly that).
+    // "full" is the one cause worth watching: it means small mode HAS the data and still couldn't
+    // deliver it, i.e. the side outgrew its curated point count.
     level.gf_customSpawnMiss = "full:" + spawns.size;
     return undefined;
 }

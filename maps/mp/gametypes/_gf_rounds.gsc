@@ -4577,8 +4577,8 @@ gf_onPlayerKilled( eInflictor, attacker, iDamage, sMeansOfDeath, sWeapon, vDir, 
             if ( getDvarInt( "gf_debug_popup" ) == 1 )
                 logPrint( "GF_POPUP: " + self.name + " died, " + damager.name + " share " + popup + "\n" );
 
-            // Text popups instead of damage numbers: killer sees "Elimination"
-            // (priority 2), every other damager sees "Assist" (priority 1).
+            // Text popups instead of damage numbers: killer sees "+1 Kill"
+            // (priority 2), every other damager sees "+1 Assist" (priority 1).
             // Localized istrings from gf.str (mod.ff) — raw string literals here would
             // allocate from the dynamic string table, which can be exhausted (the raw
             // "Elimination" literal silently failed to render for exactly that reason).
@@ -4662,6 +4662,16 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
     // otherwise still be wearing the last kill's red. Every marker-drawing hit must re-stamp it.
     if ( isDefined( eAttacker.hud_damagefeedback ) )
     {
+        // ⚠ fadeOverTime governs a hudelem's whole RGBA, not just its alpha, so writing .color
+        // while the PREVIOUS marker's 1s fade-out is still in flight makes the engine crossfade
+        // the old colour into the new one — a white marker followed closely by a kill marker
+        // lerps white -> red and reads as PINK for most of the transition (observed live; a lone
+        // kill marker, with no fade running, snaps straight to red and looks correct). A
+        // zero-length fade cancels the pending interpolation so the colour lands instantly.
+        // Safe against stock's sequence at :968 — it re-arms fadeOverTime(1) itself immediately
+        // before its own alpha = 0, so the fade-OUT is untouched and only our write is snapped.
+        eAttacker.hud_damagefeedback fadeOverTime( 0 );
+
         if ( self.pers["team"] != eAttacker.pers["team"] && isDefined( self.health ) && iDamage >= self.health )
             eAttacker.hud_damagefeedback.color = ( 1, 0.15, 0.15 );
         else

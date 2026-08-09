@@ -961,8 +961,8 @@ gf_logCuratedSpawnMiss( team )
 
         game["gf_spawnMissLogged"] = true;
         logPrint( "GF_SPAWNMISS: map " + getDvar( "mapname" ) + " has NO curated spawn data - small mode is"
-                  + " using stock start spawns for this whole match (expected if unlisted in"
-                  + " _gf_locations)\n" );
+                  + " using stock spawns (wager pool when the map has one, else start spawns) for this"
+                  + " whole match (expected if unlisted in _gf_locations)\n" );
         return;
     }
 
@@ -972,7 +972,7 @@ gf_logCuratedSpawnMiss( team )
     if ( maps\mp\gametypes\_gf_rounds::gf_isRealBot( self ) )
         kind = "bot";
 
-    logPrint( "GF_SPAWNMISS: " + kind + " " + self.name + " fell back to start spawns - team " + team
+    logPrint( "GF_SPAWNMISS: " + kind + " " + self.name + " fell back past the curated points - team " + team
               + " reason " + reason + " (map " + getDvar( "mapname" ) + " round " + round + ")\n" );
 }
 
