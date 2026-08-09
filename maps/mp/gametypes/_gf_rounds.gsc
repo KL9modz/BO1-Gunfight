@@ -4691,8 +4691,11 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
     //     though every player in this mod carries specialty_armorvest.
     // Placed ABOVE the same-team return on purpose: .color persists on the element, so a
     // friendly-fire marker (stock draws one — its check at :948 only excludes self-damage) would
-    // otherwise still be wearing the last kill's red. Every marker-drawing hit re-stamps it, with
-    // ONE sanctioned exception: a non-lethal co-hit landing in the killing blow's own frame.
+    // otherwise still be wearing the last kill's red. Every marker-drawing hit that ENTERS THIS
+    // HOOK re-stamps it, with ONE sanctioned exception: a non-lethal co-hit landing in the
+    // killing blow's own frame. Marker flashes that bypass the hook entirely (the equipment
+    // family — see gf_snapKillMarkerRed step 3) are covered the other way round: the snap thread
+    // restores the element's resting white once the kill flash's second is up.
     if ( isDefined( eAttacker.hud_damagefeedback ) )
     {
         // ⚠ fadeOverTime governs a hudelem's whole RGBA, not just its alpha — and it bites BOTH
@@ -4809,6 +4812,23 @@ gf_snapKillMarkerRed( killAt )
     self.hud_damagefeedback.alpha = 1;
     self.hud_damagefeedback fadeOverTime( 1 );
     self.hud_damagefeedback.alpha = 0;
+
+    // Step 3: once the kill flash has had its second, the element's RESTING colour goes back to
+    // white. ⚠ Not tidiness — FOURTEEN stock files flash this same element WITHOUT passing
+    // through Callback_PlayerDamage (the ones reachable in Gunfight are the equipment family:
+    // _weaponobjects (claymore/C4), _cameraspike, _scrambler, _tacticalinsertion,
+    // _acousticsensor), so the white re-stamp in gf_onPlayerDamage never sees those hits and the
+    // persisted .color made shooting enemy equipment flash RED indefinitely after a kill (live
+    // 2026-08-09). Red's reign = the fade's one second; after it, every untracked flash path
+    // defaults back to white. Bare write (the no-window rule holds here too), invisible at
+    // resting alpha 0; the wait clears stock's 1s fade window armed above, and the token guard
+    // leaves the element alone when a later white already re-stamped it (stamp cleared) or a
+    // newer kill owns the marker now (its own thread carries its own reset).
+    wait 1.05;
+    if ( !isDefined( self.hud_damagefeedback ) || !isDefined( self.gf_redMarkerAt ) || self.gf_redMarkerAt != killAt )
+        return;
+    self.hud_damagefeedback.color = ( 1, 1, 1 );
+    self.gf_redMarkerAt = undefined;
 }
 
 gf_initDamageScoring()

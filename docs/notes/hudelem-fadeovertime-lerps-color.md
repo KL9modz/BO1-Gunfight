@@ -76,6 +76,16 @@ Correctness for the kill colour comes from two pieces:
    post-kill hits that can belong to the kill itself. The stamp doubles as the snap thread's
    **generation token** — cleared or restamped, the mismatch retires a mid-flight
    `gf_snapKillMarkerRed`, so it never paints red over a marker that has moved on.
+3. **The resting-colour reset (snap thread step 3)** — `.color` persists, and **fourteen stock
+   files flash the same element without passing through `Callback_PlayerDamage`** (grep
+   `raw/maps/mp` for `updateDamageFeedback` callers; in Gunfight the reachable ones are the
+   equipment family: `_weaponobjects` claymore/C4, `_cameraspike`, `_scrambler`,
+   `_tacticalinsertion`, `_acousticsensor`). The hook's white re-stamp never sees those hits, so
+   after any kill, shooting enemy equipment flashed **red indefinitely** (live 2026-08-09). There
+   is no hookable callback on those paths, so the fix inverts the coverage: ~1.15s after the kill
+   — once stock's 1s fade has fully played out and its window expired — the snap thread bare-writes
+   the resting colour back to **white** (invisible at alpha 0, token-guarded). Red's reign is
+   exactly the kill flash's second; every untracked flash path defaults to white after it.
 
 ## Why the ordering works at all
 

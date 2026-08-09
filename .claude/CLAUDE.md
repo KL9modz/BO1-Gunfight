@@ -907,7 +907,15 @@ try to bundle the `.iwi` → build error.
   stamp** — fresh feedback on a new target beats the old kill's flash, and a dead victim fires no
   damage events, so only same-frame co-hits can belong to the kill. The stamp doubles as the snap
   thread's **generation token**: cleared or restamped, the mismatch retires the thread so it never
-  paints red over a marker that has moved on ([[hudelem-fadeovertime-lerps-color]]).
+  paints red over a marker that has moved on. ⚠ **Fourteen stock files flash this same element
+  WITHOUT passing through `Callback_PlayerDamage`** — reachable in Gunfight: the equipment family
+  (`_weaponobjects` claymore/C4, `_cameraspike`, `_scrambler`, `_tacticalinsertion`,
+  `_acousticsensor`) — so the hook's white re-stamp never sees those hits, and the persisted `.color`
+  made shooting enemy equipment flash red indefinitely after a kill. No hook exists on those paths
+  (and overriding 5 stock files is not on), so the coverage is inverted: the snap thread's **step 3
+  restores the element's resting colour to white** ~1.15s after the kill (bare write, invisible at
+  alpha 0, token-guarded) — red's reign is exactly the kill flash's second, and every untracked
+  flash path defaults back to white after it ([[hudelem-fadeovertime-lerps-color]]).
 
 ⚠ **Every `setClientDvar` is ONE reliable server command, and the client's ring buffer for them is
 FIXED (`MAX_RELIABLE_COMMANDS`).** Blowing it produces **two different client `Com_Error` disconnects —
