@@ -48,6 +48,35 @@ Three independent proofs that line is client-side:
 for anyone who has never hosted is the engine default. The only person who ever sees a real name there
 is a **listen-server host**, who *is* the server.
 
+## The lever that DOES work: the player's own client config (VERIFIED)
+
+Because the presence reads the **local** copy, a player can set it for themselves. `sv_hostname` is
+archived (`seta`) client-side and lives in the client's own profile configs:
+
+```
+storage/t5/players/config_mp.cfg                  <- base
+storage/t5/players/mods/<modname>/config_mp.cfg   <- per-mod, applies while playing that mod
+```
+
+Edit `seta sv_hostname "..."` in both. **Verified live 2026-08-06**: the card changed from
+`BlackOpsPrivate` to the edited string, and the value **survived the client rewriting the config on
+exit** (it round-trips through the archived dvar). So Plutonium's runtime "can only be changed by the
+server" block does **not** intercept the `seta` at config load.
+
+⚠ **The config file is the ONLY route - there is no console one-liner.** Typing
+`sv_hostname "..."` in a client console is refused with
+`Error: sv_hostname can only be changed by the server` (confirmed in-game 2026-08-06; that message is
+not in `t5mp.exe`, so the block is Plutonium's). This is what makes the per-player route expensive to
+distribute: unlike `cl_maxpackets` or `cg_fov`, it cannot be handed out as a paste-this line.
+⚠ **Edit with the game CLOSED.** The client rewrites these files on exit, so an edit made while it is
+running is silently discarded.
+⚠ Plain text only - Plutonium strips `^0`-`^9`/`^:`/`^;` before publishing, so `^<` and up would appear
+literally in the card.
+⚠ This is **per-player and opt-in only**. It cannot be pushed, shipped over FastDL (which carries
+`mod.ff` and nothing else), or set with `setClientDvar` (archived client dvars are refused - the same
+wall as [[killfeed-duration-client-archived]]). It is a thing a player may choose to do, never
+something a server does to them.
+
 ## Second finding: sv_hostname is not runtime-settable
 
 An RCON `set sv_hostname` appears to work and then **reverts at the next map load** - Plutonium

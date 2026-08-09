@@ -53,8 +53,15 @@ LANG_ENGLISH        "Sticks and Stones. Crossbow and ballistic knife only. Melee
 REFERENCE           OIC_DESC
 LANG_ENGLISH        "One in the Chamber. One bullet, one life. Kill to earn another bullet. Last player standing wins the round."
 
+// The score popups. English-only by construction: mod.ff is linked with
+// -language english (build_ff.ps1) and one file is served to every client, so a
+// custom string cannot follow the player's loc_language. Only STOCK references
+// (@MPUI_*) localize per client, and the closest ones are plural ("Kills") and
+// won't compose into "+1 Kill" - so this stays a literal.
+// The reference name is deliberately unchanged (gf.gsc precache, _gf_hud.gsc,
+// hud_gf_health.menu all cite GF_POPUP_ELIMINATION); only the text moved to "Kill".
 REFERENCE           POPUP_ELIMINATION
-LANG_ENGLISH        "+1 Elimination"
+LANG_ENGLISH        "+1 Kill"
 
 REFERENCE           POPUP_ASSIST
 LANG_ENGLISH        "+1 Assist"

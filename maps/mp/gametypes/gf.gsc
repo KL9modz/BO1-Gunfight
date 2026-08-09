@@ -990,12 +990,37 @@ onSpawnPlayer( teamOverride )
         }
 
         // #strip-begin - curated-spawn fallback diagnostic (dev/main only; stripped from public release)
-        // Small mode just failed to deliver a curated point and is about to degrade to the stock
-        // start spawns below. Log-only, changes nothing — see _gf_debug::gf_logCuratedSpawnMiss for
+        // Small mode just failed to deliver a curated point and is about to degrade to a stock
+        // pool below. Log-only, changes nothing — see _gf_debug::gf_logCuratedSpawnMiss for
         // why forcing the curated point is the wrong fix. Called BEFORE the fallback spawn so the
         // line lands even if the spawn below throws.
         self maps\mp\gametypes\_gf_debug::gf_logCuratedSpawnMiss( spawnTeam );
         // #strip-end
+
+        // A curated miss must NEVER leave the small play area: on a wager-blocker map the
+        // mp_tdm_spawn_<team>_start points sit OUTSIDE the sealed arena, so an overflow spawn
+        // (6 bodies on 5 curated points, or a forced-small crowd) that fell through to them
+        // spawned out of bounds. The map's own mp_wager_spawn pool is in-bounds by construction
+        // (it is what the wager gametypes themselves spawn on) and was already inited by
+        // onStartGameType's small-mode addSpawnPoints. getSpawnpoint_NearTeam is telefrag-aware
+        // (getSpawnpoint_Final skips occupied points) and biases toward the teammates already
+        // standing on the curated points, so the spawn lands on the right side of the arena.
+        // A map with no wager pool has no baked blockers either — no sealed boundary to escape —
+        // so the start-spawn fallthrough below is safe there.
+        wagerPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_wager_spawn" );
+        if ( wagerPoints.size )
+        {
+            spawnPoint = maps\mp\gametypes\_spawnlogic::getSpawnpoint_NearTeam( wagerPoints );
+            if ( isDefined( spawnPoint ) )
+            {
+                self spawn( spawnPoint.origin, spawnPoint.angles, "gf" );
+                self thread gf_lockSpawnYaw( spawnPoint.angles );
+                // #strip-begin - spawn-yaw probe (dev/main only; stripped from public release)
+                self thread maps\mp\gametypes\_gf_debug::gf_probeSpawnYaw( spawnPoint.angles, "wagerpool" );
+                // #strip-end
+                return;
+            }
+        }
     }
 
     // Always use team-specific start spawns. Gunfight has fixed sides per round

@@ -50,6 +50,7 @@ Everything below is box-local. Group by group, with how it moves.
 | `dedicated.cfg` | `%LOCALAPPDATA%\Plutonium\storage\t5\dedicated.cfg` | **Copy + review.** Never deployed by `deploy.ps1` and gitignored, so this file exists only on the box. Sole owner of `rcon_password` / `g_password`. |
 | Plutonium **server key** | `set key=` in the start bat | **Carry the key AND its exact label.** ⚠ The label *is* the in-game browser name - a new key with a different label renames the server for every player. |
 | Start bat | `C:\gameserver\T5\start_mp_server.bat` | **Copy + edit.** Carries the server key and the `sv_maxclients` latch (latched at launch - not settable later). |
+| `bots.txt` | `%LOCALAPPDATA%\Plutonium\storage\t5\bots.txt` | **Copy.** Custom bot names + orange `^<BOT` clantags. Never deployed by `deploy.ps1` (lives above the mod folder). Read at process start - needs a server restart to load ([[plutonium-bots-txt-bot-names-clantags]]). |
 | Game files | `C:\gameserver\T5` | **Re-download** (VPS_DEPLOY Phase 2). Faster than moving ~11 GB. Re-apply the `main\` slim-down after it runs clean. |
 | Plutonium runtime | `%LOCALAPPDATA%\Plutonium\bin\` | **Re-created** by running the launcher once and logging in. |
 | Mod tree | `...\storage\t5\mods\mp_gunfight\` | **From git** - `deploy.ps1 -Mod`. Nothing to carry. |

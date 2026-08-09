@@ -672,9 +672,13 @@ it no longer shares a switch point with the spawn mode.
 post-prematch by `gf_updateAutoTeamMode`, applied *next* round) — the 9th human's join opens the map one
 round later. By design (a live count inside `onStartGameType` is unreliable — bots/late joiners connect
 after it), not a bug. ⚠ Small mode can now hold up to 6 bodies/side on 5 curated points — the curated
-picker returns `undefined` when every point is occupied and the caller falls back to the stock
-telefrag-aware team-start pool (never spawn ONTO an occupied point; the old raw-cursor fallback
-telefragged the occupant). Full detail → `docs/REFERENCE.md`.
+picker returns `undefined` when every point is occupied and the caller falls back to the map's own
+**`mp_wager_spawn` pool** (telefrag-aware `getSpawnpoint_NearTeam`, in-bounds of the wager play area
+by construction — small mode must **never** spawn anyone past the baked blockers, which the
+`mp_tdm_spawn_<team>_start` points on wager maps are; those remain the fallback only on maps with no
+wager pool, which also have no blockers, so there is no boundary to escape;
+[[small-mode-spawn-fallback-outside-wager-blockers]]). Never spawn ONTO an occupied point — the old
+raw-cursor fallback telefragged the occupant. Full detail → `docs/REFERENCE.md`.
 
 ### Loadout system
 Shared random, **deterministic by round index** — every client reads the same
@@ -857,7 +861,7 @@ try to bundle the `.iwi` → build error.
   separate menuDefs — **pregame lobby** (`gf_lobby_hud`) and the admin **pause banner** (`gf_pause_hud`,
   "MATCH PAUSED", gated on `ui_gf_paused`) — both gated `!BIT_IN_KILLCAM` not `BIT_HUD_VISIBLE`
   (the lobby cam clears hud_visible, and a pause can land in a state that has too).
-- **Kill/score popup:** renders "Elimination"/"Assist" on its own `NewScoreHudElem` (`self.gf_popupElem`,
+- **Kill/score popup:** renders "+1 Kill"/"+1 Assist" on its own `NewScoreHudElem` (`self.gf_popupElem`,
   a separate pool from the ~17 cap), styled to match the stock yellow popup; the engine's own
   `hud_rankscroreupdate` is parked offscreen each spawn so stock "+N" XP pushes can't race ours.
 - **Killing-blow hitmarker (red):** the T5 hitmarker is a **stock GSC hudelem**, not engine-drawn —
@@ -872,8 +876,14 @@ try to bundle the `.iwi` → build error.
   ⚠ The white `else` branch is **not** cosmetic tidiness — `.color` persists on the element, so every
   marker-drawing hit must re-stamp it or the last kill's red rides along. That is also why the block
   sits **above** the same-team return: stock draws a marker for friendly fire too (`:948` only
-  excludes self-damage). ⚠ Known edge, accepted: a shotgun's pellets are separate damage events in one
-  frame, so a non-lethal pellet processed after the lethal one whitens the marker.
+  excludes self-damage). ⚠ **The `fadeOverTime( 0 )` ahead of the write is load-bearing, not noise:**
+  `fadeOverTime` arms an interpolation over the hudelem's **whole RGBA**, not just alpha, and stock
+  leaves a **1s** fade running after *every* hit — so without the snap a `.color` write CROSSFADES,
+  and a body shot followed by the kill inside that second rendered **pink** (live, and only when a
+  white marker preceded the red — a lone kill marker was always correct). It does not touch the
+  fade-out: stock re-arms `fadeOverTime(1)` itself right before its own `alpha = 0`
+  ([[hudelem-fadeovertime-lerps-color]]). ⚠ Known edge, accepted: a shotgun's pellets are separate
+  damage events in one frame, so a non-lethal pellet processed after the lethal one whitens the marker.
 
 ⚠ **Every `setClientDvar` is ONE reliable server command, and the client's ring buffer for them is
 FIXED (`MAX_RELIABLE_COMMANDS`).** Blowing it produces **two different client `Com_Error` disconnects —
@@ -1292,6 +1302,13 @@ tables → `docs/REFERENCE.md`.
 | `scr_pregame_timelimit` | 0 | Warmup time limit (min). ⚠ Keep **0** — stock registers it seed-if-empty at 5, and its time-out **rotates the map** instead of starting the match. Seeded to 0 by `gf.gsc` (strip-marked) + `dedicated.cfg.example`. |
 
 **Teams & bots** (dev-only reconciler)
+> Bot display names + the orange `^<BOT` clantag come from **`storage/t5/bots.txt`** (native
+> Plutonium, `name,clantag` per line, box-local — above the mod folder, never deployed; carried in
+> `docs/MIGRATION.md`). ⚠ **Read at process start** — mid-process bot reconnects keep the internal
+> random names; only a bootstrapper restart loads a change
+> ([[plutonium-bots-txt-bot-names-clantags]]). `sv_randomizeBotNames` (panel row) picks randomly
+> from the list. Does not rename the democlient.
+
 | dvar | default | meaning |
 |---|---|---|
 | `gf_fill_n` | 2 | **Per-team TARGET size.** Boundary pass evens humans to off-by-1, then pads both sides with bots to `max(bigger human side, gf_fill_n)` — humans define the size, bots absorb variance, enough humans = zero bots. **0 = no bot fill** (balancing/queue still run; manual bot control sticks). Clamp 0-6. With `gf_team_lock 1` this is also the hard HUMAN cap per side. |
