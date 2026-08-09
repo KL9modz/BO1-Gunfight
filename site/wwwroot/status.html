@@ -8,6 +8,11 @@
   <meta name="theme-color" content="#0b0d10" />
   <meta name="robots" content="noindex" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ff7a1a'/%3E%3Ctext x='16' y='22' font-family='Segoe UI,Arial' font-size='15' font-weight='800' text-anchor='middle' fill='%231a1106'%3EGF%3C/text%3E%3C/svg%3E" />
+  <!-- iOS "Add to Home Screen" icon. Its ABSENCE here is why saving this page to an iPhone
+       homescreen produced a blank tile while the homepage produced the OPS emblem: iOS reads
+       apple-touch-icon per PAGE and does not inherit it from the origin. Root-relative on
+       purpose - a bare "assets/..." breaks for any page not at the web root (see admin.html). -->
+  <link rel="apple-touch-icon" href="/assets/logo.png" />
   <style>
     :root{
       --bg:#0b0d10; --panel:#14171c; --panel2:#191d23; --bd:#262b33;
