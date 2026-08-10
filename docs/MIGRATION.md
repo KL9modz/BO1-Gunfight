@@ -26,9 +26,10 @@ Do these on the OLD box, ahead of any purchase. None of them depend on owning th
 
 1. **Drop the DNS TTL to 300s** on `gunfight.us` (A + AAAA). This is the only step with a
    mandatory lead time - at a 3600s or 86400s TTL the cutover drags for hours. Do it first.
-2. **Verify each carry-list item below actually exists** and note its path. Finding out that
-   `tools/notify/config.json` was never created is a five-minute problem now and a confusing
-   silent-no-alerts problem later.
+2. **Verify each carry-list item below actually exists** and note its path — this is now
+   scripted: **`.\tools\carry.ps1 -Check`** reports every item (exists / missing / optional) and
+   exits non-zero on a missing REQUIRED one. Finding out that `tools/notify/config.json` was
+   never created is a five-minute problem now and a confusing silent-no-alerts problem later.
 3. **Take a provider snapshot.** It is the rollback for everything that follows.
 4. **Decide rotate-vs-carry for each secret** (table in Phase 2). A migration is the cheapest
    moment to rotate, because you are rewriting the files that hold them anyway.
@@ -42,6 +43,13 @@ Do these on the OLD box, ahead of any purchase. None of them depend on owning th
 ## Phase 1 - The carry list
 
 Everything below is box-local. Group by group, with how it moves.
+
+> **This phase is scripted: `.\tools\carry.ps1 -Zip`** collects every file item below (plus the
+> two scheduled-task XMLs register_services.ps1 does not recreate, the firewall posture, and a
+> GF_HITCH baseline extracted from games_mp.log) into one bundle with a MANIFEST that carries
+> per-item restore notes and the not-a-file checklist. ⚠ The bundle holds live secrets and player
+> PII — scp only, delete from both boxes once verified. The table stays authoritative for WHAT
+> moves and WHY; the script is the executable form.
 
 ### 1. Game server & settings
 

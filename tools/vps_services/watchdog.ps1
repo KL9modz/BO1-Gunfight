@@ -56,6 +56,26 @@ param(
     [string]   $ModRootPath      = '',   # ...\storage\t5\mods\mp_gunfight (for log hygiene); derived if empty
     [int]      $LogArchiveBudgetMB = 400,# per-base cap on the engine's rolled <log>.NNN archive files (live file untouched)
     [int]      $LiveLogWarnMB    = 800,  # warn if a LIVE log grows past this (a flood dvar likely left on; restart rolls it)
+    # Periodic tasks (short-lived, re-triggered) whose health check-1 cannot see: State=Ready is
+    # their NORMAL state, so the Running check would false-alarm. Instead check 1b watches their
+    # LastTaskResult and LastRunTime age. GF-Watchdog itself is deliberately absent - it cannot
+    # judge itself mid-run; security_watch carries the reciprocal check on THIS task.
+    [string[]] $PeriodicTasks    = @('GF-SecurityWatch'),
+    [int]      $PeriodicMaxAgeMin = 15,  # 5x the 3-min cadence; a trigger that stopped firing shows here
+    # RCON panel LIVENESS (check 1c). Task state alone cannot see a hung node process, and the
+    # failure is insidious: status_service falls back to direct rcon so admin.json stays fresh
+    # and check 2 never fires - meanwhile geo, conn_logger's fallback, and THIS script's own
+    # map_rotate remediation are all dead. Probe = one HTTP GET of a static asset (zero rcon).
+    [int]      $PanelProbeFailsToAct = 2, # consecutive failed probes before bouncing the task
+    # Plutonium update drift (check 5). The launch bat applies updates (bounded) at wrapper
+    # start; THIS is the policy for when to restart: new CDN revision + empty server. Endpoint is
+    # the one mxve/plutonium-updater defaults to; local truth is the updater's own info.json.
+    [string]   $PlutoCdnInfoUrl  = 'https://cdn.plutoniummod.com/updater/prod/info.json',
+    # Plutonium install root (holds the updater's info.json). Empty = derived from the t5 storage
+    # tree at runtime - which is only correct when running from the DEPLOYED mirror; a repo-clone
+    # run derives garbage (the carry.ps1 location trap), so tests pass this explicitly.
+    [string]   $PlutoRootPath    = '',
+    [int]      $UpdateCheckEveryMin = 30,
     [switch]   $NoRemediate,             # detect + alert only; never kill/rotate (like the old behavior)
     [switch]   $WhatIf
 )
@@ -243,6 +263,80 @@ foreach ($taskName in $Tasks) {
     }
 }
 
+# ---- 1b. periodic-task health (the tasks check 1 is structurally blind to) ----
+# A periodic task that starts FAILING (nonzero LastTaskResult) or whose trigger stops firing
+# (stale LastRunTime) dies silently: State=Ready is its normal state, so nothing above notices.
+# For GF-SecurityWatch that silence means ALL security alerting is gone. 0x41301 (267009) =
+# "currently running" and 0x41303 = "has not yet run" are not failures.
+foreach ($ptName in $PeriodicTasks) {
+    $pt = Get-ScheduledTask -TaskName $ptName -ErrorAction SilentlyContinue
+    if (-not $pt) { Log "$ptName - NOT REGISTERED (periodic; skipping)"; continue }
+    $pi = Get-ScheduledTaskInfo -TaskName $ptName -ErrorAction SilentlyContinue
+    $ageMin = if ($pi.LastRunTime) { [int]((Get-Date) - $pi.LastRunTime).TotalMinutes } else { 9999 }
+    $badResult = ($pi.LastTaskResult -ne 0 -and $pi.LastTaskResult -ne 267009 -and $pi.LastTaskResult -ne 267011)
+    $isDown = ($ageMin -gt $PeriodicMaxAgeMin) -or $badResult
+    $key = "periodic-$ptName"
+    if ($isDown) {
+        $anyProblem = $true
+        $why = if ($badResult) { "LastTaskResult=0x$('{0:X}' -f $pi.LastTaskResult)" } else { "last ran ${ageMin} min ago (cadence 3 min)" }
+        Log "$ptName - UNHEALTHY: $why"
+        if (-not $WhatIf -and -not $NoRemediate) { try { Start-ScheduledTask -TaskName $ptName; Log "$ptName - start issued" } catch { Log "$ptName - start FAILED: $($_.Exception.Message)" } }
+        if (-not $WhatIf -and (Should-Alert $key $true)) {
+            Send-Alert -title "Gunfight VPS - $ptName unhealthy" `
+                -message "$ptName : $why. $(if(-not $NoRemediate){'Start issued.'}else{'Remediation disabled.'}) If this is SecurityWatch, security alerting was dark for that window." `
+                -priority 'high' -tags 'warning,robot'
+            Set-Item-State $key $true (Get-Date).ToString('o')
+        } elseif (-not $WhatIf) { Set-Item-State $key $true (Get-Item-State $key).lastAlert }
+    } else {
+        Log "$ptName - OK (last ran ${ageMin} min ago, result 0x$('{0:X}' -f $pi.LastTaskResult))"
+        if (-not $WhatIf -and (Should-Alert $key $false)) {
+            Send-Alert -title "Gunfight VPS - $ptName healthy again" -message "$ptName is running on schedule again." -priority 'default' -tags 'white_check_mark'
+        }
+        if (-not $WhatIf) { Set-Item-State $key $false $null }
+    }
+}
+
+# ---- 1c. RCON panel LIVENESS (an HTTP probe; task state cannot see a hung node) ----
+# Insidious failure: a wedged panel leaves admin.json FRESH (status_service falls back to direct
+# rcon), so check 2 stays green while geo/flags, conn_logger's fallback and this script's own
+# map_rotate remediation are all quietly dead. One GET of a static asset costs zero rcon.
+$panelKey = 'panel-liveness'
+$panelOk = $false
+try {
+    $resp = Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Uri "http://127.0.0.1:$PanelPort/" `
+                              -Headers @{ Host = "127.0.0.1:$PanelPort" }
+    $panelOk = ($resp.StatusCode -eq 200)
+} catch { $panelOk = $false }
+# Consecutive-fail counter lives as a plain int directly on $state (Save-State serializes the
+# whole object) - the items store is for down/lastAlert pairs, not counters.
+$probeFails = 0
+if ($state.PSObject.Properties.Name -contains 'panelProbeFails') { $probeFails = [int]$state.panelProbeFails }
+if ($panelOk) {
+    if ($probeFails -gt 0) { Log "panel probe OK again (was failing x$probeFails)" } else { Log 'panel probe OK' }
+    $state | Add-Member -NotePropertyName panelProbeFails -NotePropertyValue 0 -Force
+    if (-not $WhatIf -and (Should-Alert $panelKey $false)) {
+        Send-Alert -title 'Gunfight VPS - panel responsive again' -message 'The RCON panel is answering HTTP again.' -priority 'default' -tags 'white_check_mark'
+    }
+    if (-not $WhatIf) { Set-Item-State $panelKey $false $null }
+} else {
+    $probeFails++
+    $state | Add-Member -NotePropertyName panelProbeFails -NotePropertyValue $probeFails -Force
+    $anyProblem = $true
+    Log "panel probe FAILED (consecutive: $probeFails/$PanelProbeFailsToAct)"
+    if ($probeFails -ge $PanelProbeFailsToAct) {
+        if (-not $WhatIf -and -not $NoRemediate) {
+            try { Restart-GfScheduledTask -TaskName 'GF-RconPanel'; Log 'bounced GF-RconPanel' }
+            catch { Log "GF-RconPanel bounce FAILED: $($_.Exception.Message)" }
+        }
+        if (-not $WhatIf -and (Should-Alert $panelKey $true)) {
+            Send-Alert -title 'Gunfight VPS - panel hung' `
+                -message "The RCON panel task is Running but HTTP on :$PanelPort failed $probeFails checks in a row. $(if(-not $NoRemediate){'Bounced the task.'}else{'Remediation disabled.'}) While hung: no geo, no conn_logger fallback, no watchdog map_rotate." `
+                -priority 'high' -tags 'warning,robot'
+            Set-Item-State $panelKey $true (Get-Date).ToString('o')
+        } elseif (-not $WhatIf) { Set-Item-State $panelKey $true (Get-Item-State $panelKey).lastAlert }
+    }
+}
+
 # ---- 2. admin.json freshness (proxy for "is the live game server responding") ----
 $adminKey = 'admin.json-staleness'
 if (Test-Path $AdminJsonPath) {
@@ -414,6 +508,66 @@ if ($health -and $health.roundStuck) {
         Send-Alert -title 'Gunfight VPS - match cycling again' -message 'Rounds are advancing again.' -priority 'default' -tags 'white_check_mark'
     }
     if (-not $WhatIf) { Set-Item-State 'match-stuck' $false $null }
+}
+
+# ---- 5. Plutonium update drift (keep the server current WITHOUT a per-restart updater) ----
+# Mechanism grounded 2026-08-10: the official updater maintains {revision} in
+# <Plutonium root>\info.json, and the CDN advertises {revision} at $PlutoCdnInfoUrl (the endpoint
+# mxve/plutonium-updater defaults to). "Update available" is a two-integer compare over one
+# HTTPS GET. The launch bat applies updates (bounded, once per wrapper start), so the POLICY here
+# is: drift + EMPTY server -> bounce GF-GameServer under a short maintenance marker (the bat
+# updates on the way up); players on -> alert once per revision and wait for empty.
+# Rate-limited to every $UpdateCheckEveryMin so we are polite to the CDN. Path note: the watchdog
+# runs as SYSTEM, so $env:LOCALAPPDATA is the WRONG profile - derive the Plutonium root from the
+# t5 storage tree instead (same location-derivation trap as carry.ps1 documented).
+$doUpdateCheck = $true
+if ($state.PSObject.Properties.Name -contains 'updateCheckAt' -and $state.updateCheckAt) {
+    try { $doUpdateCheck = ((Get-Date) - [datetime]$state.updateCheckAt).TotalMinutes -ge $UpdateCheckEveryMin } catch { }
+}
+if ($doUpdateCheck) {
+    $state | Add-Member -NotePropertyName updateCheckAt -NotePropertyValue ((Get-Date).ToString('o')) -Force
+    try {
+        $plutoRoot = $PlutoRootPath
+        if ([string]::IsNullOrEmpty($plutoRoot)) {
+            $t5 = Resolve-T5Root
+            if ([string]::IsNullOrEmpty($t5)) { throw 'Resolve-T5Root returned empty (running outside the deployed mirror?) - pass -PlutoRootPath' }
+            $plutoRoot = Split-Path -Parent (Split-Path -Parent $t5)   # ...\storage\t5 -> ...\Plutonium
+        }
+        $localInfo = Join-Path $plutoRoot 'info.json'
+        if (Test-Path $localInfo) {
+            $localRev = [int](Get-Content $localInfo -Raw | ConvertFrom-Json).revision
+            $cdnRev   = [int](Invoke-RestMethod -UseBasicParsing -TimeoutSec 15 -Uri $PlutoCdnInfoUrl).revision
+            if ($cdnRev -gt $localRev) {
+                $anyProblem = $true
+                $humans = if ($health -and $null -ne $health.humans) { [int]$health.humans } else { -1 }
+                Log "UPDATE AVAILABLE: local r$localRev -> cdn r$cdnRev (humans=$humans)"
+                $alreadyAlerted = ($state.PSObject.Properties.Name -contains 'updateAlertRev' -and [int]$state.updateAlertRev -eq $cdnRev)
+                if ($humans -eq 0 -and -not $WhatIf -and -not $NoRemediate) {
+                    # Empty server: restart now. The marker mutes the OTHER checks for the planned
+                    # window (this run continues; the next runs skip while the bat updates+relaunches).
+                    Write-GfMaintenanceMarker -Dir $scriptRoot -Minutes 8 -Reason "plutonium update r$localRev -> r$cdnRev" | Out-Null
+                    @(Get-Process -Name 'plutonium' -ErrorAction SilentlyContinue) | Stop-Process -Force -ErrorAction SilentlyContinue
+                    try {
+                        Stop-ScheduledTask -TaskName $GameServerTask -ErrorAction SilentlyContinue
+                        @(Get-Process -Name 'plutonium-bootstrapper-win32' -ErrorAction SilentlyContinue) | Stop-Process -Force -ErrorAction SilentlyContinue
+                        Start-ScheduledTask -TaskName $GameServerTask
+                        Log "bounced $GameServerTask for the update (bat applies it on the way up)"
+                        Send-Alert -title 'Gunfight VPS - updating Plutonium' `
+                            -message "New Plutonium revision r$cdnRev (was r$localRev). Server was empty - restarted to apply. Back in ~2 min." `
+                            -priority 'default' -tags 'arrows_counterclockwise,robot'
+                        $state | Add-Member -NotePropertyName updateAlertRev -NotePropertyValue $cdnRev -Force
+                    } catch { Log "update bounce FAILED: $($_.Exception.Message)" }
+                } elseif (-not $alreadyAlerted -and -not $WhatIf) {
+                    Send-Alert -title 'Gunfight VPS - Plutonium update pending' `
+                        -message "New revision r$cdnRev available (running r$localRev). $humans player(s) on - will auto-apply at the next empty check. A stale build can break NEW clients, so don't sit on it for days." `
+                        -priority 'default' -tags 'information_source'
+                    $state | Add-Member -NotePropertyName updateAlertRev -NotePropertyValue $cdnRev -Force
+                }
+            } else {
+                Log "plutonium current (r$localRev = cdn r$cdnRev)"
+            }
+        } else { Log "update check skipped: $localInfo not found" }
+    } catch { Log "update check failed (non-fatal): $($_.Exception.Message)" }
 }
 
 # (4) LOG HYGIENE. Prune the engine's CLOSED rolled log archives to a per-base budget so a

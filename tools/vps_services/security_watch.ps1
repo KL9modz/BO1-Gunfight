@@ -528,6 +528,68 @@ try {
 } catch { Log "disk check failed: $($_.Exception.Message)" }
 $new['diskAlertAt'] = $newDiskAt
 
+# ══ 10. is the WATCHDOG alive? (the reciprocal dead-man check) ════════════════
+# GF-Watchdog watches every service INCLUDING this one (its check 1b) - but nothing watched the
+# watchdog. If its trigger breaks or its script starts failing every run, ALL self-healing and
+# health alerting dies silently, and that failure takes every other net down with it. This is
+# the mirror of its check on us: two periodic tasks on INDEPENDENT triggers, each the other's
+# dead-man switch. 0x41301 = "currently running" is not a failure.
+try {
+    $wdName = 'GF-Watchdog'
+    $wd  = Get-ScheduledTask -TaskName $wdName -ErrorAction SilentlyContinue
+    if ($wd) {
+        $wdi = Get-ScheduledTaskInfo -TaskName $wdName -ErrorAction SilentlyContinue
+        $wdAgeMin = if ($wdi.LastRunTime) { [int]((Get-Date) - $wdi.LastRunTime).TotalMinutes } else { 9999 }
+        $wdBad = ($wdi.LastTaskResult -ne 0 -and $wdi.LastTaskResult -ne 267009 -and $wdi.LastTaskResult -ne 267011)
+        if ($wdAgeMin -gt 15 -or $wdBad) {
+            $why = if ($wdBad) { "LastTaskResult=0x$('{0:X}' -f $wdi.LastTaskResult)" } else { "last ran ${wdAgeMin} min ago (cadence 3 min)" }
+            # Remediate first, alert regardless: with the watchdog down there is no other healer.
+            if (-not $WhatIf) { try { Start-ScheduledTask -TaskName $wdName } catch { } }
+            Alert "$($script:srvName) - WATCHDOG down" `
+                  ("$wdName : $why`nWhile it is down there is NO self-healing and NO health alerting - every other safety net is dark. Start was issued; verify it stays up.") `
+                  'urgent' @('rotating_light')
+        } else {
+            Log "watchdog OK (last ran ${wdAgeMin} min ago)"
+        }
+    } else {
+        Alert "$($script:srvName) - WATCHDOG not registered" `
+              'GF-Watchdog does not exist as a scheduled task. No self-healing is running. Re-register with register_services.ps1.' `
+              'urgent' @('rotating_light')
+    }
+} catch { Log "watchdog check failed: $($_.Exception.Message)" }
+
+# ══ 11. Windows evaluation-license expiry (INERT on a licensed box) ═══════════
+# Pre-staged for the migration target: the plan runs Windows Server EVALUATION for the trial
+# month, and an expired eval starts shutting the machine down HOURLY - silently, at day 180.
+# slmgr /dlv names the channel; only an EVAL channel with low remaining time alerts, so on this
+# (licensed) box the check logs one line and does nothing. Threshold 14 days; re-alert daily via
+# the standard throttle. Rearm guidance lives in the alert because future-you will read it there.
+try {
+    $slmgr = & cscript.exe //nologo "$env:SystemRoot\System32\slmgr.vbs" /dlv 2>$null
+    $txt = ($slmgr -join "`n")
+    if ($txt -match '(?i)EVAL|TIMEBASED') {
+        $minsLeft = $null
+        if ($txt -match '(?i)Timebased activation expiration:\s*(\d+)\s*minute') { $minsLeft = [int]$Matches[1] }
+        if ($null -ne $minsLeft) {
+            $daysLeft = [math]::Round($minsLeft / 1440, 1)
+            Log "windows EVAL detected: $daysLeft days remaining"
+            if ($daysLeft -le 14) {
+                $evalAt = State-Get $state 'evalAlertAt' $null
+                $due = $true
+                if ($evalAt) { try { $due = ((Get-Date) - [datetime]$evalAt).TotalHours -ge 24 } catch { } }
+                if ($due) {
+                    Alert "$($script:srvName) - Windows eval expires in $daysLeft days" `
+                          ("At expiry Windows begins shutting down HOURLY - on an unattended server that is an outage loop. Options: slmgr /rearm (resets to 180d, max 6 uses, restart required) or license it (DISM /Online /Set-Edition:ServerStandard /ProductKey:...).") `
+                          'high' @('warning', 'hourglass')
+                    $new['evalAlertAt'] = (Get-Date).ToString('o')
+                }
+            }
+        } else { Log 'windows EVAL channel detected but no expiration counter parsed - check slmgr /dlv by hand' }
+    } else {
+        Log 'windows license: not an evaluation channel (check inert)'
+    }
+} catch { Log "eval check failed: $($_.Exception.Message)" }
+
 # ── first run: seed bookmarks at the TIP so the next run starts clean ─────────
 if ($null -eq $state) {
     foreach ($p in @(@{k='sshRecordId';l='OpenSSH/Operational'}, @{k='secRecordId';l='Security'}, @{k='sysRecordId';l='System'})) {

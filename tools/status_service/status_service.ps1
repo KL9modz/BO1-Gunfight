@@ -376,6 +376,16 @@ $lastRound         = -1
 $lastRoundChangeAt = Get-Date
 
 while ($true) {
+    # ── loop stall instrument ─────────────────────────────────────────────────
+    # WHY: conn_logger needed its panel fallback 19-27x/DAY (measured 08-07..08-10) because
+    # admin.json goes stale - i.e. THIS loop stalls past 30s - and nothing named the phase that
+    # ate the time. Every consumer downstream inherits those stalls. One warning line per slow
+    # iteration, with the per-phase split, turns the next stall from a theory into a filename.
+    # Suspect on current evidence: the 60s history rebuild runs INLINE here, and its two geo
+    # batches are ~9 chunks x 5s HTTP timeout at today's 564 unique IPs - up to ~90s worst case.
+    $swLoop = [System.Diagnostics.Stopwatch]::StartNew()
+    $msAcq = 0; $msSnap = 0; $msHist = 0; $msHealth = 0
+
     $online = $false
     $snapshot = $null
     $adminSnapshot = $null
@@ -564,6 +574,8 @@ while ($true) {
         }
     }
 
+    $msAcq = $swLoop.ElapsedMilliseconds
+
     try { Write-Snapshot -path $OutFile -obj $snapshot } catch { Write-Warning ("write failed: {0}" -f $_.Exception.Message) }
 
     # Admin snapshot (with IPs) only when explicitly enabled AND the folder is
@@ -571,6 +583,7 @@ while ($true) {
     if (Test-AdminEnabled $AdminOutFile) {
         try { Write-Snapshot -path $AdminOutFile -obj $adminSnapshot } catch { Write-Warning ("admin write failed: {0}" -f $_.Exception.Message) }
     }
+    $msSnap = $swLoop.ElapsedMilliseconds - $msAcq
 
     # --- Day-file derived histories ----------------------------------------------
     # Both feeds are parsed from the SAME static players_*.log files, so they rebuild on a slow
@@ -621,6 +634,7 @@ while ($true) {
             } catch { Write-Warning ("history write failed: {0}" -f $_.Exception.Message) }
         }
     }
+    $msHist = $swLoop.ElapsedMilliseconds - $msAcq - $msSnap
 
     # --- Health snapshot (ops/detailed status: admin page + box watchdog) --------
     # No PII (round/map/counts/stuck-state), but written to the same .secured-gated
@@ -680,6 +694,15 @@ while ($true) {
             serverUptimeMins     = $uptimeMins
         }
         try { Write-Snapshot -path $HealthOutFile -obj $health } catch { Write-Warning ("health write failed: {0}" -f $_.Exception.Message) }
+    }
+
+    # ── stall verdict. >10s means this iteration alone can push admin.json toward consumers'
+    # staleness cutoffs (conn_logger skips its diff at 30s). The phase split names the culprit.
+    $swLoop.Stop()
+    $msHealth = $swLoop.ElapsedMilliseconds - $msAcq - $msSnap - $msHist
+    if ($swLoop.ElapsedMilliseconds -gt 10000) {
+        Write-Warning ("SLOW POLL: {0:N1}s total (acquire={1:N1}s snapshots={2:N1}s history+geo={3:N1}s health={4:N1}s) - this is what makes admin.json stale for consumers" -f `
+            ($swLoop.ElapsedMilliseconds/1000), ($msAcq/1000), ($msSnap/1000), ($msHist/1000), ($msHealth/1000))
     }
 
     Start-Sleep -Seconds $IntervalSeconds
