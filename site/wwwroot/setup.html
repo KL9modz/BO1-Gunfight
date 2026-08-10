@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Getting Started &mdash; Black Ops Gunfight</title>
+  <title>Getting Started &middot; Black Ops Gunfight</title>
   <meta name="description" content="Install Black Ops 1 with the CB Servers Launcher, dial in the recommended settings, fix aim-down-sights, and join the Gunfight server." />
   <meta name="theme-color" content="#0b0d10" />
   <meta property="og:type" content="article" />
-  <meta property="og:title" content="Getting Started &mdash; Black Ops Gunfight" />
+  <meta property="og:title" content="Getting Started &middot; Black Ops Gunfight" />
   <meta property="og:description" content="Install, recommended settings, the ADS fix, and how to join the Gunfight server." />
   <meta property="og:url" content="https://gunfight.us/setup.html" />
   <meta property="og:image" content="https://gunfight.us/assets/banner.jpg" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ff7a1a'/%3E%3Ctext x='16' y='22' font-family='Segoe UI,Arial' font-size='15' font-weight='800' text-anchor='middle' fill='%231a1106'%3EGF%3C/text%3E%3C/svg%3E" />
   <link rel="apple-touch-icon" href="/assets/logo.png" />
-  <link rel="stylesheet" href="styles.css?v=6" />
+  <link rel="stylesheet" href="styles.css?v=9" />
 </head>
 <body>
   <main class="wrap wrap-doc">
@@ -27,13 +27,23 @@
     <p class="lead">Black Ops Gunfight runs on <a href="https://plutonium.pw/" target="_blank" rel="noopener">Plutonium</a> for T5 (Call of Duty: Black Ops 1). The open source <a href="https://docs.cbservers.xyz/launcher" target="_blank" rel="noopener">CB Servers Launcher</a> gets you the game for free and Plutonium in one app. You&rsquo;ll need a free <a href="https://forum.plutonium.pw/register" target="_blank" rel="noopener">Plutonium account</a> to play.</p>
 
     <nav class="toc" aria-label="Contents">
-      <h2>On this page</h2>
-      <ol>
-        <li><a href="#install">Install</a></li>
-        <li><a href="#settings">Recommended settings</a></li>
-        <li><a href="#join">Find &amp; join Gunfight</a></li>
-        <li><a href="#trouble">Troubleshooting</a></li>
-      </ol>
+      <span class="toc-label">On this page</span>
+      <div class="toc-row">
+        <a class="toc-link" href="#install"><span class="tn">1</span>Install</a>
+        <a class="toc-link" href="#settings"><span class="tn">2</span>Recommended settings</a>
+        <a class="toc-link" href="#join"><span class="tn">3</span>Find &amp; join Gunfight</a>
+        <a class="toc-link" href="#trouble"><span class="tn">4</span>Troubleshooting</a>
+      </div>
+      <div class="toc-row toc-sub">
+        <span class="toc-sub-label">Settings</span>
+        <a href="#graphics">Graphics</a>
+        <a href="#fov">FOV</a>
+        <a href="#game">Game</a>
+        <a href="#controller">Controller</a>
+        <a href="#console">Console</a>
+        <a href="#ads">Sprint/ADS fix</a>
+        <a href="#console-cmds">Console commands</a>
+      </div>
     </nav>
 
     <!-- 1. INSTALL -->
@@ -48,7 +58,7 @@
         <li><span class="n">5</span><p><strong>Click PLAY &rarr; Multiplayer &rarr; Server Browser &rarr; <a href="#join">Gunfight</a></strong></p></li>
       </ol>
       <div class="note">
-        <p>With Black Ops installed, you can open it with either CB Launcher or directly through Plutonium.</p>
+        <p>With Black Ops installed, you can open it with either <a href="https://docs.cbservers.xyz/launcher" target="_blank" rel="noopener">CB Launcher</a> or directly through <a href="https://plutonium.pw/docs/install/#plutonium-launcher" target="_blank" rel="noopener">Plutonium</a>.</p>
       </div>
       <!-- image slot: assets/getting-started/01-launcher-setup.png (CB Servers Launcher: Library -> Black Ops -> SETUP) -->
     </section>
@@ -56,9 +66,9 @@
     <!-- 2. SETTINGS -->
     <section class="doc" id="settings">
       <h2 class="sec">2. Recommended settings</h2>
-      <p>Black Ops is old, but with Plutonium it can be optimized for modern systems. Here are a few critical tweaks to get the game looking sharp and running fast.</p>
+      <p>Black Ops can be optimized for modern systems. Here are a few critical tweaks to get the game looking sharp and running fast.</p>
 
-      <h3>Graphics</h3>
+      <h3 id="graphics">Graphics</h3>
       <div class="table-wrap">
         <table class="settings">
           <thead><tr><th>Setting</th><th>Recommended</th></tr></thead>
@@ -80,19 +90,18 @@
           </tbody>
         </table>
       </div>
-      <figure class="shot"><img src="assets/getting-started/graphics.png" alt="Recommended in-game Graphics settings" loading="lazy" /><figcaption>Graphics settings &mdash; Settings &rarr; Graphics.</figcaption></figure>
+      <figure class="shot"><img src="assets/getting-started/graphics.png" alt="Recommended in-game Graphics settings" loading="lazy" /><figcaption>Settings &rarr; Graphics.</figcaption></figure>
 
       <h3 id="fov">Field of view (FOV)</h3>
-      <p>The in-game <strong>Field of view</strong> slider maxes out at <strong>80</strong>, but Plutonium lets you push wider by combining it with <strong>FOV scale</strong> (Game tab). Your true FOV is <code>cg_fov</code> &times; <code>cg_fovScale</code>, so any scale above 1 takes you past 80. Set both from the in-game <strong>Options</strong> menu (Field of view on the Graphics tab, FOV scale on the Game tab), or type them straight into the console as <code>cg_fov</code> and <code>cg_fovScale</code>. If you don&rsquo;t want to use this system, just leave <strong>FOV scale</strong> at <strong>1</strong>.</p>
-      <p><strong>FOV scale also drives your aim-down-sights (ADS) sensitivity.</strong> Plutonium reworked how <code>cg_fov</code> and <code>cg_fovScale</code> behave: the vanilla game slows your sensitivity when you aim down sights, but Plutonium now bases it on your FOV scale instead. A few examples (each totalling 90 FOV):</p>
+      <p>The in-game <strong>Field of view</strong> slider caps at <strong>80</strong>, but Plutonium lets you go wider using <strong>FOV scale</strong> (Game tab) alongside <strong>Field of view</strong> (Graphics tab). To work out your total FOV, multiply <code>cg_fov</code> by <code>cg_fovScale</code>; any scale above 1 pushes past 80. Set both from the in-game <strong>Options</strong> menu, or directly via <a href="#console">console</a> (<code>cg_fov</code>, <code>cg_fovScale</code>).</p>
+      <p><strong>FOV scale also affects your ADS sensitivity.</strong> Examples totalling <strong>90</strong> FOV:</p>
       <ul>
-        <li><code>cg_fov 90</code> + <code>cg_fovScale 1</code> = 90 FOV. Only your hipfire FOV changes; sensitivity still differs when you zoom in, because the ADS FOV is lower.</li>
-        <li><code>cg_fov 40</code> + <code>cg_fovScale 2.25</code> = 90 FOV. Your ADS FOV matches your hipfire FOV &mdash; more situational awareness at the cost of less zoom detail &mdash; so sensitivity is the <strong>same</strong> hipfiring and aiming.</li>
-        <li><code>cg_fov 70</code> + <code>cg_fovScale 1.3</code> = 90 FOV. ADS is slightly zoomed in versus hipfire, and sensitivity is faster than vanilla because of the higher total FOV.</li>
+        <li><code>cg_fov 90</code> + <code>cg_fovScale 1</code>: only hipfire widens, so ADS still feels slower.</li>
+        <li><code>cg_fov 40</code> + <code>cg_fovScale 2.25</code>: ADS FOV matches hipfire, so sensitivity never changes.</li>
+        <li><code>cg_fov 70</code> + <code>cg_fovScale 1.3</code>: ADS zooms in slightly; sensitivity faster than vanilla.</li>
       </ul>
-      <p>To work out your total FOV, multiply <code>cg_fov</code> by <code>cg_fovScale</code> &mdash; for a standard <strong>80 FOV</strong>, use <code>cg_fov 65</code> and <code>cg_fovScale 1.32</code>. Expect to experiment with values to find what feels comfortable.</p>
 
-      <h3>Game</h3>
+      <h3 id="game">Game</h3>
       <div class="table-wrap">
         <table class="settings">
           <thead><tr><th>Setting</th><th>Recommended</th></tr></thead>
@@ -105,27 +114,49 @@
         </table>
       </div>
 
-      <figure class="shot"><img src="assets/getting-started/game-settings.png" alt="Recommended in-game Game settings" loading="lazy" /><figcaption>Game settings &mdash; Settings &rarr; Game.</figcaption></figure>
+      <figure class="shot"><img src="assets/getting-started/game-settings.png" alt="Recommended in-game Game settings" loading="lazy" /><figcaption>Settings &rarr; Game.</figcaption></figure>
 
-      <h3>Controller</h3>
+      <h3 id="controller">Controller</h3>
       <ul>
         <li><strong>Controls &rarr; Gamepad &rarr; Yes</strong> to enable controller support.</li>
         <li>If you are using a PlayStation controller, use <a href="https://ds4-windows.com/" target="_blank" rel="noopener">DS4Windows</a> to present it as an Xbox controller.</li>
       </ul>
 
-      <h3 id="console">How to open the console</h3>
-      <p>Press the <code>~</code> key (tilde / grave, top-left under <strong>Esc</strong>) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press <code>~</code> again. Type a command and hit <strong>Enter</strong> &mdash; you&rsquo;ll need it for the <a href="#ads">Sprint/ADS improvement</a> below.</p>
+      <details class="fold" id="console">
+        <summary>
+          <h3>How to open the console</h3>
+          <span class="fold-tag" aria-hidden="true"></span>
+          <span class="fold-chev" aria-hidden="true"></span>
+        </summary>
+        <div class="fold-body">
+          <p>Press the <code>~</code> key (tilde / grave, top-left under <strong>Esc</strong>) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press <code>~</code> again. Type a command and hit <strong>Enter</strong>. You&rsquo;ll need it for the <a href="#ads">Sprint/ADS improvement</a> below.</p>
+        </div>
+      </details>
 
-      <h3 id="ads">Mouse &amp; Keyboard: Sprint/ADS improvement</h3>
-      <p>Black Ops 1 has a long-standing quirk: <strong>you can&rsquo;t aim down sights while the Sprint key (Shift) is held.</strong> Normally you have to fully release Shift before you can aim &mdash; which loses gunfights. One console command fixes it.</p>
-      <p>Open the console (<code>~</code>) and paste:</p>
-      <pre class="cmd"><code>bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"</code></pre>
-      <p>Now you can <strong>ADS without releasing Sprint.</strong> What it does: aiming (<code>+speed_throw</code>) also clears the sprint input (<code>-breath_sprint</code>) so the engine stops blocking your aim. The trailing <code>-sprint</code> is a required no-op &mdash; it absorbs the key event so the sprint release actually fires.</p>
-      <p>The game sometimes strips custom <code>MOUSE2</code> binds on restart. If ADS goes dead, just <strong>re-paste the line</strong>.</p>
+      <details class="fold" id="ads">
+        <summary>
+          <h3>Mouse &amp; Keyboard: Sprint/ADS improvement</h3>
+          <span class="fold-tag" aria-hidden="true"></span>
+          <span class="fold-chev" aria-hidden="true"></span>
+        </summary>
+        <div class="fold-body">
+          <p>Black Ops 1 has a long-standing quirk: <strong>you can&rsquo;t aim down sights while the Sprint key (Shift) is held.</strong> Normally you have to fully release Shift before you can aim, which loses gunfights. One <a href="#console">console</a> command fixes it.</p>
+          <p>Open the <a href="#console">console</a> (<code>~</code>) and paste:</p>
+          <pre class="cmd"><code>bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"</code></pre>
+          <p>Now you can <strong>ADS without releasing Sprint.</strong> What it does: aiming (<code>+speed_throw</code>) also clears the sprint input (<code>-breath_sprint</code>) so the engine stops blocking your aim. The trailing <code>-sprint</code> is a required no-op: it absorbs the key event so the sprint release actually fires.</p>
+          <p>The game sometimes strips custom <code>MOUSE2</code> binds on restart. If ADS goes dead, just <strong>re-paste the line</strong>.</p>
+        </div>
+      </details>
 
-      <h3 id="console-cmds">Recommended console commands</h3>
-      <p>An <strong>alternate way to apply your settings</strong> &mdash; most of these have an in-game menu equivalent (Graphics / Game tabs), but a few have no menu entry at all. Open the console (<code>~</code>) and paste the block. <code>seta</code> both applies a setting <strong>and saves it</strong>, so you only paste once and it sticks across restarts.</p>
-      <pre class="cmd"><code>seta com_maxfps          "144"     // frame cap (also Options -&gt; Game -&gt; Max FPS)
+      <details class="fold" id="console-cmds">
+        <summary>
+          <h3>Recommended console commands</h3>
+          <span class="fold-tag" aria-hidden="true"></span>
+          <span class="fold-chev" aria-hidden="true"></span>
+        </summary>
+        <div class="fold-body">
+          <p>An <strong>alternate way to apply your settings</strong>. Most of these have an in-game menu equivalent (Graphics / Game tabs), but a few have no menu entry at all. Open the <a href="#console">console</a> (<code>~</code>) and paste the block. <code>seta</code> both applies a setting <strong>and saves it</strong>, so you only paste once and it sticks across restarts.</p>
+          <pre class="cmd"><code>seta com_maxfps          "144"     // frame cap (also Options -&gt; Game -&gt; Max FPS)
 seta r_displayRefresh    "144 Hz"  // Match your monitors output Hz
 seta cl_maxpackets       "100"     // stock 30; lowers input latency
 seta com_reduceSleep     "1"       // Options -&gt; Game -&gt; Reduce engine sleeps
@@ -137,11 +168,13 @@ seta cg_fov              "65"      // base FOV (true FOV = cg_fov x cg_fovScale)
 seta cg_fovScale         "1.30"    // 65 x 1.30 = ~85 total; also drives ADS sensitivity
 seta gpad_enabled        "1"       // controller support</code></pre>
 
-      <p><strong>Or apply all of them at once.</strong> Paste this single line into the console and hit <strong>Enter</strong>:</p>
-      <div class="copybox">
-        <button type="button" class="btn btn-ghost copy-btn" data-copy-target="oneliner">Copy</button>
-        <pre class="oneline" id="oneliner"><code>seta com_maxfps 144;seta r_displayRefresh "144 Hz";seta cl_maxpackets 100;seta com_reduceSleep 1;seta r_aaSamples 8;seta r_texFilterAnisoMax 16;seta r_picmip 0;seta sm_enable 1;seta cg_fov 65;seta cg_fovScale 1.30;seta gpad_enabled 1;vid_restart</code></pre>
-      </div>
+          <p><strong>Or apply all of them at once.</strong> Paste this single line into the <a href="#console">console</a> and hit <strong>Enter</strong>:</p>
+          <div class="copybox">
+            <button type="button" class="btn btn-ghost copy-btn" data-copy-target="oneliner">Copy</button>
+            <pre class="oneline" id="oneliner"><code>seta com_maxfps 144;seta r_displayRefresh "144 Hz";seta cl_maxpackets 100;seta com_reduceSleep 1;seta r_aaSamples 8;seta r_texFilterAnisoMax 16;seta r_picmip 0;seta sm_enable 1;seta cg_fov 65;seta cg_fovScale 1.30;seta gpad_enabled 1;vid_restart</code></pre>
+          </div>
+        </div>
+      </details>
     </section>
 
     <!-- 3. JOIN -->
@@ -149,18 +182,11 @@ seta gpad_enabled        "1"       // controller support</code></pre>
       <h2 class="sec">3. Find &amp; join Gunfight</h2>
       <p>Black Ops Gunfight is a ranked server. Join through the in-game <strong>Server Browser</strong>.</p>
       <ol class="steps">
-        <li><span class="n">1</span><p>Launch the game via the Plutonium launcher.</p></li>
+        <li><span class="n">1</span><p>Launch the game with either <a href="https://docs.cbservers.xyz/launcher" target="_blank" rel="noopener">CB Launcher</a> or directly through <a href="https://plutonium.pw/docs/install/#plutonium-launcher" target="_blank" rel="noopener">Plutonium</a>.</p></li>
         <li><span class="n">2</span><p>Click <strong>PLAY</strong> and open the <strong>Server Browser</strong>.</p></li>
-        <li><span class="n">3</span><p>On the <strong>Ranked</strong> tab, click <strong>refresh</strong> then find <code>Gunfight | gunfight.us</code> (mode <strong>GF</strong>) and join.</p></li>
+        <li><span class="n">3</span><p>On the <strong>Ranked</strong> tab, click <strong>refresh</strong> then find <code>Gunfight [gunfight.us]</code> (mode <strong>GF</strong>) and join.</p></li>
       </ol>
-      <div class="note">
-        <p>The screen may go black for a moment as the game does a quick restart before connecting.</p>
-      </div>
-      <figure class="shot"><img src="assets/getting-started/server-browser.png" alt="The Server Browser with Gunfight | gunfight.us in the Ranked tab" loading="lazy" /><figcaption>The Server Browser &mdash; look for <strong>Gunfight | gunfight.us</strong> (mode GF) on the <strong>Ranked</strong> tab.</figcaption></figure>
-
-      <div class="note">
-        <p>Keep your <strong>Plutonium launcher updated</strong> so its build matches the server&rsquo;s. Questions? Join our <a href="https://discord.gg/blackops" target="_blank" rel="noopener">Discord</a>.</p>
-      </div>
+      <figure class="shot"><img src="assets/getting-started/server-browser.png" alt="The Server Browser with Gunfight [gunfight.us] in the Ranked tab" loading="lazy" /><figcaption>The Server Browser: look for <strong>Gunfight [gunfight.us]</strong> on the <strong>Ranked</strong> tab.</figcaption></figure>
     </section>
 
     <!-- 4. TROUBLESHOOTING -->
@@ -176,7 +202,7 @@ seta gpad_enabled        "1"       // controller support</code></pre>
             <tr><td><strong>FOV or ADS sensitivity feels weird</strong></td><td>See the <a href="#fov">Field of view</a> section.</td></tr>
             <tr><td><strong>Game doesn&rsquo;t feel smooth</strong></td><td>Use full-screen with the <a href="#settings">recommended settings</a>.</td></tr>
             <tr><td><strong>Game won&rsquo;t launch / bad install</strong></td><td>In the CB Servers Launcher, open <strong>Black Ops &rarr; SETUP</strong> to re-point or re-download your copy, then click <strong>VERIFY</strong>.</td></tr>
-            <tr><td><strong>Gunfight isn&rsquo;t in the server list</strong></td><td>Reset all filters, view the <strong>Ranked</strong> tab, and click <strong>Refresh</strong> to find <code>Gunfight | gunfight.us</code>.</td></tr>
+            <tr><td><strong>Gunfight isn&rsquo;t in the server list</strong></td><td>Reset all filters, view the <strong>Ranked</strong> tab, and click <strong>Refresh</strong> to find <code>Gunfight [gunfight.us]</code>.</td></tr>
             <tr><td><strong>Error connecting to the server</strong></td><td>Make sure your Plutonium client is up to date, restart then rejoin.</td></tr>
             <tr><td><strong>Settings &amp; Rank reset to defaults</strong> after joining Gunfight</td><td>Normal on the very first join. Settings &amp; Rank are saved <strong>per mod</strong>, not per game. Back out to the main menu (the mod stays loaded), apply the <a href="#settings">recommended settings</a>, and rejoin. One-time setup; they stick from then on. You&rsquo;ll rank up fast.</td></tr>
           </tbody>
@@ -190,6 +216,6 @@ seta gpad_enabled        "1"       // controller support</code></pre>
       This mod is not endorsed by or affiliated with the copyright holders of the base game in any form.</p>
 
   </main>
-  <script src="setup.js?v=1"></script>
+  <script src="setup.js?v=2"></script>
 </body>
 </html>

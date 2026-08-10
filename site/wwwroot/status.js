@@ -65,7 +65,7 @@ function renderRoster(parent, teamKey, label, players){
   head.appendChild(el('span', null, String(group.length)));
   box.appendChild(head);
   var ul = el('ul', 'plist ' + teamKey);
-  if (!group.length){ ul.appendChild(el('li', 'empty', '—')); }
+  if (!group.length){ ul.appendChild(el('li', 'empty', 'None')); }
   group.forEach(function(p){
     var li = el('li');
     li.appendChild(el('span', 'pdot' + (p.alive?' alive':'')));

@@ -30,7 +30,7 @@ function render(d){
   var rc=el('div','card');
   var players=d.players||[];
   rc.appendChild(el('p','kick','Live roster  ('+players.length+' online)'));
-  if(!players.length){ rc.appendChild(el('div','empty', d.online?'No players online.':'—')); }
+  if(!players.length){ rc.appendChild(el('div','empty', d.online?'No players online.':'Server offline.')); }
   else{
     var tbl=el('table');
     var thead=el('tr');
@@ -40,7 +40,7 @@ function render(d){
       var tr=el('tr');
       var td0=el('td'); td0.appendChild(el('span','pdot'+(p.alive?' alive':''))); tr.appendChild(td0);
       tr.appendChild(el('td','name',p.name));
-      var tt=el('td'); tt.appendChild(el('span','tag '+teamTag(p.team), p.team||'—')); tr.appendChild(tt);
+      var tt=el('td'); tt.appendChild(el('span','tag '+teamTag(p.team), p.team||'n/a')); tr.appendChild(tt);
       tr.appendChild(el('td',null,(p.ping!=null?p.ping+' ms':'')));
       tr.appendChild(el('td','ip', p.ip||''));
       tbl.appendChild(tr);
@@ -132,7 +132,7 @@ function fetchHist(){
     .catch(function(){
       if (histAll.length) return;   // keep last good data on a transient error
       if (histResults){ histResults.innerHTML=''; histResults.appendChild(
-        el('div','empty','History file not available yet — it is written after the status service picks up the update.')); }
+        el('div','empty','History file not available yet: it is written after the status service picks up the update.')); }
     });
 }
 
@@ -140,7 +140,7 @@ function initHist(){
   var host=document.getElementById('history');
   if(!host) return;
   var card=el('div','card');
-  card.appendChild(el('p','kick','Connection history — search name / IP / GUID across every day on file'));
+  card.appendChild(el('p','kick','Connection history: search name / IP / GUID across every day on file'));
   histInput=document.createElement('input');
   histInput.type='search'; histInput.className='search';
   histInput.placeholder='Search a player name, IP, or GUID…';
@@ -184,7 +184,7 @@ var _regionNames = null;
 try { _regionNames = new Intl.DisplayNames(['en'], { type:'region' }); } catch(e){ _regionNames = null; }
 function countryName(cc){
   cc = String(cc||'').toUpperCase();
-  if(!/^[A-Z]{2}$/.test(cc)) return cc || '—';
+  if(!/^[A-Z]{2}$/.test(cc)) return cc || 'n/a';
   if(_regionNames){ try { var n=_regionNames.of(cc); if(n && n!==cc) return n; } catch(e){} }
   return cc;
 }
@@ -233,7 +233,7 @@ function renderStats(){
   cell('Countries', s.countries.length);
   cell('Total sessions', s.totLeft);
   cell('Total playtime', fmtDur(s.totSec));
-  cell('Avg session', s.totLeft ? fmtDur(s.totSec/s.totLeft) : '—');
+  cell('Avg session', s.totLeft ? fmtDur(s.totSec/s.totLeft) : 'n/a');
   cell('Connects', s.connects);
   c1.appendChild(g);
   host.appendChild(c1);
@@ -256,7 +256,7 @@ function renderStats(){
     });
     c2.appendChild(tbl);
   }
-  c2.appendChild(el('div','stnote','Playtime counts completed sessions only — anyone online right now is added when they leave.'));
+  c2.appendChild(el('div','stnote','Playtime counts completed sessions only; anyone online right now is added when they leave.'));
   host.appendChild(c2);
 
   // Most connections leaderboard
@@ -272,7 +272,7 @@ function renderStats(){
       tr.appendChild(el('td','rank', String(idx+1)));
       var nt=el('td','name'); nt.appendChild(statFlag(p.cc)); nt.appendChild(document.createTextNode(p.name||'?')); tr.appendChild(nt);
       tr.appendChild(el('td',null, String(p.conns)));
-      tr.appendChild(el('td','dur', p.sec ? fmtDur(p.sec) : '—'));
+      tr.appendChild(el('td','dur', p.sec ? fmtDur(p.sec) : 'n/a'));
       tblc.appendChild(tr);
     });
     c4.appendChild(tblc);
@@ -303,8 +303,8 @@ function renderStats(){
 // neither re-render disturbs the other. Fetches live/health.json (no PII:
 // round/map/counts/stuck-state), written by status_service every 5s.
 var HEALTHURL = 'live/health.json';
-function fmtAge(s){ if(s==null||s<0) return '—'; s=Math.round(s); return s<90? s+'s' : Math.floor(s/60)+'m'; }
-function fmtUp(m){ if(m==null) return '—'; if(m<60) return m+'m'; return Math.floor(m/60)+'h '+(m%60)+'m'; }
+function fmtAge(s){ if(s==null||s<0) return 'n/a'; s=Math.round(s); return s<90? s+'s' : Math.floor(s/60)+'m'; }
+function fmtUp(m){ if(m==null) return 'n/a'; if(m<60) return m+'m'; return Math.floor(m/60)+'h '+(m%60)+'m'; }
 
 function renderHealth(d){
   var host=document.getElementById('health');
@@ -330,11 +330,11 @@ function renderHealth(d){
 
   var g=el('div','hstat');
   function cell(k,v){ var c=el('div','cell'); c.appendChild(el('div','k',k));
-    c.appendChild(el('div','v',(v==null||v==='')?'—':String(v))); g.appendChild(c); }
+    c.appendChild(el('div','v',(v==null||v==='')?'n/a':String(v))); g.appendChild(c); }
   if(d.online){
-    cell('Map', d.mapName||d.map||'—');
+    cell('Map', d.mapName||d.map||'n/a');
     cell('Mode', prettyGt(d.gametype));
-    cell('Round', d.round!=null? d.round : '—');
+    cell('Round', d.round!=null? d.round : 'n/a');
     cell('Score', ((d.score&&d.score.allies)||0)+' – '+((d.score&&d.score.axis)||0));
     cell('Players', (d.humans!=null?d.humans:'?')+' + '+(d.bots!=null?d.bots:'?')+' bots');
     cell('Alive', ((d.alive&&d.alive.allies)||0)+' / '+((d.alive&&d.alive.axis)||0));

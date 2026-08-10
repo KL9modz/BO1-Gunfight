@@ -18,17 +18,17 @@ Made by **KL9**. Join us on **[Discord](https://discord.gg/blackops)**.
 
 ## Features
 
-- **Fully custom HUD** — a built-from-scratch heads-up display with **live health for both teams** and a full loadout preview at the start of every round.
-- **50+ unique loadouts** — a shared, **shuffle-without-repeat** loadout pool with randomized weapon camos; both teams get the same kit each round.
-- **All 26 maps & size scaling** — **all 26 maps** (base + DLC), each with hand-placed spawn and overtime points, plus map-size scaling: tighter wager-style sizes for smaller lobbies, full-map sizes for bigger ones.
-- **Overtime flag** — a **hold-to-capture** objective spawns center-map when a round runs long; capture it to steal the round for either team.
-- **Health-based rounds** — if nobody captures the overtime flag, the round is decided on **total remaining health**. Equal health is a draw.
-- **Visual improvements** — tuned game rendering, lighting, and colors for a **cleaner, sharper look**.
-- **Real stats & XP** — a ranked server with real stats and XP tracking. **4XP enabled!**
-- **Full bot support** — **fully functional bots** can be added to any lobby.
+- **Fully custom HUD**: a built-from-scratch heads-up display with **live health for both teams** and a full loadout preview at the start of every round.
+- **50+ unique loadouts**: a shared, **shuffle-without-repeat** loadout pool with randomized weapon camos; both teams get the same kit each round.
+- **All 26 maps & size scaling**: **all 26 maps** (base + DLC), each with hand-placed spawn and overtime points, plus map-size scaling: tighter wager-style sizes for smaller lobbies, full-map sizes for bigger ones.
+- **Overtime flag**: a **hold-to-capture** objective spawns center-map when a round runs long; capture it to steal the round for either team.
+- **Health-based rounds**: if nobody captures the overtime flag, the round is decided on **total remaining health**. Equal health is a draw.
+- **Visual improvements**: tuned game rendering, lighting, and colors for a **cleaner, sharper look**.
+- **Real stats & XP**: a ranked server with real stats and XP tracking. **4XP enabled!**
+- **Full bot support**: **fully functional bots** can be added to any lobby.
 
 **Adjustable (server-side):**
-- Loadout rotation and side switching — every **2 rounds** by default.
+- Loadout rotation and side switching: every **2 rounds** by default.
 - Round timer, overtime timer, and capture time.
 
 Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFERENCE.md)**.
@@ -39,7 +39,7 @@ Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFER
 
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/KL9modz/BO1-Gunfight/main/site/wwwroot/assets/gameplay.jpg" alt="A live Gunfight round — dual Pythons and the team-health HUD" width="820" />
+<img src="https://raw.githubusercontent.com/KL9modz/BO1-Gunfight/main/site/wwwroot/assets/gameplay.jpg" alt="A live Gunfight round: dual Pythons and the team-health HUD" width="820" />
 
 <br /><br />
 
@@ -53,12 +53,12 @@ Full reference for every system and tunable → **[docs/REFERENCE.md](docs/REFER
 
 Black Ops is **free to play** on PC through the CB Servers Launcher.
 
-1. **Get the game + Plutonium** with the **[CB Servers Launcher](https://github.com/CBServers/cb-launcher)** — one app downloads Black Ops 1 and runs it on Plutonium (a free [Plutonium account](https://forum.plutonium.pw/register) is required).
+1. **Get the game + Plutonium** with the **[CB Servers Launcher](https://github.com/CBServers/cb-launcher)**: one app downloads Black Ops 1 and runs it on Plutonium (a free [Plutonium account](https://forum.plutonium.pw/register) is required).
 2. **Launch & join:** hit **PLAY → Multiplayer**, open the **Server Browser**, and join **`Gunfight`**.
 
-The mod **downloads automatically** when you connect: Plutonium pulls it from the server (FastDL), so there's no manual install. T5 has no direct IP connect — find the server in the in-game **browser** by its name, and keep your client updated (the CB Servers Launcher does this for you) so its build matches the server's.
+The mod **downloads automatically** when you connect: Plutonium pulls it from the server (FastDL), so there's no manual install. T5 has no direct IP connect. Find the server in the in-game **browser** by its name, and keep your client updated (the CB Servers Launcher does this for you) so its build matches the server's.
 
-**New to Plutonium?** The full walkthrough — install, recommended settings, the aim-down-sights fix, and joining the server → **[Getting Started](docs/GETTING_STARTED.md)**.
+**New to Plutonium?** The full walkthrough: install, recommended settings, the aim-down-sights fix, and joining the server → **[Getting Started](docs/GETTING_STARTED.md)**.
 
 ---
 

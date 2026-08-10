@@ -1,4 +1,5 @@
-// Copy-to-clipboard for the one-line console command block.
+// Copy-to-clipboard for the one-line console command block, plus auto-expand
+// for the collapsible <details class="fold"> sections when linked to directly.
 // External file (not inline) so it works under the site's script-src 'self' CSP.
 (function () {
   "use strict";
@@ -53,8 +54,42 @@
     });
   }
 
+  // Collapsible <details class="fold"> sections: closed by default, but a TOC
+  // or in-page link pointing at one (or at content inside one) opens it so the
+  // reader always lands on visible content.
+  function openFoldFor(id) {
+    if (!id) return;
+    var target;
+    try {
+      target = document.getElementById(decodeURIComponent(id));
+    } catch (e) {
+      return;
+    }
+    if (!target) return;
+    var fold = target.closest ? target.closest("details.fold") : null;
+    if (fold && !fold.open) fold.open = true;
+  }
+
+  function openFoldForHash() {
+    if (location.hash && location.hash.length > 1) {
+      openFoldFor(location.hash.slice(1));
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     var btns = document.querySelectorAll(".copy-btn[data-copy-target]");
     for (var i = 0; i < btns.length; i++) wire(btns[i]);
+
+    // Open before the browser scrolls: catch same-page anchor clicks directly
+    // (a repeat click on the current hash fires no hashchange event).
+    document.addEventListener("click", function (ev) {
+      var a = ev.target && ev.target.closest ? ev.target.closest('a[href^="#"]') : null;
+      if (a) openFoldFor(a.getAttribute("href").slice(1));
+    });
+
+    // Arriving with a hash in the URL (shared link / reload).
+    openFoldForHash();
   });
+
+  window.addEventListener("hashchange", openFoldForHash);
 })();

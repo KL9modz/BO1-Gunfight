@@ -19,6 +19,8 @@ wins** takes the match.
 - Migrate to new LA host
 - Map/mode vote
 - Website screenshots
+- Add more fun mods from other mod menus
+- Create alt modes: Team Sharpshooter, Team Gun Game
 
 ### Open bugs
 - **RESOLVED — "auto-balanced → forced to choose a class/team, couldn't spawn" (YooDyl `mp_silo`
@@ -288,6 +290,18 @@ asked to fix; if you believe a *claim* is wrong, raise it and wait. ⚠ Nothing 
 deploys — `deploy.ps1 -Web` is manual and no scheduled task pulls or publishes (verified 2026-08-09,
 all 8 `GF-*` tasks) — so anything live got there because a human ran a deploy over a commit like the
 above. That is exactly why the *commit* is the place to stop it.
+
+🚫 **NEVER PUBLISH AN EM DASH.** No `—` and no `&mdash;` in any copy for `site/wwwroot/`, `README.md`,
+or anything else player-facing. Use a comma, a semicolon, a colon, or two sentences, whichever the
+sentence actually wants. This is a house style rule, not a preference to weigh: an em dash reads as
+machine-written copy. **The site + README were fully swept on 2026-08-10** (owner-requested), so
+`grep -rn "&mdash;\|—" site/wwwroot README.md` should return **only code comments** — any prose hit is
+a regression. Conventions the sweep settled, reuse them: a `<b>Label</b> — text` tile or list row takes
+a **colon**; a page `<title>` separator is **`&middot;`** (matching the footer, and unambiguous next to
+the `Gunfight [gunfight.us]` server name); an empty data cell is **`n/a`**, never a bare dash glyph.
+⚠ **Code comments are deliberately exempt** and were left alone (they are developer-facing, and
+rewriting them is pure diff noise). ⚠ **En dashes are NOT covered** — `admin.js`'s `Allies 3 – 2 Axis`
+score separator is correct typography; do not "fix" it.
 
 ### Diagnostics — where the logs go, and what to read
 **There are two log files and only one is ours.** Get this wrong and you will grep an empty file and
