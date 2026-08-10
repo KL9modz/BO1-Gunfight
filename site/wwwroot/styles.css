@@ -411,7 +411,24 @@ a.chip:hover {
   color: var(--muted);
   font-size: 0.96rem;
 }
-.guide-cta .btn { font-size: 1.02rem; padding: 13px 30px; }
+.guide-cta .btn { font-size: 0.99rem; padding: 12px 26px; }
+/* Tinted treatment: orange text and border on a faint orange wash, instead of the filled
+   gradient. Reads as the page's primary action without shouting; the border carries the
+   visibility that the solid fill used to. Scoped to .guide-cta so .btn-primary keeps its
+   original punch if reused. The color override is required - .btn-primary sets dark ink
+   for a solid fill, which would be near-invisible on the wash. */
+.guide-cta .btn-primary {
+  background: rgba(255, 122, 26, 0.09);
+  border-color: rgba(255, 122, 26, 0.5);
+  color: var(--accent-2);
+  box-shadow: none;
+}
+.guide-cta .btn-primary:hover {
+  background: rgba(255, 122, 26, 0.16);
+  border-color: var(--accent);
+  color: var(--accent-2);
+  box-shadow: 0 6px 18px -10px rgba(255, 122, 26, 0.45);
+}
 
 /* landing screenshots (caption-less, inside the About card) */
 .shot-img {

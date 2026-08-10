@@ -13,7 +13,7 @@
   <meta property="og:image" content="https://gunfight.us/assets/banner.jpg" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ff7a1a'/%3E%3Ctext x='16' y='22' font-family='Segoe UI,Arial' font-size='15' font-weight='800' text-anchor='middle' fill='%231a1106'%3EGF%3C/text%3E%3C/svg%3E" />
   <link rel="apple-touch-icon" href="/assets/logo.png" />
-  <link rel="stylesheet" href="styles.css?v=9" />
+  <link rel="stylesheet" href="styles.css?v=10" />
 </head>
 <body>
   <main class="wrap wrap-doc">
@@ -49,7 +49,7 @@
     <!-- 1. INSTALL -->
     <section class="doc" id="install">
       <h2 class="sec">1. Install</h2>
-      <p>The <a href="https://docs.cbservers.xyz/launcher" target="_blank" rel="noopener">CB Servers Launcher</a> includes everything you need to start playing for free.</p>
+      <p>The <a href="https://docs.cbservers.xyz/launcher" target="_blank" rel="noopener">CB Launcher</a> includes everything you need to start playing for free.</p>
       <ol class="steps">
         <li><span class="n">1</span><p><strong>Get the launcher.</strong> Download <code>cb-launcher.exe</code> from <a href="https://docs.cbservers.xyz/games/t5" target="_blank" rel="noopener">docs.cbservers.xyz/games/t5</a>.</p></li>
         <li><span class="n">2</span><p><strong>Run it.</strong> If Windows SmartScreen shows <em>&ldquo;Windows protected your PC&rdquo;</em>, click <strong>More info &rarr; Run anyway</strong>.</p></li>
@@ -184,7 +184,7 @@ seta gpad_enabled        "1"       // controller support</code></pre>
       <ol class="steps">
         <li><span class="n">1</span><p>Launch the game with either <a href="https://docs.cbservers.xyz/launcher" target="_blank" rel="noopener">CB Launcher</a> or directly through <a href="https://plutonium.pw/docs/install/#plutonium-launcher" target="_blank" rel="noopener">Plutonium</a>.</p></li>
         <li><span class="n">2</span><p>Click <strong>PLAY</strong> and open the <strong>Server Browser</strong>.</p></li>
-        <li><span class="n">3</span><p>On the <strong>Ranked</strong> tab, click <strong>refresh</strong> then find <code>Gunfight [gunfight.us]</code> (mode <strong>GF</strong>) and join.</p></li>
+        <li><span class="n">3</span><p>On the <strong>Ranked</strong> tab, click <strong>refresh</strong> then find <code>Gunfight [gunfight.us]</code> and join.</p></li>
       </ol>
       <figure class="shot"><img src="assets/getting-started/server-browser.png" alt="The Server Browser with Gunfight [gunfight.us] in the Ranked tab" loading="lazy" /><figcaption>The Server Browser: look for <strong>Gunfight [gunfight.us]</strong> on the <strong>Ranked</strong> tab.</figcaption></figure>
     </section>
@@ -196,14 +196,14 @@ seta gpad_enabled        "1"       // controller support</code></pre>
         <table>
           <thead><tr><th>Problem</th><th>Fix</th></tr></thead>
           <tbody>
-            <tr><td><strong>Controller not detected</strong></td><td>Enable <strong>Controls &rarr; Gamepad &rarr; Yes</strong> (PlayStation controllers need <a href="https://ds4-windows.com/" target="_blank" rel="noopener">DS4Windows</a> or Steam input).</td></tr>
+            <tr><td><strong>Controller not detected</strong></td><td>Enable <strong>Controls &rarr; Gamepad &rarr; Yes</strong> (PlayStation controllers need <a href="https://ds4-windows.com/" target="_blank" rel="noopener">DS4Windows</a> or Steam input). See the <a href="https://docs.cbservers.xyz/guides/controllers" target="_blank" rel="noopener">controller guide</a>.</td></tr>
             <tr><td><strong>Can&rsquo;t aim down sights</strong> while holding Sprint</td><td>Paste the ADS bind from the <a href="#ads">Sprint/ADS improvement</a> section.</td></tr>
             <tr><td><strong>ADS stopped working</strong> after a restart</td><td>Re-paste the <a href="#ads">ADS bind</a>.</td></tr>
-            <tr><td><strong>FOV or ADS sensitivity feels weird</strong></td><td>See the <a href="#fov">Field of view</a> section.</td></tr>
-            <tr><td><strong>Game doesn&rsquo;t feel smooth</strong></td><td>Use full-screen with the <a href="#settings">recommended settings</a>.</td></tr>
-            <tr><td><strong>Game won&rsquo;t launch / bad install</strong></td><td>In the CB Servers Launcher, open <strong>Black Ops &rarr; SETUP</strong> to re-point or re-download your copy, then click <strong>VERIFY</strong>.</td></tr>
-            <tr><td><strong>Gunfight isn&rsquo;t in the server list</strong></td><td>Reset all filters, view the <strong>Ranked</strong> tab, and click <strong>Refresh</strong> to find <code>Gunfight [gunfight.us]</code>.</td></tr>
-            <tr><td><strong>Error connecting to the server</strong></td><td>Make sure your Plutonium client is up to date, restart then rejoin.</td></tr>
+            <tr><td><strong>FOV looks weird or ADS sensitivity feels wrong</strong></td><td>See the <a href="#fov">Field of view</a> section.</td></tr>
+            <tr><td><strong>Game doesn&rsquo;t feel smooth or FPS is low</strong></td><td>Use full-screen with the <a href="#settings">recommended settings</a>.</td></tr>
+            <tr><td><strong>Game won&rsquo;t open</strong></td><td>In the CB Servers Launcher, open <strong>Black Ops &rarr; SETUP</strong> to re-point or re-download your copy, then click <strong>VERIFY</strong>.</td></tr>
+            <tr><td><strong>Gunfight isn&rsquo;t in the server list</strong></td><td>Reset all filters, view the <strong>Ranked</strong> tab, and click <strong>Refresh</strong> to find <code>Gunfight [gunfight.us]</code>. Check the <a href="status.html">live status page</a> to confirm the server is up.</td></tr>
+            <tr><td><strong>Error connecting to the server</strong></td><td>Make sure your <a href="https://plutonium.pw/docs/update/" target="_blank" rel="noopener">Plutonium client is up to date</a>, restart then rejoin.</td></tr>
             <tr><td><strong>Settings &amp; Rank reset to defaults</strong> after joining Gunfight</td><td>Normal on the very first join. Settings &amp; Rank are saved <strong>per mod</strong>, not per game. Back out to the main menu (the mod stays loaded), apply the <a href="#settings">recommended settings</a>, and rejoin. One-time setup; they stick from then on. You&rsquo;ll rank up fast.</td></tr>
           </tbody>
         </table>

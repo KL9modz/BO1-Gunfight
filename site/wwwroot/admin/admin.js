@@ -162,6 +162,7 @@ initHist();
 // server change. Re-rendered from fetchHist() whenever the 60s history refresh
 // lands. Scope = whatever admin_history.json holds (up to 60 days / 5000 events).
 var STATS_TOP = 10;
+var STATS_TOP_REGIONS = 12;   // the region list is unbounded; the country list is not
 
 // Flag SVG, self-hosted like the public page. Admin lives at /admin/, so the
 // assets/ dir is one level up. Unknown/absent -> the neutral xx placeholder.
@@ -199,8 +200,11 @@ function computeStats(events){
   // name; take the most recent non-empty country the same way.
   for(var i=0;i<events.length;i++){
     var e=events[i], k=statKey(e), p=P[k];
-    if(!p){ p=P[k]={ name:e.name||'?', cc:'', sec:0, sessions:0, conns:0 }; }
+    if(!p){ p=P[k]={ name:e.name||'?', cc:'', region:'', sec:0, sessions:0, conns:0 }; }
     if(!p.cc && e.cc) p.cc=e.cc;
+    // Region is stamped only on admin_history (never the public feed), and only for IPs the
+    // panel's geo cache has already resolved, so it can be absent on an otherwise good row.
+    if(!p.region && e.region) p.region=e.region;
     if(e.date) days[e.date]=1;
     if(e.event==='CONNECT'){ connects++; p.conns++; }
     if(e.event==='LEFT'){ var s=parseSession(e.session); if(s>0){ p.sec+=s; p.sessions++; totSec+=s; totLeft++; } }
@@ -209,12 +213,25 @@ function computeStats(events){
   var byCC={}; arr.forEach(function(p){ if(p.cc) byCC[p.cc]=(byCC[p.cc]||0)+1; });
   var cc=[], c; for(c in byCC){ if(byCC.hasOwnProperty(c)) cc.push({cc:c,n:byCC[c]}); }
   cc.sort(function(a,b){ return b.n-a.n; });
+  // Same unique-player counting as the country roll-up, one level finer. Keyed on cc+region so
+  // two same-named regions in different countries never merge, and players whose IP has no
+  // region resolved are counted separately rather than bucketed into a fake "unknown" row.
+  var byRG={}, noRG=0;
+  arr.forEach(function(p){
+    if(!p.region){ noRG++; return; }
+    var rk=(p.cc||'')+'|'+p.region;
+    if(!byRG[rk]) byRG[rk]={ cc:p.cc||'', region:p.region, n:0 };
+    byRG[rk].n++;
+  });
+  var rg=[], r; for(r in byRG){ if(byRG.hasOwnProperty(r)) rg.push(byRG[r]); }
+  rg.sort(function(a,b){ return b.n-a.n || a.region.localeCompare(b.region); });
   var top=arr.filter(function(p){ return p.sec>0; })
              .sort(function(a,b){ return b.sec-a.sec; }).slice(0,STATS_TOP);
   var topConn=arr.filter(function(p){ return p.conns>0; })
              .sort(function(a,b){ return b.conns-a.conns; }).slice(0,STATS_TOP);
   return { unique:arr.length, connects:connects, totSec:totSec, totLeft:totLeft,
-           days:Object.keys(days).length, countries:cc, top:top, topConn:topConn };
+           days:Object.keys(days).length, countries:cc, regions:rg, noRegion:noRG,
+           top:top, topConn:topConn };
 }
 
 function renderStats(){
@@ -231,6 +248,7 @@ function renderStats(){
     c.appendChild(el('div','v',String(v))); g.appendChild(c); }
   cell('Unique players', s.unique);
   cell('Countries', s.countries.length);
+  cell('States / provinces', s.regions.length);
   cell('Total sessions', s.totLeft);
   cell('Total playtime', fmtDur(s.totSec));
   cell('Avg session', s.totLeft ? fmtDur(s.totSec/s.totLeft) : 'n/a');
@@ -296,6 +314,35 @@ function renderStats(){
     c3.appendChild(list);
   }
   host.appendChild(c3);
+
+  // Players by state / province (ip-api's regionName, one level below the country roll-up)
+  var c5=el('div','card');
+  c5.appendChild(el('p','kick','Players by state / province  ('+s.regions.length+')'));
+  if(!s.regions.length){
+    c5.appendChild(el('div','empty', s.noRegion
+      ? 'No regions resolved yet: the panel geo cache has country codes but no region for these players.'
+      : 'No regions resolved yet.'));
+  }
+  else{
+    var shown=s.regions.slice(0,STATS_TOP_REGIONS);
+    var rmax=shown[0].n || 1, rlist=el('div','clist');
+    shown.forEach(function(o){
+      var row=el('div','crow rrow');
+      row.appendChild(statFlag(o.cc));
+      var nm=el('span','cname', o.region); nm.title=o.region; row.appendChild(nm);
+      row.appendChild(el('span','csub', countryName(o.cc)));
+      var bar=el('div','cbar'), fill=el('i'); fill.style.width=Math.round(o.n/rmax*100)+'%';
+      bar.appendChild(fill); row.appendChild(bar);
+      row.appendChild(el('span','cn', String(o.n)));
+      rlist.appendChild(row);
+    });
+    c5.appendChild(rlist);
+  }
+  var rnote='State in the US, province in Canada, closest equivalent elsewhere.';
+  if(s.regions.length>STATS_TOP_REGIONS) rnote+=' Showing the top '+STATS_TOP_REGIONS+' of '+s.regions.length+'.';
+  if(s.noRegion) rnote+=' '+s.noRegion+' player'+(s.noRegion===1?'':'s')+' had no region resolved.';
+  c5.appendChild(el('div','stnote', rnote));
+  host.appendChild(c5);
 }
 
 // ---- Server health (ops status) ------------------------------------------

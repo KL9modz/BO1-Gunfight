@@ -4,11 +4,11 @@
 
 # Black Ops Gunfight
 
-**Black Ops Gunfight** brings the authentic **Gunfight** game mode to **Call of Duty: Black Ops 1**, **free to play on PC** through Plutonium T5. Two teams face off using a **shared loadout** that **rotates every other round**. **No health regeneration, no custom loadouts, no killstreaks.** If time expires, capture the **overtime flag** to secure the round. Otherwise, the team with the **most remaining health** wins the round. The first team to win **6 rounds** wins the match.
+**Black Ops Gunfight** brings the authentic Gunfight game mode to the original **Call of Duty: Black Ops**, **free to play on PC** through Plutonium T5. Two teams face off using a **shared loadout** that rotates every other round. No health regeneration, no custom loadouts, no killstreaks. If time expires, **capture the overtime flag** to secure the round. Otherwise, the team with the most remaining health wins the round. The first team to **win 6 rounds** wins the match.
 
 Made by **KL9**. Join us on **[Discord](https://discord.gg/blackops)**.
 
-![Version](https://img.shields.io/badge/version-0.7.5-ff7a1a)
+![Version](https://img.shields.io/badge/version-0.8.1-ff7a1a)
 [![Discord](https://img.shields.io/badge/Discord-join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/blackops)
 [![Website](https://img.shields.io/badge/web-gunfight.us-2ea44f)](https://gunfight.us)
 
@@ -18,14 +18,15 @@ Made by **KL9**. Join us on **[Discord](https://discord.gg/blackops)**.
 
 ## Features
 
-- **Fully custom HUD**: a built-from-scratch heads-up display with **live health for both teams** and a full loadout preview at the start of every round.
-- **50+ unique loadouts**: a shared, **shuffle-without-repeat** loadout pool with randomized weapon camos; both teams get the same kit each round.
-- **All 26 maps & size scaling**: **all 26 maps** (base + DLC), each with hand-placed spawn and overtime points, plus map-size scaling: tighter wager-style sizes for smaller lobbies, full-map sizes for bigger ones.
-- **Overtime flag**: a **hold-to-capture** objective spawns center-map when a round runs long; capture it to steal the round for either team.
-- **Health-based rounds**: if nobody captures the overtime flag, the round is decided on **total remaining health**. Equal health is a draw.
-- **Visual improvements**: tuned game rendering, lighting, and colors for a **cleaner, sharper look**.
-- **Real stats & XP**: a ranked server with real stats and XP tracking. **4XP enabled!**
-- **Full bot support**: **fully functional bots** can be added to any lobby.
+- **Fully custom HUD**: A built-from-scratch heads-up display with **live health for both teams** and a full loadout preview at the start of every round.
+- **50+ unique loadouts**: A shared, **shuffle-without-repeat** loadout pool with randomized weapon camos. Both teams get the same kit each round.
+- **All 26 maps & size scaling**: **All 26 maps** (base + DLC) with tighter wager-style map sizes for smaller lobbies & full-map sizes for big lobbies.
+- **Overtime objective**: If the round timer expires, a **hold-to-capture** flag spawns center-map. Capture it to win the round.
+- **Health-based rounds**: If nobody captures the overtime flag, the round is decided on **total remaining health**. Equal health is a draw.
+- **Visual improvements**: Tuned game rendering, lighting, and colors for a **cleaner look**.
+- **Real stats & XP**: This Ranked Server provides real stats & XP. **4XP Enabled!**
+- **Ultra-fast dedicated server**: A fully optimized, centrally located **dedicated server** for low ping and smooth gameplay, with more locations planned soon.
+- **Configurable bots**: **A.I. bots** can be added to any lobby with tunable difficulty and placement.
 
 **Adjustable (server-side):**
 - Loadout rotation and side switching: every **2 rounds** by default.

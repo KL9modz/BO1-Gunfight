@@ -283,8 +283,13 @@ function Build-ConnHistory {
 # resolved in the background, so a cold IP simply has no flag for a poll or two. Geo can never
 # delay the status snapshot, and a dead panel just means no flags (cosmetic, never fatal).
 #
-# PRIVACY: only the 2-letter country CODE crosses back into this process. The IP is never
-# published - it stays in the box-local cache and the .secured admin files.
+# PRIVACY: only the 2-letter country CODE and the region (state / province) name cross back into
+# this process. The IP is never published - it stays in the box-local cache and the .secured admin
+# files. The region is finer-grained than the code, so it is stamped ONLY on the .secured admin
+# history; Build-PublicActivity below deliberately takes the country code and nothing else.
+#
+# Returns ip -> @{ cc; region }. Callers that only want the code read .cc: a bare $geo[$ip] is a
+# hashtable now, not a string, so every consumer must pick a field.
 function Get-GeoBatch {
     param([string[]]$ips, [int]$panelPort)
     $out = @{}
@@ -300,7 +305,12 @@ function Get-GeoBatch {
             $r = Invoke-RestMethod -UseBasicParsing -TimeoutSec 5 -Uri $u
             if ($r.ok -and $r.geo) {
                 foreach ($prop in $r.geo.PSObject.Properties) {
-                    if ($prop.Value.cc) { $out[$prop.Name] = [string]$prop.Value.cc }
+                    if ($prop.Value.cc) {
+                        $out[$prop.Name] = @{
+                            cc     = [string]$prop.Value.cc
+                            region = [string]$prop.Value.region   # '' on a pre-region cache entry
+                        }
+                    }
                 }
             }
         } catch { }   # panel down / slow: no flags this pass, snapshot still ships
@@ -317,7 +327,7 @@ function Build-PublicActivity {
     $out = New-Object System.Collections.ArrayList
     foreach ($e in $events) {
         $bare = ([string]$e.ip -split ':')[0]
-        $cc   = if ($geo.ContainsKey($bare)) { $geo[$bare] } else { '' }
+        $cc   = if ($geo.ContainsKey($bare)) { $geo[$bare].cc } else { '' }
         [void]$out.Add([ordered]@{
             date    = $e.date
             time    = $e.time
@@ -482,7 +492,7 @@ while ($true) {
             $ignore = Get-GfIgnoreList $IgnoreFile
             foreach ($h in $humansRaw) {
                 $bare = ([string]$h.ip -split ':')[0]
-                $cc   = if ($geo.ContainsKey($bare)) { $geo[$bare] } else { '' }
+                $cc   = if ($geo.ContainsKey($bare)) { $geo[$bare].cc } else { '' }
                 $list      += ,([ordered]@{ name = $h.name; team = $h.team; alive = $h.alive; ping = $h.ping; cc = $cc })
                 $adminList += ,([ordered]@{ name = $h.name; team = $h.team; alive = $h.alive; ping = $h.ping; cc = $cc; ip = $h.ip; guid = $h.guid })
                 # $humanNames feeds ONLY the recent-activity diff below, so an ignored player is
@@ -593,9 +603,14 @@ while ($true) {
             try {
                 $ev   = Build-ConnHistory -dir $LogDir -days $AdminHistoryDays -maxEvents $AdminHistoryMax
                 $ageo = Get-GeoBatch -ips @($ev | ForEach-Object { $_.ip }) -panelPort $PanelPort
+                # The admin history is the ONE feed that carries the region (state / province)
+                # alongside the code - it is already behind the .secured gate with the full IP,
+                # so a coarser location adds no exposure. activity.json stays country-only.
                 foreach ($e in $ev) {
-                    $bare = ([string]$e.ip -split ':')[0]
-                    $e.cc = if ($ageo.ContainsKey($bare)) { $ageo[$bare] } else { '' }
+                    $bare     = ([string]$e.ip -split ':')[0]
+                    $hit      = if ($ageo.ContainsKey($bare)) { $ageo[$bare] } else { $null }
+                    $e.cc     = if ($hit) { $hit.cc } else { '' }
+                    $e.region = if ($hit) { $hit.region } else { '' }
                 }
                 Write-Snapshot -path $AdminHistoryFile -obj ([ordered]@{
                     updated = $now.ToString('o')

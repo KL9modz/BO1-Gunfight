@@ -93,6 +93,10 @@
       border:1px solid var(--bd);overflow:hidden}
     .crow .cbar > i{display:block;height:100%;background:var(--accent)}
     .crow .cn{font-variant-numeric:tabular-nums;color:#c7d0dc;width:30px;text-align:right}
+    /* region rows carry a second, dimmer country label, so the name column is narrower */
+    .crow .csub{color:var(--dm);font-size:11px;width:104px;flex:0 0 auto;overflow:hidden;
+      text-overflow:ellipsis;white-space:nowrap}
+    .crow.rrow .cname{width:132px}
     .stnote{color:#6b7482;font-size:11px;margin-top:9px}
   </style>
 </head>

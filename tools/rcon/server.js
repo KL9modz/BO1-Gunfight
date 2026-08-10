@@ -951,7 +951,7 @@ const server = http.createServer(async (req, res) => {
       const geo = {};
       for (const ip of ips) {
         const hit = geoCached(ip);
-        if (hit) { if (hit.ok) geo[ip] = { cc: hit.cc, country: hit.country, city: hit.city }; }
+        if (hit) { if (hit.ok) geo[ip] = { cc: hit.cc, country: hit.country, region: hit.region || '', city: hit.city }; }
         else geoResolve(ip).catch(() => {});   // warm it for a later tick; do not await
       }
       return sendJson(res, { ok: true, geo });

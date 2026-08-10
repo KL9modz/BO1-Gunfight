@@ -98,6 +98,11 @@
       border-radius:var(--r);background:#1e2124}
     .ctext{font-size:13px;color:var(--dm);margin:0 0 12px}
     .ctext strong{color:var(--tx);font-weight:700}
+    /* a bolded LINK stays link-orange - .ctext strong would otherwise win over the a rule */
+    .ctext a strong{color:var(--accent)}
+    .ctext a:hover strong{text-decoration:underline;text-underline-offset:2px}
+    /* OPS emblem used inline as an emoji-sized glyph - em-sized so it tracks the text */
+    .inline-logo{height:1.15em;width:auto;vertical-align:-.2em;margin-left:4px}
   </style>
 </head>
 <body>
@@ -116,7 +121,7 @@
     <div id="activity"></div>
 
     <div class="card">
-      <p class="ctext">Join the <strong>Black Ops Gunfight</strong> Discord for scrims, updates, and to find people to play with.</p>
+      <p class="ctext">Join the <a href="https://discord.gg/blackops" target="_blank" rel="noopener"><strong>Black Ops Gunfight</strong><img class="inline-logo" src="assets/logo.png" alt="" aria-hidden="true" /></a> Discord for scrims, updates, and to find people to play with.</p>
       <iframe class="discord-widget" title="Black Ops Gunfight Discord server"
         src="https://discord.com/widget?id=1130709585284583496&amp;theme=dark"
         height="480" loading="lazy" allowtransparency="true" frameborder="0"
