@@ -90,6 +90,9 @@
 //   quake              - one strong EarthQuake centered on every player
 //   tpall              - teleport all players to Player 1 (host/anchor)
 //   saymsg             - iPrintLnBold the contents of dvar gf_say to everyone
+//   adminmsg           - print the contents of dvar gf_adminsay to the ADMINS ONLY (killfeed).
+//                        The box services' channel for admin-only notices (GF-ConnLogger's
+//                        "who just joined, and from where"); see gf_bridgeAdminSay.
 //
 // Config dvar (panel-managed):
 //   gf_admin_guids -> comma-separated player GUID allowlist. gf_bridgeNotify prints command
@@ -120,6 +123,11 @@ gf_bridgeInit()
     setDvar( "gf_cmd", "" );
     if ( getDvar( "gf_say" ) == "" )
         setDvar( "gf_say", "" );
+    // Admin-only message slot (the adminmsg verb). Deliberately NOT gf_say: the panel's broadcast
+    // owns that one, and a box service dropping a notice between a Say's two writes would otherwise
+    // be broadcast to the whole server.
+    if ( getDvar( "gf_adminsay" ) == "" )
+        setDvar( "gf_adminsay", "" );
     if ( getDvar( "gf_expbullets_radius" ) == "" )
         setDvar( "gf_expbullets_radius", "200" );   // RCON Blast Radius slider default
 
@@ -287,7 +295,20 @@ gf_bridgeSplitSeq( raw )
 // gf_admin_guids allowlist, replacing the old bare iPrintLnBold that center-printed to EVERYONE.
 // Read live each call (cheap — only fires on an admin action). Empty allowlist => prints to nobody
 // (the panel still logs the action). getGuid() is coerced to a string so the compare is type-safe.
-gf_bridgeNotify( text )
+//
+// ROUTING — the default is the KILLFEED, i.e. game-message window 0, the same window the obituaries
+// and stock's own iPrintLn( &"MP_CONNECTED" ) share (_globallogic_player.gsc:29). That is the right
+// home for a STREAM of admin feedback: it stacks instead of stomping, sits off to the side, and
+// ages out by itself. `bold` (optional — an omitted arg is simply undefined in T5 GSC) routes to
+// iPrintLnBold instead = window 1, center screen, unmissable, and each call REPLACES the previous
+// one, which is why it is reserved for the five match-control banners.
+// ⚠ Window 0 holds ~4 lines (con_gameMsgWindow0LineCount) and shares them with real obituaries, so
+// keep any one notice to a SINGLE line or it evicts the kills the admin just made.
+// ⚠ Its dwell is con_gameMsgWindow0MsgTime (stock 5s), which is CLIENT-owned and archived — the
+// server cannot retime it, settled live ([[killfeed-duration-client-archived]]); an admin who wants
+// longer sets /con_gameMsgWindow0MsgTime 20 in their own console. The killfeed_ verb is kept purely
+// as the reproduction of that refusal, NOT as a working lever.
+gf_bridgeNotify( text, bold )
 {
     guids = getDvar( "gf_admin_guids" );
     if ( guids == "" )
@@ -304,7 +325,10 @@ gf_bridgeNotify( text )
         {
             if ( admins[j] == pg )
             {
-                p iPrintLnBold( text );
+                if ( isDefined( bold ) && bold )
+                    p iPrintLnBold( text );
+                else
+                    p iPrintLn( text );
                 break;
             }
         }
@@ -528,6 +552,7 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "quake"          ) { gf_bridgeQuake();             return; }
     if ( cmd == "tpall"          ) { gf_bridgeTeleportAll();       return; }
     if ( cmd == "saymsg"         ) { gf_bridgeBroadcast();         return; }
+    if ( cmd == "adminmsg"       ) { gf_bridgeAdminSay();          return; }
 
     // Per-player commands: pgod_<num>, pfreeze_<num>, punfreeze_<num>, pperks_<num>
     t = gf_bridgeTail( cmd, "pgod_"      );   if ( isDefined( t ) ) { gf_bridgePlayerCmd( "god",      t ); return; }
@@ -566,7 +591,7 @@ gf_bridgePause()
     level.gf_paused = true;
     maps\mp\gametypes\_gf_rounds::gf_pauseMatch();
     visionSetNaked( maps\mp\gametypes\_gf_rounds::gf_visionSetForKey( "bw" ), 0.5 );   // cheat_bw — bare = all clients
-    gf_bridgeNotify( "^3-- MATCH PAUSED --" );
+    gf_bridgeNotify( "^3-- MATCH PAUSED --", true );   // bold: a match-control banner must not scroll past
 }
 
 gf_bridgeResume()
@@ -575,7 +600,7 @@ gf_bridgeResume()
     level.gf_paused = false;
     maps\mp\gametypes\_gf_rounds::gf_resumeMatch();
     gf_bridgeRestoreVision( 0.5 );
-    gf_bridgeNotify( "^2-- MATCH RESUMED --" );
+    gf_bridgeNotify( "^2-- MATCH RESUMED --", true );
 }
 
 // Drop back to whatever vision is standing — the admin's persisted gf_vis_vision key, or Gunfight's
@@ -602,7 +627,7 @@ gf_bridgeLobbyStart()
         return;
     }
     level.gf_lobbyStart = true;
-    gf_bridgeNotify( "^2-- STARTING MATCH --" );
+    gf_bridgeNotify( "^2-- STARTING MATCH --", true );
 }
 
 // "Restart Round" from the panel: replay the round from the top — nobody scores, the shared
@@ -647,7 +672,7 @@ gf_bridgeRestartRound()
     // threads endGame, and a GSC thread runs immediately up to its first wait), so it never sticks.
     game["roundsplayed"]--;
 
-    gf_bridgeNotify( "^3-- RESTARTING ROUND --" );
+    gf_bridgeNotify( "^3-- RESTARTING ROUND --", true );
     maps\mp\gametypes\_gf_rounds::gf_endRound( "tie" );
 }
 
@@ -682,7 +707,7 @@ gf_bridgeRestartMatch()
         return;
     }
 
-    gf_bridgeNotify( "^3-- RESTARTING MATCH --" );
+    gf_bridgeNotify( "^3-- RESTARTING MATCH --", true );
 
     // Snapshot the current sides into the dvars the post-restart gate reads back, so a restart keeps
     // the teams it had instead of re-autoassigning everyone.
@@ -1853,4 +1878,24 @@ gf_bridgeBroadcast()
     msg = getDvar( "gf_say" );
     if ( msg == "" ) return;
     iPrintLnBold( msg );   // intentional ALL-players broadcast (the panel's "say to everyone"), not admin-only feedback
+}
+
+// --- Admin-only message ------------------------------------------------------
+// Reads dvar gf_adminsay and routes it through gf_bridgeNotify, so it lands in the ★ admin's
+// KILLFEED and in nobody else's. This is the channel anything on the box uses when it has something
+// only an admin should see — today GF-ConnLogger's "who just joined, and from where" line, which is
+// why the notice arrives with the join rather than on an admin action.
+//
+// ⚠ Its own dvar, never gf_say: the panel's broadcast owns that one, and a service dropping a
+// notice between a Say's two writes would otherwise put it in front of the whole server.
+// ⚠ Cleared on read. The sender uses the UNSTAMPED form (`set gf_adminsay "…";set gf_cmd adminmsg`,
+// one batched rcon send — two packets race on the paced queue, which is what the panel's own Say
+// learned), and seq 0 is deliberately never deduped by gf_bridgePoll, so without the clear a later
+// bare adminmsg would re-show a stale line.
+gf_bridgeAdminSay()
+{
+    msg = getDvar( "gf_adminsay" );
+    if ( msg == "" ) return;
+    setDvar( "gf_adminsay", "" );
+    gf_bridgeNotify( msg );
 }

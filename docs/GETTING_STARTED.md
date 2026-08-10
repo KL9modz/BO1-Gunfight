@@ -1,31 +1,31 @@
-# Black Ops Gunfight - Getting Started
+[<- Black Ops Gunfight](../README.md)
 
-Everything a new player needs: install Plutonium and Black Ops 1, dial in the recommended settings, fix the aim-down-sights bug, and join the Gunfight server. *Part of the [Black Ops Gunfight](../README.md) documentation.*
+# Getting Started
 
-> Platform: **PC only.** Black Ops Gunfight runs on the [Plutonium](https://plutonium.pw/) T5 client for Call of Duty: Black Ops 1. The **[CB Servers Launcher](https://github.com/CBServers/cb-launcher)** gets you the game and Plutonium in one app - see [step 1](#1-install-black-ops-1--plutonium).
+*Install - settings - joining the server*
 
-## Contents
-- [1. Install Black Ops 1 + Plutonium](#1-install-black-ops-1--plutonium)
-- [2. Recommended settings](#2-recommended-settings)
-  - [Recommended console commands](#recommended-console-commands)
-- [3. Find & join Gunfight](#3-find--join-gunfight)
-- [4. Troubleshooting](#4-troubleshooting)
+Black Ops Gunfight runs on [Plutonium](https://plutonium.pw/) for T5 (Call of Duty: Black Ops 1). The open source [CB Servers Launcher](https://github.com/CBServers/cb-launcher) gets you the game for free and Plutonium in one app. You'll need a free [Plutonium account](https://forum.plutonium.pw/register) to play.
+
+## On this page
+
+1. [Install](#1-install)
+2. [Recommended settings](#2-recommended-settings)
+3. [Find & join Gunfight](#3-find--join-gunfight)
+4. [Troubleshooting](#4-troubleshooting)
 
 ---
 
-## 1. Install Black Ops 1 + Plutonium
+## 1. Install
 
-Black Ops Gunfight runs on **[Plutonium](https://plutonium.pw/)**, a free community client for Black Ops 1. The **[CB Servers Launcher](https://github.com/CBServers/cb-launcher)** is the easiest way in - one app downloads Black Ops 1 *and* runs it on the Plutonium client, so there's **no separate Plutonium download**. You'll just need a free **Plutonium account** ([forum.plutonium.pw/register](https://forum.plutonium.pw/register)).
+The [CB Servers Launcher](https://github.com/CBServers/cb-launcher) includes everything you need to start playing for free.
 
-1. **Get the launcher.** Download `cb-launcher.exe` from **[github.com/CBServers/cb-launcher](https://github.com/CBServers/cb-launcher)** (Releases). Save it anywhere.
+1. **Get the launcher.** Download `cb-launcher.exe` from [github.com/CBServers/cb-launcher](https://github.com/CBServers/cb-launcher).
 2. **Run it.** If Windows SmartScreen shows *"Windows protected your PC"*, click **More info -> Run anyway**.
-3. **Open the Library tab** and find **Black Ops**, then click **SETUP**:
-   - **Don't own the game?** Choose **Download game** and let it finish (it's a large download).
-   - Already have Black Ops installed? Point it at your existing copy, then click **VERIFY**.
+3. **Open the Library tab** and find **Black Ops**, then click **SETUP**. Choose **Download game** and let it finish.
 4. **Log in** with your Plutonium account (create one free at [forum.plutonium.pw/register](https://forum.plutonium.pw/register)).
-5. **Click PLAY -> Multiplayer.** Done - CB Servers installed the game and the Plutonium client for you.
+5. **Click PLAY -> Multiplayer -> Server Browser -> [Gunfight](#3-find--join-gunfight)**
 
-> **CB Servers only bundles the download - the client it runs *is* Plutonium**, so everything below (settings, joining gunfight.us) works exactly the same. CB Servers is a third-party launcher, not affiliated with Plutonium.
+> With Black Ops installed, you can open it with either CB Launcher or directly through Plutonium.
 
 <!-- image slot: docs/images/getting-started/01-launcher-setup.png (CB Servers Launcher: Library -> Black Ops -> SETUP) -->
 
@@ -35,23 +35,17 @@ Black Ops Gunfight runs on **[Plutonium](https://plutonium.pw/)**, a free commun
 
 Black Ops is old, but with Plutonium it can be optimized for modern systems. Here are a few critical tweaks to get the game looking sharp and running fast.
 
-> **Do this setup *after* your first join - your settings are saved per mod.** Plutonium keeps a separate settings profile for every mod, and Gunfight is a mod: everything on this page (graphics, FOV, console commands, even the ADS bind) saves into whichever profile is loaded *when you set it*. Set it all up before ever joining and it lands in your vanilla profile - then your first join switches to Gunfight's own profile and everything looks reset.
->
-> The one-time flow: **[join the server](#3-find--join-gunfight) once**, then **back out to the main menu** and apply everything below from there - the mod stays loaded until you close the game, and some graphics/hardware settings can't be changed while connected anyway. Rejoin and you're done: from then on your settings stick for every visit.
->
-> Rank works the same way: each mod keeps its own stats, so you start at **level 1** on Gunfight even if you're ranked up elsewhere. Your Gunfight rank is its own track and saves normally.
-
 ### Graphics
 
 | Setting | Recommended |
 |---|---|
-| Video mode (resolution) | **Highest your display supports** (e.g. `2560x1440` for 2K) |
+| Video mode (resolution) | **Highest your display supports** (e.g. 2560x1440 for 2K) |
 | Aspect ratio | **Auto** |
 | Screen refresh rate | **Highest** (e.g. 144 / 240) |
 | No border (borderless fullscreen window) | **Yes** |
 | Sync every frame (V-Sync) | **Yes** |
 | Anti-Aliasing | **8x** |
-| Anisotropic filtering | **16 (max)** |
+| Anisotropic filtering | **16** (max) |
 | Texture filtering | **Trilinear** |
 | Texture quality | **Extra** |
 | Shader warming | **Yes** |
@@ -61,7 +55,7 @@ Black Ops is old, but with Plutonium it can be optimized for modern systems. Her
 | Brightness | **Not too high** |
 
 ![Recommended in-game Graphics settings](images/getting-started/graphics.png)
-*In-game Graphics settings - Settings -> Graphics.*
+*Graphics settings - Settings -> Graphics.*
 
 ### Field of view (FOV)
 
@@ -90,17 +84,17 @@ To work out your total FOV, multiply `cg_fov` by `cg_fovScale` - for a standard 
 ### Controller
 
 - **Controls -> Gamepad -> Yes** to enable controller support.
-- If you are using a PlayStation controller, use **[DS4Windows](https://ds4-windows.com/)** to present it as an Xbox controller.
+- If you are using a PlayStation controller, use [DS4Windows](https://ds4-windows.com/) to present it as an Xbox controller.
 
 ### How to open the console
 
-Press the **`~`** key (tilde / grave, top-left under **Esc**) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press `~` again. Type a command and hit **Enter** - you'll need it for the [Sprint/ADS improvement](#mouse--keyboard-sprintads-improvement) below.
+Press the `~` key (tilde / grave, top-left under **Esc**) to open the Plutonium console. If nothing happens, enable the console in the Plutonium launcher/in-game options first, then press `~` again. Type a command and hit **Enter** - you'll need it for the [Sprint/ADS improvement](#mouse--keyboard-sprintads-improvement) below.
 
 ### Mouse & Keyboard: Sprint/ADS improvement
 
 Black Ops 1 has a long-standing quirk: **you can't aim down sights while the Sprint key (Shift) is held.** Normally you have to fully release Shift before you can aim - which loses gunfights. One console command fixes it.
 
-Open the console (**`~`**) and paste:
+Open the console (`~`) and paste:
 
 ```
 bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"
@@ -108,11 +102,11 @@ bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"
 
 Now you can **ADS without releasing Sprint.** What it does: aiming (`+speed_throw`) also clears the sprint input (`-breath_sprint`) so the engine stops blocking your aim. The trailing `-sprint` is a required no-op - it absorbs the key event so the sprint release actually fires.
 
-The game sometimes strips custom `MOUSE2` binds on restart. If ADS goes dead, just **re-paste the line** - with the Gunfight mod loaded (on the server, or at the menu right after leaving it). A bind saved in vanilla doesn't carry into Gunfight - see the note at the top of this section.
+The game sometimes strips custom `MOUSE2` binds on restart. If ADS goes dead, just **re-paste the line**.
 
 ### Recommended console commands
 
-An **alternate way to apply your settings** - most of these have an in-game menu equivalent (Graphics / Game tabs), but a few have no menu entry at all. Open the console (**`~`**) and paste the block. `seta` both applies a setting **and saves it**, so you only paste once and it sticks across restarts. (Like everything on this page, paste it with the mod loaded - see the note at the top of this section.)
+An **alternate way to apply your settings** - most of these have an in-game menu equivalent (Graphics / Game tabs), but a few have no menu entry at all. Open the console (`~`) and paste the block. `seta` both applies a setting **and saves it**, so you only paste once and it sticks across restarts.
 
 ```
 seta com_maxfps          "144"     // frame cap (also Options -> Game -> Max FPS)
@@ -128,10 +122,10 @@ seta cg_fovScale         "1.30"    // 65 x 1.30 = ~85 total; also drives ADS sen
 seta gpad_enabled        "1"       // controller support
 ```
 
-**Or apply all of them at once** - paste this single line into the console and hit **Enter**:
+**Or apply all of them at once.** Paste this single line into the console and hit **Enter**:
 
 ```
-seta com_maxfps 144;seta r_displayRefresh "144 Hz";seta cl_maxpackets 100;seta com_reduceSleep 1;seta r_aaSamples 8;seta r_texFilterAnisoMax 16;seta r_picmip 0;seta sm_enable 1;seta cg_fov 65;seta cg_fovScale 1.30;seta gpad_enabled 1
+seta com_maxfps 144;seta r_displayRefresh "144 Hz";seta cl_maxpackets 100;seta com_reduceSleep 1;seta r_aaSamples 8;seta r_texFilterAnisoMax 16;seta r_picmip 0;seta sm_enable 1;seta cg_fov 65;seta cg_fovScale 1.30;seta gpad_enabled 1;vid_restart
 ```
 
 ---
@@ -141,18 +135,15 @@ seta com_maxfps 144;seta r_displayRefresh "144 Hz";seta cl_maxpackets 100;seta c
 Black Ops Gunfight is a ranked server. Join through the in-game **Server Browser**.
 
 1. Launch the game via the Plutonium launcher.
-2. Open the **Server Browser** under **PLAY**.
-3. **Reset the filters** and click **Refresh** so every server shows (modded servers are hidden by default filters).
-4. On the **Ranked** tab, find **`Gunfight | gunfight.us`** (mode **GF**) and join. The mod **downloads automatically** on connect (FastDL) - no manual install needed.
+2. Click **PLAY** and open the **Server Browser**.
+3. On the **Ranked** tab, click **refresh** then find `Gunfight | gunfight.us` (mode **GF**) and join.
 
-> **First join only:** after the download finishes, the game rebuilds itself around the mod and your screen may go **black for a few minutes**. This is normal - let it finish and it will drop you into the match. Still black after ~5 minutes? Close the game and rejoin: the mod is already downloaded, so the second join is quick. Every join after that is instant.
->
-> Your settings will also look **reset to defaults** on that first join - they aren't lost; Gunfight keeps its own settings profile. Back out to the main menu (the mod stays loaded), run through [Recommended settings](#2-recommended-settings), and rejoin - a one-time setup.
+> The screen may go black for a moment as the game does a quick restart before connecting.
 
-![The Server Browser - Gunfight | gunfight.us in the Ranked tab](images/getting-started/server-browser.png)
-*The Server Browser - look for `Gunfight | gunfight.us` (mode GF) on the Ranked tab.*
+![The Server Browser with Gunfight | gunfight.us in the Ranked tab](images/getting-started/server-browser.png)
+*The Server Browser - look for `Gunfight | gunfight.us` (mode **GF**) on the **Ranked** tab.*
 
-> Keep your **Plutonium launcher updated** so its build matches the server's - FastDL ships the *mod*, not the engine build. More at **[gunfight.us](https://gunfight.us)** and our **[Discord](https://discord.gg/blackops)**.
+> Keep your **Plutonium launcher updated** so its build matches the server's. Questions? Join our [Discord](https://discord.gg/blackops).
 
 ---
 
@@ -160,16 +151,18 @@ Black Ops Gunfight is a ranked server. Join through the in-game **Server Browser
 
 | Problem | Fix |
 |---|---|
+| **Controller not detected** | Enable **Controls -> Gamepad -> Yes** (PlayStation controllers need [DS4Windows](https://ds4-windows.com/) or Steam input). |
 | **Can't aim down sights** while holding Sprint | Paste the ADS bind from the [Sprint/ADS improvement](#mouse--keyboard-sprintads-improvement) section. |
-| **ADS stopped working** after a restart | Re-paste the `bind MOUSE2 ...` line **with the Gunfight mod loaded** (on the server, or at the menu right after leaving it) - a bind saved in vanilla doesn't carry into Gunfight. |
-| **Settings / FOV reset to defaults** after joining Gunfight | Normal on the very first join - settings are saved **per mod**. Back out to the main menu (the mod stays loaded), apply the [Recommended settings](#2-recommended-settings), and rejoin. One-time setup; they stick from then on. |
-| **Level 1 on Gunfight** despite rank elsewhere | Plutonium keeps a separate stats profile per mod. Your Gunfight rank is its own track and saves normally - nothing in Gunfight is gated on level anyway. |
+| **ADS stopped working** after a restart | Re-paste the [ADS bind](#mouse--keyboard-sprintads-improvement). |
+| **FOV or ADS sensitivity feels weird** | See the [Field of view](#field-of-view-fov) section. |
+| **Game doesn't feel smooth** | Use full-screen with the [recommended settings](#2-recommended-settings). |
 | **Game won't launch / bad install** | In the CB Servers Launcher, open **Black Ops -> SETUP** to re-point or re-download your copy, then click **VERIFY**. |
-| **Gunfight isn't in the server list** | Reset all filters, click **Refresh**, and check the **Ranked** tab for `Gunfight | gunfight.us`. |
-| **Black screen after the mod downloads** (first join) | Normal on the very first join - the game is rebuilding itself around the mod. Give it a few minutes and it drops you into the match. Still black after ~5 minutes? Close the game and rejoin - the second join is quick. |
-| **Error connecting to the server** | Make sure your Plutonium client is up to date, then rejoin. |
-| **Controller not detected** | Enable **Controls -> Gamepad -> Yes**; if needed, run **[DS4Windows](https://ds4-windows.com/)**. |
+| **Gunfight isn't in the server list** | Reset all filters, view the **Ranked** tab, and click **Refresh** to find `Gunfight \| gunfight.us`. |
+| **Error connecting to the server** | Make sure your Plutonium client is up to date, restart then rejoin. |
+| **Settings & Rank reset to defaults** after joining Gunfight | Normal on the very first join. Settings & Rank are saved **per mod**, not per game. Back out to the main menu (the mod stays loaded), apply the [recommended settings](#2-recommended-settings), and rejoin. One-time setup; they stick from then on. You'll rank up fast. |
 
 ---
 
-*Made by KL9. Questions or bugs? Ping us on [Discord](https://discord.gg/blackops).*
+Made by **KL9** - [Discord](https://discord.gg/blackops) - [GitHub](https://github.com/KL9modz/BO1-Gunfight)
+
+*Trademarks used are owned by their respective owners. This mod is not endorsed by or affiliated with the copyright holders of the base game in any form.*

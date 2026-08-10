@@ -1213,7 +1213,40 @@ ack, so a reset would leave the panel un-acked → it resends the same seq → t
 `wA:wX:round:aliveA:aliveX:gametype:hold:fillN:pAllies:pAxis:parked:botDiff` — field 12 is the live
 bot-difficulty preset, so the panel's Difficulty row stays lit on the current value every tick) and **`gf_roster`**
 (`<num>,<team>,<alive>,<pending>,<bot>;…`). Command feedback is private to `gf_admin_guids`
-(`gf_bridgeNotify`); only `saymsg` broadcasts. Team moves: `pteam_<num>_<team>` defers to next round
+(`gf_bridgeNotify`); only `saymsg` broadcasts.
+
+**Where admin feedback LANDS: the killfeed, by default.** `gf_bridgeNotify( text, bold )` prints with
+`iPrintLn` — **game-message window 0**, the same window the obituaries and stock's own
+`iPrintLn( &"MP_CONNECTED" )` (`_globallogic_player.gsc:19-29`) share. That is the right home for a
+*stream* of feedback: it stacks instead of stomping, sits off to the side, and ages out by itself. The
+optional `bold` (an omitted arg is simply undefined in T5 GSC) routes to `iPrintLnBold` = window 1,
+center screen, where **each call replaces the previous one** — reserved for the five match-control
+banners (pause / resume / start / both restarts). ⚠ Window 0 holds only ~4 lines
+(`con_gameMsgWindow0LineCount`) **shared with real obituaries**, so any one notice must be a SINGLE
+line or it evicts the kills the admin just made. ⚠ Its dwell is `con_gameMsgWindow0MsgTime` (stock 5s),
+**client-owned and archived — the server cannot retime it** ([[killfeed-duration-client-archived]]); an
+admin who wants longer types `/con_gameMsgWindow0MsgTime 20` in their own console, and the `killfeed_`
+verb is kept **only as the reproduction of that refusal**, never as a working lever.
+
+**`adminmsg` — the box's admin-only channel.** Reads dvar **`gf_adminsay`** and routes it through
+`gf_bridgeNotify`, so anything running on the box can put a line in front of the ★ admin and nobody
+else. Today's producer is **`GF-ConnLogger`**: on a CONNECT it emits one coloured line — name, city /
+country, ISP, plus a `^1[VPN/HOST]` tag when ip-api reports proxy/hosting — so an admin in-game sees
+who just joined and from where. Both of its calls go through the **panel** on loopback (`/api/geoip?ip=`
+— the *blocking* single-lookup mode, which is what makes the first join from a cold IP carry a location
+— then `POST /api/rcon`), so it adds **no rcon poller and no second ip-api client**. The full IP is
+**opt-in** (`-AdminNoticeIp`, default off: the line renders on the admin's screen, so a screenshot or
+stream would publish a player's address, and the IP is already in the day-file); muted GUIDs
+(`ignore.local.json`) raise no notice; `ONLINE` cold-start rows are skipped so a service restart can't
+flood the feed. ⚠ **Its own dvar, never `gf_say`** — the panel's broadcast owns that one, and a notice
+landing between a Say's two writes would go to the whole server. ⚠ Sent as **one batched, UNSTAMPED**
+rcon write (`set gf_adminsay "…";set gf_cmd adminmsg`): two packets race on the paced queue (what the
+panel's own Say learned), and seq 0 is never deduped and never touches the panel's high-water mark, so
+it cannot collide with a seq the panel is awaiting an ack for — which is also why `gf_bridgeAdminSay`
+**clears the dvar on read**. ⚠ The name is stripped of `^` colour codes and of `"`/`;` before it
+reaches the dvar: without that, a player could **rename themselves into an rcon command**.
+
+Team moves: `pteam_<num>_<team>` defers to next round
 via `pers["gf_pendingTeam"]`, consumed in the target's **pre-spawn** maySpawn window (the
 `gf_movePending` mechanism — ⚠ the old `spawned_player` watcher raced the re-begin spawn wave and
 resurrected the "enemy spawns / 1 HP" bug; [[pteam-spawnedplayer-apply-races-respawn-1hp]]);
@@ -1367,7 +1400,8 @@ tables → `docs/REFERENCE.md`.
 | `gf_vis_*` (`vision`/`ambient`/`gridint`/`gridcon`/`hdr`/`fog`) | "" | RCON visual tweaks; client-side, unreliable on dedicated. |
 | `gf_expbullets_radius` | 200 | RCON explosive-bullets blast radius. |
 
-**Bridge telemetry** (dev-only, dedicated-only): `gf_cmd`, `gf_ack`, `gf_state`, `gf_roster`, `gf_say`.
+**Bridge telemetry** (dev-only, dedicated-only): `gf_cmd`, `gf_ack`, `gf_state`, `gf_roster`, `gf_say`,
+`gf_adminsay` (the admin-only message slot — see *RCON bridge*; cleared on read).
 **HUD** (per-client menu dvars): the `ui_gf_*` family (health panel, self bar, loadout overview,
 lobby) — see `docs/REFERENCE.md`. **Dev/debug** (strip-wrapped): `gf_debug_spawns`, `gf_debug_hud_pool`,
 `gf_debug_elem_probe`, `gf_hitch_pct`, `gf_hitch_debug`, `gf_force_loadout`, `gf_force_camo`.

@@ -14,6 +14,13 @@
 # so short sessions are caught more reliably. admin.json is written atomically
 # (temp + Move), so reads are never torn.
 #
+# IN-GAME ADMIN NOTICE (added 2026-08-09): on a CONNECT this also puts ONE coloured line -
+# name, city/country, ISP, a [VPN/HOST] tag - into the KILLFEED of whoever holds the panel's
+# admin star, via the bridge's adminmsg verb. Admins only; nobody else sees it. Both calls go
+# through the panel on loopback (geo + the rcon write), so it adds no rcon poller and no second
+# ip-api client. Off with -AdminNotice $false; the full IP is opt-in (-AdminNoticeIp $true).
+# It is strictly a notification: a failure warns and is dropped, never costing the day-file line.
+#
 # DEPENDENCY: needs status_service running with -AdminOutFile set AND the .secured
 # marker present (that is what makes admin.json exist). If admin.json is missing or
 # stale (older than -StaleSeconds) or reports the server offline, this logger simply
@@ -44,18 +51,35 @@ param(
     # never stored here - same contract as status_service and join-notify.
     [string] $RconHost        = '127.0.0.1',
     [int]    $RconPort        = 28960,
-    [string] $CfgPath         = ''
+    [string] $CfgPath         = '',
+    # In-game admin notice: on a CONNECT, put a one-line "who joined and from where" into the
+    # KILLFEED of whoever holds the panel's admin star (gf_admin_guids), via the bridge's adminmsg
+    # verb. Nobody else sees it. $false = off (the day-file + ntfy paths are untouched either way).
+    [bool]   $AdminNotice     = $true,
+    # Include the joiner's full IP in that line. OFF by default ON PURPOSE: the line renders on the
+    # admin's screen, so a screenshot or a stream publishes a player's address - and the geo below
+    # is the part that is actually readable at a glance. The IP is always in the day-file and one
+    # panel click away, so this only ever buys convenience, never access.
+    [bool]   $AdminNoticeIp   = $false,
+    # Mute list (shared with GF-StatusService / GF-JoinNotify): an ignored player's join raises no
+    # in-game notice. Chiefly so the owner's own connects don't announce themselves.
+    [string] $IgnoreFile      = ''
 )
 
 $ErrorActionPreference = 'Stop'
 
-. (Join-Path $PSScriptRoot '..\common.ps1')   # Resolve-T5Root
+. (Join-Path $PSScriptRoot '..\common.ps1')       # Resolve-T5Root
+# Shared with GF-StatusService / GF-JoinNotify: Get-GfIgnoreList (mtime-cached) + Test-GfIgnored.
+# ⚠ Used ONLY to suppress the in-game notice. The day-files stay complete for an ignored player -
+# same contract as status_service, which filters at the projection and never at the source.
+. (Join-Path $PSScriptRoot '..\ignore_list.ps1')
 
 # --- Resolve default paths ----------------------------------------------------
 # storage\t5\ (where the logs\ folder lives); common.ps1 resolves it from its fixed location.
 $storageT5 = Resolve-T5Root
 
-if ([string]::IsNullOrEmpty($LogDir)) { $LogDir = Join-Path $storageT5 'logs' }
+if ([string]::IsNullOrEmpty($LogDir))     { $LogDir     = Join-Path $storageT5 'logs' }
+if ([string]::IsNullOrEmpty($IgnoreFile)) { $IgnoreFile = Join-Path $PSScriptRoot '..\ignore.local.json' }
 
 $stateFile = Join-Path $LogDir '.connstate.json'
 
@@ -79,15 +103,95 @@ $stateFile = Join-Path $LogDir '.connstate.json'
 # "no data from admin.json OR the panel" while the panel was perfectly healthy). Pass
 # host/port/password explicitly, exactly as join-notify and status_service do.
 if ([string]::IsNullOrEmpty($CfgPath)) { $CfgPath = Join-Path $storageT5 'dedicated.cfg' }
-$script:PanelUrl = ''
+$script:PanelUrl  = ''
+$script:PanelBase = ''
+$script:PanelPw   = ''
 if ($PanelPort -gt 0) {
     $pw = ''
     try { $pw = Get-RconPassword -CfgPath $CfgPath } catch { $pw = '' }
     if ([string]::IsNullOrEmpty($pw)) {
         Write-Warning "no rcon_password found in $CfgPath - panel fallback DISABLED (file-only, blind windows return)"
     } else {
-        $script:PanelUrl = 'http://127.0.0.1:{0}/api/status?host={1}&port={2}&password={3}' -f `
-                           $PanelPort, $RconHost, $RconPort, [uri]::EscapeDataString($pw)
+        $script:PanelBase = 'http://127.0.0.1:{0}' -f $PanelPort
+        $script:PanelPw   = $pw
+        $script:PanelUrl  = '{0}/api/status?host={1}&port={2}&password={3}' -f `
+                            $script:PanelBase, $RconHost, $RconPort, [uri]::EscapeDataString($pw)
+    }
+}
+
+# --- In-game admin notice -----------------------------------------------------
+# One line into the admin star's killfeed when a human connects. Everything it needs already
+# existed; this only joins them up:
+#   * this logger already has name / IP / GUID for every connect (the diff below),
+#   * the panel already resolves geo (its disk-cached, rate-paced ip-api client),
+#   * the bridge already prints privately to gf_admin_guids (gf_bridgeNotify).
+# ⚠ Panel-first: BOTH calls go through the panel on loopback. This adds no rcon poller and no
+#   second ip-api client - the two rules this box's services are built around.
+
+# Strip what would break the line. EVERY caret goes, not just well-formed ^<digit> codes: a
+# player-supplied ^1 would recolour the rest of our line, and a trailing bare ^ would swallow the
+# first character of the tag we append after it. Then the two characters the cfg/rcon parser treats
+# as structure: " ends the dvar value early and ; splits the command - a name carrying either is a
+# PLAYER injecting an rcon command by renaming themselves, so this one is a security strip, not
+# cosmetics. Finally clamp the length: the whole line is one dvar value over rcon, and window 0
+# only holds ~4 lines.
+function Format-NoticeField {
+    param([string]$s, [int]$max = 24)
+    if ($null -eq $s) { return '' }
+    $t = $s -replace '\^', ''
+    $t = $t -replace '["\;\r\n]', ''
+    $t = $t.Trim()
+    if ($t.Length -gt $max) { $t = $t.Substring(0, $max) }
+    return $t
+}
+
+# BLOCKING single lookup (?ip=), not the roster's non-blocking ?ips= batch. This is exactly the
+# case that mode is documented for - one lookup, once, with somebody waiting on the answer - and
+# it is what makes the FIRST join from a new IP carry a location instead of an empty tag. Called
+# only after the day-file write has already succeeded, so geo can never delay the record itself.
+function Get-GeoTag {
+    param([string]$ipPort)
+    if ([string]::IsNullOrEmpty($script:PanelBase)) { return '' }
+    $ip = ($ipPort -split ':')[0]
+    if ([string]::IsNullOrEmpty($ip)) { return '' }
+    try {
+        $r = Invoke-RestMethod -UseBasicParsing -TimeoutSec 6 -Uri ('{0}/api/geoip?ip={1}' -f $script:PanelBase, $ip)
+    } catch { return '' }
+    if ($null -eq $r -or -not $r.ok) { return '' }
+
+    $where = @()
+    if ($r.city)    { $where += (Format-NoticeField $r.city 20) }
+    if ($r.country) { $where += (Format-NoticeField $r.country 20) }
+    $tag = ''
+    if ($where.Count) { $tag = '^5' + ($where -join ', ') }
+    if ($r.isp)      { $tag += '  ^7' + (Format-NoticeField $r.isp 22) }
+    # Worth an admin's attention on sight: a connection from a datacentre / known proxy is the
+    # shape a ban evader or a booter arrives in.
+    if ($r.proxy -or $r.hosting) { $tag += '  ^1[VPN/HOST]' }
+    return $tag
+}
+
+# One batched rcon send: two separate packets race on the panel's paced queue, which is what the
+# panel's own Say learned the hard way (app.js "two separate packets raced"). Unstamped (no
+# "<seq>:") on purpose - seq 0 is never deduped by gf_bridgePoll and never touches the panel's
+# high-water mark, so this can never collide with a seq the panel is waiting on an ack for.
+function Send-AdminNotice {
+    param([string]$msg)
+    if ([string]::IsNullOrEmpty($script:PanelBase)) { return }
+    $body = @{
+        host     = $RconHost
+        port     = $RconPort
+        password = $script:PanelPw
+        command  = 'set gf_adminsay "{0}";set gf_cmd adminmsg' -f $msg
+        priority = $true
+    } | ConvertTo-Json -Compress
+    try {
+        Invoke-RestMethod -UseBasicParsing -TimeoutSec 10 -Method Post -ContentType 'application/json' `
+                          -Uri ('{0}/api/rcon' -f $script:PanelBase) -Body $body | Out-Null
+    } catch {
+        # Cosmetic channel: the day-file record is already written and ntfy already fired. A failed
+        # notice must never cost us the log line, and must never take the service down.
+        Write-Warning ("admin notice send failed: {0}" -f $_.Exception.Message)
     }
 }
 
@@ -306,6 +410,17 @@ while ($true) {
             $verb = if ($firstPoll -and $coldStart) { 'ONLINE' } else { 'CONNECT' }
             if (Write-Event -dir $LogDir -verb $verb -p $p) {
                 $state[$key] = @{ key = $key; name = $p.name; ip = $p.ip; guid = $p.guid; firstSeen = (Get-Date).ToString('o') }
+                # CONNECT only, never ONLINE: the cold-start batch is "who was already here", and
+                # announcing six of those the moment the service restarts would flood the killfeed
+                # of an admin who is mid-round - and evict the obituaries while doing it.
+                if ($AdminNotice -and $verb -eq 'CONNECT' -and
+                    -not (Test-GfIgnored (Get-GfIgnoreList $IgnoreFile) $p.guid $p.name)) {
+                    $line = '^2JOIN ^7{0}' -f (Format-NoticeField $p.name)
+                    $geo  = Get-GeoTag $p.ip
+                    if ($geo)            { $line += '  ' + $geo }
+                    if ($AdminNoticeIp)  { $line += '  ^7' + (($p.ip -split ':')[0]) }
+                    Send-AdminNotice $line
+                }
             }
         }
     }
