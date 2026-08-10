@@ -228,9 +228,21 @@ if (!$NoRootCopy) {
 
 $built = Get-Item -LiteralPath $builtModFf
 $local = Get-Item -LiteralPath (Join-Path $ModRoot "mod.ff")
+
+# Fingerprint of THIS artifact, printed so "is the mod.ff in the mod folder still the one I just
+# built?" is answerable at a glance. It matters because the mod folder is ALSO the Plutonium
+# CLIENT's FastDL download directory: joining the live server downloads the server's mod.ff
+# straight over this build, and the classic "rebuilt it, still shows the old text" is that swap
+# ([[fastdl-download-clobbers-local-modff]]).
+# NOT for comparing two BUILDS -- build_ff.ps1 is not byte-deterministic (identical sources have
+# produced 22,208 and 22,240 bytes), so use SIZE for drift, stale = smaller
+# ([[modff-drift-vs-gsc-deploy]]).
+$md5 = (Get-FileHash -LiteralPath $builtModFf -Algorithm MD5).Hash
+
 Write-Host ""
 Write-Host "Done."
 Write-Host "Built:  $($built.FullName) ($($built.Length) bytes)"
+Write-Host "MD5:    $md5  (this artifact -- re-check the mod folder copy after joining any server)"
 Write-Host "Copied: $($local.FullName) ($($local.Length) bytes)"
 
 if (!$NoRootCopy) {

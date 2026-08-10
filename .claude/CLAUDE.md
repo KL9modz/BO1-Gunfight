@@ -1480,6 +1480,17 @@ asset changes: `mp/gametypesTable.csv`, `localizedstrings/gf.str`, `localizedstr
 `ui_mp/hud_gf.txt` or `ui_mp/hud_gf_health.menu` **structure** (dvar values/positions are
 runtime-tunable), or a `raw/fx/misc/*.efx`.
 
+⚠ **A clean build is NOT proof the game is running it — the mod folder is also the CLIENT's FastDL
+download directory.** Joining the live server makes the client checksum-compare and **download the
+server's `mod.ff` straight over your fresh build**, so the classic "rebuilt it, still shows the old
+text" is almost always the artifact being swapped, not a bad edit or a stale source. The tell is a
+mod-folder `mod.ff` **newer than** the linker's own output in `<GameRoot>\zone\english\mod.ff`;
+recover by copying that back. Test `mod.ff` changes against a LOCAL server, and read what is actually
+inside an ff with **`tools/inflate_fastfile_zlib.ps1`** (⚠ it already exists — do not write a second
+inflater) rather than inferring it. ⚠ `build_ff.ps1` is not byte-deterministic, so a hash identifies
+**one artifact**, never that two builds match ([[modff-drift-vs-gsc-deploy]] — compare SIZE; stale =
+smaller). ([[fastdl-download-clobbers-local-modff]])
+
 ### Overriding stock engine strings (`localizedstrings/cgame.str`)
 A localizedstring baked into **our** `mod.ff` **overrides the game's own shipped-zone copy** — so any
 single-purpose engine string can be retitled or blanked. ⚠ **The asset name is `<STR FILENAME>_<REFERENCE>`**,

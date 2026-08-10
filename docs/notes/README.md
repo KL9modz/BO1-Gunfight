@@ -153,6 +153,7 @@ in a diff and on GitHub — **prefer that for anything new.** Either way: link r
 - [fastdl-first-join-black-screen-rebuild](fastdl-first-join-black-screen-rebuild.md) — post-download the client rebuilds the engine with NO UI. Empty ui_mp/mod.txt stub kills a 4.6s stall. Unstick: vid_restart.
 - [svtimeout-connect-twice-firstjoin](svtimeout-connect-twice-firstjoin.md) — the client waits for an EOF IIS keep-alive withholds. Fix = allowKeepAlive=false for /mods.
 - [fastdl-mod-download-count-counts-local-ff](fastdl-mod-download-count-counts-local-ff.md) — a count of the LOCAL mod folder, NOT the server manifest. Don't chase it.
+- [fastdl-download-clobbers-local-modff](fastdl-download-clobbers-local-modff.md) — the mod folder is ALSO the client's FastDL download dir, so joining the live server overwrites your fresh `mod.ff` with the server's and you test the OLD one. Tell: mod-folder ff NEWER than `zone\english\mod.ff`. Inflate with `tools/inflate_fastfile_zlib.ps1` — don't infer, and don't write a second inflater.
 
 ## Client-side
 - [bo1-sprint-ads-compound-bind](bo1-sprint-ads-compound-bind.md) — needs a trailing inert keynum-absorber token; HOLD ads only; Pluto reads the storage-path config_mp.cfg.
