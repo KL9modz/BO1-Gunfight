@@ -107,9 +107,14 @@ function Invoke-GfPanelRcon {
         [string]$Pw,
         [Parameter(Mandatory)][string]$Command,
         [int]$PanelPort = 3000,
-        [int]$TimeoutSec = 15
+        [int]$TimeoutSec = 15,
+        # Target game server as seen FROM the panel. Defaults cover the box; parameters exist so
+        # a caller that already carries -RconHost/-RconPort (conn_logger) loses nothing by
+        # consolidating onto this helper instead of hand-rolling the POST.
+        [string]$RconHost = '127.0.0.1',
+        [int]$RconPort = 28960
     )
-    $body = @{ host = '127.0.0.1'; port = 28960; password = $Pw; command = $Command; priority = $true } | ConvertTo-Json -Compress
+    $body = @{ host = $RconHost; port = $RconPort; password = $Pw; command = $Command; priority = $true } | ConvertTo-Json -Compress
     return (Invoke-RestMethod -Uri ("http://127.0.0.1:{0}/api/rcon" -f $PanelPort) -Method Post -ContentType 'application/json' -Body $body -TimeoutSec $TimeoutSec)
 }
 
