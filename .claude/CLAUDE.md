@@ -254,6 +254,41 @@ external references we use are the official engine sources (see **Resources**).
 - **Test panel/bridge/telemetry changes against a DEDICATED server, not a listen host** — a listen
   server masks RCON queue saturation and the "Unknown cmd" dvar-probe spam that only bite on the VPS.
 
+### 🛑 MARKETING COPY IS THE OWNER'S — NEVER "CORRECT" IT AGAINST THE CODE
+**`site/wwwroot/*.html` and `README.md`'s feature list are ADVERTISING written by the owner, not
+documentation generated from the source.** They are allowed to round, exaggerate, simplify, and
+disagree with the code. **A mismatch between site copy and the code is NOT a bug and NOT drift — do
+not "fix" it, do not flag it as an inconsistency, and never let a verifier's output override a
+sentence a human typed.** If a number there looks wrong to you, you are missing context (a map that
+is playable but deliberately uncurated, a promo the owner is running, a claim that is aspirational on
+purpose). **Leave it. Ask, or say nothing.**
+
+Owner-authored copy that is **deliberate and must not be rewritten**:
+- **"All 26 maps"** — the owner's count and phrasing. `verify_locations.ps1` reports **25 curated**
+  spawn sets, and that is the *code* number: `firingrange` is a supported opt-out that still plays
+  fine on stock spawns, so 26 is the honest count of *playable* maps. **Both numbers are right about
+  different things.** `_gf_locations.gsc`'s 25 belongs in technical prose only (this file's *Spawns*
+  section); it never propagates to the site or the README feature list.
+- **"4XP Enabled!"** — the owner's promo phrasing. Do **not** replace it with a computed ratio from
+  `registerScoreInfo` (kill 500 vs stock 100). The house format is **`<N>XP Enabled!`** and the
+  **"All <N> maps"** headline — keep both formats intact even when changing the number.
+- **"Tuned game rendering, lighting, and colors"** — kept as written even though the `r_*` push was
+  removed and what ships is the `visionSetNaked` pass.
+
+⚠ **This has happened three times and cost real trust.** `eac1a0e` (2026-07-28) rewrote *All 24
+maps* → *25 maps* and *2XP Enabled!* → *Boosted XP — rank up ~5× faster!*; the owner restored the
+house format in `2a1cdab` (2026-07-30 01:32) as *26 maps* / *4XP Enabled!*; **`36feaeb` (29 minutes
+later) reverted both again and also reworded the rendering line — in `README.md` too — citing
+"drifted public numbers".** Each pass was a docs/accuracy sweep that treated advertising as if it
+were a spec. **A commit whose job is "fix drift" must not touch `site/wwwroot/` or the README
+feature list at all.**
+
+✅ **Copy changes there are owner-requested only.** Fix a typo, a broken link, or markup you were
+asked to fix; if you believe a *claim* is wrong, raise it and wait. ⚠ Nothing on the site auto-
+deploys — `deploy.ps1 -Web` is manual and no scheduled task pulls or publishes (verified 2026-08-09,
+all 8 `GF-*` tasks) — so anything live got there because a human ran a deploy over a commit like the
+above. That is exactly why the *commit* is the place to stop it.
+
 ### Diagnostics — where the logs go, and what to read
 **There are two log files and only one is ours.** Get this wrong and you will grep an empty file and
 conclude a diagnostic never fired:
@@ -1155,7 +1190,10 @@ animates (`gf_slideLoadout`). Related: [[menu-rendered-loadout-overview]]. Full 
 - **Headshots-only** (`level.gf_headshotsOnly`) is a dev-bridge flag, off/undefined in public builds.
 
 ### Spawns & wager map zone
-Curated hand-placed spawns for **25 maps** (`_gf_locations.gsc`, built once/match, cached in `game[]`);
+Curated hand-placed spawns for **25 maps** (`_gf_locations.gsc`, built once/match, cached in `game[]`;
+⚠ this 25 is the *curated-set* count and stays in technical prose — the site and README say **"All 26
+maps"** deliberately, counting `firingrange`'s supported opt-out, and that copy is the owner's: see
+*Marketing copy is the owner's*);
 each map has one set of 5 allies + 5 axis points and one OT flag point. Small mode consumes them via
 `onSpawnPlayer`/`onSpawnPlayerUnified`, which **short-circuits all small-mode spawns to the curated
 points** so late/async spawns (bot fill, late joiners, 60s forceSpawn) keep fight-facing points instead
