@@ -45,7 +45,10 @@ param(
     # server so the launcher loop restarts it). Must be > $AdminStaleSecs.
     [int]      $AdminHardStaleSecs = 300,
     # A plutonium.exe (updater/launcher) with NO bootstrapper child, older than this, is a
-    # wedged `-update-only` (the bat loop is stuck on that line, server DOWN, task still Running).
+    # wedged `-update-only` (the bat is stuck on that step, server DOWN, task still Running).
+    # Since 2026-08-11 the bat delegates that step to update_plutonium.ps1, which bounds and kills
+    # the updater ITSELF, so this is now a backstop for the paths that script cannot cover (it is
+    # missing / it crashed / something else started an updater), not the primary bound.
     [int]      $UpdaterWedgeSecs = 120,
     [int]      $ReAlertMinutes   = 20,
     [string]   $StatePath        = '',
@@ -377,10 +380,13 @@ $upd  = @(Get-Process -Name 'plutonium'                    -ErrorAction Silently
 # from that lighter touch before escalating to a whole-task restart.
 $updaterRemediatedThisRun = $false
 
-# (3a) WEDGED UPDATER. The launch bat runs `plutonium.exe -update-only` before each
-# (re)launch; if it hangs, the loop is stuck there with NO game server, yet GF-GameServer
-# stays State=Running (the task can't see it). Signature: plutonium.exe present, bootstrapper
-# absent, and it's been that way past a normal update download. Kill it -> the bat advances.
+# (3a) WEDGED UPDATER. If `plutonium.exe -update-only` hangs, the bat is stuck on that step with
+# NO game server, yet GF-GameServer stays State=Running (the task can't see it). Signature:
+# plutonium.exe present, bootstrapper absent, past a normal update download. Kill it -> bat advances.
+# BACKSTOP ONLY since 2026-08-11: the bat's update step is update_plutonium.ps1, which skips the
+# updater entirely when the local revision already equals the CDN's, and otherwise waits for the
+# revision to LAND and then kills it. A genuinely long update (a first install) stands this whole
+# watchdog down behind that script's maintenance marker, so it cannot be reclaimed mid-download.
 if ($upd.Count -gt 0 -and $boot.Count -eq 0) {
     $oldest = ($upd | Sort-Object StartTime | Select-Object -First 1)
     $ageSec = [int]((Get-Date) - $oldest.StartTime).TotalSeconds
