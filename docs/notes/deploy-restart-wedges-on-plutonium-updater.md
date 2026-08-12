@@ -1,6 +1,6 @@
 ---
 name: deploy-restart-wedges-on-plutonium-updater
-description: "FIXED 2026-08-10: `plutonium.exe -update-only` hangs on its NO-OP path (fails to exit when already current), which wedged EVERY restart. The bat now runs it once BEFORE the :server loop, cmd-bounded at 120s + taskkill; crash relaunches skip it (3s recovery). Freshness moved to watchdog check 5 (CDN revision drift, restart-when-empty). deploy.ps1 + watchdog 3a heals remain as nets."
+description: "FIXED 2026-08-10, SHARPENED 2026-08-11: `plutonium.exe -update-only` hangs on its NO-OP path (fails to exit when already current), which wedged EVERY restart. The bat's update step is now update_plutonium.ps1, which compares local info.json's revision to the CDN's: already current -> skip the updater entirely (restart 2m06s -> 16.3s measured); pending -> run it and wait for the revision to LAND (5.3s vs a 180s cap), then kill it. The blind 120s cmd bound survives as the fallback. Freshness policy is watchdog check 5; 3a is now only a backstop."
 metadata: 
   node_type: memory
   type: project
@@ -79,6 +79,39 @@ The live test also settled the root-cause question this note left open, and CONF
 observation was the general case: with CDN and local both at r5344 (**nothing to apply**), the
 updater still sat the full 120s and had to be killed. `-update-only` **fails to exit when there is
 no update** — the hang is the no-op path, not a slow download, which is why every restart wedged.
+
+**SHARPENED 2026-08-11 — the blind timer became a POSITIVE completion signal.** The 08-10 fix bounded
+the hang but still paid it: with nothing to download the updater never exits, so **every** deliberate
+restart burned the full 120s. The bat's update step is now
+`tools/vps_services/update_plutonium.ps1` (in the repo, deployed with the mod; the bat keeps the old
+inline block as a `goto legacyupdate` fallback for a missing/mid-deploy mod tree, flow-tested):
+
+| local vs CDN revision | what happens | measured |
+|---|---|---|
+| `local == cdn` | updater **never started** (it would only hang); any idle one is cleared | restart **2m06s -> 16.3s** end-to-end (3.3s to bootstrapper) |
+| `local < cdn` | started, then polled until the **local revision reaches the CDN's**, then killed | **5.3s** vs a 180s cap (synthetic updater) |
+| CDN unreachable | run blind, bounded 180s, done when the revision *changes* or it exits | degrades to 08-10 behavior |
+| no local info.json | first install, bounded 900s, done when the revision appears | migration-day path |
+
+The signal is the same one **CBServers/cb-launcher** uses (`src/launcher/plutonium/plutonium.cpp`);
+their comment is this note's bug verbatim: *"Their window stays up after finishing, so the revision
+landing is the completion signal."* ⚠ Endpoint note: cb-launcher reads
+`cdn.plutonium.pw/updater/prod.json` and follows `manifests[0]` — verified 2026-08-11 that entry is a
+**URL string**, and it resolves to the `cdn.plutoniummod.com/updater/prod/info.json` we already poll.
+Same source of truth, one hop apart; `prod.json` is the indirection layer to re-resolve through if the
+info.json URL ever moves.
+
+⚠ **Two invariants the script must keep.** (1) It sits in the **launch path**, so it never blocks:
+`$ErrorActionPreference` is deliberately *not* `Stop` (inverting the long-running-service pattern) and
+every failure path still `exit 0`s — a script error must degrade to a slow start, never a dead server.
+(2) A real update can outrun **watchdog 3a's 120s** wedge threshold and be killed mid-write, so the RUN
+paths drop a self-expiring maintenance marker sized to their own cap — **extend-only** (a deploy's
+longer window is never shortened) and **never deleted** (expiry is what guarantees an aborted run can't
+leave the watchdog switched off). The SKIP path writes no marker; there is no window to protect.
+⚠ `Get-Process -Name 'plutonium'` is an exact base-name match, so it can never hit
+`plutonium-bootstrapper-win32` — re-proven live 2026-08-11 (matched `plutonium(8760)` only, bootstrapper
+survived the kill). The same run re-confirmed the root cause: started with local == cdn == r5344, the
+real updater was still running 12s later with nothing to do.
 
 **The old "keep it in the loop for freshness" concern is now owned by watchdog check (5)** —
 update DRIFT policy: the CDN advertises `{revision}` at
