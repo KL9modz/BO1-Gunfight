@@ -116,13 +116,18 @@ gf_REVEAL_TIME() { return 0.6; }
 // same frame is a reliable-command burst that widens the between-rounds snapshot gap -> the
 // "Connection Interrupted" flash the second a round starts. Offset each player by their client slot
 // (getEntityNumber) so ~2 players' pushes land per 20Hz frame instead of the whole lobby at once.
-// <=0.25s, invisible during the frozen prematch (the HUD snaps in anyway). Humans only reach here
+// <=0.35s, invisible during the frozen prematch (the HUD snaps in anyway). Humans only reach here
 // (bot-guarded callers). Complements the sv_maxRate bump, which drains the burst faster once on the wire.
 // The burst itself is now ~12 reliable commands per human (was ~45) — see the batching note in
 // gf_showWeaponHUD. This stagger spreads what's left; it does NOT replace the batching.
+//
+// ⚠ The modulo is the number of DISTINCT frames the wave is spread over, so it has to track the
+// player cap rather than stay a fixed 6: at 7v7 a modulo of 6 drops 14 clients into 6 buckets
+// (~2.3 per frame) and every collision is exactly the same-frame reliable-command burst this
+// exists to avoid. 8 buckets keeps a full 14-player lobby under ~2 per frame.
 gf_hudRevealStagger()
 {
-    return ( self getEntityNumber() % 6 ) * 0.05;
+    return ( self getEntityNumber() % 8 ) * 0.05;
 }
 
 // Admin match-pause banner (gf_pause_hud menuDef). Pushed to one client. Called for every player by

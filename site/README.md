@@ -21,8 +21,9 @@ site/
 ```
 
 The JSON the status page reads (`status.json`, `activity.json`, and the gated
-`admin.json`/`health.json`) is **not** in this folder — `GF-StatusService` writes it on the box.
-See `docs/VPS_DEPLOY.md`.
+`admin.json`/`health.json`/`gamestats.json`) is **not** in this folder — `GF-StatusService` writes
+it on the box. See `docs/VPS_DEPLOY.md`. `gamestats.json` (the combat leaderboard's source) is
+GUID-keyed, so like the other `admin/live/` files it exists only behind the `.secured` gate.
 
 ⚠ **IIS long-caches `.css`/`.js` but not `.html`.** After editing an asset, bump the `?v=N` query on
 its `<link>`/`<script>` tag, or a deploy ships new HTML against a stale cached asset — this shipped

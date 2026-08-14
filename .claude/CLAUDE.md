@@ -16,11 +16,41 @@ wins** takes the match.
 
 ## TODO
 
-- Migrate to new LA host
+- Migrate to new host
 - Map/mode vote
 - Website screenshots
 - Add more fun mods from other mod menus
 - Create alt modes: Team Sharpshooter, Team Gun Game
+- **Retail-Steam BO1 port: the ONLY open question is the server binary `CoDMPServer.exe`.** A retail
+  Gunfight server would reach every Steam BO1 owner from the in-game browser with zero client setup,
+  and the whole mod stack is already proven live there (ZAM `mp_ZAMv4` + `Classixz/bo1-snife` on
+  GitHub): unranked servers auto-deliver `mod.ff` + `.iwd` to vanilla clients over the stock HTTP
+  redirect (`sv_allowDownload`/`sv_wwwDownload`/`sv_wwwBaseURL`, laid out `<baseURL>/mods/<fs_game>/`;
+  Treyarch's own Steam RCON tool, appid 42720, exposes those four dvars in its **unranked** settings
+  manifest and **not** in the ranked one), custom gametypes register exactly like ours
+  (`stringtable,mp/gametypesTable.csv` + `rawfile,maps/mp/gametypes/<gt>.txt` +
+  `menufile,ui_mp/hud_<gt>.txt` + a line in `maps/mp/gametypes/_gametypes.txt`), custom `.menu` files
+  and custom weapons work, and **GSC stays loose** (snife's `mod.csv` lists no `.gsc` — scripts run
+  server-side out of the mod folder, clients never get them). ⚠ **`BlackOpsMP.exe` is client-only —
+  tested locally 2026-08-14: args reach the engine (`r_fullscreen 0` applied) but `dedicated`/
+  `net_port`/`logfile` are silently ignored, no log is written, and it comes up as a client on UDP
+  3074.** The server was always the separate, never-Steam-shipped `CoDMPServer.exe` (leaked 2014), and
+  the leak holds TWO builds: **`CoDMPServer_s.exe`** = secured/ranked, wants `dw_licensefile` +
+  `sv_licensenum` and dies on `Dedicated server authentication failure` (this is the "BO1 needs a
+  Demonware licence" everyone repeats), vs plain **`CoDMPServer.exe`**, whose documented failure is an
+  *asset* one (`Exceeded limit of 256 'stringtable' assets`, fixed by deleting `zone/Common/patch_mp.ff`
+  — note ours adds a stringtable). Nobody online distinguishes the two. Rentals are dead (GameServers
+  exited BO1, lists no CoD at all now; no other provider sells it) and the surviving modded servers are
+  grandfathered GameServers boxes (ZAM's `173.199.76.204` RDAPs to GameServers.com, Toronto). <!-- ip-ok: third-party public game-server address; the RDAP literal IS the evidence for the grandfathered-box finding -->
+  Next step is social, not technical: ask Classixz (the invite is linked off the
+  `Classixz/bo1-snife` GitHub repo — deliberately not pasted here, the pre-commit guard blocks raw
+  `discord.gg/<code>` invites because they expire) which binary they run, whether the
+  unsecured one needs a licence file, and how the box is provisioned. ⚠ Weigh the legitimacy cost —
+  the leaked binary is the same unofficial-Activision-code category as Plutonium, and the only gain is
+  that *clients* stay stock. The clean-legitimacy alternative is BO3 (first-party dedicated server tool
+  + Workshop delivery), which costs a T7 rewrite. Retail also loses XP (unranked grants none, so the
+  `registerScoreInfo` tuning is void) and the `g_fix_*` engine fixes (the bullet-damage dupe and the
+  weapon-switch entity leak both bite this mod hard).
 
 ### Open bugs
 - **RESOLVED — "auto-balanced → forced to choose a class/team, couldn't spawn" (YooDyl `mp_silo`
@@ -202,6 +232,35 @@ wins** takes the match.
   0.5→0.3s, the fade masks the coarser stepping); snapping the outro (like the intro) is the zero-cost floor.
 - **Hybrid custom round-timer HUD:** keep the native engine-driven `MM:SS` for the normal phase, own only
   the final ≤10s (orange `S.T` tenths) via the menu layer, route OT through the same element.
+- **Remote RCON access (drive the panel from a phone / any device) — "put it on the website behind a
+  login" is the WRONG first move, and the reason is structural.** The panel has **no user
+  authentication at all**: `server.js` binds `127.0.0.1` only and allowlists `Host`/`Origin` to
+  `127.0.0.1:<PORT>` as its CSRF / DNS-rebinding guard — **loopback IS the auth**. So adding a login
+  page is not hardening an app, it is deleting the only control and backfilling in front of four
+  unauthenticated power endpoints: `POST /api/rcon` (arbitrary server console — every dvar, the GSC
+  bridge, map control), `POST /api/savecfg` (writes `dedicated.cfg` on the box), `GET`/`POST
+  /api/secrets` (reads/writes stored **rcon passwords**), and `/api/status` + `/api/geoip` (player
+  IPs/GUIDs). Ranked options:
+  1. **Tailscale / WireGuard — the recommendation.** Panel reachable at the tailnet IP from phone/
+     laptop; no public port, no login code, auth = IdP + device approval. Cost is one config change:
+     bind the tailnet interface and **widen the Host/Origin allowlist by ADDING that host — never by
+     removing the check** (it is the anti-rebinding guard, and a wildcard means any site you visit can
+     POST to the panel). Caveat: everyone on the tailnet is full admin — fine for a single-user tailnet.
+  2. **IIS reverse proxy on gunfight.us behind auth** — the literal "secure page with login", and it
+     reuses the proven `/admin` pattern (`tools/vps_services/setup_admin_auth.ps1`, Basic auth over
+     HTTPS + the `.secured` interlock). Needs ARR, and preserve-host handling or the allowlist rejects
+     every proxied request. ⚠ Hardening is **not optional** here: proxy an allowlist of paths (never
+     `/`), keep `/api/secrets` + `/api/savecfg` loopback-only, rate-limit, and log every `/api/rcon`
+     with the authenticated user. A Windows local account behind IIS Basic auth is thin cover for what
+     is effectively a remote console, and that credential is worth more than a panel password.
+  3. **Least-privilege command page** — expose a narrow authenticated page with a **whitelist** of
+     verbs (pause, end round, restart, kick, map change) consumed by a box-side service; the panel
+     itself never faces the internet. Safest public-web shape, at the cost of the live editor.
+  4. **Real session auth inside `server.js`** (argon2 + TOTP + CSRF + lockout) — most code, most
+     ongoing risk. Only worth it for multiple *named* admins with an audit trail.
+  ⚠ Weigh all four against what already exists: the **`gf-vps` Remote Control session** covers
+  phone-based ops today, and `ssh -L 3000:127.0.0.1:3000 gf-vps` gives the full panel from any machine
+  holding the key. The marginal need may be smaller than it looks.
 - RCON: gas/stun/flash intensity sliders; mantle/climb speed control.
 - Lobby ready-up / team-picking UI; lobby fly-cam controls.
 - Min-players option that also counts bots (`scr_gf_min_players` counts humans only today).
@@ -861,11 +920,22 @@ primitive sequences suicide → wait for death to settle (bounded ~2s) → quiet
 balancer's prematch moves all route through it. `pteamforce_` on an alive player = **die + late-spawn**
 onto the new team (round rules permitting).
 
-**Human-joiner steering at connect** (`level.autoassign = gf_autoJoinBalance`, unchanged in spirit):
-lopsided human split (diff > 1) → seat the lighter side; balanced → stock pick (players can squad up);
-now also lock-aware (both sides full → spectate + queue; one side full → the open side), and an ALIVE
-player picking Auto Assign routes through the sequenced move. Still the single delegate for the
-lobby→match transfer plan (`gf_autoassignPlanned` fallbacks reach saved *real* stock — no recursion).
+**Human-joiner steering at connect** (`level.autoassign = gf_autoJoinBalance`): any human split with a
+lighter side → seat it; **only EXACT parity** falls through to the stock pick (players can still squad
+up when the choice is free). Lock-aware (both sides full → spectate + queue; one side full → the open
+side), and an ALIVE player picking Auto Assign routes through the sequenced move. Still the single
+delegate for the lobby→match transfer plan (`gf_autoassignPlanned` fallbacks reach saved *real* stock —
+no recursion). Both seating paths share **`gf_seatBalancedJoin`** so they cannot drift.
+⚠ **The parity bound is load-bearing, and so is the UNPLANNED-joiner path.** It used to be `diff <= 1`
+→ stock, and `gf_autoassignPlanned`'s "fresh joiner not in the plan" branch used to be a **bare** stock
+autoassign. Both let a coin flip turn a legal 1-gap into a 2-gap — and because bots pad to
+`max(bigger human side, gf_fill_n)`, a 2-gap becomes "N humans vs N-1 humans + a bot" for the **rest of
+the match**, which reads to players as "the teams were never balanced" even though the head count is NvN.
+⚠ **Steer an unplanned joiner against the PROJECTED split (`gf_planProjectedHumans`), never a live
+head-count** — at the match-start re-begin wave clients reconnect one at a time, so an early joiner sees
+0/0 and calls it parity no matter how lopsided the plan is. Count the **plan entries** (+ already-seated
+humans the plan doesn't name); a stale entry costs at most a 1-gap, which the boundary evens.
+([[unplanned-joiner-coinflip-opens-two-gap]])
 
 **Boundary-only remains the rule** — ONE yield-free `gf_boundaryPass` per round, triggered by:
 `gf_round_over` +0.5s (inside the killcam), the match-start gate release (pre-spawn; the Auto/Manual
@@ -912,6 +982,13 @@ try to bundle the `.iwi` → build error.
   members but must SKIP bodies on their way out (`.gf_displacePending` / `gf_parkPending`) — a
   displaced bot's pers lies for the ~2s its suicide-park settles, and a panel seeded mid-churn showed
   "3 players / 300" on a 2-human team ([[health-hud-counts-mid-displacement-bodies]]).
+  ⚠ **`Alive: N` reading LOW is almost never a HUD bug — check `scr_team_maxsize` first.** The
+  readout is exact at any team size (both stats are plain sums), so a team that "should" be 7 and
+  reads 6 usually means the 7th was **benched by the cap** — the tell is `GF_TEAMTRACE: … ->
+  spectator by maxsize` plus a `GF_TEAMWATCH … reason maxsize` on the same player each round (live
+  2026-08-13, `mp_golfcourse`, cap 6). The second, by-design reason is the `gf_spawnedRound` gate:
+  a player team-assigned but not spawned into THIS round is excluded deliberately, so a mid-round
+  joiner appears next round. Neither is fixed in `_gf_hud`.
 - **Self health bar**, **loadout overview** (icons via `ui_gf_lo_*`; 3 hardcoded perk icons; the
   equipment row's three columns each carry their own gate — `ui_gf_lo_show2`/`3`/`4` — for a `"none"`
   equipment loadout or an admin slot switch, hiding icon+name only so the bracket doesn't reflow), and two
@@ -1147,11 +1224,18 @@ animates (`gf_slideLoadout`). Related: [[menu-rendered-loadout-overview]]. Full 
   rcon lands on a console that *is* a client's (that is the setup where `set bg_viewKickScale 0.9` was
   once seen refused, which is what seeded the whole misconception), and its `gf_<dvar>` mirror, which
   buys cfg-persistence for free.
-- **Reading engine-dvar defaults:** the dvar dump in `console_mp.log` prints **registered defaults, never
-  live values** (`g_inactivity` 190 vs our cfg's 300; `sv_maxclients` 4 vs 14). It is the cheapest way to
-  read an engine dvar's true default and to prove a dvar is engine-registered at all — a `set` on a name
-  the engine never registers creates a user dvar that looks real in every dump and is read by nothing.
-  For **live** values use the panel (`/api/dvars?fresh=1`), never the dump and never the cfg.
+- **Reading engine-dvar defaults:** the dvar dump in `console_mp.log` is the cheapest way to prove a dvar
+  is engine-registered at all — a `set` on a name the engine never registers creates a user dvar that
+  looks real in every dump and is read by nothing. ⚠ **What it prints is NOT reliably the default.** This
+  file long claimed "registered defaults, never live values" (`g_inactivity` 190 vs our cfg's 300;
+  `sv_maxclients` 4 vs 14) — **the live VPS log on 2026-08-13 says the opposite**: the first dump sits
+  *after* `execing dedicated.cfg` and reports the cfg's own values (`g_inactivity "300"`,
+  `sv_maxclients "14"`, `sv_timeout "240"`), plus `g_gametype "gf"` and the GSC-seeded
+  `scr_gf_flinch "0.5"`, neither of which has a registered default that could read that way. So treat a
+  dump value as **live state at that map_restart** (which makes the per-round dumps a free timeline —
+  that is how the collision "reset" was dated), and read a true default from a **live rcon read's** typed
+  `default:` / `Domain is …` fields. For live values the panel (`/api/dvars?fresh=1`) is still the tool of
+  record — the dump is only a fallback when rcon replies are being dropped.
   ([[engine-dvar-defaults-from-log-dump]], [[read-the-server-not-the-file]])
 - ⚠ **THE `bg_*` / `cg_*` PREFIX RULE — a server-side `set` on one is INERT on a dedicated server.**
   The prefix *is* the ownership marker: **`g_`/`sv_`/`scr_` = server** (a `set` works), **`bg_` =
@@ -1202,6 +1286,34 @@ animates (`gf_slideLoadout`). Related: [[menu-rendered-loadout-overview]]. Full 
   overruns 15s. If a clip ever needs fixing, keep stock's **per-player self-relative** model and bump the
   offset (per-player `wait N` from each spawn); never go level-wide. ([[intro-sting-killed-by-underscore-shared-channel]])
 - **Headshots-only** (`level.gf_headshotsOnly`) is a dev-bridge flag, off/undefined in public builds.
+
+### Match stats (persistent per-player K/D/damage/wins)
+Recorded the classic CoD-server way: **structured `logPrint` lines on the one diagnostic stream**
+(`games_mp.log` — the same file stock writes its `J;` connect lines to), aggregated by a box service.
+No RCON, no dvar, no reliable command, no new thread. GSC (`_gf_rounds.gsc`, ships public) emits one
+**delta** line per HUMAN per round — `GF_STAT;matchid;round;guid;team;K;D;A;HS;DMG;CAP;RW;name` — and
+one `GF_MATCH;matchid;map;guid;W|L|T;name` per seated human at match end. Name rides **LAST**
+(end-anchored parsing, names contain anything); bots/democlient never emitted. Deltas mean the
+aggregator just **sums every line ever seen** — no dedup, no per-match reconciliation, a crash loses at
+most the round in progress. Counters are **mod-owned pers[]** (`gf_stK/D/A/HS`, bumped in
+`gf_onPlayerKilled` under a `gf_roundActive` gate so administrative suicides — team-switch
+`gf_seqTeamMove` — never count; damage/captures ride the existing `pers["gf_damage"]`/`pers["captures"]`
+via last-flushed marks). ⚠ **Deliberately NOT stock's `incPersStat`/`statAdd` chain** — that writes the
+per-mod Demonware blob the server can never read back ([[plutonium-stats-are-namespaced-per-mod]]), and
+parts of it are dead under `overridePlayerScore`. Flush is **double-sited and zero-safe** (counters
+zeroed on flush; all-zero lines skipped): `gf_endRound` (pre-notify block, before endGame's
+`roundsplayed++` — the round-win predicate reads `pers["gf_spawnedRound"] == roundsplayed`) plus
+`gf_onRoundEndGame` as the rescue for end paths that bypass `gf_endRound` (bridge END ROUND's
+`sd_endGame`). Box side: `status_service` tails the log **incrementally** (byte offset + file
+**creation-time identity** in `storage\t5\logs\gamestats.local.json` — size alone misses a rotation the
+fresh log outgrew; archive-tail recovery on rotation), sums day→GUID buckets, and projects
+`admin/live/gamestats.json` behind the **`.secured` gate** (GUID-keyed = never the open web root; ingest
+runs even while the gate is down). The admin page joins it to the connection history by GUID (Combat
+leaderboard + drill-down; windows are **day-granular on the BOX calendar**). Parser regexes are
+**line-start anchored** behind the engine's `min:sec` prefix so a hostile player *name* containing
+`GF_STAT;…` inside some other line cannot forge stats. Accepted losses: a mid-round leaver's partial
+round; a watchdog `map_rotate`'s final round (no endGame → no lines). Tests:
+`tools/tests/gamestats.Tests.ps1` + `site/test/admin_combat.test.js`.
 
 ### Spawns & wager map zone
 Curated hand-placed spawns for **25 maps** (`_gf_locations.gsc`, built once/match, cached in `game[]`;
@@ -1395,13 +1507,14 @@ tables → `docs/REFERENCE.md`.
 | `gf_capture_time` / `_large` | 3.5 / 5 | OT zone hold-to-capture seconds, small / large. |
 | `scr_gf_teamspawnmode` | auto | `auto` \| `large` \| `small` (auto goes large when a team hits 5+). |
 | `scr_gf_flinch` | 0.5 | Flinch scale (× stock `bg_viewKickScale` 0.2) → **half stock kick**. The **only global flinch reducer**: 1.0 = stock, 0 = none. (The sniper/heavy package's `specialty_bulletflinch` adds a further **0.2×** for those 10 loadouts only — never put it back in the base set.) Pushed **per-client every spawn, unconditionally** — the server dvar alone doesn't replicate, and the push beats a player's own autoexec (clamp 0-3). |
-| `scr_gf_headshot_scale` | 1.0 | Multiplier on **FINAL** headshot damage (clamp 0-3): 1 = stock, 0.5 = half, 0 = headshots void; a positive scale never rounds a hit below 1. The engine folds the weapon file's baked hit-location multiplier into `iDamage` **before** GSC sees it (`MOD_HEAD_SHOT` set at `_globallogic_player.gsc:731-738`, hook at `:741`, return consumed `:742-743`), so this rescales the result globally — it can't set a per-weapon multiplier to an absolute value (that's the custom-weapon-file pass). Applied at the **top** of `gf_onPlayerDamage` so the scaled value flows through score (= damage dealt), the most-HP time-out decision, and the red kill-marker test; FF headshots scale too (engine applies FF damage, never scored). Read live per hit (`gf_headshotScale`) → an RCON `set` lands on the next shot; registered per round from `gf_roundApplyTuning` for the panel sweep. Plain dvar row (DASHBOARD → GUNFIGHT), **no bridge verb**. Interacts with Body Armor's −20% non-headshot cut: lowering this narrows that deliberate headshot premium. |
+| `scr_gf_headshot_scale` | 0.8 | Multiplier on **FINAL** headshot damage (clamp 0-3): 1 = stock, 0.5 = half, 0 = headshots void; a positive scale never rounds a hit below 1. **0.8 is the shipped default**: every non-headshot bullet takes Body Armor's −20%, so scaling headshots by the same 0.8 cancels that premium and restores the weapon files' stock head:body ratio. ⚠ Not a sniper-one-shot lever — the snipers' 1.5× zone covers neck/upper chest (not headshots), and sniper rounds drop armorvest from everyone. The engine folds the weapon file's baked hit-location multiplier into `iDamage` **before** GSC sees it (`MOD_HEAD_SHOT` set at `_globallogic_player.gsc:731-738`, hook at `:741`, return consumed `:742-743`), so this rescales the result globally — it can't set a per-weapon multiplier to an absolute value (that's the custom-weapon-file pass). Applied at the **top** of `gf_onPlayerDamage` so the scaled value flows through score (= damage dealt), the most-HP time-out decision, and the red kill-marker test; FF headshots scale too (engine applies FF damage, never scored). Read live per hit (`gf_headshotScale`) → an RCON `set` lands on the next shot; registered per round from `gf_roundApplyTuning` for the panel sweep. Plain dvar row (DASHBOARD → GUNFIGHT), **no bridge verb**. |
 | `scr_gf_killcam_slowmo` | 0.6 | The round-end killcam's **timescale FLOOR** (clamp 0.25-1.0) — **not a toggle** (it used to be one; 0/1 no longer mean what they did). `0.25` = stock BO1 cinematic **and the bug**; `1.0` = no slow motion. Stock's 0.25 spaces the server's game frames ~200ms apart, overrunning `MAX_PACKET_USERCMDS` (32) on any client above ~160 fps → the "Connection Interrupted" plug. `0.6` → ~83ms, safe to ~385 fps, still a clear slow-mo. Clamp the **depth, not the length**. ⚠ `sv_fps` is not the lever — it truncates the killcam's frame-sized archive ring. |
 | `scr_gf_jump_fatigue` | 0 | **0 = OFF (the GF default)** / 1 = stock. Drives the engine's `jump_slowdownEnable` (post-jump movement drag — "jump fatigue"). The mod owns it so OFF ships as a default even with no cfg and no panel (`gf_applyJumpFatigue`, re-applied every round). RCON bridge: `jumpfatigue_<0\|1>`. |
 | `scr_gf_sprint_unlimited` | 0 | **0 = stock** / 1 = the sprint meter never empties. Drives the client dvar `player_sprintUnlimited`, **pushed per-client every spawn** — stock's only push is at connect and is ON-only, so a bare `set` on it reaches nobody already in the server and can never turn it back off (`gf_applySprintUnlimited` + `_Client`). RCON bridge: `sprintunlimited_<0\|1>`. |
 | `scr_elevator_failsafe` | 1 | **ENGINE/map dvar, read at LEVEL LOAD → next map only.** `1` = **Hotel's elevators are disabled** (the GF default): cars parked at the lower floor, car + floor doors shut, `DisconnectPaths()` both levels, use triggers retitled "ELEVATOR UNAVAILABLE", bot prox-think short-circuited. 100% stock — `mp_hotel` ships its **own** elevator script (`maps/mp/mp_hotel_elevators.gsc`, **not** the generic `maps/mp/_elevator.gsc`) and Treyarch built this switch into it; stock forces it on for `xblive_wagermatch 1`, so the wager gametypes already ran Hotel dead. Seeded if-empty in `gf.gsc onStartGameType` (**outside** the strip regions — it ships in the public build) + set in `dedicated.cfg`, for the boot-straight-onto-Hotel case. No effect on any other map. |
+| `g_playerCollision` / `g_playerEjection` | cfg ships **2 / 2** (engine default `everybody`) | **Player collision is OFF by default** — players pass through each other, and nothing shoves overlapping bodies apart. A one-life mode fought out of tight curated 2v2 spawns cannot afford a teammate body-blocking a doorway. **Real Plutonium ENGINE dvars** (registered by the bootstrapper, not Treyarch — absent from `raw/` and from `BlackOpsMP.exe`, which is why an older note wrongly guessed they were T6-only), **cfg-owned** like the `g_fix_*` family: **no GSC writes them**, so `dedicated.cfg` IS the default and a hand edit there is the whole change. ⚠ They are **ENUMs**: written by **index** (`set g_playerCollision "2"`) but they **read back as a NAME** (`nobody`), which blanked the panel's 0/1/2 dropdown on every read and made Set All / 💾 Save skip the row — the "it keeps resetting" report. Fixed panel-side with a name→index `rmap`. ⚠ A live rcon/panel change is **effective immediately and survives `map_restart`**; the ONLY thing that reverts it is a **server restart** re-execing the cfg. Set both — ejection alone still pushes players apart. `g_playerCollisionEjectSpeed` (25) is then moot. ([[player-collision-enum-dvar-panel-blank]]) |
 | `g_fix_viewkick_dupe` | 1 | **INERT on T5 MP** — the engine never registered it (live read: `Domain is any text`, `default:` mirrors our own `set`). Harmless, does nothing. Flinch is `scr_gf_flinch` alone. |
-| `scr_team_maxsize` | 0 (cfg ships 6) | `>0` caps players/team; overflow → spectator on spawn. |
+| `scr_team_maxsize` | 0 (cfg ships **7**) | `>0` caps players/team; overflow → spectator on spawn. **This is the "bench everyone past the cap" lever**, not `gf_team_lock` (which makes `gf_fill_n` the human cap and would force bots to pad to that size every round). Live-editable — no restart. Shipped 7 (7v7) against `sv_maxclients` 18 = 14 playing + 1 democlient + 3 spectator. ⚠ A cap the client slots can't fund silently benches people: `scr_team_maxsize × 2 + 1 (democlient) ≤ sv_maxclients`. |
 
 **Match start / pregame lobby** (match's first round only)
 | dvar | default | meaning |
@@ -1429,7 +1542,7 @@ tables → `docs/REFERENCE.md`.
 
 | dvar | default | meaning |
 |---|---|---|
-| `gf_fill_n` | 2 | **Per-team TARGET size.** Boundary pass evens humans to off-by-1, then pads both sides with bots to `max(bigger human side, gf_fill_n)` — humans define the size, bots absorb variance, enough humans = zero bots. **0 = no bot fill** (balancing/queue still run; manual bot control sticks). Clamp 0-6. With `gf_team_lock 1` this is also the hard HUMAN cap per side. |
+| `gf_fill_n` | 2 | **Per-team TARGET size.** Boundary pass evens humans to off-by-1, then pads both sides with bots to `max(bigger human side, gf_fill_n)` — humans define the size, bots absorb variance, enough humans = zero bots. **0 = no bot fill** (balancing/queue still run; manual bot control sticks). Clamp 0-7 (tracks `scr_team_maxsize`). ⚠ The clamp bounds only the admin-set **floor** — `gf_teamSizeTarget` is deliberately unclamped, so humans push the size past it on their own and an odd human split still gets exactly one evening bot at ANY size (7 humans → 4v3 + 1 bot; 7v6 humans → one bot on axis). With `gf_team_lock 1` this is also the hard HUMAN cap per side. |
 | `gf_team_balance` | 1 | Even the HUMAN split (off-by-1) at every round boundary, moving the most recent joiner. 0 = humans never auto-moved (arranged teams). Bridge: `balance_<0\|1>`. |
 | `gf_team_lock` | 0 | 1 = `gf_fill_n` is a hard human cap per side; overflow joiners spectate, queued in join order, auto-seated when a seat opens. Bots never count against it. Bridge: `teamlock_<0\|1>`. |
 | `gf_team_switch` | 1 | Players may switch teams themselves, immediately (alive mid-round = die + sit out the round; prematch/grace = free). 0 = self-switching refused; admin moves still work. Bridge: `teamswitch_<0\|1>`. |

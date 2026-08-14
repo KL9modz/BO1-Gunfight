@@ -371,7 +371,7 @@ gf_bridgeTelemetry()
         // bots benched in spectator for reuse. Computed from the reconciler's own classifier so the
         // panel matches exactly what the fill sees. All appended (index-based parse), so older panels
         // ignore them.
-        fillN  = maps\mp\gametypes\_bot::gf_fillTarget();   // CLAMPED floor (0-6) — the configured min, what the panel input seeds from
+        fillN  = maps\mp\gametypes\_bot::gf_fillTarget();   // CLAMPED floor (0-7) — the configured min, what the panel input seeds from
         fc     = maps\mp\gametypes\_bot::gf_reconcileCount();
         pAll   = fc["allies_human"] + fc["allies_bot"];
         pAxi   = fc["axis_human"]   + fc["axis_bot"];

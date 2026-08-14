@@ -213,13 +213,18 @@ gf_flinchScale()
 // scr_gf_headshot_scale — multiplier on FINAL headshot damage. The engine applies the weapon
 // file's baked hit-location multiplier before GSC ever sees iDamage, so this rescales that
 // result (1 = stock, 0.5 = half, 0 = headshots deal nothing); it cannot set the underlying
-// multiplier to an absolute value. Single-sourced like the flinch scale: the live consumer is
-// per-hit (gf_onPlayerDamage), so an RCON `set` lands on the very next shot; gf.gsc::
-// gf_roundApplyTuning calls this once per round purely to register the dvar (gf_cfgFloat's
-// seed-if-empty) so the panel's connect-sweep never reads an unregistered name.
+// multiplier to an absolute value. Ships at 0.8, which exactly cancels the Body Armor headshot
+// premium: every non-headshot bullet takes armorvest's -20%, so scaling headshots by the same
+// 0.8 restores the weapon files' stock head:body ratio (the overall softer TTK stays). ⚠ It
+// does NOT touch the sniper one-shot — the snipers' 1.5x zone covers neck/upper chest too,
+// which are not headshots, and sniper rounds drop armorvest from everyone. Single-sourced like
+// the flinch scale: the live consumer is per-hit (gf_onPlayerDamage), so an RCON `set` lands
+// on the very next shot; gf.gsc:: gf_roundApplyTuning calls this once per round purely to
+// register the dvar (gf_cfgFloat's seed-if-empty) so the panel's connect-sweep never reads an
+// unregistered name.
 gf_headshotScale()
 {
-    return gf_cfgFloat( "scr_gf_headshot_scale", 1.0, 0, 3 );
+    return gf_cfgFloat( "scr_gf_headshot_scale", 0.8, 0, 3 );
 }
 
 gf_applyFlinch()
@@ -1587,6 +1592,52 @@ gf_applyBotPlan()
     }
 }
 
+// Project the human split the live transfer plan is GOING to produce, for steering an UNPLANNED
+// joiner (gf_autoassignPlanned). ⚠ A live head-count is the wrong input here: at the match-start
+// re-begin wave clients reconnect one at a time, so an early unplanned joiner reads 0/0 and calls it
+// "parity" no matter how lopsided the plan is. That is the exact mp_crisis failure (2026-08-13):
+// TomTheWhale re-began FIRST of six into a plan seating 2 allies / 3 axis, coin-flipped onto the
+// heavier side, and round 0 played 2 humans + 1 fill bot against 4 humans. The plan entries are the
+// best available prediction of the final composition; a stale entry (a planned player who never
+// comes back) costs at most a 1-gap, which the round boundary evens. Returns r["a"] / r["x"].
+gf_planProjectedHumans( exclude )
+{
+    r = [];
+    r["a"] = 0;
+    r["x"] = 0;
+    if ( !isDefined( level.gf_teamPlanEntries ) )
+        return r;
+
+    for ( i = 0; i < level.gf_teamPlanEntries.size; i++ )
+    {
+        kv = strTok( level.gf_teamPlanEntries[i], ":" );
+        if ( kv.size < 2 )
+            continue;
+        if      ( kv[1] == "a" ) r["a"]++;
+        else if ( kv[1] == "x" ) r["x"]++;    // "s" (spectator) holds no seat
+    }
+
+    // Add humans already seated who the plan does NOT name — an earlier unplanned joiner through
+    // this same path. The plan says nothing about them, so they'd otherwise be invisible here.
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        p = players[i];
+        if ( !isDefined( p ) || !gf_isHuman( p ) )
+            continue;
+        if ( isDefined( exclude ) && p == exclude )
+            continue;
+        t = p.pers["team"];
+        if ( !isDefined( t ) || ( t != "allies" && t != "axis" ) )
+            continue;
+        if ( gf_teamPlanLookup( level.gf_teamPlanEntries, "" + p getGuid() ) != "" )
+            continue;                         // already counted by its plan entry above
+        if ( t == "allies" ) r["a"]++;
+        else                 r["x"]++;
+    }
+    return r;
+}
+
 // GUID -> planned team ("allies"/"axis"/"spectator"), or "" if not in the plan.
 gf_teamPlanLookup( entries, guid )
 {
@@ -1623,7 +1674,14 @@ gf_autoassignPlanned()
     want = gf_teamPlanLookup( level.gf_teamPlanEntries, "" + self getGuid() );
     if ( want == "" )
     {
-        self gf_stockAutoassignStamped();        // fresh joiner not in the plan
+        // Fresh joiner the plan doesn't name. ⚠ This must NOT be a bare stock autoassign: a plan is
+        // a snapshot of the PREVIOUS roster, so an unplanned joiner is exactly the player most likely
+        // to unbalance it, and stock's pick is a coin flip that ignores the seating just applied.
+        // Route through the same balance steer a normal mid-match joiner gets (see the mp_crisis
+        // capture in gf_seatBalancedJoin), against the PROJECTED split — a live head-count is wrong
+        // during the re-begin wave (see gf_planProjectedHumans).
+        proj = gf_planProjectedHumans( self );
+        self gf_seatBalancedJoin( proj["a"], proj["x"] );
         return;
     }
     if ( want == "spectator" )
@@ -1723,6 +1781,22 @@ gf_autoJoinBalance()
         return;
     }
 
+    self gf_seatBalancedJoin( ha, hx );
+}
+
+// Seat a PRE-SPAWN human (spectator/dead) by team-size lock first, then human balance. Shared by the
+// two connect-time seating paths so they cannot drift: gf_autoJoinBalance's normal mid-match joiner
+// and gf_autoassignPlanned's UNPLANNED joiner (a fresh player the transfer plan doesn't name).
+// Callers pass the human counts they already computed (both exclude self).
+//
+// ⚠ The stock fall-through is EXACT PARITY ONLY, and that bound is load-bearing. It used to be
+// `diff <= 1`, which let stock's coin flip turn a legal 1-gap into a 2-gap — and because bots pad to
+// max(bigger human side, gf_fill_n), a 2-gap becomes "N humans vs N-1 humans + a bot" for the rest of
+// the match. Live capture (mp_crisis, 2026-08-13): a 5-entry carried plan seated 2 allies / 3 axis,
+// the one unplanned joiner coin-flipped onto the 3 side, and round 0 played 2 humans + 1 bot against
+// 4 humans. At parity the pick is free (squad up with a friend); at a 1-gap it is not.
+gf_seatBalancedJoin( ha, hx )
+{
     // Team-size lock: both sides full of humans -> spectate + queue (join order); one side full
     // -> the open side is the only legal seat, so take it regardless of balance.
     if ( gf_teamLockOn() )
@@ -1739,10 +1813,7 @@ gf_autoJoinBalance()
         if ( xFull ) { self gf_seatJoinTeam( "allies" ); return; }
     }
 
-    diff = ha - hx;
-    if ( diff < 0 )
-        diff = hx - ha;                              // abs without unary minus
-    if ( diff <= 1 )                                 // balanced enough — let the player pick a side
+    if ( ha == hx )                                  // dead even — the pick costs nothing, let them choose
     {
         self gf_stockAutoassignStamped();
         return;
@@ -2013,14 +2084,18 @@ gf_menuTeamChoice( team )
 // boundary reconciler auto-seats them the moment a seat opens). Bots never count against the lock
 // (a joining human always displaces a bot instead of spectating). Lock is inert at gf_fill_n 0.
 
-// ⚠ THE canonical read of gf_fill_n — the single place the 0-6 clamp and the default 2 exist.
+// ⚠ THE canonical read of gf_fill_n — the single place the 0-7 clamp and the default 2 exist.
+// The upper bound tracks the per-team player cap (scr_team_maxsize, shipped 7): it bounds only the
+// admin-set FLOOR, so raising it never forces bigger teams — it just lets an admin ask for an
+// all-bot 7v7. Humans already push the size past it on their own (gf_teamSizeTarget is deliberately
+// unclamped), which is why an odd human split still gets exactly one evening bot at any size.
 // _bot::gf_fillTarget() and gf.gsc::gf_targetRoundSize() both delegate here, so the lock gate and
 // the fill reconciler can never disagree about the target size. Do NOT re-inline getDvarInt(
 // "gf_fill_n" ) anywhere: it was hand-clamped in three files, and a bounds change had to land in
 // all three or they silently diverged.
 gf_teamTargetSize()
 {
-    return gf_cfgInt( "gf_fill_n", 2, 0, 6 );
+    return gf_cfgInt( "gf_fill_n", 2, 0, 7 );
 }
 
 gf_teamLockOn()
@@ -3673,6 +3748,12 @@ gf_endRound( winner )
     if ( isDefined( winner ) && winner != "tie" )
         [[level._setTeamScore]]( winner, [[level._getTeamScore]]( winner ) + 1 );
 
+    // Match stats: flush every human's round deltas as GF_STAT log lines. Synchronous
+    // logPrint only — no yields, so it belongs in this pre-notify block, and it must
+    // run before endGame's roundsplayed++ (the line's round number and the
+    // gf_spawnedRound round-win predicate both read the CURRENT round's value).
+    gf_statFlushRound( winner );
+
     // Native WIN/LOSS banner subtitle — reason set at the decision site (carried
     // via level var so it survives the OT gf_ot_done re-entry into gf_endRound).
     reasonText = "";
@@ -4534,11 +4615,21 @@ gf_onRoundEndGame()
     gf_writeExpectCount();
     // #strip-end
 
-    if ( game["roundswon"]["allies"] == game["roundswon"]["axis"] )
-        return "tie";
-    else if ( game["roundswon"]["axis"] > game["roundswon"]["allies"] )
-        return "axis";
-    return "allies";
+    result = "tie";
+    if ( game["roundswon"]["axis"] > game["roundswon"]["allies"] )
+        result = "axis";
+    else if ( game["roundswon"]["allies"] > game["roundswon"]["axis"] )
+        result = "allies";
+
+    // Match stats. The flush is the belt-and-braces half of the double call-site
+    // contract: an end path that bypassed gf_endRound (the bridge END ROUND's
+    // sd_endGame) still gets its final round's combat deltas rescued here — with no
+    // round-win credit (winner undefined), and as all-zero no-ops on the normal path.
+    // Then one W/L/T line per seated human.
+    gf_statFlushRound( undefined );
+    gf_statEmitMatch( result );
+
+    return result;
 }
 
 // ─── Optional Callbacks ────────────────────────────────────────────────────
@@ -4552,6 +4643,10 @@ gf_onPlayerKilled( eInflictor, attacker, iDamage, sMeansOfDeath, sWeapon, vDir, 
     // load gate identifies still-loading clients by statusicon == "hud_status_connecting"
     // (gf_anyTrackedClientLoading), so that value must keep its stock meaning.
     self.statusicon = "hud_death_suicide";
+
+    // Match stats: the victim's death, the killer's kill/headshot. Assists are
+    // counted below, in the same loop that pays the assist XP.
+    self gf_statNoteKill( attacker, sMeansOfDeath );
 
     // On death, every player who damaged the victim (killer and assisters alike)
     // sees a popup with their own exact damage share — no floor.
@@ -4619,7 +4714,12 @@ gf_onPlayerKilled( eInflictor, attacker, iDamage, sMeansOfDeath, sWeapon, vDir, 
             // can reach, and that is on the dead path too. Bots earn nothing worth spending a
             // reliable command on, but the XP call is server-side and free, so no bot filter.
             if ( !isDefined( attacker ) || damager != attacker )
+            {
                 damager thread maps\mp\gametypes\_rank::giveRankXP( "assist" );
+                // Match stats: same flat-assist rule the XP uses (every non-killer
+                // damager). Bots increment too — harmless, they are never emitted.
+                damager gf_statBump( "gf_stA", 1 );
+            }
         }
         self.gf_assisters = [];
     }
@@ -4645,7 +4745,8 @@ gf_onPlayerDisconnect()
 
 gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeapon, vPoint, vDir, sHitLoc, psOffsetTime )
 {
-    // Headshot damage scale (scr_gf_headshot_scale, default 1 = stock). Stock has already
+    // Headshot damage scale (scr_gf_headshot_scale, default 0.8 — cancels the Body Armor
+    // headshot premium, restoring the stock head:body ratio; 1 = stock). Stock has already
     // reclassified the hit before this hook fires (MOD_HEAD_SHOT is set at
     // _globallogic_player.gsc:731-738, the hook runs at :741, and :742-743 takes our return as
     // the applied damage), and the engine has already folded in the weapon file's hit-location
@@ -4904,6 +5005,202 @@ gf_setPlayerScoreSilent( player, score )
     player.pers["score"] = score;
     player.score         = player.pers["score"];
     player notify( "update_playerscore_hud" );
+}
+
+// ─── Match stats (GF_STAT / GF_MATCH log lines) ────────────────────────────
+//
+// Persistent per-player gameplay stats, recorded the way CoD servers always have:
+// structured lines on the engine's own g_log stream (games_mp.log — the same file
+// stock already writes its J;/Q; connect lines to, g_logSync 1 so a crash loses
+// nothing already written). No RCON, no dvar, no reliable command, no new thread —
+// the box-side status service tails the file and aggregates.
+//
+// Shape: ONE delta line per HUMAN per round (bots and the demo client are noise) at
+// round end, plus one result line per human at match end:
+//
+//   GF_STAT;<matchid>;<round>;<guid>;<team>;<kills>;<deaths>;<assists>;<headshots>;<damage>;<captures>;<roundwin>;<name>
+//   GF_MATCH;<matchid>;<map>;<guid>;<W|L|T>;<name>
+//
+// Per-round DELTAS, not cumulative totals, so the aggregator just sums every line it
+// has ever seen — no dedup, no "last row per match" query, and a crash mid-match
+// loses at most the round in progress. The name rides LAST because names can contain
+// anything; every parser of this repo reads names end-anchored
+// ([[status-parser-name-spaces-bot-miscount]]).
+//
+// The counters live in pers[] (survive map_restart(true); a map change or
+// map_restart(false) wipes them, which is correct — both start a new match) and are
+// ZEROED at each flush, so flushing twice is harmless: the second pass emits nothing
+// (all-zero lines are skipped). That makes the belt-and-braces double call site safe —
+// gf_endRound flushes every normal round, and gf_onRoundEndGame flushes again for the
+// end paths that bypass gf_endRound entirely (the bridge END ROUND's sd_endGame).
+// Damage and captures piggyback on their existing mod-owned cumulative counters
+// (pers["gf_damage"], pers["captures"]) via a last-flushed mark instead of a second
+// live counter — one source of truth for each number.
+//
+// Deliberately NOT tracked from stock's incPersStat/statAdd chain: that writes the
+// Demonware per-mod profile blob ([[plutonium-stats-are-namespaced-per-mod]]), which
+// the server can never read back — and pieces of it route through score paths that
+// level.overridePlayerScore turns off. Everything here is mod-owned state the mod
+// already computes.
+//
+// Known, accepted loss: a player who leaves MID-round takes that partial round's
+// stats with them (their completed rounds were already flushed). A watchdog
+// map_rotate on a stuck match skips endGame, so nothing is emitted for its final
+// round either — same class of degradation as the team plan (both degrade to stock).
+
+// Lazy counter bump — pers keys start undefined for every fresh connect.
+gf_statBump( key, n )
+{
+    if ( !isDefined( self.pers[key] ) )
+        self.pers[key] = 0;
+    self.pers[key] += n;
+}
+
+gf_statGet( key )
+{
+    if ( !isDefined( self.pers[key] ) )
+        return 0;
+    return self.pers[key];
+}
+
+// Called from gf_onPlayerKilled (self = victim). Assists are counted where the
+// assist XP is paid (the damager loop in gf_onPlayerKilled), not here.
+gf_statNoteKill( attacker, sMeansOfDeath )
+{
+    // Only live-round deaths are stats. Outside the active round the only deaths are
+    // administrative — the sequenced team move's suicide(), a prematch switch — and
+    // counting those would charge a player a death for clicking a menu. The fatal
+    // blow that ENDS a round is safely inside: its killed-callback (and this hook)
+    // runs before gf_onDeadEvent's gf_endRound clears the flag.
+    if ( !isDefined( level.gf_roundActive ) || !level.gf_roundActive )
+        return;
+
+    self gf_statBump( "gf_stD", 1 );
+
+    if ( !isDefined( attacker ) || !isPlayer( attacker ) || attacker == self )
+        return;
+    if ( !isDefined( attacker.pers["team"] ) || !isDefined( self.pers["team"] ) )
+        return;
+    if ( attacker.pers["team"] == self.pers["team"] )
+        return;   // a team kill scores the victim's death only, like the scoreboard
+
+    attacker gf_statBump( "gf_stK", 1 );
+    if ( isDefined( sMeansOfDeath ) && sMeansOfDeath == "MOD_HEAD_SHOT" )
+        attacker gf_statBump( "gf_stHS", 1 );
+}
+
+// The match identity for this round's lines: the damage system's existing per-match
+// token (gettime() at match start — monotonic across map_restart(true), so every
+// round of one match shares it). Context for the aggregator, not a dedup key.
+gf_statMatchId()
+{
+    if ( isDefined( game["gf_damage_match"] ) )
+        return game["gf_damage_match"];
+    return 0;
+}
+
+// Flush every human's round deltas as one GF_STAT line each, then zero the counters.
+// winner credits roundwin to winning-team players who actually spawned into this
+// round (pers["gf_spawnedRound"] — the same predicate the health HUD trusts); the
+// gf_onRoundEndGame belt-and-braces call passes undefined (no round-win credit, it
+// only rescues combat deltas from an end path that bypassed gf_endRound).
+// Yield-free by construction: called inside gf_endRound's pre-notify block.
+gf_statFlushRound( winner )
+{
+    matchid = gf_statMatchId();
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        player = players[i];
+        if ( !isDefined( player ) || !gf_isHuman( player ) )
+            continue;
+
+        // Coerce to string BEFORE testing: concatenation is the only stock-proven use of
+        // getGuid()'s return, so never compare it against another type directly.
+        guid = "" + player getGuid();
+        if ( guid == "" || guid == "0" )
+            continue;
+
+        team = "";
+        if ( isDefined( player.pers["team"] ) )
+            team = player.pers["team"];
+
+        rw = 0;
+        if ( isDefined( winner ) && winner != "tie" && team == winner
+            && isDefined( player.pers["gf_spawnedRound"] )
+            && player.pers["gf_spawnedRound"] == game["roundsplayed"] )
+            rw = 1;
+
+        k   = player gf_statGet( "gf_stK" );
+        d   = player gf_statGet( "gf_stD" );
+        a   = player gf_statGet( "gf_stA" );
+        hs  = player gf_statGet( "gf_stHS" );
+
+        // Damage / captures: delta against the last-flushed mark on the existing
+        // cumulative counters. A mark ABOVE the counter means the counter was reset
+        // under us (new match) — treat the whole current value as this round's.
+        dmgNow = player gf_statGet( "gf_damage" );
+        capNow = player gf_statGet( "captures" );
+        dmg = dmgNow - ( player gf_statGet( "gf_stDmgMark" ) );
+        cap = capNow - ( player gf_statGet( "gf_stCapMark" ) );
+        if ( dmg < 0 ) dmg = dmgNow;
+        if ( cap < 0 ) cap = capNow;
+
+        // Zero + advance the marks BEFORE the skip test, so a second flush of the
+        // same round (the double call-site contract above) emits nothing.
+        player.pers["gf_stK"]  = 0;
+        player.pers["gf_stD"]  = 0;
+        player.pers["gf_stA"]  = 0;
+        player.pers["gf_stHS"] = 0;
+        player.pers["gf_stDmgMark"] = dmgNow;
+        player.pers["gf_stCapMark"] = capNow;
+
+        if ( k == 0 && d == 0 && a == 0 && hs == 0 && dmg == 0 && cap == 0 && rw == 0 )
+            continue;
+
+        logPrint( "GF_STAT;" + matchid + ";" + game["roundsplayed"] + ";" + guid + ";" + team + ";"
+            + k + ";" + d + ";" + a + ";" + hs + ";" + dmg + ";" + cap + ";" + rw + ";"
+            + player.name + "\n" );
+    }
+}
+
+// One W/L/T line per seated human at match end. Called from gf_onRoundEndGame —
+// stock invokes that at exactly one site, inside endGame's match-end tail, on EVERY
+// end path; players are frozen but still connected, so pers["team"] is intact
+// (the same window the team-carry snapshot trusts).
+gf_statEmitMatch( result )
+{
+    matchid = gf_statMatchId();
+    mapname = getDvar( "mapname" );
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        player = players[i];
+        if ( !isDefined( player ) || !gf_isHuman( player ) )
+            continue;
+
+        // Coerce to string BEFORE testing: concatenation is the only stock-proven use of
+        // getGuid()'s return, so never compare it against another type directly.
+        guid = "" + player getGuid();
+        if ( guid == "" || guid == "0" )
+            continue;
+
+        team = "";
+        if ( isDefined( player.pers["team"] ) )
+            team = player.pers["team"];
+        if ( team != "allies" && team != "axis" )
+            continue;   // a spectator at match end gets no result
+
+        letter = "T";
+        if ( result == "allies" || result == "axis" )
+        {
+            if ( team == result ) letter = "W";
+            else                  letter = "L";
+        }
+
+        logPrint( "GF_MATCH;" + matchid + ";" + mapname + ";" + guid + ";" + letter + ";"
+            + player.name + "\n" );
+    }
 }
 
 gf_queueHealthHUDUpdate()

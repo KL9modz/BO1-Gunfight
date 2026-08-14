@@ -193,7 +193,7 @@
       <button class="b-gh b-sm ctrl" onclick="botTeam('kick','axis')">－</button>
     </div>
     <div class="srow" data-dvar="gf_fill_n" data-tip="gf_fill_n — TEAM SIZE (per-team target)&#10;At every round boundary the reconciler (1) evens the HUMAN split to off-by-1 (most recent joiner moves — Auto-Balance toggle below), then (2) pads BOTH sides with bots to max(bigger human side, N): humans define the size, bots absorb ALL variance, and enough humans means ZERO bots (4 humans + N=2 = 2v2 bot-free; 7 humans = 4v3 + 1 bot = 4v4; 9+ humans also flips LARGE map mode next round). A sparse lobby fills to N (1 human, N=2 = 2v2 with 3 bots). Bots only ever sit on the side with fewer humans, and default to the hardest difficulty. Mid-round changes land at the next round start. With Lock Team Size ON this is also the hard HUMAN cap per side. Survives map restart AND the lobby fast-restart.&#10;0 = NO bot fill (human balancing still runs; manual bot control sticks)."><span class="slbl">Team Size</span>
-      <input id="vFillN" class="num ctrl" type="number" value="2" min="0" max="6">
+      <input id="vFillN" class="num ctrl" type="number" value="2" min="0" max="7">
       <button class="b-ac b-sm ctrl" onclick="applyFillN()">Apply</button>
       <span class="shint" id="fillReadout">off</span></div>
     <div class="srow" data-dvar="gf_team_lock" data-tip="gf_team_lock&#10;ON = Team Size becomes a hard HUMAN cap per side: a joiner who finds both sides full must spectate, queued in JOIN ORDER, and is auto-seated at the next round start once a seat opens (someone leaves). Bots never count against the lock — a joining human always displaces a bot instead of spectating. Inert while Team Size is 0.&#10;Bridge: teamlock_0 / teamlock_1 (applies immediately).">

@@ -33,7 +33,12 @@ user seeing it = local listen-server testing).
    only when dedicated.cfg sets it → errored on a cfg-less listen server).
    → **Seeded with defaults in `gf.gsc` onStartGameType** (both mode variants + team_maxsize;
    gf_debug_* seeded dev-only inside `#strip-begin/#strip-end`). Defaults mirror the read sites.
-3. **Plutonium engine dvars** (`g_*`, `sv_*`, `bullet_*`, `sv_bot*`) — CONFIRMED phantom on this
+3. **Plutonium engine dvars** (`g_*`, `sv_*`, `bullet_*`, `sv_bot*`) — ⚠ **the sweeping guess below was
+   partly WRONG**: `g_playerCollision` / `g_playerEjection` / `g_playerCollisionEjectSpeed` are **real,
+   registered Plutonium dvars on T5** (strings live in `plutonium-bootstrapper-win32.exe`; neither name
+   was ever dead-cached), and treating the whole section as phantom sent a later investigation down the
+   wrong path — see [[player-collision-enum-dvar-panel-blank]]. "Not in the `raw/` dump" means Treyarch
+   didn't register it, not that Plutonium doesn't. Original text follows. CONFIRMED phantom on this
    Plutonium T5 build: `sv_allowFriendlyThrowback`, `g_fix_viewkick_dupe`, `sv_sayName` (user
    screenshot), and the whole GAMEPLAY panel section (`g_playerCollision`/`g_playerEjection`/
    `g_fix_*`/`g_patchRocketJumps`/`bullet_penetration_affected_by_team`) looks T6/BO2-derived and

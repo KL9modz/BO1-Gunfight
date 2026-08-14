@@ -90,6 +90,29 @@ account in **Computer Management → Local Users**. Then create the marker so th
 starts: `New-Item C:\inetpub\wwwroot\admin\live\.secured -Force`. Basic auth is HTTPS-only
 here by design (the site already forces HTTPS + HSTS).
 
+## Gameplay stats (kills / deaths / damage / wins)
+
+The mod logPrints one **delta** line per human per round (`GF_STAT;...`) and one
+result line per human at match end (`GF_MATCH;...`) into the engine's own
+`games_mp.log` - the classic CoD stat-line transport, same stream as stock's `J;`
+connect lines. This service tails that file **incrementally** (byte offset +
+creation-time identity persisted in `storage\t5\logs\gamestats.local.json`, so a
+restart resumes instead of double-counting) and sums every line into per-day
+per-GUID buckets: kills, deaths, assists, headshots, damage (= the in-game score),
+captures, round wins, match W-L-T, rounds. Because the lines are deltas, the sum
+is the truth - no dedup, no per-match reconciliation, and rotation of the live
+log (engine restart) recovers the unread tail from the newest archive.
+
+The projection (`admin\live\gamestats.json`) is **GUID-keyed, so it rides the same
+`.secured` gate as `admin_history.json`** - it must never land in the open web
+root. The admin page joins it to the connection history by GUID and renders the
+Combat leaderboard + per-player drill-down. Ingest itself runs even while the gate
+is down (the accumulator is box-local); only the projection waits.
+
+Known, accepted losses: a player who leaves **mid-round** takes that partial
+round's numbers with them, and a watchdog `map_rotate` on a stuck match skips the
+final round's flush (no endGame = no lines) - both degrade, never corrupt.
+
 ### Muting a player from the activity surfaces
 
 `tools/ignore.local.json` (gitignored, box-local — copy `tools/ignore.example.json`; shared

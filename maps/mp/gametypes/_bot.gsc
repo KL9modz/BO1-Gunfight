@@ -1055,12 +1055,12 @@ gf_humanPlanMove( p, team )
 	p iprintln("^3You were moved to balance the teams");
 }
 
-// Per-team TARGET size (clamped 0-6). 0 = no bot fill (human balancing + the lock queue still
+// Per-team TARGET size (clamped 0-7). 0 = no bot fill (human balancing + the lock queue still
 // run; manual bot control sticks). Humans above the target grow the team naturally — see
 // gf_teamSizeTarget(): the padded size is max(bigger human side, this). With gf_team_lock 1 this
 // same number becomes the hard HUMAN cap per side (_gf_rounds::gf_teamLockDenies).
 // Thin alias for _gf_rounds::gf_teamTargetSize() — the canonical gf_fill_n read (default 2,
-// clamp 0-6). Kept as a name because the reconciler and the bridge (_gf_bridge:337) both call
+// clamp 0-7). Kept as a name because the reconciler and the bridge (_gf_bridge:337) both call
 // gf_fillTarget(); the clamp itself must exist in exactly one place.
 gf_fillTarget()
 {
@@ -1071,7 +1071,7 @@ gf_fillTarget()
 // the gf_fill_n target). The caller has already evened the humans to off-by-1 and stamped the
 // POST-move counts into `c`, so a full human lobby (e.g. 4v4) runs with ZERO bots and an odd human
 // count gets exactly one bot on the short side (7 humans -> 4v3 + 1 bot = 4v4). Not clamped by the
-// 0-6 target clamp — humans set the ceiling here; the bots actually ADDED are still bounded by the
+// 0-7 target clamp — humans set the ceiling here; the bots actually ADDED are still bounded by the
 // client ceiling in gf_boundaryPass's deploy loop.
 // `floor` is gf_fillTarget() (already > 0 when this is reached — the caller returns early at 0).
 gf_teamSizeTarget(c, floor)

@@ -52,7 +52,7 @@ set party_minplayers "2"                            // Pre-Match Lobby. 2 = publ
 // which ROTATES THE MAP, so an under-populated server would just cycle maps every 5 minutes. Keep 0.
 // 0 means no time limit, so the warmup waits for party_minplayers however long that takes.
 set scr_pregame_timelimit "0"                       // Stock warmup time limit in minutes. Keep 0. See above.
-set scr_team_maxsize "6"                            // Gunfight: max players per team (up to 6v6). Overflow past this is sent to spectator on spawn. sv_maxclients (launch bat) = 14 -> 12 play + 2 spectator/headroom. Set 4 for a 4v4-capped server.
+set scr_team_maxsize "7"                            // Gunfight: max players per team (up to 7v7). Overflow past this is sent to spectator on spawn. sv_maxclients (launch bat) = 18 -> 14 play + 1 democlient + 3 spectator/headroom. Set 4 for a 4v4-capped server.
 // scr_gf_largemode_minplayers is RETIRED (no longer read). Small/large is hard-wired to the health-panel skull cap: <=4v4 small, any team of 5+ large. Force a mode with scr_gf_teamspawnmode "large" | "small".
 set scr_xpscale "1"                                 // Round end XP multiplicator (score * scr_xpscale = xp)
 set scr_wagerbet "100"                              // How much it would cost to connect to a wager gamemode. 
@@ -141,7 +141,10 @@ set scr_gf_jump_fatigue "0"                         // 0 = no jump fatigue (defa
 // ever pushes it to a client at connect and only in the ON direction -- so a direct cfg/rcon line on it
 // reaches nobody already in the server, and can never turn it back OFF. The mod owns the per-client push.
 set scr_gf_sprint_unlimited "0"                     // 0 = stock sprint meter (default), 1 = sprint never runs out
-set g_playerEjection "0"                            // From whom are players ejected? (0 = everybody, 1 = enemies, 2 = nobody)
+// The other half of player collision (see g_playerCollision below, which carries the rationale).
+// Turning collision off but leaving ejection on would still shove overlapping players apart, so
+// both go to nobody together.
+set g_playerEjection "2"                            // From whom are players ejected? (0 = everybody, 1 = enemies, 2 = nobody)
 set g_playerCollisionEjectSpeed "25"                // How fast are players ejected from eachother? (0-32000)
 set sv_allowFriendlyThrowback "1"                   // Prevent throwing friendly grenades?
 set cg_hudGrenadeIconShowFriendly "1"               // Prevent friendly grenades showing on the HUD?
@@ -159,7 +162,18 @@ set g_fixBulletDamageDupe "1"                       // Fix an issue where inters
 // which is squarely this mod's hot path: every player is handed a fresh shared loadout (GiveWeapon +
 // switchToWeapon) every single round, on a server that runs 24/7.
 set g_fix_entity_leaks "1"                          // Fix various engine related issues where entities leaks?
-set g_playerCollision "0"                           // Who are players colliding with? (0 = everybody, 1 = enemies, 2 = nobody)
+// Player collision OFF is the GF default (engine default is everybody). Gunfight is a one-life mode
+// fought out of tight curated 2v2 spawns and doorways, where a teammate's body is a wall you cannot
+// shoot through and cannot walk past -- body-blocking a doorway costs a round that has no respawn.
+// It is also cfg-owned on purpose: g_playerCollision is a Plutonium ENGINE dvar with no GSC writer,
+// same class as the g_fix_* family above, so THIS LINE is the whole default and a hand edit here is
+// what changes it. Two properties worth knowing before debugging it:
+//   1. It is an ENUM. It is written by index (the "2" below) but READS BACK as "nobody", which is
+//      why the RCON panel's dropdown needs a name->index map to display it.
+//   2. A live rcon/panel change is effective immediately and SURVIVES map_restart -- the only thing
+//      that reverts it is a server restart re-execing this file. If collision seems to "reset by
+//      itself", check whether the box restarted, not whether the write landed.
+set g_playerCollision "2"                           // Who are players colliding with? (0 = everybody, 1 = enemies, 2 = nobody)
 // WARNING this line does NOTHING for players on a dedicated server, despite what it looks like.
 // bg_* is the SHARED/PREDICTED dvar class -- every client scales its own view from its OWN LOCAL copy,
 // and the server's copy does not replicate. This is the exact same trap as bg_viewKickScale (flinch),

@@ -17,64 +17,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
 
-const ADMIN_JS = path.join(__dirname, '..', 'wwwroot', 'admin', 'admin.js');
-const SRC = fs.readFileSync(ADMIN_JS, 'utf8');
-
-// --- DOM stubs -------------------------------------------------------------
-// mkNode is deliberately strict about innerHTML: the file's contract is that every
-// value is rendered via textContent (safe against a hostile player name), and the
-// only sanctioned innerHTML use is clearing with ''. Markup here fails the test.
-function mkNode(tag){
-  const n = {
-    tag, className:'', textContent:'', title:'', type:'', style:{}, kids:[], handlers:{},
-    set innerHTML(v){ if(v !== '') throw new Error('innerHTML used with markup: '+v); n.kids.length = 0; },
-    get innerHTML(){ return ''; },
-    appendChild(c){ n.kids.push(c); return c; },
-    addEventListener(ev, fn){ (n.handlers[ev] = n.handlers[ev] || []).push(fn); },
-    setAttribute(){},
-    click(){ (n.handlers.click || []).forEach(f => f()); },
-  };
-  return n;
-}
-function walk(n, out){ out.push(n); (n.kids||[]).forEach(k => walk(k, out)); return out; }
-function textOf(n){ return walk(n, []).map(x => x.textContent || '').join('|'); }
-
-// hostIds: which getElementById lookups resolve to a node. Everything else is null,
-// which is how the file's own guards keep the unrelated cards inert.
-function load(hostIds){
-  const hosts = {};
-  (hostIds || []).forEach(id => { hosts[id] = mkNode('div'); });
-  // Stub ONLY what a vm context genuinely lacks (the DOM, fetch, timers). Every standard
-  // built-in - Date, Intl, Array - already exists as the context's OWN realm copy, and
-  // injecting the host's instead is what makes cross-realm comparisons behave oddly.
-  const sandbox = {
-    document: {
-      getElementById: (id) => (id in hosts ? hosts[id] : null),
-      createElement: (t) => mkNode(t),
-      createTextNode: (s) => { const n = mkNode('#text'); n.textContent = String(s); return n; },
-    },
-    fetch: () => new Promise(() => {}),     // never settles: no fetch-driven render runs
-    setInterval: () => 0, setTimeout: () => 0, clearTimeout: () => {},
-    console,
-  };
-  sandbox.window = sandbox;
-  vm.createContext(sandbox);
-  vm.runInContext(SRC, sandbox, { filename:'admin.js' });
-  return { sb: sandbox, hosts };
-}
-
-// An array that crossed the vm boundary carries the SANDBOX's Array.prototype, so
-// assert.deepEqual (strict) rejects it against a host array with "same structure but not
-// reference-equal". Copy it into this realm before comparing; the elements are primitives.
-const here = (arr) => Array.from(arr);
-
-// One day-file event, shaped exactly like Build-ConnHistory emits it.
-const ev = (date, time, event, ip, name, guid, session, cc, region) =>
-  ({ date, time, event, ip, name, guid, ping:'50', session: session||'', cc: cc||'', region: region||'' });
+// The vm/DOM harness (mkNode's innerHTML strictness, the cross-realm `here` rule, the
+// Build-ConnHistory event shape) is shared with admin_combat.test.js - see harness.js.
+const { walk, textOf, load, here, ev } = require('./harness.js');
 
 // Doc addresses are RFC 5737 with invented names/GUIDs, per the repo's address rule.
 // alice: 2 sessions (10m + 65m), renamed once, one GUID, two IPs.

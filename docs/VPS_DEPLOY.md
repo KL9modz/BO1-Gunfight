@@ -46,8 +46,8 @@ small Gunfight lobby with headroom.
 
 | Decision | Value used here | Notes |
 |---|---|---|
-| `sv_maxclients` | **14** (12 players + 2 spectator headroom) | Spawns flip to LARGE once a team has 5+ players (hard-wired to the health-panel skull cap; `scr_gf_largemode_minplayers` is retired). Lower to 10 for a 4v4 server. |
-| `scr_team_maxsize` | **6** (up to 6v6) | Max players per team; overflow past it is sent to spectator on spawn. Set in `dedicated.cfg`. Set `4` for a 4v4 server. |
+| `sv_maxclients` | **18** (14 players + 1 democlient + 3 spectator headroom) | The engine's own default, and the count BO1 MP was authored for. Domain is 1-32, but the stock TDM spawn pools large mode uses are placed for 9v9 and `sv_maxRate` is already pinned at its max (25000), so 18 is the practical ceiling. Lower to 10 for a 4v4 server. ⚠ Latched at launch - a bat restart, not a bootstrapper kill. |
+| `scr_team_maxsize` | **7** (up to 7v7) | Max players per team; overflow past it is sent to spectator on spawn. Set in `dedicated.cfg`, live-editable via the panel. Set `4` for a 4v4 server. |
 | Server key | **Generate a fresh one** | platform.plutonium.pw/serverkeys. Do not reuse the dev-machine key. |
 | RCON password | **Rotate via packager** | The live `dedicated.cfg` still carries a leaked value - never deploy it. |
 | Public vs friends | `party_minplayers "2"`, no `g_password` = public | Set `g_password "..."` for friends-only. |
@@ -119,7 +119,7 @@ small Gunfight lobby with headroom.
     set cfg=dedicated.cfg
     set name=Gunfight
     set port=28960
-    set maxclients=14
+    set maxclients=18
     set mod=mods/mp_gunfight
     ```
     Launch line (your proven command - gamepath points at the game files):

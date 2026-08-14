@@ -175,6 +175,8 @@ var statSort = 'sec';         // sec | sessions | avg | conns | last | name
 var statDir  = -1;            // -1 = descending
 var statPick = null;          // statKey() of the drilled-down player, or null
 var statsBody = null, segBtns = [];
+var combSort = 'k';           // combat leaderboard sort column
+var combDir  = -1;
 
 // Flag SVG, self-hosted like the public page. Admin lives at /admin/, so the
 // assets/ dir is one level up. Unknown/absent -> the neutral xx placeholder.
@@ -259,6 +261,84 @@ function playerEvents(events, key){
 }
 function keyList(o){ var a=[], k; for(k in o){ if(o.hasOwnProperty(k)) a.push(k); } return a; }
 function pad2(n){ return (n<10?'0':'')+n; }
+
+// ---- Combat stats (gamestats.json: kills/deaths/damage/wins) ---------------
+// Aggregated on the box by status_service from the GF_STAT/GF_MATCH lines the mod
+// writes into games_mp.log at round/match end. Day-bucketed per GUID, so the same
+// window buttons apply - at DAY granularity (a bounded window includes every day it
+// touches). Fetched on the history cadence; absent file = no card (older deploys).
+var CURL = 'live/gamestats.json';
+var combatDays = null;    // {'yyyy-mm-dd': {'<guid>': {k,d,a,hs,dmg,cap,rw,mw,ml,mt,rounds,name}}}
+
+// The box-local calendar date of an instant, using the offset recovered from the
+// history's `updated` stamp - day buckets are stamped by the BOX's clock, so the
+// window cutoff must be computed on that calendar, not the viewer's.
+function boxDateStr(t){
+  var off=boxOffset(), min=0;
+  var m=/^([+-])(\d{2}):(\d{2})$/.exec(off);
+  if(m){ min=(+m[2])*60+(+m[3]); if(m[1]==='-') min=-min; }
+  var d=new Date(t+min*60000);
+  return d.getUTCFullYear()+'-'+pad2(d.getUTCMonth()+1)+'-'+pad2(d.getUTCDate());
+}
+function combatWindowDayKeys(){
+  if(!combatDays) return [];
+  var keys=keyList(combatDays);
+  keys.sort(); keys.reverse();          // newest first, so first-seen name wins below
+  if(!statWinH) return keys;
+  var cut=boxDateStr(statNow()-statWinH*3600000);
+  var out=[], i;
+  for(i=0;i<keys.length;i++){ if(keys[i]>=cut) out.push(keys[i]); }
+  return out;
+}
+function computeCombat(){
+  var byG={}, days=combatWindowDayKeys(), gi, g, e, p;
+  for(gi=0; gi<days.length; gi++){
+    var bucket=combatDays[days[gi]];
+    for(g in bucket){
+      if(!bucket.hasOwnProperty(g)) continue;
+      e=bucket[g]; p=byG[g];
+      if(!p){ p=byG[g]={ guid:g, name:'', k:0,d:0,a:0,hs:0,dmg:0,cap:0,rw:0,mw:0,ml:0,mt:0,rounds:0 }; }
+      if(!p.name && e.name) p.name=e.name;   // days are newest-first: newest name wins
+      p.k+=e.k||0; p.d+=e.d||0; p.a+=e.a||0; p.hs+=e.hs||0; p.dmg+=e.dmg||0;
+      p.cap+=e.cap||0; p.rw+=e.rw||0; p.mw+=e.mw||0; p.ml+=e.ml||0; p.mt+=e.mt||0;
+      p.rounds+=e.rounds||0;
+    }
+  }
+  var arr=[], k; for(k in byG){ if(byG.hasOwnProperty(k)) arr.push(byG[k]); }
+  return arr;
+}
+function kdOf(p){ return p.d ? p.k/p.d : p.k; }
+function fmtKd(p){ return (Math.round(kdOf(p)*100)/100).toFixed(2); }
+function sortCombat(arr){
+  var val = { k:   function(p){ return p.k; },
+              d:   function(p){ return p.d; },
+              kd:  function(p){ return kdOf(p); },
+              a:   function(p){ return p.a; },
+              hs:  function(p){ return p.hs; },
+              dmg: function(p){ return p.dmg; },
+              rw:  function(p){ return p.rw; },
+              mw:  function(p){ return p.mw; },
+              rounds: function(p){ return p.rounds; } }[combSort];
+  var out=arr.slice();
+  if(!val){
+    out.sort(function(a,b){
+      return combDir * String(a.name||'').toLowerCase().localeCompare(String(b.name||'').toLowerCase());
+    });
+    return out;
+  }
+  out.sort(function(a,b){
+    return combDir*(val(a)-val(b)) || String(a.name||'').localeCompare(String(b.name||''));
+  });
+  return out;
+}
+
+function fetchCombat(){
+  fetch(CURL+'?t='+Date.now(),{cache:'no-store'})
+    .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(d){ combatDays=(d && d.days) ? d.days : null; renderStats(); })
+    .catch(function(){ /* absent until the service ships/secures it; card simply not drawn */ });
+}
+fetchCombat(); setInterval(fetchCombat,60000);
 
 function computeStats(events){
   var P={}, totSec=0, totLeft=0, connects=0, days={}, hours=[], longest=null, i;
@@ -389,6 +469,18 @@ function sortTh(label, key, cls){
   });
   return th;
 }
+// Same, for the combat leaderboard's own sort state.
+function combTh(label, key){
+  var th=el('th','srt');
+  th.appendChild(document.createTextNode(label));
+  if(combSort===key) th.appendChild(el('span','arw', combDir<0?'▾':'▴'));
+  th.addEventListener('click', function(){
+    if(combSort===key){ combDir=-combDir; }
+    else { combSort=key; combDir = (key==='name') ? 1 : -1; }
+    renderStats();
+  });
+  return th;
+}
 
 function renderStats(){
   var host=document.getElementById('stats'); if(!host) return;
@@ -465,6 +557,61 @@ function renderStats(){
   if(statWinH) lnote+=' A session counts toward the window it ENDED in.';
   c2.appendChild(el('div','stnote', lnote));
   statsBody.appendChild(c2);
+
+  // ---- Combat leaderboard (kills / deaths / damage / wins) ----
+  // Only rendered once gamestats.json exists and has data in the window; flags are
+  // joined from the connection stats by GUID (combat rows carry no geo of their own).
+  var combat=sortCombat(computeCombat());
+  if(combat.length){
+    var ccByGuid={};
+    s.players.forEach(function(p){ if(p.key.indexOf('g:')===0 && p.cc) ccByGuid[p.key.slice(2)]=p.cc; });
+    var c8=el('div','card');
+    c8.appendChild(el('p','kick','Combat leaderboard  ·  '+combat.length+
+      ' player'+(combat.length===1?'':'s')+' in this window'));
+    var tblb=el('table','lb'), thb=el('tr');
+    thb.appendChild(el('th','rank','#'));
+    thb.appendChild(combTh('Player','name'));
+    thb.appendChild(combTh('Kills','k'));
+    thb.appendChild(combTh('Deaths','d'));
+    thb.appendChild(combTh('K/D','kd'));
+    thb.appendChild(combTh('Assists','a'));
+    thb.appendChild(combTh('HS','hs'));
+    thb.appendChild(combTh('Damage','dmg'));
+    thb.appendChild(combTh('Rd wins','rw'));
+    thb.appendChild(combTh('Matches','mw'));
+    thb.appendChild(combTh('Rounds','rounds'));
+    tblb.appendChild(thb);
+    combat.slice(0,STATS_ROWS).forEach(function(p,idx){
+      var tr=el('tr', statPick==='g:'+p.guid ? 'rowlink picked' : 'rowlink');
+      tr.appendChild(el('td','rank', String(idx+1)));
+      var nt=el('td','name');
+      nt.appendChild(statFlag(ccByGuid[p.guid]||''));
+      nt.appendChild(document.createTextNode(p.name||'?'));
+      tr.appendChild(nt);
+      tr.appendChild(el('td',null, String(p.k)));
+      tr.appendChild(el('td',null, String(p.d)));
+      tr.appendChild(el('td','dur', fmtKd(p)));
+      tr.appendChild(el('td',null, String(p.a)));
+      tr.appendChild(el('td',null, String(p.hs)));
+      tr.appendChild(el('td','dur', String(p.dmg)));
+      tr.appendChild(el('td',null, String(p.rw)));
+      tr.appendChild(el('td','dur', p.mw+'-'+p.ml+(p.mt?'-'+p.mt+'T':'')));
+      tr.appendChild(el('td',null, String(p.rounds)));
+      tr.addEventListener('click', function(){
+        statPick = (statPick==='g:'+p.guid) ? null : 'g:'+p.guid;
+        renderStats();
+      });
+      tblb.appendChild(tr);
+    });
+    c8.appendChild(tblb);
+    var cnote='Damage is the in-game score (cumulative damage dealt). Matches is the W-L record; '+
+      'Rounds counts rounds with any recorded activity. Recording starts at this deploy, so '+
+      'older sessions have connection stats only.';
+    if(combat.length>STATS_ROWS) cnote+=' Showing the top '+STATS_ROWS+' of '+combat.length+'.';
+    if(statWinH) cnote+=' Combat windows are day-granular: every calendar day the window touches counts in full.';
+    c8.appendChild(el('div','stnote', cnote));
+    statsBody.appendChild(c8);
+  }
 
   // ---- Drill-down for the picked player ----
   if(statPick){
@@ -597,6 +744,26 @@ function playerCard(p, events){
   cell('Last seen', agoLong(p.last));
   cell('Location', p.region ? (p.region+', '+countryName(p.cc)) : countryName(p.cc));
   card.appendChild(g);
+
+  // Combat block, when this identity is a GUID with recorded gameplay in the window.
+  if(p.key.indexOf('g:')===0 && combatDays){
+    var guid=p.key.slice(2), comb=null;
+    computeCombat().forEach(function(c){ if(c.guid===guid) comb=c; });
+    if(comb){
+      var g2=el('div','hstat');
+      function cell2(k,v){ var c=el('div','cell'); c.appendChild(el('div','k',k));
+        c.appendChild(el('div','v',String(v))); g2.appendChild(c); }
+      cell2('Kills', comb.k);
+      cell2('Deaths', comb.d);
+      cell2('K/D', fmtKd(comb));
+      cell2('Assists', comb.a);
+      cell2('Headshots', comb.hs);
+      cell2('Damage', comb.dmg);
+      cell2('Round wins', comb.rw);
+      cell2('Matches', comb.mw+'-'+comb.ml+(comb.mt?'-'+comb.mt+'T':''));
+      card.appendChild(g2);
+    }
+  }
 
   var names=keyList(p.names), ips=keyList(p.ips), guids=keyList(p.guids);
   function chips(label, arr, cls){

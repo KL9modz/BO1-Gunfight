@@ -67,6 +67,15 @@ param(
     # that so the box signal only fires if the in-game net also failed.
     [string] $HealthOutFile        = '',
     [int]    $RoundStuckSecs       = 300,
+    # Gameplay stats (kills/deaths/assists/damage/round wins) aggregated from the GF_STAT /
+    # GF_MATCH lines the mod logPrints into games_mp.log at round/match end. The accumulator
+    # ($GameStatsState, box-local beside the day-files, NEVER deployed or served) sums every
+    # delta line ever ingested into per-day per-GUID buckets; the projection ($GameStatsFile)
+    # is written beside the admin snapshot behind the same .secured gate - it carries GUIDs,
+    # so it must never land in the open web root. Ingest runs on the history cadence
+    # (static file tail, zero rcon); '' derives both paths below.
+    [string] $GameStatsFile  = '',
+    [string] $GameStatsState = '',
     # Box-local list of players muted from the ACTIVITY surfaces (the recent ring + the public
     # activity feed). They stay in the live player list and in the admin snapshot/history - see
     # tools\ignore_list.ps1. Defaults to tools\ignore.local.json; absent = ignore nobody.
@@ -116,6 +125,14 @@ if ([string]::IsNullOrEmpty($ActivityOutFile)) {
 # folder's own logs\ dir, distinct from $LogDir (players_*.log).
 $modFolder    = Resolve-ModRoot
 $gamesLogPath = Join-Path $modFolder 'logs\games_mp.log'
+
+# Gameplay-stat paths: the accumulator sits beside the players_*.log day-files (box-local,
+# outside the deploy mirror and the web root); the projection sits beside the admin snapshot
+# (GUID-keyed, so it needs the .secured gate exactly like admin_history.json).
+if ([string]::IsNullOrEmpty($GameStatsState)) { $GameStatsState = Join-Path $LogDir 'gamestats.local.json' }
+if ([string]::IsNullOrEmpty($GameStatsFile) -and -not [string]::IsNullOrEmpty($AdminOutFile)) {
+    $GameStatsFile = Join-Path (Split-Path -Parent $AdminOutFile) 'gamestats.json'
+}
 
 # --- RCON password (explicit -> $env:GF_RCON_PW -> cfg; Get-RconPassword in common.ps1) -------
 $rconPw = Get-RconPassword -Explicit $RconPassword -CfgPath $CfgPath
@@ -340,6 +357,159 @@ function Build-PublicActivity {
     return @($out.ToArray())
 }
 
+# --- Gameplay stats (GF_STAT / GF_MATCH lines out of games_mp.log) ------------
+# The mod logPrints one DELTA line per human per round (kills/deaths/assists/headshots/
+# damage/captures/roundwin) and one W|L|T line per human at match end - same transport as
+# stock's own J;/Q; connect lines, name LAST so it parses end-anchored whatever it contains.
+# Because the lines are deltas, aggregation is a plain sum of every line ever ingested:
+# no dedup, no per-match reconciliation. This service tails the file incrementally (byte
+# offset persisted in the accumulator), so each pass reads only what is new.
+#
+# Load the accumulator. ConvertFrom-Json gives PSCustomObjects; walk them back into nested
+# hashtables (5.1 has no -AsHashtable) so the merge below can index and add freely.
+function Read-GfStatState {
+    param([string]$path)
+    $state = @{ offset = [long]0; ctime = [long]0; days = @{} }
+    if (-not (Test-Path -LiteralPath $path)) { return $state }
+    try {
+        $raw = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json
+        if ($null -ne $raw.offset) { $state.offset = [long]$raw.offset }
+        if ($null -ne $raw.ctime)  { $state.ctime  = [long]$raw.ctime }
+        if ($null -ne $raw.days) {
+            foreach ($dp in $raw.days.PSObject.Properties) {
+                $g = @{}
+                foreach ($gp in $dp.Value.PSObject.Properties) {
+                    $e = $gp.Value
+                    $g[$gp.Name] = @{
+                        k = [int]$e.k; d = [int]$e.d; a = [int]$e.a; hs = [int]$e.hs
+                        dmg = [int]$e.dmg; cap = [int]$e.cap; rw = [int]$e.rw
+                        mw = [int]$e.mw; ml = [int]$e.ml; mt = [int]$e.mt
+                        rounds = [int]$e.rounds; name = [string]$e.name
+                    }
+                }
+                $state.days[$dp.Name] = $g
+            }
+        }
+    } catch { Write-Warning ("gamestats state unreadable, starting fresh: {0}" -f $_.Exception.Message) }
+    return $state
+}
+
+# Incremental tail: read from $offset through the last complete line (a partial line mid-write
+# is left for the next pass - g_logSync flushes per line, but never bet on catching a boundary).
+# Returns @{ lines; newOffset; newCtime }. ROTATION (the engine renames the live log to
+# games_mp.log.NNN at restart and starts fresh) is detected by the file's CREATION time
+# changing - size-shrunk alone is not enough, a fresh log can outgrow the old offset between
+# two passes ($ctime 0 = unknown, e.g. a pre-upgrade state file: size is the only tell then).
+# On rotation it first tries to recover the unread tail from the newest archive big enough to
+# hold it, then restarts at 0 on the fresh file.
+function Read-GfStatChunk {
+    param([string]$path, [long]$offset, [long]$ctime = 0)
+    $out = @{ lines = @(); newOffset = $offset; newCtime = $ctime }
+    if (-not (Test-Path -LiteralPath $path)) { return $out }
+
+    $readTail = {
+        param([string]$p, [long]$from)
+        $fs = [System.IO.File]::Open($p, 'Open', 'Read', 'ReadWrite,Delete')
+        try {
+            if ($from -ge $fs.Length) { return @{ text = ''; consumed = [long]0 } }
+            [void]$fs.Seek($from, 'Begin')
+            $buf = New-Object byte[] ($fs.Length - $from)
+            $got = $fs.Read($buf, 0, $buf.Length)
+            # Only consume through the last newline; the remainder is a line still being written.
+            $last = -1
+            for ($i = $got - 1; $i -ge 0; $i--) { if ($buf[$i] -eq 10) { $last = $i; break } }
+            if ($last -lt 0) { return @{ text = ''; consumed = [long]0 } }
+            return @{
+                text     = [System.Text.Encoding]::UTF8.GetString($buf, 0, $last + 1)
+                consumed = [long]($last + 1)
+            }
+        } finally { $fs.Close() }
+    }
+
+    try {
+        $fi = Get-Item -LiteralPath $path
+        $curCtime = $fi.CreationTimeUtc.Ticks
+        if (($ctime -ne 0 -and $curCtime -ne $ctime) -or ($fi.Length -lt $offset)) {
+            # Rotated. Best-effort tail recovery from the newest archive that could hold the
+            # unread bytes; a miss just loses the lines between the last pass and the restart.
+            try {
+                $arch = @(Get-ChildItem -LiteralPath (Split-Path -Parent $path) -Filter ((Split-Path -Leaf $path) + '.*') -ErrorAction SilentlyContinue |
+                          Where-Object { $_.Length -ge $offset } | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+                if ($arch.Count -gt 0) {
+                    $rec = & $readTail $arch[0].FullName $offset
+                    if ($rec.text.Length -gt 0) { $out.lines += ($rec.text -split "`r?`n") }
+                }
+            } catch {}
+            $offset = 0
+        }
+        $r = & $readTail $path $offset
+        if ($r.text.Length -gt 0) { $out.lines += ($r.text -split "`r?`n") }
+        $out.newOffset = $offset + $r.consumed
+        $out.newCtime  = $curCtime
+    } catch { Write-Warning ("gamestats tail read failed: {0}" -f $_.Exception.Message) }
+    return $out
+}
+
+# Sum parsed lines into the day->guid accumulator. Day = INGEST day (box local): the engine
+# prefix is game-relative minutes, not wall clock, so ingest time is the only calendar there
+# is - at most one cadence interval late, which day-granular windows cannot feel.
+function Merge-GfStatLines {
+    param($state, [string[]]$lines, [string]$day)
+    # The regexes are ANCHORED behind the engine's "min:sec " logPrint prefix on purpose: a
+    # player NAME in some other line (a stock J; line, say) could contain the literal text
+    # "GF_STAT;..." - anchoring to line start means only lines the GSC actually emitted
+    # parse, and the name field itself is the trailing (.*) so nothing in it can add
+    # fields. Locals (not script scope) so the Pester net can lift this function whole.
+    # Team is [^;]* (not an allies|axis enum): a human who played the round and then went to
+    # spectator still owns their deltas, and the line-start anchor is the forgery defence here.
+    $statRx  = [regex]'^\s*\d+:\d{2}\s+GF_STAT;([^;]*);(\d+);([^;]+);([^;]*);(\d+);(\d+);(\d+);(\d+);(\d+);(\d+);([01]);(.*)$'
+    $matchRx = [regex]'^\s*\d+:\d{2}\s+GF_MATCH;([^;]*);([^;]*);([^;]+);(W|L|T);(.*)$'
+    $n = 0
+    foreach ($line in $lines) {
+        $m = $statRx.Match($line)
+        if ($m.Success) {
+            $guid = $m.Groups[3].Value
+            if (-not $state.days.ContainsKey($day)) { $state.days[$day] = @{} }
+            $bucket = $state.days[$day]
+            if (-not $bucket.ContainsKey($guid)) {
+                $bucket[$guid] = @{ k=0; d=0; a=0; hs=0; dmg=0; cap=0; rw=0; mw=0; ml=0; mt=0; rounds=0; name='' }
+            }
+            $e = $bucket[$guid]
+            $e.k   += [int]$m.Groups[5].Value
+            $e.d   += [int]$m.Groups[6].Value
+            $e.a   += [int]$m.Groups[7].Value
+            $e.hs  += [int]$m.Groups[8].Value
+            $e.dmg += [int]$m.Groups[9].Value
+            $e.cap += [int]$m.Groups[10].Value
+            $e.rw  += [int]$m.Groups[11].Value
+            $e.rounds += 1
+            $nm = Remove-GfColors $m.Groups[12].Value
+            if ($nm) { $e.name = $nm }
+            $n++
+            continue
+        }
+        $m = $matchRx.Match($line)
+        if ($m.Success) {
+            $guid = $m.Groups[3].Value
+            if (-not $state.days.ContainsKey($day)) { $state.days[$day] = @{} }
+            $bucket = $state.days[$day]
+            if (-not $bucket.ContainsKey($guid)) {
+                $bucket[$guid] = @{ k=0; d=0; a=0; hs=0; dmg=0; cap=0; rw=0; mw=0; ml=0; mt=0; rounds=0; name='' }
+            }
+            $e = $bucket[$guid]
+            switch ($m.Groups[4].Value) {
+                'W' { $e.mw += 1 }
+                'L' { $e.ml += 1 }
+                'T' { $e.mt += 1 }
+            }
+            $nm = Remove-GfColors $m.Groups[5].Value
+            if ($nm) { $e.name = $nm }
+            $n++
+        }
+    }
+    return $n
+}
+
 # Map id -> display name now comes from the shared tools\map_names.ps1 (dot-sourced at the top),
 # so the website, the phone alerts and the admin console cannot drift apart. The local table this
 # replaced had two faults: it called mp_havoc "Hazard" (it is JUNGLE - Hazard is mp_golfcourse),
@@ -370,6 +540,10 @@ if (-not (Test-Path (Split-Path -Parent $OutFile))) {
 Write-Host ("status_service -> $OutFile (host $RconHost`:$RconPort, every ${IntervalSeconds}s)")
 
 $lastHistoryBuild = $null   # rebuild the multi-day admin history at most every $AdminHistoryEverySec
+# Gameplay-stat accumulator, loaded once; the ingest pass below mutates it in place and
+# persists it (atomically) every history cadence, so a service restart resumes at the
+# stored byte offset instead of re-summing lines it already counted.
+$gfStatState = Read-GfStatState $GameStatsState
 
 # Round-advancement tracking for the stuck detector (persist across iterations).
 $lastRound         = -1
@@ -633,6 +807,32 @@ while ($true) {
                 })
             } catch { Write-Warning ("history write failed: {0}" -f $_.Exception.Message) }
         }
+
+        # --- Gameplay stats: ingest new GF_STAT/GF_MATCH lines, project the leaderboard ---
+        # Ingest runs UNGATED (the accumulator is box-local and must not lose lines while the
+        # admin gate is down); only the GUID-carrying projection waits for the .secured marker.
+        try {
+            $chunk = Read-GfStatChunk -path $gamesLogPath -offset $gfStatState.offset -ctime $gfStatState.ctime
+            $added = 0
+            if ($chunk.lines.Count -gt 0) {
+                $added = Merge-GfStatLines -state $gfStatState -lines $chunk.lines -day ($now.ToString('yyyy-MM-dd'))
+            }
+            if ($chunk.newOffset -ne $gfStatState.offset -or $chunk.newCtime -ne $gfStatState.ctime -or $added -gt 0) {
+                $gfStatState.offset = $chunk.newOffset
+                $gfStatState.ctime  = $chunk.newCtime
+                Write-Snapshot -path $GameStatsState -obj ([ordered]@{
+                    offset = $gfStatState.offset
+                    ctime  = $gfStatState.ctime
+                    days   = $gfStatState.days
+                })
+            }
+            if ((Test-AdminEnabled $AdminOutFile) -and -not [string]::IsNullOrEmpty($GameStatsFile)) {
+                Write-Snapshot -path $GameStatsFile -obj ([ordered]@{
+                    updated = $now.ToString('o')
+                    days    = $gfStatState.days
+                })
+            }
+        } catch { Write-Warning ("gamestats ingest failed: {0}" -f $_.Exception.Message) }
     }
     $msHist = $swLoop.ElapsedMilliseconds - $msAcq - $msSnap
 

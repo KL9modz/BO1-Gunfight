@@ -1649,7 +1649,7 @@ async function kickBots(){
 async function applyFillN(){
   // Clamp to the same 0-6 the server clamps to (HTML max= only limits the spinner, not a typed value),
   // so the input, the sent value and the telemetry echo can never disagree.
-  const n=Math.max(0,Math.min(6,parseInt(g('vFillN').value)||0));
+  const n=Math.max(0,Math.min(7,parseInt(g('vFillN').value)||0));   // mirrors _gf_rounds::gf_teamTargetSize's 0-7 clamp — keep the two in step
   g('vFillN').value=n;
   const r=await rcon(`set gf_fill_n ${n}`);
   const lbl=n>0?('target '+n+'v'+n):'no bots';   // gf_fill_n is a TARGET — humans can push the size higher; 0 = no bot fill (balancing still runs)
@@ -2131,7 +2131,7 @@ const SRV_SECTIONS = [
     { n:'sv_timeout',               lbl:'In-Game Timeout (s)',    type:'num',    def:'240', tip:'sv_timeout\nSeconds the server waits without receiving a packet from an ALREADY-IN-GAME client before dropping it. Engine default: 240. GF default: 240.\n⚠ The Plutonium T5ServerConfig template ships 15, which drops anyone who alt-tabs out of EXCLUSIVE FULLSCREEN — Windows minimizes the window, the client stops pumping its main loop and stops sending, so the server drops it 15s later. Borderless/windowed keeps running while unfocused and never hits this.\n⚠ At 15 the server also gave up ~3x sooner than the client itself does (the client’s own cl_timeout is 40), so a lag spike or packet-loss burst dropped players who were still sitting there waiting. A server must never be stricter than its own clients — keep this ≥ cl_timeout (40).\nRaising it costs you nothing but the time a hard-crashed client holds its player slot. AFK kicking is g_inactivity, not this; the CONNECTING/loading phase is sv_connectTimeout, not this.' },
     { n:'sv_connectTimeout',        lbl:'Connect/Load Timeout (s)',type:'num',   def:'200', tip:'sv_connectTimeout\nSeconds the server waits for a client that is still CONNECTING / LOADING (before it goes active). Separate dvar from sv_timeout, which only governs clients already in the game. Engine default: 80. GF default: 200 (matches the client’s own cl_connectTimeout of 200).\n⚠ This is the one that governs FIRST JOINS, and 80 is thin. A first-time joiner downloads mod.ff over FastDL, then the Plutonium client switches fs_game IN PLACE with no loading UI — it destroys and recreates the D3D9 device (the black screen) and reloads ~180MB of zones, a 30–60s stall — and then runs a full Demonware stats/CAC re-sync that has documented multi-minute stalls. Blowing the 80s budget mid-rebuild is a large part of why new players report having to connect twice.\nCosts nothing: it only ever applies to a client that has not finished loading.' },
     { n:'party_minplayers',         lbl:'Warmup Min Players',        type:'num', def:'2',   tip:'party_minplayers\nHow many players the engine’s PRE-MATCH WARMUP (ADVANCED → MATCH START → Pre-Match Warmup) waits for before it starts the match. This is the warmup’s ONLY gate.\n⚠ Counts any non-spectator, so BOTS count toward it — a bot-filled server can satisfy it on its own.\n⚠ The warmup snapshots this at level load, so changing it mid-warmup does nothing until the next map.\nDoes NOT gate the Gunfight match itself (stock waitForPlayers() is an empty stub) — for that, use Min Players in ADVANCED → MATCH START (scr_gf_min_players). Also feeds the wager bet calc.' },
-    { n:'sv_maxclients',            lbl:'Max Players',            type:'num',    def:'14',  eff:'restart', tip:'sv_maxclients\nMaximum simultaneous connections the server accepts. GF: 14 = 12 playing (up to 6v6) + 2 spectator headroom.' },
+    { n:'sv_maxclients',            lbl:'Max Players',            type:'num',    def:'18',  eff:'restart', tip:'sv_maxclients\nMaximum simultaneous connections the server accepts. GF: 18 = 14 playing (up to 7v7, capped by scr_team_maxsize) + 1 democlient + 3 spectator headroom.\nDomain is 1-32, but 18 is the engine default and what BO1 MP was authored for: large mode uses the stock TDM spawn pools (placed for 9v9) and sv_maxRate is already pinned at its max 25000, so every extra client splits a fixed per-client budget.\nLatched at LAUNCH - it lives in the start bat, not dedicated.cfg, and needs a full bat restart (a bootstrapper kill keeps the old value).' },
     { n:'sv_floodProtect',          lbl:'Chat Flood Protection',  type:'num',    def:'20',  tip:'sv_floodProtect\nThrottle rapid chat messages. Stock template ships 4, but 20 is required when an RCON tool is driving the server -- which it always is here (the admin panel). GF default: 20.' },
     { n:'sv_kickBanTime',           lbl:'Kick Ban Duration (s)',  type:'num',    def:'300', tip:'sv_kickBanTime\nHow long a kicked player must wait before reconnecting.' },
     { n:'sv_maxPing',               lbl:'Max Ping (0=any)',       type:'num',    def:'0',   tip:'sv_maxPing\nKick players whose ping exceeds this. 0 = no limit.' },
@@ -2150,8 +2150,15 @@ const SRV_SECTIONS = [
     { n:'scr_wagerbet',             lbl:'Wager Bet Amount',       type:'num',    def:'100', tip:'scr_wagerbet\nCoD Points cost to enter a wager match.' },
   ]},
   { title: 'ENGINE GAMEPLAY', eff: 'live', per: 'dvar', vars: [
-    { n:'g_playerCollision',           lbl:'Player Collision',         type:'sel', def:'0', opts:[['0','Everyone'],['1','Enemies only'],['2','Nobody']], tip:'g_playerCollision\nWho players physically collide with.' },
-    { n:'g_playerEjection',            lbl:'Player Ejection Source',   type:'sel', def:'0', opts:[['0','Everyone'],['1','Enemies only'],['2','Nobody']], tip:'g_playerEjection\nWho pushes players apart when overlapping.' },
+    // ⚠ These two are Plutonium ENUM dvars: they are WRITTEN by index (0/1/2, which is what the
+    // options below send and what a `set g_playerCollision "2"` cfg line does) but they READ BACK
+    // as the enum NAME -- "everybody" / "enemies" / "nobody". Without the rmap the read value
+    // matches no <option>, the select goes BLANK (selectedIndex -1), and _rowVal then returns null
+    // so Set All and 💾 Save silently SKIP the row -- which looks exactly like "the server keeps
+    // resetting it" even though the live write took and stuck. rmap normalizes name -> index on
+    // read; never remove it without also changing what the options send.
+    { n:'g_playerCollision',           lbl:'Player Collision',         type:'sel', def:'0', opts:[['0','Everyone'],['1','Enemies only'],['2','Nobody']], rmap:{everybody:'0',enemies:'1',nobody:'2'}, tip:'g_playerCollision\nWho players physically collide with. GF default: Nobody (players pass through each other) -- set in dedicated.cfg, since nothing in GSC writes this.\nENGINE enum: written by index (0/1/2), reads back as everybody/enemies/nobody. Live-effective, and a live change STICKS across map_restart -- only a server restart reverts it, because dedicated.cfg is re-exec\'d at boot.' },
+    { n:'g_playerEjection',            lbl:'Player Ejection Source',   type:'sel', def:'0', opts:[['0','Everyone'],['1','Enemies only'],['2','Nobody']], rmap:{everybody:'0',enemies:'1',nobody:'2'}, tip:'g_playerEjection\nWho pushes players apart when overlapping. GF default: Nobody -- it is the other half of turning collision off; leaving ejection on would still shove overlapping players apart.\nSame enum shape as Player Collision (write index, read name).' },
     { n:'g_playerCollisionEjectSpeed', lbl:'Ejection Speed',           type:'num', def:'25',  tip:'g_playerCollisionEjectSpeed\nHow fast players are pushed apart. Range: 0–32000.' },
     { n:'sv_allowFriendlyThrowback',   lbl:'Friendly Grenade Throwback',type:'tog',def:'1',  tip:'sv_allowFriendlyThrowback\nAllow players to throw back friendly grenades.' },
     { n:'g_patchRocketJumps',          lbl:'Rocket Jump Knockback',    type:'tog', def:'1',   tip:'g_patchRocketJumps\nEnable upward knockback from rocket self-damage.' },
@@ -2415,7 +2422,7 @@ const GF_MATCH_VARS = [
     { n:'scr_gf_roundswitch',         lbl:'Sides Switch Every (rounds)', type:'num', def:'2',    tip:'scr_gf_roundswitch\nSwap attacker/defender sides every N rounds. 0 = never.' },
     { n:'scr_gf_roundsperloadout',    lbl:'Rounds Per Loadout',       type:'num', def:'2', tip:'scr_gf_roundsperloadout\nRounds the shared random loadout stays before rotating to the next. Clamped 1-9. Independent of Side Switch.' },
     { n:'scr_gf_numlives',            lbl:'Lives / Round',            type:'num', def:'1',    tip:'scr_gf_numlives\nLives per player per round.' },
-    { n:'scr_gf_headshot_scale',      lbl:'Headshot Damage ×',        type:'flt', def:'1.0',  tip:'scr_gf_headshot_scale\nMultiplier on FINAL headshot damage: 1 = stock, 0.5 = half, 2 = double, 0 = headshots deal no damage. Clamped 0-3.\nThe engine applies each weapon file’s own baked hit-location multiplier first — this rescales that result globally, for every weapon; it cannot set a weapon’s multiplier to an absolute value.\nRead live at every hit (plain dvar, no bridge verb), so a change lands on the very next shot. Scaled damage flows through everything downstream: the score (score IS damage dealt), the most-HP-wins time-out decision, and the red kill hitmarker.\nNote everyone carries Body Armor (−20% on non-headshot bullets), so headshots are already worth proportionally more than the weapon files say — lowering this narrows that deliberate gap, raising it widens it.' },
+    { n:'scr_gf_headshot_scale',      lbl:'Headshot Damage ×',        type:'flt', def:'0.8',  tip:'scr_gf_headshot_scale\nMultiplier on FINAL headshot damage: 1 = stock, 0.5 = half, 2 = double, 0 = headshots deal no damage. Clamped 0-3.\nThe engine applies each weapon file’s own baked hit-location multiplier first — this rescales that result globally, for every weapon; it cannot set a weapon’s multiplier to an absolute value.\nRead live at every hit (plain dvar, no bridge verb), so a change lands on the very next shot. Scaled damage flows through everything downstream: the score (score IS damage dealt), the most-HP-wins time-out decision, and the red kill hitmarker.\nEveryone carries Body Armor (−20% on non-headshot bullets), so at 1.0 headshots are worth proportionally more than the weapon files say. The 0.8 default cancels that premium exactly, restoring the stock head:body ratio; raise toward 1 to bring the premium back.\nDoes NOT affect the sniper one-shot: the snipers’ 1.5× zone covers neck/upper chest too (not headshots), and sniper rounds drop Body Armor from everyone.' },
 
     { grp:'Loadout Slots',
       n:'scr_gf_lethals',             lbl:'Lethals',                  type:'tog', def:'1', tip:'scr_gf_lethals\nON (default): the round’s shared loadout hands out its lethal — frag / Semtex / Tomahawk.\nOFF: nobody gets a lethal at all, on any loadout, and the overview’s lethal slot is hidden.\n\nApplies on the NEXT SPAWN, so anyone already alive keeps theirs until the round ends. Nothing is rebuilt — each loadout still carries its lethal, the give is just skipped, so switching it back on restores exactly the same grenades.' },
@@ -2920,7 +2927,14 @@ function srvApplyValues(vars, values, prefix) {
     const el = g(base);
     if (!el) return;
     const row = el.closest('.srow');
-    const val = values[v.n];
+    let val = values[v.n];
+    // Enum dvars read back as a NAME but are written by index (see the g_playerCollision rows):
+    // fold the name onto the option value the control actually carries, or the select would end up
+    // blank and be skipped by Set All / 💾 Save. Unknown strings fall through unchanged.
+    if (v.rmap && val !== null && val !== undefined) {
+      const mapped = v.rmap[String(val).trim().toLowerCase()];
+      if (mapped !== undefined) val = mapped;
+    }
     if (val === null || val === undefined) {
       // Read missed (timeout/parse-miss): field still shows its hardcoded default, not a
       // live value. Flag the row so the two aren't confused.
@@ -2989,8 +3003,8 @@ const DASH_GAMEPLAY = [
   { n:'scr_team_fftype',        lbl:'Friendly Fire',   type:'sel', def:'0', also:'scr_gf_team_fftype', eff:'live', per:'dvar',
     opts:[['0','Off'],['1','On'],['2','Reflect'],['3','Shared']],
     tip:'scr_team_fftype + scr_gf_team_fftype (live override)\n0=off, 1=on, 2=damage reflected to shooter, 3=shared with team.\nSets BOTH the stock dvar and the gf per-gametype override — the engine re-polls the override every ~5s, so it applies to the RUNNING match (the old MATCH toggle wrote scr_gf_ff/scr_team_ff, which nothing reads — that was the "FF re-enables itself" bug).' },
-  { n:'scr_team_maxsize',       lbl:'Max Team Size',   type:'num', def:'6', eff:'next', per:'dvar',
-    tip:'scr_team_maxsize\nPlayers per team max; overflow goes to spectator on spawn. 0 = unlimited.\nGF server ships 6 (up to 6v6). Auto spawn mode is per-team roster driven, not this.' },
+  { n:'scr_team_maxsize',       lbl:'Max Team Size',   type:'num', def:'7', eff:'next', per:'dvar',
+    tip:'scr_team_maxsize\nPlayers per team max; overflow goes to spectator on spawn. 0 = unlimited.\nGF server ships 7 (up to 7v7). This is the lever that benches everyone past the cap - not Team Size Lock, which instead makes Bot Fill Target the human cap and would force bots to pad to that size every round.\nCannot exceed what sv_maxclients leaves free. Auto spawn mode is per-team roster driven, not this.' },
   { n:'scr_game_killstreaks',   lbl:'Killstreaks',     type:'tog', def:'0', bridge:'killstreaks', eff:'live', per:'dvar',
     tip:'scr_game_killstreaks + bridge killstreaks_on/off\nONE switch: sets the sticky dvar (future rounds, 💾 Save persists it) AND flips level.killstreaksenabled live via the GSC bridge so the running round changes too. GF default: off.' },
   { n:'regen',                  lbl:'Health Regen',    type:'bridgetog', def:'0', eff:'live', per:'transient',

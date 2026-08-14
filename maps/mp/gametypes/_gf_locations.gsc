@@ -742,7 +742,8 @@ gf_getCustomSpawnPoint( team )
     // undefined sends the caller (gf.gsc onSpawnPlayer) down its IN-BOUNDS fallback chain: the
     // map's own mp_wager_spawn pool first (telefrag-aware NearTeam — inside the wager play area
     // by construction, so small mode never leaks a spawn past the baked blockers), then the stock
-    // mp_tdm_spawn_<team>_start pool only on maps with no wager pool (which also have no blockers,
+    // round-start pool (gf_startSpawnClass: SD clusters, else TDM start) only on maps with no
+    // wager pool (which also have no blockers,
     // so there is no sealed boundary to escape). Never spawn ONTO an occupied curated point —
     // that kills the frozen occupant (the old raw-cursor fallback did exactly that).
     // "full" is the one cause worth watching: it means small mode HAS the data and still couldn't

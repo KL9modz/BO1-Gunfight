@@ -910,7 +910,8 @@ gf_probeLoadGap()
 }
 
 // SMALL-MODE CURATED-SPAWN FALLBACK DIAGNOSTIC. gf_getCustomSpawnPoint returning undefined sends the
-// spawner down gf.gsc's stock mp_tdm_spawn_<team>_start path — correct side, but not the fight-facing
+// spawner down gf.gsc's stock round-start path (gf_startSpawnClass: SD clusters, else TDM start)
+// — correct side, but not the fight-facing
 // curated point small mode exists to deliver. That degradation was completely silent: nothing in any
 // log distinguished a curated spawn from a fallback one, so it could only be caught by eye, in play.
 //

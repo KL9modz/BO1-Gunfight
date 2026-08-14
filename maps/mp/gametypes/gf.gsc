@@ -601,7 +601,7 @@ gf_roundSeedDvars()
     // to max(bigger human side, gf_fill_n) — so humans define the size, bots absorb the variance,
     // and enough humans means ZERO bots. 0 = no bot fill (human balancing still runs; manual bot
     // control sticks). It MUST be a dvar — the only state surviving the lobby's map_restart(false).
-    gf_seedDvar( "gf_fill_n", "2" );              // per-team target size (clamped 0-6 on read); 0 = no bots
+    gf_seedDvar( "gf_fill_n", "2" );              // per-team target size (clamped 0-7 on read); 0 = no bots
     gf_seedDvar( "gf_fill_kick_floor", "2" );     // client slots kept free for humans: a parked bot is KICKED (not parked) once level.players >= sv_maxclients - this
     gf_seedDvar( "gf_team_balance", "1" );        // 1 = even the HUMAN split (off-by-1) at every round boundary; 0 = never move humans
     gf_seedDvar( "gf_team_lock", "0" );           // 1 = gf_fill_n is a hard HUMAN cap per side: overflow joiners spectate, queued (join order) for the next open seat
@@ -695,8 +695,9 @@ gf_roundApplyTuning()
     // the base perk set for that reason — see gf_applyFlinch in _gf_rounds.gsc.
     gf_applyFlinch();
 
-    // Headshot damage scale — registers scr_gf_headshot_scale (default 1.0 = the weapon file's
-    // stock hit-location multiplier untouched; clamp 0-3) so the RCON panel's connect-sweep never
+    // Headshot damage scale — registers scr_gf_headshot_scale (default 0.8 = the Body Armor
+    // headshot premium cancelled, stock head:body ratio restored; 1.0 = the weapon file's
+    // multiplier untouched; clamp 0-3) so the RCON panel's connect-sweep never
     // reads an unregistered name. Registration only: the consumer is per-hit
     // (_gf_rounds::gf_onPlayerDamage via gf_headshotScale), so an RCON change lands on the very
     // next shot with nothing to re-apply here.
@@ -824,8 +825,23 @@ gf_roundWorldSetup()
 
     level.spawnMins = ( 0, 0, 0 );
     level.spawnMaxs = ( 0, 0, 0 );
+    // TDM's start clusters are placed UNCONDITIONALLY even when SD wins below: they stay the
+    // fallback of the fallback (gf_startSpawnClass, and the getTeamSpawnPoints last resort can
+    // still reach them), and an unplaced spawnpoint has never had spawnPointInit's
+    // placeSpawnpoint() ground-snap run on it — spawning on one drops a player into geometry.
+    // Placing a classname is idempotent-ish bookkeeping; spawning on an unplaced one is a bug.
     maps\mp\gametypes\_spawnlogic::placeSpawnPoints( "mp_tdm_spawn_allies_start" );
     maps\mp\gametypes\_spawnlogic::placeSpawnPoints( "mp_tdm_spawn_axis_start" );
+    // Round-start pool: SD when the map ships it (it is the better-shaped pool for a one-life
+    // round — see gf_startSpawnClass), TDM start otherwise. Re-derived every round because
+    // map_restart wipes level.*.
+    level.gf_startSpawn = [];   // explicit init — never index-assign into an undefined level.*
+    level.gf_startSpawn["allies"] = gf_startSpawnClass( "allies" );
+    level.gf_startSpawn["axis"]   = gf_startSpawnClass( "axis" );
+    if ( level.gf_startSpawn["allies"] != "mp_tdm_spawn_allies_start" )
+        maps\mp\gametypes\_spawnlogic::placeSpawnPoints( level.gf_startSpawn["allies"] );
+    if ( level.gf_startSpawn["axis"] != "mp_tdm_spawn_axis_start" )
+        maps\mp\gametypes\_spawnlogic::placeSpawnPoints( level.gf_startSpawn["axis"] );
     // Large mode plays the full map on the standard TDM spawn pool; small mode
     // prefers the wager spawn cluster when the map has one.
     if ( level.gf_largeMode )
@@ -848,8 +864,8 @@ gf_roundWorldSetup()
         }
     }
     maps\mp\gametypes\_spawning::updateAllSpawnPoints();
-    level.spawn_allies_start = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_allies_start" );
-    level.spawn_axis_start   = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_axis_start" );
+    level.spawn_allies_start = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( level.gf_startSpawn["allies"] );
+    level.spawn_axis_start   = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( level.gf_startSpawn["axis"] );
 
     level.mapCenter = maps\mp\gametypes\_spawnlogic::findBoxCenter( level.spawnMins, level.spawnMaxs );
     setMapCenter( level.mapCenter );
@@ -875,6 +891,38 @@ gf_roundWorldSetup()
 
     if ( !level.gf_largeMode )
         gf_applyWagerZoneAssets();
+}
+
+// ─── Round-start spawn pool: SD first, TDM start as the fallback ─────────────
+// Gunfight is SD-SHAPED — round-based, one life, fixed sides, and the WHOLE team materialising
+// at once at each round start with no respawns. Treyarch authored the SD clusters for exactly
+// that load, so they are defensible, side-separated and sized for a full team arriving together.
+// TDM's *_start points are authored for a SINGLE match-start spawn before the game hands off to
+// the scattered mp_tdm_spawn pool, so they are thinner and more exposed, and a 7-body simultaneous
+// spawn crowds them. Hence: prefer SD, keep TDM start as the fallback.
+//
+// ⚠ allies -> attacker / axis -> defender is a FIXED mapping, matching stock sd.gsc's own
+// level.spawn_*_start assignment (sd.gsc:227-228). Reading game["attackers"] instead would add a
+// dependency without changing the answer: _globallogic seeds it to "allies" (:1607-1608) and ONLY
+// sd.gsc/dem.gsc swap it on a side switch — GF runs neither, so it is "allies" forever here.
+// The side swap is already handled one level up: onSpawnPlayer flips spawnTeam through
+// getOtherTeam() when game["switchedsides"] is set, so the caller hands us the team whose END of
+// the map this player should start on. Do NOT also swap here — that would cancel it out.
+//
+// ⚠ Returns a classname to CHECK, never blind-places: _spawnlogic::placeSpawnPoints calls
+// AbortLevel() on an empty classname (_spawnlogic.gsc:101-115), which takes the WHOLE level down.
+// Every stock BO1 map ships SD spawns, but a map that somehow lacks them must degrade to TDM, not
+// kill the server. The getEntArray probe is the cheap way to ask before committing.
+gf_startSpawnClass( team )
+{
+    sdClass = "mp_sd_spawn_attacker";
+    if ( team == "axis" )
+        sdClass = "mp_sd_spawn_defender";
+
+    if ( getEntArray( sdClass, "classname" ).size )
+        return sdClass;
+
+    return "mp_tdm_spawn_" + team + "_start";
 }
 
 // ─── Cosmodrome rocket: once per match, not once per round ───────────────────
@@ -1005,7 +1053,7 @@ onSpawnPlayer( teamOverride )
         // #strip-end
 
         // A curated miss must NEVER leave the small play area: on a wager-blocker map the
-        // mp_tdm_spawn_<team>_start points sit OUTSIDE the sealed arena, so an overflow spawn
+        // round-start pool (SD clusters, or TDM start) sits OUTSIDE the sealed arena, so an overflow spawn
         // (6 bodies on 5 curated points, or a forced-small crowd) that fell through to them
         // spawned out of bounds. The map's own mp_wager_spawn pool is in-bounds by construction
         // (it is what the wager gametypes themselves spawn on) and was already inited by
@@ -1034,7 +1082,20 @@ onSpawnPlayer( teamOverride )
     // and never respawns mid-round, so getSpawnpoint_NearTeam on a shared pool
     // (both teams use the same wager/TDM points) could place a late-spawning bot
     // on the wrong side when inGracePeriod is false.
-    spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_" + spawnTeam + "_start" );
+    //
+    // ⚠ This is LARGE MODE'S ROUND-START path as well as small mode's curated-miss overflow — the
+    // curated block above is wrapped in !level.gf_largeMode. It is NOT all of large mode: once
+    // useStartSpawns flips false, onSpawnPlayerUnified leaves large mode on the stock scored
+    // system (the scattered mp_tdm_spawn pool) and never reaches here. Round start is exactly the
+    // moment that matters, though — a one-life round materialises the whole team at once, which is
+    // the load SD's clusters are authored for, so the pool is gf_startSpawnClass's pick: SD where
+    // the map ships it, TDM start otherwise.
+    // spawnTeam is already flipped by game["switchedsides"] above, so the SD attacker/defender
+    // mapping swaps with the sides for free.
+    spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( level.gf_startSpawn[spawnTeam] );
+
+    if ( !spawnPoints.size )
+        spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_tdm_spawn_" + spawnTeam + "_start" );
 
     if ( !spawnPoints.size )
         spawnPoints = maps\mp\gametypes\_spawnlogic::getSpawnpointArray( "mp_sab_spawn_" + spawnTeam + "_start" );
@@ -1413,7 +1474,7 @@ gf_lateSpawnAllowed()
 // gf_displaceBotForHuman, so they can never disagree on what "over size" means.
 gf_targetRoundSize()
 {
-    fillN = maps\mp\gametypes\_gf_rounds::gf_teamTargetSize();   // canonical read: default 2, clamp 0-6
+    fillN = maps\mp\gametypes\_gf_rounds::gf_teamTargetSize();   // canonical read: default 2, clamp 0-7
     if ( fillN == 0 )
         return 0;
 
