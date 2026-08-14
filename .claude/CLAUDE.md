@@ -21,36 +21,45 @@ wins** takes the match.
 - Website screenshots
 - Add more fun mods from other mod menus
 - Create alt modes: Team Sharpshooter, Team Gun Game
-- **Retail-Steam BO1 port: the ONLY open question is the server binary `CoDMPServer.exe`.** A retail
-  Gunfight server would reach every Steam BO1 owner from the in-game browser with zero client setup,
-  and the whole mod stack is already proven live there (ZAM `mp_ZAMv4` + `Classixz/bo1-snife` on
-  GitHub): unranked servers auto-deliver `mod.ff` + `.iwd` to vanilla clients over the stock HTTP
-  redirect (`sv_allowDownload`/`sv_wwwDownload`/`sv_wwwBaseURL`, laid out `<baseURL>/mods/<fs_game>/`;
+- **Retail-Steam BO1 port: CLOSED 2026-08-14 — the working server binary is unobtainable, and the
+  one person who could ask already did and was refused.** Answered directly by **Classixz**
+  (`Classixz/bo1-snife`): ZAM still runs **through GameServers.com**, who were the **SOLE provider**
+  of BO1 dedicated servers (renting from them was "essentially the only way") and **stopped selling
+  new BO1 servers ~2022**. Decisively: **the files circulating online are the ~2010 leak, while the
+  build GameServers actually runs is 2011** — a later, different binary that has **never leaked** —
+  and the files cannot be downloaded from them, because when the orders stopped Classixz asked them
+  to release the server files and **they declined**. ⚠ **Do not re-run this research and do not
+  re-ask Classixz**; the obvious ask has been made and refused. The old framing ("the ONLY open
+  question is which `CoDMPServer.exe` build") is therefore answered the unhelpful way: the build that
+  works is the one nobody outside GameServers has, and the 2010-vs-2011 gap is also the likeliest
+  root of the leak's documented `Exceeded limit of 256 'stringtable' assets` failure (it is a year
+  older than the retail assets it is being pointed at — and ours *adds* a stringtable). The surviving
+  modded servers are grandfathered GameServers boxes (ZAM's `173.199.76.204` RDAPs to GameServers.com, Toronto), <!-- ip-ok: third-party public game-server address; the RDAP literal IS the evidence for the grandfathered-box finding -->
+  which is now explained rather than merely observed: they predate the ~2022 cutoff.
+  **What stays true and proven** (keep it — it is real knowledge if the situation ever changes, and
+  it cost real work): the whole mod stack runs on retail. Unranked servers auto-deliver `mod.ff` +
+  `.iwd` to vanilla clients over the stock HTTP redirect
+  (`sv_allowDownload`/`sv_wwwDownload`/`sv_wwwBaseURL`, laid out `<baseURL>/mods/<fs_game>/`;
   Treyarch's own Steam RCON tool, appid 42720, exposes those four dvars in its **unranked** settings
-  manifest and **not** in the ranked one), custom gametypes register exactly like ours
+  manifest and **not** the ranked one); custom gametypes register exactly like ours
   (`stringtable,mp/gametypesTable.csv` + `rawfile,maps/mp/gametypes/<gt>.txt` +
-  `menufile,ui_mp/hud_<gt>.txt` + a line in `maps/mp/gametypes/_gametypes.txt`), custom `.menu` files
-  and custom weapons work, and **GSC stays loose** (snife's `mod.csv` lists no `.gsc` — scripts run
+  `menufile,ui_mp/hud_<gt>.txt` + a line in `maps/mp/gametypes/_gametypes.txt`); custom `.menu` files
+  and custom weapons work; and **GSC stays loose** (snife's `mod.csv` lists no `.gsc` — scripts run
   server-side out of the mod folder, clients never get them). ⚠ **`BlackOpsMP.exe` is client-only —
-  tested locally 2026-08-14: args reach the engine (`r_fullscreen 0` applied) but `dedicated`/
+  tested locally 2026-08-14**: args reach the engine (`r_fullscreen 0` applied) but `dedicated`/
   `net_port`/`logfile` are silently ignored, no log is written, and it comes up as a client on UDP
-  3074.** The server was always the separate, never-Steam-shipped `CoDMPServer.exe` (leaked 2014), and
-  the leak holds TWO builds: **`CoDMPServer_s.exe`** = secured/ranked, wants `dw_licensefile` +
-  `sv_licensenum` and dies on `Dedicated server authentication failure` (this is the "BO1 needs a
-  Demonware licence" everyone repeats), vs plain **`CoDMPServer.exe`**, whose documented failure is an
-  *asset* one (`Exceeded limit of 256 'stringtable' assets`, fixed by deleting `zone/Common/patch_mp.ff`
-  — note ours adds a stringtable). Nobody online distinguishes the two. Rentals are dead (GameServers
-  exited BO1, lists no CoD at all now; no other provider sells it) and the surviving modded servers are
-  grandfathered GameServers boxes (ZAM's `173.199.76.204` RDAPs to GameServers.com, Toronto). <!-- ip-ok: third-party public game-server address; the RDAP literal IS the evidence for the grandfathered-box finding -->
-  Next step is social, not technical: ask Classixz (the invite is linked off the
-  `Classixz/bo1-snife` GitHub repo — deliberately not pasted here, the pre-commit guard blocks raw
-  `discord.gg/<code>` invites because they expire) which binary they run, whether the
-  unsecured one needs a licence file, and how the box is provisioned. ⚠ Weigh the legitimacy cost —
-  the leaked binary is the same unofficial-Activision-code category as Plutonium, and the only gain is
-  that *clients* stay stock. The clean-legitimacy alternative is BO3 (first-party dedicated server tool
-  + Workshop delivery), which costs a T7 rewrite. Retail also loses XP (unranked grants none, so the
-  `registerScoreInfo` tuning is void) and the `g_fix_*` engine fixes (the bullet-damage dupe and the
-  weapon-switch entity leak both bite this mod hard).
+  3074. The leak's two builds (**`CoDMPServer_s.exe`** secured/ranked, wants `dw_licensefile` +
+  `sv_licensenum` and dies on `Dedicated server authentication failure` — the "BO1 needs a Demonware
+  licence" everyone repeats — vs plain **`CoDMPServer.exe`**, whose failure is the *asset* one above)
+  are both moot now: both are the 2010 leak. **The only remaining retail path is acquiring a
+  grandfathered GameServers box from someone winding one down** — untested, probably against their
+  ToS, and it buys a rented server on a dead product line. Not worth pursuing. **We stay on
+  Plutonium.** The clean-legitimacy alternative remains BO3 (first-party dedicated server tool +
+  Workshop delivery) at the cost of a T7 rewrite. ⚠ And note what retail would have *cost* even if it
+  had worked, which is the strongest argument this was never the bargain it looked like: no XP
+  (unranked grants none, voiding the `registerScoreInfo` tuning) and no `g_fix_*` engine fixes — the
+  bullet-damage dupe and the weapon-switch entity leak both bite this mod hard, and both were
+  deliberate opt-ins.
 
 ### Open bugs
 - **RESOLVED — "auto-balanced → forced to choose a class/team, couldn't spawn" (YooDyl `mp_silo`
