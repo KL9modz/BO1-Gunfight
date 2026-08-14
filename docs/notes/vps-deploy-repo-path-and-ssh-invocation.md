@@ -21,7 +21,7 @@ The real clone (the only `.git` on the box) is **`C:\gfdeploy\BO1-Gunfight`**. A
 ```
 cd C:\gfdeploy\BO1-Gunfight ; .\tools\deploy.ps1 -Mod
 ```
-Run as **Administrator** (the server's own account) — a wrong-account run mirrors to the wrong profile. `$ModDest` defaults to `$env:LOCALAPPDATA\Plutonium\storage\t5\mods\mp_gunfight`, which is what makes the account matter.
+Run as **Administrator** — a wrong-account run mirrors to the wrong profile. `$ModDest` defaults to `$env:LOCALAPPDATA\Plutonium\storage\t5\mods\mp_gunfight`, which is what makes the account matter. ⚠ Administrator is the right account because it owns the **profile the server loads from**, NOT because the server runs as it — the process is `SYSTEM` and the task action pins `LOCALAPPDATA` ([[vps-game-server-runs-as-system-localappdata-pinned]]). SSH lands as administrator, so a plain `deploy.ps1 -Mod` over SSH is already correct.
 
 ## 2. Over SSH, invoke deploy.ps1 through `cmd.exe` — never let PowerShell redirect git's stderr
 

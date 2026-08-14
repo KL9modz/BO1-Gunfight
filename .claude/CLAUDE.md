@@ -1760,8 +1760,16 @@ content), so `git checkout main` after cloning and push `main` with `tools/push_
 - **`package_server.ps1`** builds the PRIVATE VPS bundle: the **entire `main` tree** + `mod.ff` +
   `dedicated.cfg`. ⚠ It does **not** strip — the VPS runs dev wiring live by design; only a hardcoded
   `rcon_password` in GSC is blocked ([[package-server-does-not-strip-markers]]).
-- **`deploy.ps1`** runs **ON the VPS** as the server's own account (a wrong-account run silently mirrors
-  to the wrong profile). `-Mod`: pulls `main`, checks `mod.ff` out of `origin/release` (gitignored on
+- **`deploy.ps1`** runs **ON the VPS**, from the account owning the **profile the server loads its mod
+  from** — `Administrator`, which is what an SSH session lands as, so a plain `deploy.ps1 -Mod` over
+  `ssh gf-vps` is already correct (a wrong-account run silently mirrors to the wrong profile).
+  ⚠ **The server PROCESS runs as `SYSTEM`, so its process owner is NOT how you find that folder** —
+  `GF-GameServer` is a ServiceAccount scheduled task whose action pins `LOCALAPPDATA` to
+  Administrator's profile before launching the bat. The old "check the bootstrapper's owner"
+  diagnostic (still quoted in some places until 2026-08-14) now answers `SYSTEM` and sends you to a
+  `systemprofile` path that does not exist. Read the **task action**, or confirm against the
+  continuously-written `…\mods\mp_gunfight\logs\games_mp.log`
+  ([[vps-game-server-runs-as-system-localappdata-pinned]]). `-Mod`: pulls `main`, checks `mod.ff` out of `origin/release` (gitignored on
   `main`), mirrors the tree + `mod.ff` into the mods folder, publishes `mod.ff` to the FastDL web root,
   restarts, and recycles the RCON panel + load-once box services. `-Web`: secret-scans + robocopy-mirrors
   `site/wwwroot` into IIS (preserving the box-owned `web.config`). ⚠ The restart auto-recovers a wedged

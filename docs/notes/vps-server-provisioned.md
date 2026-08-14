@@ -84,14 +84,18 @@ key-only. **RDP stays home-IP-pinned** (`RDP-AdminOnly-In` → `<admin-home-ip>`
 Win32-OpenSSH v9.5 MSI — `Add-WindowsCapability` FoD is broken on this box (0x800f0950).
 Used the same day to run `deploy.ps1 -Mod` remotely and verify live files/process.
 
-**Server account (confirmed 2026-07-02 via bootstrapper process owner): the game server runs
-as `Administrator`. NO `gfsvc` account exists** - the low-priv gfsvc in VPS_DEPLOY.md is
-aspirational hardening that was never implemented. Live mod folder =
-`C:\Users\Administrator\AppData\Local\Plutonium\storage\t5\mods\mp_gunfight`. Deploys use the
-git-pull applier `tools/deploy.ps1 -Mod/-Web` inside `C:\gfdeploy\BO1-Gunfight` and MUST run
-from an Administrator session (default `-ModDest` resolves via `$env:LOCALAPPDATA`) - a
-wrong-account deploy silently mirrors into that account's own profile while the server keeps
-loading old files (this exact failure once shipped stale GSC: the enableText XP-popup fix
+**Server profile: the live mod folder is
+`C:\Users\Administrator\AppData\Local\Plutonium\storage\t5\mods\mp_gunfight`. NO `gfsvc`
+account exists** - the low-priv gfsvc in VPS_DEPLOY.md is aspirational hardening that was
+never implemented. ⚠ **The 2026-07-02 claim that the server RUNS as `Administrator` was
+retired 2026-08-14: the process runs as `SYSTEM`** and only its *profile* is Administrator's,
+because the `GF-GameServer` task action sets `LOCALAPPDATA` before invoking the bat - so the
+bootstrapper's process owner is the WRONG way to find the folder and now points at a
+systemprofile path that does not exist ([[vps-game-server-runs-as-system-localappdata-pinned]]).
+Deploys use the git-pull applier `tools/deploy.ps1 -Mod/-Web` inside `C:\gfdeploy\BO1-Gunfight`
+and MUST run from an Administrator session (default `-ModDest` resolves via
+`$env:LOCALAPPDATA`) - a wrong-account deploy silently mirrors into that account's own profile
+while the server keeps loading old files (this exact failure once shipped stale GSC: the enableText XP-popup fix
 appeared "not to work" until deployed to the right profile). Also 2026-07-02: the Plutonium
 server key was exposed in a pasted process command line (`+set key SVrs...`) - suggested
 rotating it at platform.plutonium.pw/serverkeys (key label = server-browser name, see

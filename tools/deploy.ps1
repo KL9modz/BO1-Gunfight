@@ -27,13 +27,24 @@ $ErrorActionPreference = "Stop"
 #   .\tools\deploy.ps1 -Mod -NoRestart   # copy mod files but leave the server running
 #   .\tools\deploy.ps1 -Mod -NoFastDL    # deploy the mod but skip the FastDL copy
 #
-# Run as the SAME account that runs the game server so $env:LOCALAPPDATA resolves
-# to that profile's Plutonium storage. On the current VPS the server runs as
-# ADMINISTRATOR (confirmed 2026-07-02 via the bootstrapper process owner; no gfsvc
-# account exists - the low-priv gfsvc in docs/VPS_DEPLOY.md is aspirational hardening).
-# A wrong-account deploy SILENTLY mirrors into that account's own profile while the
-# server keeps loading old files. Find the real account any time:
-#   Get-CimInstance Win32_Process | ? Name -match bootstrapper   # check the owner
+# Run from the account whose $env:LOCALAPPDATA matches the PROFILE the server loads
+# its mod out of. On the current VPS that is ADMINISTRATOR - so an SSH session (which
+# lands as administrator) deploys correctly with no -ModDest. A wrong-account deploy
+# SILENTLY mirrors into that account's own profile while the server keeps loading old
+# files (no gfsvc account exists; the low-priv gfsvc in docs/VPS_DEPLOY.md is
+# aspirational hardening).
+#
+# WARN Do NOT identify the profile from the bootstrapper's process OWNER. That owner is
+# SYSTEM (verified 2026-08-14): GF-GameServer is a scheduled task with a ServiceAccount
+# principal, and its action PINS the profile before launching the bat:
+#   cmd.exe /c "set LOCALAPPDATA=C:\Users\Administrator\AppData\Local&&...start_mp_server.bat"
+# The bat then does everything off %LOCALAPPDATA%, so the storage tree is Administrator's
+# while the process runs as SYSTEM. Trusting the owner points you at
+# C:\Windows\System32\config\systemprofile\... which does not even exist - the exact silent
+# wrong-profile deploy this comment warns about. Read the TASK ACTION instead:
+#   (Get-ScheduledTask GF-GameServer).Actions | % { $_.Execute + ' ' + $_.Arguments }
+# Confirm against reality either way - the live log is written continuously:
+#   <profile>\Plutonium\storage\t5\mods\mp_gunfight\logs\games_mp.log   # age should be ~0s
 # If deploying from a different account, pass -ModDest explicitly, e.g.
 #   -ModDest C:\Users\Administrator\AppData\Local\Plutonium\storage\t5\mods\mp_gunfight
 #

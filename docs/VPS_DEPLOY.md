@@ -376,9 +376,13 @@ controlled and editable like any other file (Claude edits it directly).
    Windows Credential Manager.)
 3. Clone once to a neutral path, **as the account that runs the game server** (so a plain
    `.\tools\deploy.ps1 -Mod` resolves `$env:LOCALAPPDATA` to that account's Plutonium storage).
-   The hardening ideal is a low-priv `gfsvc` user; **on this box the server runs as
-   `Administrator`**, so run deploys from an elevated Administrator session (`-Mod` then needs no
-   `-ModDest`). `.\tools\vps_setup.ps1` prints the right command for whichever account you use.
+   The hardening ideal is a low-priv `gfsvc` user; **on this box the server loads its mod out of
+   the `Administrator` profile**, so run deploys from an elevated Administrator session (`-Mod`
+   then needs no `-ModDest`). ⚠ The *process* runs as `SYSTEM` — the `GF-GameServer` task action
+   pins `LOCALAPPDATA` to Administrator's profile before launching the bat, so the bootstrapper's
+   process owner is NOT how you find the folder
+   ([[vps-game-server-runs-as-system-localappdata-pinned]]).
+   `.\tools\vps_setup.ps1` prints the right command for whichever account you use.
    ```powershell
    git clone -b main https://github.com/KL9modz/BO1-Gunfight.git C:\gfdeploy\BO1-Gunfight
    ```
