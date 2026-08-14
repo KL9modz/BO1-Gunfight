@@ -98,6 +98,51 @@
       text-overflow:ellipsis;white-space:nowrap}
     .crow.rrow .cname{width:132px}
     .stnote{color:#6b7482;font-size:11px;margin-top:9px}
+    /* stats chrome: the window bar is built once and never re-rendered, so it
+       sits OUTSIDE the card stack the 60s refresh rebuilds */
+    .sbar{display:flex;align-items:center;justify-content:space-between;gap:10px;
+      flex-wrap:wrap;margin:0 0 10px}
+    .skick{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dm)}
+    .seg{display:inline-flex;background:var(--panel);border:1px solid var(--bd);
+      border-radius:999px;padding:2px}
+    .seg button{appearance:none;border:0;background:transparent;color:var(--dm);cursor:pointer;
+      font:inherit;font-size:12px;font-weight:700;padding:4px 13px;border-radius:999px;
+      line-height:1.4}
+    .seg button:hover{color:var(--tx)}
+    .seg button.on{background:var(--accent);color:#1a1106}
+    /* sortable leaderboard */
+    table.lb th.srt{cursor:pointer;user-select:none}
+    table.lb th.srt:hover{color:var(--tx)}
+    .arw{margin-left:4px;color:var(--accent)}
+    tr.rowlink{cursor:pointer}
+    tr.rowlink:hover{background:var(--panel2)}
+    tr.picked{background:rgba(255,122,26,.09)}
+    .alias{margin-left:6px;font-size:10px;font-weight:700;color:var(--dm);
+      border:1px solid var(--bd);border-radius:999px;padding:0 5px}
+    /* connects-by-hour histogram */
+    .hours{display:flex;align-items:flex-end;gap:3px;height:92px;margin-top:4px}
+    .hours .hb{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%}
+    .hours .hb > i{display:block;background:#5a4633;border-radius:3px 3px 0 0;min-height:2px}
+    .hours .hb.pk > i{background:var(--accent)}
+    .hlab{display:flex;gap:3px;margin-top:4px}
+    .hlab span{flex:1;text-align:center;font-size:9px;color:#6b7482;
+      font-variant-numeric:tabular-nums}
+    /* day rows reuse the country-bar layout; the date is short, the note is on the right */
+    .crow.drow .cname{width:96px;font-variant-numeric:tabular-nums}
+    .crow.drow .csub{width:64px;text-align:right}
+    .crow.drow .cn{width:58px}
+    /* player drill-down */
+    .pcard{border-color:rgba(255,122,26,.45)}
+    .xbtn{appearance:none;border:1px solid var(--bd);background:transparent;color:var(--dm);
+      cursor:pointer;font:inherit;font-size:11px;padding:2px 10px;border-radius:999px;
+      margin-left:auto}   /* .hhead is shared with the health card; only this button floats right */
+    .xbtn:hover{color:var(--tx);border-color:var(--accent)}
+    .chips{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;margin-top:9px}
+    .clab{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dm);
+      margin-right:2px}
+    .chip{font-size:11px;color:#c7d0dc;background:var(--panel2);border:1px solid var(--bd);
+      border-radius:6px;padding:1px 7px;overflow-wrap:anywhere}
+    .chip.mono1{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:10px}
   </style>
 </head>
 <body>
@@ -117,6 +162,9 @@
     <p class="foot" id="foot">&nbsp;</p>
   </main>
 
-  <script src="admin.js"></script>
+  <!-- ?v= is the ONLY cache key the browser has: IIS serves .js with a long cache
+       lifetime and .html with a short one, so a returning admin gets the new HTML
+       with the OLD script unless this number moves. Bump it on every admin.js edit. -->
+  <script src="admin.js?v=1"></script>
 </body>
 </html>

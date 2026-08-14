@@ -18,7 +18,7 @@ services. Don't restate their content here; a second copy drifts.
 | Loadout authoring | `loadout_editor/` | CLAUDE.md → *Per-loadout perks* |
 | Box services | `status_service/`, `conn_logger/`, `notify/` (each has its own README) | VPS_DEPLOY.md |
 | Shared libs | `common.ps1`, `status_parse.js` + `status_parse.ps1` (the **single-sourced** `status` parser — extend it, never copy the parsing form), `ignore_list.ps1`, `map_names.ps1`, `ntfy.ps1` | — |
-| Tests | `tests/` (Pester; `fixtures/status_reply.txt` pins both parser twins) | — |
+| Tests | `tests/` (Pester; `fixtures/status_reply.txt` pins both parser twins), `rcon/test/` + `../site/test/` (node:test) | — |
 | Measurement | `ts_sample.ps1` (samples timescale from **outside** the GSC VM — the only wall clock we have) | CLAUDE.md → *Final-killcam slow motion* |
 | Wager-zone extraction | see below | this file |
 

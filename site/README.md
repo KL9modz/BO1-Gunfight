@@ -14,6 +14,9 @@ site/
     styles.css        <- shared by index + setup ONLY; status/admin carry inline <style>
     script.js         <- tracked placeholder, loaded by NO page (says so in its own header)
     assets/           <- screenshots, logo, favicon, flags/ (self-hosted country SVGs)
+  test/               <- node:test suites for the page scripts. OUTSIDE wwwroot on purpose:
+                         `deploy.ps1 -Web` /MIRrors wwwroot into IIS, so a test file under it
+                         would be published. Run: node --test "site/test/**/*.test.js"
   README.md           <- this file
 ```
 
@@ -24,9 +27,9 @@ See `docs/VPS_DEPLOY.md`.
 ⚠ **IIS long-caches `.css`/`.js` but not `.html`.** After editing an asset, bump the `?v=N` query on
 its `<link>`/`<script>` tag, or a deploy ships new HTML against a stale cached asset — this shipped
 visibly broken once at `v=4` ([[site-css-js-cache-bust-version-query]]). Current state: `styles.css`
-is at `?v=6` (index + setup), `setup.js` at `?v=1`, and **`status.js` / `admin/admin.js` carry no
-`?v=` at all** — so an edit to either relies on the browser revalidating. Add one when you next touch
-them.
+is at `?v=6` (index + setup), `setup.js` at `?v=1`, `admin/admin.js` at `?v=1`, and **`status.js`
+carries no `?v=` at all** — so an edit to it relies on the browser revalidating. Add one when you
+next touch it. `status.html`/`admin.html` keep their CSS inline, so only their scripts need a bump.
 
 This is **not** the RCON admin panel. That lives in [`../tools/rcon/`](../tools/rcon/),
 is loopback-only, and is never deployed to the public site.
