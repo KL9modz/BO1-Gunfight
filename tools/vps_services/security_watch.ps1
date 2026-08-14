@@ -564,6 +564,14 @@ try {
 # slmgr /dlv names the channel; only an EVAL channel with low remaining time alerts, so on this
 # (licensed) box the check logs one line and does nothing. Threshold 14 days; re-alert daily via
 # the standard throttle. Rearm guidance lives in the alert because future-you will read it there.
+# ⚠ The throttle stamp follows section 9's idiom and MUST: $new is rebuilt empty every run and
+# Write-State replaces the whole file, so a key written ONLY inside the alert branch is dropped on
+# the next quiet run - State-Get then reads $null, $due is always true, and the "daily" re-alert
+# fires every cadence (3 min) for the whole 14-day window. Seed from the old state, overwrite only
+# when we actually alert, and write it back UNCONDITIONALLY below - including on the licensed and
+# throw paths, where carrying $null forward is the correct no-op.
+$evalAlertAt = State-Get $state 'evalAlertAt' $null
+$newEvalAt   = $evalAlertAt
 try {
     $slmgr = & cscript.exe //nologo "$env:SystemRoot\System32\slmgr.vbs" /dlv 2>$null
     $txt = ($slmgr -join "`n")
@@ -574,21 +582,21 @@ try {
             $daysLeft = [math]::Round($minsLeft / 1440, 1)
             Log "windows EVAL detected: $daysLeft days remaining"
             if ($daysLeft -le 14) {
-                $evalAt = State-Get $state 'evalAlertAt' $null
                 $due = $true
-                if ($evalAt) { try { $due = ((Get-Date) - [datetime]$evalAt).TotalHours -ge 24 } catch { } }
+                if ($evalAlertAt) { try { $due = ((Get-Date) - [datetime]$evalAlertAt).TotalHours -ge 24 } catch { } }
                 if ($due) {
                     Alert "$($script:srvName) - Windows eval expires in $daysLeft days" `
                           ("At expiry Windows begins shutting down HOURLY - on an unattended server that is an outage loop. Options: slmgr /rearm (resets to 180d, max 6 uses, restart required) or license it (DISM /Online /Set-Edition:ServerStandard /ProductKey:...).") `
                           'high' @('warning', 'hourglass')
-                    $new['evalAlertAt'] = (Get-Date).ToString('o')
+                    $newEvalAt = (Get-Date).ToString('o')
                 }
-            }
+            } else { $newEvalAt = $null }   # back above the threshold (rearmed/licensed): clear the stamp
         } else { Log 'windows EVAL channel detected but no expiration counter parsed - check slmgr /dlv by hand' }
     } else {
         Log 'windows license: not an evaluation channel (check inert)'
     }
 } catch { Log "eval check failed: $($_.Exception.Message)" }
+$new['evalAlertAt'] = $newEvalAt
 
 # ── first run: seed bookmarks at the TIP so the next run starts clean ─────────
 if ($null -eq $state) {
