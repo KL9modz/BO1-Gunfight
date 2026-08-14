@@ -105,3 +105,10 @@ raw/fx/*
 raw/fx/misc/*
 !raw/fx/misc/*.efx
 tools/ff_extract/
+# material_spike WORKSPACE artifacts (tools/material_spike/README.md): make_material.ps1
+# writes the triplet at the repo root for build_ff staging. Transient until a spike asset
+# goes to production -- the repo IS the mod folder, so a committed images/ deploys to the
+# VPS and FastDL. Lift these deliberately at that point, never by accident.
+materials/
+material_properties/
+images/

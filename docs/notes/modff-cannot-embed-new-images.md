@@ -1,6 +1,6 @@
 ---
 name: modff-cannot-embed-new-images
-description: "The T5 linker writes an image REFERENCE by name, it does NOT embed .iwi pixel data — so mod.ff cannot ship a new/overriding image. This is why the 'Connection Interrupted' PLUG ICON cannot be hidden (only its text)."
+description: "The T5 linker writes an image REFERENCE by name, not pixel data — STILL TRUE. But 2026-08-14 the conclusion 'therefore mod.ff cannot ship a custom image' fell: Classixz/bo1-competitiveleaguemod ships 132 custom images on EXACTLY that reference-only model (material registered in the ff, .iwi delivered loose beside it). Format fully decoded, generator + verifier + tests in tools/material_spike/ (corpus-validated byte-for-byte); the laptop spike + the Plutonium delivery question are the open half."
 metadata: 
   node_type: memory
   type: project
@@ -15,10 +15,65 @@ metadata:
 - `material,net_disconnect` + `image,net` — the material's `colorMap` just resolved to the game's **stock** `net` image. A silent **no-op** that would have looked like "the idea failed".
 - `material,net_disconnect` (patched so `colorMap` → a unique name `gfn`) + `image,gfn` — the material then points at an image present in **NO zone**, which draws the **missing-texture checkerboard**. Shipping that would have put a permanent artifact on every client's screen.
 
-**Consequence — the "Connection Interrupted" PLUG ICON cannot be hidden.** [[stock-engine-string-override-via-modff]] blanks the *text* (a localizedstring, looked up by name at draw time, so an override wins). The icon is **material `net_disconnect` → colorMap image `net`** (Q3's inherited `gfx/2d/net` phone-jack). It has **no dvar**, and its screen position is **hardcoded in `CG_DrawDisconnect`**, so it cannot be moved offscreen either. Transparency was the only lever and the image pipeline blocks it. Hiding it would need a genuine image asset in the zone via the Asset Manager / `.gdt` pipeline (`bin/asset_manager.exe`, `bin/converter.exe`) — **unproven**.
+---
+
+## 2026-08-14 — the conclusion falls: the reference-only linker was never the blocker
+
+**`Classixz/bo1-competitiveleaguemod` ("BOCL", the retail league mod) ships 132 custom
+images — rank icons, camos, team logos, menu backgrounds — on EXACTLY the reference-only
+model this note proved.** Its `mod.csv` registers **zero** `image,` rows; it registers 64
+**`material,`** rows (each material a tiny raw binary that *names* its image) and ships the
+`.iwi` files **loose beside the fastfile** (retail: mod folder / `.iwd`, FastDL-delivered —
+`sv_wwwBaseURL` in their config). The linker writing "only a by-name reference" is not the
+wall; it is the *design*: the material record rides `mod.ff`, the pixels ride next to it,
+and the client resolves the name at load. Our 2026-07-12 attempt 2 even reproduced the
+missing half by accident — the checkerboard was the reference *working* with nothing to
+resolve against.
+
+**The raw material format is now fully decoded** (all 132 BOCL binaries parsed, 132/132
+geometry + string round-trip): `[0x40 header][12-byte texture entries @0x40][20-byte
+constant entries][string pool: techset, name, image, map/constant names]`, little-endian,
+absolute offsets, no padding, no dedup of equal name/image strings. For a 2d single-colorMap
+HUD material the whole file is 0x4F + len(name)+1 + len(image)+1 + 9 bytes; two 2d families
+exist (hud sortKey 43 / decal sortKey 4) differing in 4 header constants. Companion
+`material_properties/<name>` = 16 bytes (u32 0, 1, mirror-of-+0x20, garbage). `.iwi` v13 =
+48-byte header with **EIGHT** u32 size slots at 0x10..0x2F (⚠ not 4 — a 32-byte hexdump
+mis-called that once; the regenerated header diverged at 0x20 until fixed), then DXT payload
+(DXT5 = W×H bytes; format byte 0x0B DXT1 / 0x0C DXT3 / 0x0D DXT5).
+
+**Tooling (all committed, all tested):**
+- `tools/material_spike/make_material.ps1` — fabricates the triplet. **Corpus-validated
+  byte-for-byte**: regenerates BOCL's `blank`, `icon_x3`, `bo_cl_camo_1` identically.
+- `tools/material_spike/verify_zone.ps1` — post-build verdict (PIXELS / REFERENCE-ONLY /
+  broken), encoding this note's sentinel method + the deployed-zone baseline (102,232 B
+  inflated, exactly one nul-delimited `2d`, zero `IWi` magic).
+- `tools/tests/material_spike.Tests.ps1` — 13 tests pinning the format; the corpus
+  comparison auto-runs when `%TEMP%\bo1-clm` exists.
+- `build_ff.ps1`'s `material` case now co-stages `material_properties\<name>`.
+
+**OPEN — the spike itself (laptop-only; this box has no linker) and the delivery half:**
+does the Plutonium T5 *client* resolve a loose `.iwi` from (1) the mod folder's `images\`
+(the BOCL layout — and the production path, since the repo IS the mod folder and FastDL
+would have to carry it), (2) `storage\t5\raw\images\` (raw fallback proven for rawfiles,
+unknown for images), or (3) a mod-folder `.iwd`? Runbook with the decision tree:
+`tools/material_spike/README.md`. Web research into Plutonium's iwd/loose-image handling
+was attempted and did not complete — the empirical tests decide anyway.
+
+**RESULTS (fill in after the laptop run):** _pending._
+
+**If delivery works, first users:** transparent `net` image (`-Payload transparent`, an
+all-zero DXT5 payload decodes to alpha 0) to finally kill the plug icon below; gunfight.us
+HUD branding; custom camos via BOCL's `weaponOptions.csv` pattern (rows 17+ `NN,camo,<image>`
+feed the same `CalcWeaponOptions` camo index we already roll — carrier material pulls the
+image, no weapon-file forks).
+
+---
+
+**Consequence — the "Connection Interrupted" PLUG ICON cannot be hidden** *(as of
+2026-07-12; the spike above exists to overturn this)*. [[stock-engine-string-override-via-modff]] blanks the *text* (a localizedstring, looked up by name at draw time, so an override wins). The icon is **material `net_disconnect` → colorMap image `net`** (Q3's inherited `gfx/2d/net` phone-jack). It has **no dvar**, and its screen position is **hardcoded in `CG_DrawDisconnect`**, so it cannot be moved offscreen either. Transparency was the only lever and the image pipeline blocks it. ~~Hiding it would need a genuine image asset in the zone via the Asset Manager / `.gdt` pipeline (`bin/asset_manager.exe`, `bin/converter.exe`) — unproven.~~ ⚠ That guess is retired: BOCL proves the route is a raw material + loose image, no Asset Manager involved.
 
 **Useful things learned anyway:**
-- **`raw/materials/<name>`** holds the STOCK material sources (13,373 of them) as small binaries: a header of absolute offsets into a trailing string block (`"2d"` techniqueSet | material name | image name | `"colorMap"`). A **same-length** string swap is offset-safe. `net_disconnect` is 107 bytes and uses techniqueSet `2d` (alpha-blended — so alpha 0 *would* have rendered invisible).
-- **`raw/images/*.iwi`** are `IWi` **v13**: 48-byte header (magic, ver, format, flags, w, h, depth, then 9 dwords), then payload. Format `0x0b` = DXT1 (0.5 B/px), `0x0c` = DXT3/DXT5 (1 B/px). An **all-zero DXT3/DXT5 payload decodes to alpha 0** = fully transparent, so a transparent `.iwi` can be synthesized by copying a stock header and zeroing the payload — no art tools needed. (The technique is sound; only the *delivery* is blocked.)
+- **`raw/materials/<name>`** holds the STOCK material sources (13,373 of them) as small binaries: a header of absolute offsets into a trailing string block (`"2d"` techniqueSet | material name | image name | `"colorMap"`). A **same-length** string swap is offset-safe (and with the format now decoded, ANY-length edits are safe via `make_material.ps1`'s layout law). `net_disconnect` is 107 bytes and uses techniqueSet `2d` (alpha-blended — so alpha 0 *would* have rendered invisible).
+- **`raw/images/*.iwi`** are `IWi` **v13**: 48-byte header (magic, ver, format, flags, w, h, depth, then 9 dwords — one zero + eight size slots), then payload. Format `0x0b` = DXT1 (0.5 B/px), `0x0c` = DXT3, `0x0d` = DXT5 (1 B/px). An **all-zero DXT3/DXT5 payload decodes to alpha 0** = fully transparent, so a transparent `.iwi` can be synthesized by copying a stock header and zeroing the payload — no art tools needed. (`make_material.ps1 -Payload transparent` does exactly this.)
 - **`build_ff.ps1` now backs up and RESTORES** any stock file it stages over (materials live in the game's own `raw/`, and the cleanup pass would otherwise *delete* a stock modtools source from the install).
-- BO1 has **no loose `images/` folder** — image data lives inside fastfiles, so there is no client-side loose-file route either.
+- ~~BO1 has **no loose `images/` folder** — image data lives inside fastfiles, so there is no client-side loose-file route either.~~ ⚠ Superseded: true for the BASE game's assets, but BOCL's whole image set is loose-file/iwd resolved on retail `fs_game` mods. Whether Plutonium T5 mirrors that mod-folder route is the spike's open question.

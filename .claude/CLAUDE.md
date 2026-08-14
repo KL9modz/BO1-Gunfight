@@ -1694,12 +1694,16 @@ for genuine lag; do **not** cite it as evidence a symptom is unfixable.
 ([[killcam-slowmo-timescale-usercmd-backlog]], [[connection-interrupted-mitigations]])
 ⚠ It also suppresses the
 warning for **genuine** lag/packet loss.
-⚠ **Only the TEXT is gone — the PLUG ICON still renders, and cannot be removed.** It is material
-`net_disconnect` → colorMap image `net` (Q3's inherited phone-jack); no dvar, and its position is hardcoded.
-Overriding it would need a new image in `mod.ff`, and **this linker cannot embed one** — it writes an image
-*reference* by name and silently drops the pixel data. Both attempts *built clean*: one was a no-op, the
-other would have shipped a **missing-texture checkerboard** to every client. Tried and reverted
-2026-07-12 → [[modff-cannot-embed-new-images]]. Do not retry without the Asset Manager/`.gdt` pipeline. ⚠ Keep overrides to single-purpose keys: the scoreboard's other
+⚠ **Only the TEXT is gone — the PLUG ICON still renders** (material `net_disconnect` → colorMap image
+`net`, Q3's inherited phone-jack; no dvar, position hardcoded). The linker writes an image *reference*
+by name and drops the pixel data — both 2026-07-12 attempts built clean as a no-op / a would-be
+**missing-texture checkerboard**. ⚠ **But "cannot be removed" is no longer settled — a prepared spike
+tests it** ([[modff-cannot-embed-new-images]], updated 2026-08-14): Classixz's BOCL mod ships 132
+custom images on exactly that reference-only model (material registered in the ff, `.iwi` delivered
+loose beside it — never the Asset Manager), the raw material format is fully decoded, and
+`tools/material_spike/` holds a corpus-validated generator + verifier + runbook. Laptop-only (no
+linker on the VPS); the open half is whether the Plutonium T5 client resolves a loose/`.iwd` image
+from the mod folder. A transparent `net.iwi` (all-zero DXT5 = alpha 0) is the payoff if it does. ⚠ Keep overrides to single-purpose keys: the scoreboard's other
 columns are `MPUI_*`, which the combat record / leaderboards / after-action report also use — renaming one
 changes it **everywhere**. ⚠ Overrides only reach clients that downloaded `mod.ff`, i.e. players **already
 on the server** — a messaging surface, never an ads/acquisition one. Full detail →

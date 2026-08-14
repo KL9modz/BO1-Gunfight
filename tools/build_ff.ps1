@@ -134,7 +134,11 @@ foreach ($line in $manifestLines) {
         # else the linker just reads the stock definition already in the game's raw\materials.
         # NOTE: staging a material OVERWRITES a stock modtools source file -- see the
         # backup/restore below, which puts the original back instead of deleting it.
-        "material" { $assetsToStage.Add("materials\$name") }
+        # A CUSTOM material (tools/material_spike) also ships a 16-byte
+        # material_properties\<name> companion (the bo1-competitiveleaguemod corpus ships one
+        # for 100% of its deliberately-registered materials). Stage it when we have one; the
+        # missing-source path below just warns for stock materials, which ship none of ours.
+        "material" { $assetsToStage.Add("materials\$name"); $assetsToStage.Add("material_properties\$name") }
     }
 }
 
