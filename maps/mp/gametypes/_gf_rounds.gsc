@@ -3749,10 +3749,9 @@ gf_endRound( winner )
         [[level._setTeamScore]]( winner, [[level._getTeamScore]]( winner ) + 1 );
 
     // Match stats: flush every human's round deltas as GF_STAT log lines. Synchronous
-    // logPrint only — no yields, so it belongs in this pre-notify block, and it must
-    // run before endGame's roundsplayed++ (the line's round number and the
-    // gf_spawnedRound round-win predicate both read the CURRENT round's value).
-    gf_statFlushRound( winner );
+    // logPrint only — no yields, so it belongs in this pre-notify block. This site runs
+    // BEFORE endGame's roundsplayed++ (:927), so the counter still names this round.
+    gf_statFlushRound( winner, game["roundsplayed"] );
 
     // Native WIN/LOSS banner subtitle — reason set at the decision site (carried
     // via level var so it survives the OT gf_ot_done re-entry into gf_endRound).
@@ -4625,8 +4624,9 @@ gf_onRoundEndGame()
     // contract: an end path that bypassed gf_endRound (the bridge END ROUND's
     // sd_endGame) still gets its final round's combat deltas rescued here — with no
     // round-win credit (winner undefined), and as all-zero no-ops on the normal path.
-    // Then one W/L/T line per seated human.
-    gf_statFlushRound( undefined );
+    // roundsplayed was ALREADY incremented on this path (:927 runs before :985), so
+    // the round being rescued is roundsplayed - 1. Then one W/L/T line per human.
+    gf_statFlushRound( undefined, game["roundsplayed"] - 1 );
     gf_statEmitMatch( result );
 
     return result;
@@ -4717,8 +4717,11 @@ gf_onPlayerKilled( eInflictor, attacker, iDamage, sMeansOfDeath, sWeapon, vDir, 
             {
                 damager thread maps\mp\gametypes\_rank::giveRankXP( "assist" );
                 // Match stats: same flat-assist rule the XP uses (every non-killer
-                // damager). Bots increment too — harmless, they are never emitted.
-                damager gf_statBump( "gf_stA", 1 );
+                // damager) — but only on a HUMAN victim (bot rule; the XP itself
+                // stays as-is, it is server-side and free). Bot damagers may
+                // increment too — harmless, they are never emitted.
+                if ( gf_isHuman( self ) )
+                    damager gf_statBump( "gf_stA", 1 );
             }
         }
         self.gf_assisters = [];
@@ -4861,6 +4864,14 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
 
         eAttacker.pers["gf_damage"] += damage;
         gf_setPlayerScoreSilent( eAttacker, eAttacker.pers["gf_damage"] );
+
+        // Match stats: persistent damage counts HUMAN-vs-HUMAN only (bot rule). The
+        // in-game score above deliberately keeps counting bot damage — the scoreboard
+        // shows the round you actually played — so the stats need their own counter
+        // rather than a mark against pers["gf_damage"]. Same capped value: overkill
+        // never inflates either number.
+        if ( gf_isHuman( self ) && gf_isHuman( eAttacker ) )
+            eAttacker gf_statBump( "gf_stDmg", damage );
 
         // Per-target damage for kill popup
         victimKey = "v" + int( self.entnum );
@@ -5027,15 +5038,24 @@ gf_setPlayerScoreSilent( player, score )
 // anything; every parser of this repo reads names end-anchored
 // ([[status-parser-name-spaces-bot-miscount]]).
 //
+// ⚠ THE BOT RULE — nothing involving a bot counts. Bot fill is on by default, so a
+// leaderboard that counted bot kills would be farmable solo. Enforced at three layers:
+// K/D/A/HS/DMG bump only when BOTH parties are human (a suicide still counts a death —
+// no bot involved); a round win / OT capture needs at least one HUMAN on the opposing
+// team that round (gf_statHumansSpawned); a match W/L/T is only emitted when both
+// teams hold a human at match end. The in-game SCOREBOARD deliberately keeps counting
+// bot damage/kills — it shows the round actually played; only the persistent stats
+// are bot-blind, which is why damage has its own pers["gf_stDmg"] counter instead of
+// a mark against pers["gf_damage"].
+//
 // The counters live in pers[] (survive map_restart(true); a map change or
 // map_restart(false) wipes them, which is correct — both start a new match) and are
 // ZEROED at each flush, so flushing twice is harmless: the second pass emits nothing
 // (all-zero lines are skipped). That makes the belt-and-braces double call site safe —
 // gf_endRound flushes every normal round, and gf_onRoundEndGame flushes again for the
 // end paths that bypass gf_endRound entirely (the bridge END ROUND's sd_endGame).
-// Damage and captures piggyback on their existing mod-owned cumulative counters
-// (pers["gf_damage"], pers["captures"]) via a last-flushed mark instead of a second
-// live counter — one source of truth for each number.
+// Captures piggyback on the existing mod-owned cumulative pers["captures"] via a
+// last-flushed mark instead of a second live counter.
 //
 // Deliberately NOT tracked from stock's incPersStat/statAdd chain: that writes the
 // Demonware per-mod profile blob ([[plutonium-stats-are-namespaced-per-mod]]), which
@@ -5065,6 +5085,9 @@ gf_statGet( key )
 
 // Called from gf_onPlayerKilled (self = victim). Assists are counted where the
 // assist XP is paid (the damager loop in gf_onPlayerKilled), not here.
+// ⚠ BOT RULE: nothing involving a bot counts. A kill on a bot is not a kill, a death
+// to a bot is not a death, a headshot on a bot is not a headshot — bot fill is on by
+// default, so anything less makes the leaderboard farmable solo against bots.
 gf_statNoteKill( attacker, sMeansOfDeath )
 {
     // Only live-round deaths are stats. Outside the active round the only deaths are
@@ -5075,10 +5098,16 @@ gf_statNoteKill( attacker, sMeansOfDeath )
     if ( !isDefined( level.gf_roundActive ) || !level.gf_roundActive )
         return;
 
-    self gf_statBump( "gf_stD", 1 );
+    // A HUMAN victim's death counts unless a bot did it (a suicide — fall, own
+    // grenade — involves no bot, so it still counts, like the scoreboard).
+    if ( gf_isHuman( self )
+        && !( isDefined( attacker ) && isPlayer( attacker ) && attacker != self && !gf_isHuman( attacker ) ) )
+        self gf_statBump( "gf_stD", 1 );
 
     if ( !isDefined( attacker ) || !isPlayer( attacker ) || attacker == self )
         return;
+    if ( !gf_isHuman( attacker ) || !gf_isHuman( self ) )
+        return;   // bot killer or bot victim: no kill, no headshot
     if ( !isDefined( attacker.pers["team"] ) || !isDefined( self.pers["team"] ) )
         return;
     if ( attacker.pers["team"] == self.pers["team"] )
@@ -5099,15 +5128,46 @@ gf_statMatchId()
     return 0;
 }
 
+// How many HUMANS spawned into round roundNum on each team — the bot-rule gate for
+// round wins and captures: an outcome earned against a team with no human on it
+// (bot-only opposition) is not a stat. Returns an array keyed "allies"/"axis".
+gf_statHumansSpawned( roundNum )
+{
+    counts = [];
+    counts["allies"] = 0;
+    counts["axis"]   = 0;
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        player = players[i];
+        if ( !isDefined( player ) || !gf_isHuman( player ) )
+            continue;
+        if ( !isDefined( player.pers["gf_spawnedRound"] ) || player.pers["gf_spawnedRound"] != roundNum )
+            continue;
+        team = player.pers["team"];
+        if ( isDefined( team ) && ( team == "allies" || team == "axis" ) )
+            counts[team]++;
+    }
+    return counts;
+}
+
 // Flush every human's round deltas as one GF_STAT line each, then zero the counters.
 // winner credits roundwin to winning-team players who actually spawned into this
 // round (pers["gf_spawnedRound"] — the same predicate the health HUD trusts); the
 // gf_onRoundEndGame belt-and-braces call passes undefined (no round-win credit, it
 // only rescues combat deltas from an end path that bypassed gf_endRound).
+// roundNum is passed explicitly because the two call sites sit on opposite sides of
+// stock endGame's roundsplayed++ (_globallogic.gsc:927 increments, :985 invokes
+// onRoundEndGame) — reading the counter here would stamp the rescue flush one round
+// forward and break the gf_spawnedRound comparisons.
+// ⚠ BOT RULE: K/D/A/HS/DMG are human-vs-human by construction (their bump sites gate
+// on gf_isHuman both sides); RW and CAP are gated HERE on human opposition — a round
+// win or an OT capture against a bot-only enemy team does not count.
 // Yield-free by construction: called inside gf_endRound's pre-notify block.
-gf_statFlushRound( winner )
+gf_statFlushRound( winner, roundNum )
 {
     matchid = gf_statMatchId();
+    humans  = gf_statHumansSpawned( roundNum );
     players = level.players;
     for ( i = 0; i < players.size; i++ )
     {
@@ -5125,40 +5185,46 @@ gf_statFlushRound( winner )
         if ( isDefined( player.pers["team"] ) )
             team = player.pers["team"];
 
+        // Human opposition for THIS player's outcomes (bot rule). A spectator has no
+        // opposing team, so their outcome fields are inert anyway.
+        humanOpp = 0;
+        if ( team == "allies" ) humanOpp = humans["axis"];
+        else if ( team == "axis" ) humanOpp = humans["allies"];
+
         rw = 0;
-        if ( isDefined( winner ) && winner != "tie" && team == winner
+        if ( isDefined( winner ) && winner != "tie" && team == winner && humanOpp > 0
             && isDefined( player.pers["gf_spawnedRound"] )
-            && player.pers["gf_spawnedRound"] == game["roundsplayed"] )
+            && player.pers["gf_spawnedRound"] == roundNum )
             rw = 1;
 
         k   = player gf_statGet( "gf_stK" );
         d   = player gf_statGet( "gf_stD" );
         a   = player gf_statGet( "gf_stA" );
         hs  = player gf_statGet( "gf_stHS" );
+        dmg = player gf_statGet( "gf_stDmg" );
 
-        // Damage / captures: delta against the last-flushed mark on the existing
-        // cumulative counters. A mark ABOVE the counter means the counter was reset
-        // under us (new match) — treat the whole current value as this round's.
-        dmgNow = player gf_statGet( "gf_damage" );
+        // Captures: delta against the last-flushed mark on the existing cumulative
+        // counter. A mark ABOVE the counter means the counter was reset under us
+        // (new match) — treat the whole current value as this round's. The mark
+        // always advances; the DELTA is discarded when the opposition was bot-only.
         capNow = player gf_statGet( "captures" );
-        dmg = dmgNow - ( player gf_statGet( "gf_stDmgMark" ) );
         cap = capNow - ( player gf_statGet( "gf_stCapMark" ) );
-        if ( dmg < 0 ) dmg = dmgNow;
         if ( cap < 0 ) cap = capNow;
+        if ( humanOpp == 0 ) cap = 0;
 
         // Zero + advance the marks BEFORE the skip test, so a second flush of the
         // same round (the double call-site contract above) emits nothing.
-        player.pers["gf_stK"]  = 0;
-        player.pers["gf_stD"]  = 0;
-        player.pers["gf_stA"]  = 0;
-        player.pers["gf_stHS"] = 0;
-        player.pers["gf_stDmgMark"] = dmgNow;
+        player.pers["gf_stK"]   = 0;
+        player.pers["gf_stD"]   = 0;
+        player.pers["gf_stA"]   = 0;
+        player.pers["gf_stHS"]  = 0;
+        player.pers["gf_stDmg"] = 0;
         player.pers["gf_stCapMark"] = capNow;
 
         if ( k == 0 && d == 0 && a == 0 && hs == 0 && dmg == 0 && cap == 0 && rw == 0 )
             continue;
 
-        logPrint( "GF_STAT;" + matchid + ";" + game["roundsplayed"] + ";" + guid + ";" + team + ";"
+        logPrint( "GF_STAT;" + matchid + ";" + roundNum + ";" + guid + ";" + team + ";"
             + k + ";" + d + ";" + a + ";" + hs + ";" + dmg + ";" + cap + ";" + rw + ";"
             + player.name + "\n" );
     }
@@ -5168,11 +5234,26 @@ gf_statFlushRound( winner )
 // stock invokes that at exactly one site, inside endGame's match-end tail, on EVERY
 // end path; players are frozen but still connected, so pers["team"] is intact
 // (the same window the team-carry snapshot trusts).
+// ⚠ BOT RULE: a match result only counts when BOTH teams hold at least one human at
+// match end — a W earned against a bot-only enemy (solo vs fill) is not a stat.
 gf_statEmitMatch( result )
 {
+    humansA = 0;
+    humansX = 0;
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        player = players[i];
+        if ( !isDefined( player ) || !gf_isHuman( player ) || !isDefined( player.pers["team"] ) )
+            continue;
+        if ( player.pers["team"] == "allies" )    humansA++;
+        else if ( player.pers["team"] == "axis" ) humansX++;
+    }
+    if ( humansA == 0 || humansX == 0 )
+        return;
+
     matchid = gf_statMatchId();
     mapname = getDvar( "mapname" );
-    players = level.players;
     for ( i = 0; i < players.size; i++ )
     {
         player = players[i];

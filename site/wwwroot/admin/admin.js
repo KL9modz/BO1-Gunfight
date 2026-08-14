@@ -604,7 +604,8 @@ function renderStats(){
       tblb.appendChild(tr);
     });
     c8.appendChild(tblb);
-    var cnote='Damage is the in-game score (cumulative damage dealt). Matches is the W-L record; '+
+    var cnote='Bots never count: kills, deaths, damage and headshots are human-vs-human only, '+
+      'and round or match wins need a human on the enemy team. Matches is the W-L record; '+
       'Rounds counts rounds with any recorded activity. Recording starts at this deploy, so '+
       'older sessions have connection stats only.';
     if(combat.length>STATS_ROWS) cnote+=' Showing the top '+STATS_ROWS+' of '+combat.length+'.';

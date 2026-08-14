@@ -1293,12 +1293,20 @@ Recorded the classic CoD-server way: **structured `logPrint` lines on the one di
 No RCON, no dvar, no reliable command, no new thread. GSC (`_gf_rounds.gsc`, ships public) emits one
 **delta** line per HUMAN per round — `GF_STAT;matchid;round;guid;team;K;D;A;HS;DMG;CAP;RW;name` — and
 one `GF_MATCH;matchid;map;guid;W|L|T;name` per seated human at match end. Name rides **LAST**
-(end-anchored parsing, names contain anything); bots/democlient never emitted. Deltas mean the
+(end-anchored parsing, names contain anything); bots/democlient never emitted. ⚠ **THE BOT RULE:
+nothing involving a bot counts** (bot fill is on by default — anything less is farmable solo):
+K/D/A/HS/DMG bump only when BOTH parties are human; a round win / OT capture needs ≥1 HUMAN on the
+opposing team that round (`gf_statHumansSpawned`); a match W/L/T is only emitted with a human on both
+teams at match end. The in-game **scoreboard still counts bots** deliberately (it shows the round
+actually played) — which is why stat damage is its own `pers["gf_stDmg"]` counter, not a mark against
+the score's `pers["gf_damage"]`. Deltas mean the
 aggregator just **sums every line ever seen** — no dedup, no per-match reconciliation, a crash loses at
-most the round in progress. Counters are **mod-owned pers[]** (`gf_stK/D/A/HS`, bumped in
-`gf_onPlayerKilled` under a `gf_roundActive` gate so administrative suicides — team-switch
-`gf_seqTeamMove` — never count; damage/captures ride the existing `pers["gf_damage"]`/`pers["captures"]`
-via last-flushed marks). ⚠ **Deliberately NOT stock's `incPersStat`/`statAdd` chain** — that writes the
+most the round in progress. Counters are **mod-owned pers[]** (`gf_stK/D/A/HS/Dmg`, bumped in
+`gf_onPlayerKilled`/`gf_onPlayerDamage` under a `gf_roundActive` gate so administrative suicides —
+team-switch `gf_seqTeamMove` — never count; captures ride the existing `pers["captures"]` via a
+last-flushed mark). ⚠ The flush takes the round number **as an argument** — its two call sites sit on
+opposite sides of stock `endGame`'s `roundsplayed++` (`:927` increments, `:985` invokes
+`onRoundEndGame`), so the rescue site passes `roundsplayed - 1`. ⚠ **Deliberately NOT stock's `incPersStat`/`statAdd` chain** — that writes the
 per-mod Demonware blob the server can never read back ([[plutonium-stats-are-namespaced-per-mod]]), and
 parts of it are dead under `overridePlayerScore`. Flush is **double-sited and zero-safe** (counters
 zeroed on flush; all-zero lines skipped): `gf_endRound` (pre-notify block, before endGame's

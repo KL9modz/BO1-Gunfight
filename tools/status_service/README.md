@@ -109,6 +109,12 @@ root. The admin page joins it to the connection history by GUID and renders the
 Combat leaderboard + per-player drill-down. Ingest itself runs even while the gate
 is down (the accumulator is box-local); only the projection waits.
 
+**Bots never count.** The GSC enforces it at emission: kills/deaths/assists/
+headshots/damage are human-vs-human only, a round win or capture needs a human on
+the opposing team that round, and a match result line is only written when both
+teams hold a human at match end. The in-game scoreboard still counts bots (it shows
+the round actually played); only these persistent stats are bot-blind.
+
 Known, accepted losses: a player who leaves **mid-round** takes that partial
 round's numbers with them, and a watchdog `map_rotate` on a stuck match skips the
 final round's flush (no endGame = no lines) - both degrade, never corrupt.
