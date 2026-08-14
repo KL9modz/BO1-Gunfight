@@ -234,6 +234,31 @@ if (-not $Check) {
     [void]$manifest.Add("")
 }
 
+# --- Defender exclusions: perf tuning that is INVISIBLE until it is missing ---------
+# A fresh box scans the game tree on every map load, so the omission shows up as I/O latency
+# and MsMpEng RAM spikes (measured peak 1183MB on the old box) - i.e. as frame hitches, which
+# read as "the new host is worse" rather than as a missing setting. Exported as reference, not
+# restored automatically: the paths are box-specific and re-adding them is one command.
+if (-not $Check) {
+    try {
+        $mp = Get-MpPreference -ErrorAction Stop
+        $lines = @('# Re-add on the new box (Add-, never Set- - Set REPLACES the whole list):', '')
+        foreach ($x in @($mp.ExclusionPath))    { $lines += "Add-MpPreference -ExclusionPath '$x'" }
+        foreach ($x in @($mp.ExclusionProcess)) { $lines += "Add-MpPreference -ExclusionProcess '$x'" }
+        foreach ($x in @($mp.ExclusionExtension)) { $lines += "Add-MpPreference -ExclusionExtension '$x'" }
+        if (@($mp.ExclusionPath).Count -eq 0 -and @($mp.ExclusionProcess).Count -eq 0) { $lines += '# (none were set)' }
+        $rd = Join-Path $dest 'reference'
+        if (-not (Test-Path $rd)) { New-Item -ItemType Directory -Force -Path $rd | Out-Null }
+        $lines | Set-Content (Join-Path $rd 'defender-exclusions.txt') -Encoding UTF8
+        Report 'EXPORT' 'REF' 'defender exclusions' "$(@($mp.ExclusionPath).Count) path(s), $(@($mp.ExclusionProcess).Count) process(es)"
+    } catch { Write-Warning "defender exclusion export failed: $($_.Exception.Message)" }
+    [void]$manifest.Add("[REF]  reference/defender-exclusions.txt")
+    [void]$manifest.Add("           Paste the Add-MpPreference lines on the new box. Excluding the game tree")
+    [void]$manifest.Add("           cuts map-load I/O and the Defender RAM spike - it matters MORE on a 4GB")
+    [void]$manifest.Add("           plan, where a scan spike is the difference between fitting and paging.")
+    [void]$manifest.Add("")
+}
+
 # --- the not-a-file checklist ------------------------------------------------------
 [void]$manifest.Add("=== DELIBERATELY NOT INCLUDED (copying these is wrong, not just unnecessary) ===")
 [void]$manifest.Add("  security_state.json   carries the OLD box's trust baseline -> false alarms forever.")
