@@ -102,6 +102,21 @@ function Log($msg) {
     Write-Host "[$t] $msg"
 }
 
+# Age in seconds of a file that ANOTHER process rewrites continuously, or $null if it isn't there.
+# ⚠ Never do `if (Test-Path $p) { (Get-Item $p)... }` on one of these: that is two statements with a
+# gap, and status_service replaces its snapshots with `Move-Item -Force`, which on Windows DELETES
+# the destination and then moves - so admin.json genuinely blinks out of existence several times a
+# minute. Land in that window and Get-Item throws PathNotFound, which under $ErrorActionPreference
+# 'Stop' kills the whole run. That is exactly what happened 2026-08-14 02:29:04: check 2 read
+# admin.json fine, check 3b missed it in the SAME second, the watchdog exited 1, and GF-SecurityWatch's
+# reciprocal dead-man check paged "WATCHDOG down" for what was a self-healing 35s blip. One tolerant
+# stat, null-guarded by the caller ([[watchdog-toctou-on-atomically-replaced-json]]).
+function Get-FileAgeSeconds($path) {
+    $item = Get-Item $path -ErrorAction SilentlyContinue
+    if (-not $item) { return $null }
+    return [int]((New-TimeSpan -Start $item.LastWriteTime -End (Get-Date)).TotalSeconds)
+}
+
 # ---- log hygiene -------------------------------------------------------------
 # The engine appends to a single live log (games_mp.log via g_logSync 1; console_mp.log) and rolls
 # it to <base>.000, .001, ... when it hits its own size cap. Those rolled files are CLOSED (the
@@ -342,8 +357,8 @@ if ($panelOk) {
 
 # ---- 2. admin.json freshness (proxy for "is the live game server responding") ----
 $adminKey = 'admin.json-staleness'
-if (Test-Path $AdminJsonPath) {
-    $age = (New-TimeSpan -Start (Get-Item $AdminJsonPath).LastWriteTime -End (Get-Date)).TotalSeconds
+$age = Get-FileAgeSeconds $AdminJsonPath
+if ($null -ne $age) {
     $isStale = $age -gt $AdminStaleSecs
     if ($isStale) {
         $anyProblem = $true
@@ -418,8 +433,8 @@ if ($upd.Count -gt 0 -and $boot.Count -eq 0) {
 # (3b) HUNG SERVER. admin.json stale past the HARD threshold while the bootstrapper is alive =
 # the server is running but not answering RCON/status (a true hang, not a between-launch gap or
 # the updater wedge handled above). Kill the bootstrapper so the bat's restart loop starts fresh.
-if (Test-Path $AdminJsonPath) {
-    $hardAge = [int]((New-TimeSpan -Start (Get-Item $AdminJsonPath).LastWriteTime -End (Get-Date)).TotalSeconds)
+$hardAge = Get-FileAgeSeconds $AdminJsonPath
+if ($null -ne $hardAge) {
     if ($hardAge -gt $AdminHardStaleSecs -and $boot.Count -gt 0) {
         $anyProblem = $true
         Log "server HUNG: admin.json ${hardAge}s stale AND bootstrapper alive"
@@ -451,12 +466,10 @@ if (Test-Path $AdminJsonPath) {
 # a bat that can self-heal already had its chance. Deliberately NOT conditioned on plutonium.exe:
 # the crash can leave a stray launcher (3a's target) or none, and either way a wedged bat needs
 # the task bounced - the manual fix used live 2026-07-12 (Stop/Start the task + clear strays).
-$darkAge = 0
+$darkAge = Get-FileAgeSeconds $AdminJsonPath
 $serverDark = $false
-if (Test-Path $AdminJsonPath) {
-    $darkAge = [int]((New-TimeSpan -Start (Get-Item $AdminJsonPath).LastWriteTime -End (Get-Date)).TotalSeconds)
-    $serverDark = ($darkAge -gt $AdminHardStaleSecs)
-}
+if ($null -eq $darkAge) { $darkAge = 0 }
+else { $serverDark = ($darkAge -gt $AdminHardStaleSecs) }
 $gsTask = Get-ScheduledTask -TaskName $GameServerTask -ErrorAction SilentlyContinue
 if ($boot.Count -eq 0 -and $serverDark -and $gsTask -and $gsTask.State -eq 'Running' -and -not $updaterRemediatedThisRun) {
     $anyProblem = $true
@@ -584,8 +597,11 @@ $modLogsDir = Join-Path $ModRootPath 'logs'
 Trim-EngineLogArchive $modLogsDir  'games_mp.log'   $LogArchiveBudgetMB
 Trim-EngineLogArchive $ModRootPath 'console_mp.log' $LogArchiveBudgetMB
 foreach ($lp in @((Join-Path $modLogsDir 'games_mp.log'), (Join-Path $ModRootPath 'console_mp.log'))) {
-    if (Test-Path $lp) {
-        $liveMB = [math]::Round((Get-Item $lp).Length / 1MB, 0)
+    # Tolerant stat for the same reason as Get-FileAgeSeconds: a server restart rolls the live log
+    # to <base>.000 between the test and the read, and a miss here would kill the run.
+    $lpItem = Get-Item $lp -ErrorAction SilentlyContinue
+    if ($lpItem) {
+        $liveMB = [math]::Round($lpItem.Length / 1MB, 0)
         if ($liveMB -ge $LiveLogWarnMB) {
             Log "LIVE log large: $(Split-Path -Leaf $lp) = ${liveMB}MB (only a server restart rolls it - check for a flood dvar left on, e.g. gf_debug_popup)"
         }
