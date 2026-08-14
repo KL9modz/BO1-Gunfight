@@ -178,16 +178,12 @@ function Get-GeoTag {
 function Send-AdminNotice {
     param([string]$msg)
     if ([string]::IsNullOrEmpty($script:PanelBase)) { return }
-    $body = @{
-        host     = $RconHost
-        port     = $RconPort
-        password = $script:PanelPw
-        command  = 'set gf_adminsay "{0}";set gf_cmd adminmsg' -f $msg
-        priority = $true
-    } | ConvertTo-Json -Compress
     try {
-        Invoke-RestMethod -UseBasicParsing -TimeoutSec 10 -Method Post -ContentType 'application/json' `
-                          -Uri ('{0}/api/rcon' -f $script:PanelBase) -Body $body | Out-Null
+        # Through common.ps1's shared panel-rcon POST (same priority-lane semantics the hand-rolled
+        # body here used to duplicate; the helper grew -RconHost/-RconPort so nothing was lost).
+        Invoke-GfPanelRcon -Pw $script:PanelPw -PanelPort $PanelPort -TimeoutSec 10 `
+                           -RconHost $RconHost -RconPort $RconPort `
+                           -Command ('set gf_adminsay "{0}";set gf_cmd adminmsg' -f $msg) | Out-Null
     } catch {
         # Cosmetic channel: the day-file record is already written and ntfy already fired. A failed
         # notice must never cost us the log line, and must never take the service down.

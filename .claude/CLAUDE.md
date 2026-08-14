@@ -1777,6 +1777,20 @@ status dark >300s + `GF-GameServer` still `Running` + 3a didn't act this run →
 2026-07-12). 3e waits one full cycle past 3a (via `$updaterRemediatedThisRun`) so a self-healing bat gets
 first crack before the heavier task bounce ([[deploy-restart-wedges-on-plutonium-updater]]).
 
+**Staying current with Plutonium is automatic, and no longer costs restart time.** The CDN advertises
+`{revision}` at `cdn.plutoniummod.com/updater/prod/info.json` and the official updater maintains the
+local one in `%LOCALAPPDATA%\Plutonium\info.json`, so "update available" is a **two-integer compare over
+one HTTPS GET**. The two halves are split on purpose: **watchdog check 5** owns the POLICY (every 30 min
+— drift + **empty** server → bounce `GF-GameServer` under a maintenance marker; players on → alert once
+per revision and wait for empty), while the launch bat owns the APPLY via
+**`tools/vps_services/update_plutonium.ps1`** — already current → the updater is **never started** (it
+does not exit on its no-op path, which used to make every restart pay ~2 min; a restart is now ~16s),
+pending → started and cleared the instant the new revision **lands**. ⚠ Two invariants: it sits in the
+launch path so it never blocks (always `exit 0`; `$ErrorActionPreference` deliberately **not** `Stop`,
+inverting the service pattern), and its run paths stand the watchdog down with a self-expiring,
+extend-only marker so 3a cannot reclaim a long first install
+([[deploy-restart-wedges-on-plutonium-updater]]).
+
 **Muting a player (the owner's own connects).** `tools/ignore.local.json` (gitignored + `/XF`-excluded,
 so it's box-local; shared loader `tools/ignore_list.ps1`, re-read on change with no restart) lists GUIDs
 that are **excluded from activity, not from presence**. `GF-StatusService` filters them out of the

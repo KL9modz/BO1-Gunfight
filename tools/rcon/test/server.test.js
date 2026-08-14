@@ -1,6 +1,12 @@
 // Regression net for tools/rcon/server.js's pure functions — zero dependencies, node:test.
 //
-//   node --test tools/rcon/test/
+//   node --test "tools/rcon/test/**/*.test.js"     (or name the file explicitly)
+//
+// WARNING: a BARE DIRECTORY (node --test tools/rcon/test/) reports "fail 1" on node 24 while the
+// suite is actually green - it tries to LOAD the directory as a module (MODULE_NOT_FOUND) instead
+// of scanning it. That WAS the documented command here, so a green suite read as broken. Verified
+// on node v24.18.0, 2026-08-11: glob and explicit-file forms both pass 34/34, all directory forms
+// fail identically.
 //
 // Every block below encodes a PAST LIVE INCIDENT (the case name says which); these are the
 // regression tests those incidents never had. server.js exports its pure surface behind a
