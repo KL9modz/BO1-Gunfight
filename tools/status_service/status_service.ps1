@@ -402,6 +402,11 @@ function Read-GfStatState {
 # two passes ($ctime 0 = unknown, e.g. a pre-upgrade state file: size is the only tell then).
 # On rotation it first tries to recover the unread tail from the newest archive big enough to
 # hold it, then restarts at 0 on the fresh file.
+# WARN An archive is ONLY "<leaf>.NNN" - match it with a regex and exclude the live path, never
+# with -Filter alone. Win32's trailing ".*" also matches the EXTENSIONLESS live file, which is by
+# definition the newest-written, so it won the newest-first sort and got read as its own archive:
+# the real tail was silently lost on every rotation, and the bytes past $offset were read twice
+# (once as the "archive", once from 0) - double-counted, since Merge-GfStatLines sums with no dedup.
 function Read-GfStatChunk {
     param([string]$path, [long]$offset, [long]$ctime = 0)
     $out = @{ lines = @(); newOffset = $offset; newCtime = $ctime }
@@ -433,8 +438,14 @@ function Read-GfStatChunk {
             # Rotated. Best-effort tail recovery from the newest archive that could hold the
             # unread bytes; a miss just loses the lines between the last pass and the restart.
             try {
-                $arch = @(Get-ChildItem -LiteralPath (Split-Path -Parent $path) -Filter ((Split-Path -Leaf $path) + '.*') -ErrorAction SilentlyContinue |
-                          Where-Object { $_.Length -ge $offset } | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+                # -Filter stays as the cheap FS-level prefilter; the regex is what actually
+                # defines an archive (see the WARN above), and the live file is excluded by
+                # full path as well so neither guard is load-bearing on its own.
+                $leaf   = Split-Path -Leaf $path
+                $archRx = [regex]('^' + [regex]::Escape($leaf) + '\.\d+$')
+                $arch = @(Get-ChildItem -LiteralPath (Split-Path -Parent $path) -Filter ($leaf + '.*') -ErrorAction SilentlyContinue |
+                          Where-Object { $archRx.IsMatch($_.Name) -and $_.FullName -ne $fi.FullName -and $_.Length -ge $offset } |
+                          Sort-Object LastWriteTime -Descending | Select-Object -First 1)
                 if ($arch.Count -gt 0) {
                     $rec = & $readTail $arch[0].FullName $offset
                     if ($rec.text.Length -gt 0) { $out.lines += ($rec.text -split "`r?`n") }

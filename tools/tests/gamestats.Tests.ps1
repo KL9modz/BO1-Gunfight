@@ -158,6 +158,24 @@ Describe "Read-GfStatChunk (incremental tail)" {
         Assert-True ($lines -contains 'FRESH') "fresh file read too"
         Assert-Eq $r.newCtime ((Get-Item $log).CreationTimeUtc.Ticks) "identity updated"
     }
+    It "never reads the LIVE file (or a non-.NNN sibling) as its own archive" {
+        # Win32's -Filter 'games_mp.log.*' ALSO matches the extensionless live file, which is
+        # always the newest-written -> it used to win the newest-first sort and be recovered as
+        # its own archive: the real tail was lost, and its own bytes past $offset were read twice
+        # (once as "archive", once from 0) into an accumulator that sums with no dedup.
+        # Two independent guards now, so this pins each: .bak fails the suffix rule, the live
+        # file fails the path rule. Both decoys are NEWER than the real archive on purpose.
+        [System.IO.File]::WriteAllText((Join-Path $tmp 'games_mp.log.000'), "SEEN`nARCHIVED`n")
+        [System.IO.File]::WriteAllText((Join-Path $tmp 'games_mp.log.bak'), "SEEN`nDECOY`n")
+        [System.IO.File]::WriteAllText($log, "SEEN`nLIVETAIL`n")
+        $seen  = [System.Text.Encoding]::UTF8.GetBytes("SEEN`n").Length
+        $stale = (Get-Item $log).CreationTimeUtc.Ticks - 1
+        $r = Read-GfStatChunk -path $log -offset $seen -ctime $stale
+        $lines = @($r.lines | Where-Object { $_ })
+        Assert-True ($lines -contains 'ARCHIVED') "recovered from the .NNN archive"
+        Assert-True (-not ($lines -contains 'DECOY')) "a non-.NNN sibling is not an archive"
+        Assert-Eq (@($lines | Where-Object { $_ -eq 'LIVETAIL' }).Count) 1 "live tail read once, not double-counted"
+    }
     It "does NOT rotate on a matching creation time" {
         [System.IO.File]::WriteAllText($log, "A`nB`n")
         $ct = (Get-Item $log).CreationTimeUtc.Ticks
