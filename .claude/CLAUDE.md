@@ -212,8 +212,11 @@ wins** takes the match.
   the bridge dispatched (`gf_ack` advanced), `cg_thirdPerson` pushed in the same session **landed**
   (control), and the killfeed dvar **stayed at 5**. Dev verb `killfeed_<sec>` (`_gf_bridge.gsc`) exists
   and is kept only as the reproduction. **Remaining choice if we ever want to own the timing:** document
-  the console line for players (cheap), or render our own killfeed in the menu layer (costs reliable
-  commands per kill + a `mod.ff` rebuild). ⚠ **Never use an archived dvar as the control** in a push test —
+  the console line for players (cheap — ⚠ MAIN MENU only: `sv_disableClientConsole 1` blocks the
+  in-game console on our server, and the dvar is `seta` so a menu-set value persists into the
+  session), render our own killfeed in the menu layer (costs reliable commands per kill + a `mod.ff`
+  rebuild), or — if the menu-`execNow` probe pans out — an opt-in in-game settings menu
+  ([[bocl-readyup-timeout-execmenu-designs]] §4). ⚠ **Never use an archived dvar as the control** in a push test —
   `cg_drawFPS` is itself `seta`, so `fps_1` fails under BOTH hypotheses and proves nothing (it wasted the
   first run of this experiment). ([[killfeed-duration-client-archived]])
 - **Own the prematch/intro countdown with `gettime()`** so a hitch degrades to a 1-frame stutter (the
@@ -271,7 +274,23 @@ wins** takes the match.
   phone-based ops today, and `ssh -L 3000:127.0.0.1:3000 gf-vps` gives the full panel from any machine
   holding the key. The marginal need may be smaller than it looks.
 - RCON: gas/stun/flash intensity sliders; mantle/climb speed control.
-- Lobby ready-up / team-picking UI; lobby fly-cam controls.
+- Lobby ready-up / team-picking UI; lobby fly-cam controls. **Ready-up has a worked design**
+  ([[bocl-readyup-timeout-execmenu-designs]], from BOCL's reference implementation): 20 Hz
+  use-button toggle on the hold, ready state mirrored into `statusicon` so the SCOREBOARD shows it
+  (zero HUD elements), count via the existing `ui_gf_*` lobby dvars, all-ready = START under a
+  `scr_gf_lobby_readyup` gate (default 0; the lobby-timer ceiling stays the anti-hostage net). Same
+  note: **rationed team timeouts** designed as a one-round PREMATCH EXTENSION at the boundary
+  (never a mid-round freeze — 42s one-life rounds are unpausable in practice), and **lobby
+  all-talk** via `SetMatchTalkFlag("EveryoneHearsEveryone", 1)` (stock flips it at halftime/podium;
+  VOIP-on-Plutonium untested by ear).
+- **Menu-`execNow` probe** ([[bocl-readyup-timeout-execmenu-designs]] §4): BOCL menus exec console
+  commands in the CLIENT's context (`connect.menu` `execNow "exec disabledDvars"`); if Plutonium
+  honors that from a server-delivered mod menu, it is the only in-game client-exec channel we have —
+  `sv_disableClientConsole 1` blocks players typing, so every "type this in your console" remedy
+  (killfeed retiming, `cl_maxpackets`) is currently MAIN-MENU-ONLY
+  ([[league-dvar-probe-2011-rulesets]], which also live-cataloged BOCL's 2011 league dvars: ⚠ never
+  set `scr_game_perks 0`, it likely deletes the mod's whole SetPerk layer). Probe rides the next
+  `mod.ff` rebuild; if it works, ships ONLY behind an explicit in-menu player yes.
 - Min-players option that also counts bots (`scr_gf_min_players` counts humans only today).
 - Spawn/flag pass: widen spawns; adjust flags generally; Hockey mode on Arena (map-specific).
 - Ship custom weapon files for ADS-FOV / move-speed tuning; tuning pass (shorter round, capture 3.5s,
