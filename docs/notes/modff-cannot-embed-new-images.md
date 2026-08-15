@@ -51,13 +51,23 @@ mis-called that once; the regenerated header diverged at 0x20 until fixed), then
   comparison auto-runs when `%TEMP%\bo1-clm` exists.
 - `build_ff.ps1`'s `material` case now co-stages `material_properties\<name>`.
 
-**OPEN — the spike itself (laptop-only; this box has no linker) and the delivery half:**
-does the Plutonium T5 *client* resolve a loose `.iwi` from (1) the mod folder's `images\`
-(the BOCL layout — and the production path, since the repo IS the mod folder and FastDL
-would have to carry it), (2) `storage\t5\raw\images\` (raw fallback proven for rawfiles,
-unknown for images), or (3) a mod-folder `.iwd`? Runbook with the decision tree:
-`tools/material_spike/README.md`. Web research into Plutonium's iwd/loose-image handling
-was attempted and did not complete — the empirical tests decide anyway.
+**OPEN — the spike itself (laptop-only; this box has no linker); the delivery route is
+now strongly evidenced but not end-to-end proven.** Research (2026-08-14, Wayback reads —
+plutonium.pw is Cloudflare-blocked to direct fetch — plus live GitHub artifacts) settled
+the ordering: **the `.iwd` is the community-standard carrier.** `Classixz/bo1-snife`'s
+*shipped* mod folder is `mod.ff` + `mp_UU_snife.iwd`, and that .iwd unzips to **exactly
+169 `images/*.iwi` and nothing else** — materials in the ff, pixels in the iwd, resolved
+by name at load. Plutonium T5 provably mounts mod-folder .iwds client-side (an
+actively-maintained iwd-only ZM mod loads its in-iwd scripts; Bot Warfare ships
+`mod.ff + mp_bots.iwd`; a loose .iwd in `storage\t5` root even auto-loads globally), T5
+MP mod downloading is a maintained feature (changelog r3417), and the official T5 FastDL
+doc requires `.iwd`/`.iwi` MIME types on the mirror. ⚠ `storage\t5\images\` is NOT a
+route: officially **replacement-only** (must match an existing texture name) and
+**client-local** — it can never carry a new image. Still unknown: whether Plutonium reads
+a loose `images\` subfolder *inside* a mod folder (retail does; community ships the iwd
+instead), whether the dedicated binary must hold the .iwd to advertise it, and the exact
+downloader manifest — the runbook's empirical tests + a FastDL access-log watch on a
+clean join close all three. Runbook: `tools/material_spike/README.md`.
 
 **RESULTS (fill in after the laptop run):** _pending._
 

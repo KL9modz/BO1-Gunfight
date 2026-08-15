@@ -1702,8 +1702,10 @@ tests it** ([[modff-cannot-embed-new-images]], updated 2026-08-14): Classixz's B
 custom images on exactly that reference-only model (material registered in the ff, `.iwi` delivered
 loose beside it — never the Asset Manager), the raw material format is fully decoded, and
 `tools/material_spike/` holds a corpus-validated generator + verifier + runbook. Laptop-only (no
-linker on the VPS); the open half is whether the Plutonium T5 client resolves a loose/`.iwd` image
-from the mod folder. A transparent `net.iwi` (all-zero DXT5 = alpha 0) is the payoff if it does. ⚠ Keep overrides to single-purpose keys: the scoreboard's other
+linker on the VPS); the expected delivery is a mod-folder **`.iwd`** (snife ships `mod.ff` + an iwd
+holding exactly its 169 `.iwi`s; Plutonium provably mounts mod-folder iwds client-side and its T5
+FastDL doc requires the `.iwd`/`.iwi` MIME types), pending the runbook's end-to-end proof. A
+transparent `net.iwi` (all-zero DXT5 = alpha 0) is the payoff. ⚠ Keep overrides to single-purpose keys: the scoreboard's other
 columns are `MPUI_*`, which the combat record / leaderboards / after-action report also use — renaming one
 changes it **everywhere**. ⚠ Overrides only reach clients that downloaded `mod.ff`, i.e. players **already
 on the server** — a messaging surface, never an ads/acquisition one. Full detail →

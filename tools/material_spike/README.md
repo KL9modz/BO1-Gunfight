@@ -63,19 +63,32 @@ game's `raw\` afterwards.
 
 ## 5. Delivery tests (only for REFERENCE-ONLY)
 
-Find where the Plutonium T5 **client** resolves a loose `.iwi`, most-likely first. After
-each placement: `loadMod mp_gunfight` + `map mp_nuked` (listen host) → step 6 look.
+Route ordering settled by research 2026-08-14 (Wayback reads of the Cloudflare-blocked
+plutonium.pw docs/forum + live GitHub artifacts). The headline evidence: **bo1-snife's
+SHIPPED mod folder is `mod.ff` + `mp_UU_snife.iwd`, and that .iwd unzips to exactly 169
+`images/*.iwi` and nothing else** — materials ride the ff, pixels ride the .iwd. On the
+Plutonium side, mod-folder .iwds provably mount client-side (an iwd-only ZM mod loads its
+in-iwd scripts; Bot Warfare ships `mod.ff + mp_bots.iwd`), and the official T5 FastDL doc
+requires `.iwd`/`.iwi` MIME types on the mirror — the strongest official signal the
+downloader fetches them. After each placement: `loadMod mp_gunfight` + `map mp_nuked`
+(listen host) → step 6 look.
 
-1. **Mod folder, loose:** copy `images\gf_test.iwi` to
+1. **IWD — the community-proven layout, try first:** zip `images\gf_test.iwi` (path
+   inside the zip must be `images/gf_test.iwi`, **store/no-compression** to be safe),
+   rename to `mp_gunfight.iwd`, drop it in the mod folder next to mod.ff.
+2. **Mod folder, loose:** copy `images\gf_test.iwi` to
    `%LOCALAPPDATA%\Plutonium\storage\t5\mods\mp_gunfight\images\` — the literal BOCL
-   layout. ⚠ If this works it is also the *production* path: the repo IS the mod folder,
-   so committing `images\` ships it, and FastDL clients need it delivered too — test a
-   second machine or a fresh FastDL download before calling it done.
-2. **Storage raw:** `%LOCALAPPDATA%\Plutonium\storage\t5\raw\images\gf_test.iwi`
-   (Plutonium's raw/ fallback — proven for rawfiles, unknown for images).
-3. **IWD:** zip `images\gf_test.iwi` (folder path inside the zip: `images/gf_test.iwi`,
-   **store/no-compression** to be safe), rename `gf_test.iwd`, drop in the mod folder —
-   the classic retail sideload; unknown whether Plutonium T5 mounts mod-folder IWDs.
+   *repo* layout (retail reads it; UNKNOWN on Plutonium — community mods ship the .iwd).
+   If this works it is the lowest-friction production path: the repo IS the mod folder.
+
+⚠ NOT a route: `storage\t5\images\` — the official loading-textures doc is explicit that
+it is **replacement-only** (filename must match an existing texture) and **client-local**
+("only visible to you"). It cannot carry a NEW image and is not server delivery.
+
+⚠ Production notes for whichever route wins: FastDL must mirror the new file
+**byte-identical** next to mod.ff (mismatch = "Invalid file" on join; never bz2), and
+`deploy.ps1 -Mod` must learn to publish it. Decisive FastDL check: watch the web server's
+access log for the `.iwd` GET on a clean client's first join.
 
 ## 6. The look (in-game confirmation)
 
