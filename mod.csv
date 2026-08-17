@@ -39,6 +39,68 @@ fx,misc/fx_ui_flagbase_gf_white
 # checkerboard -- strictly worse than the plug. Hiding the icon needs a real image asset in
 # mod.ff (Asset Manager / .gdt pipeline), which is unproven here. Do not retry casually.
 stringtable,mp/gametypesTable.csv
+# CUSTOM CAMOS -- WORKING IN GAME 2026-08-16. Our own copy of the STOCK camo/lens/reticle table
+# (raw/mp/weaponOptions.csv, 148 lines) + 9 appended camo rows. ⚠ Overriding this table means
+# shipping the WHOLE thing -- it also carries the lens/reticle/etc blocks -- so ours is a verbatim
+# copy plus those 9 lines.
+#
+# A T5 camo is ONE TILING IMAGE, not a material: the engine takes the cell at (camo index,
+# weapon-parent column) and plugs it in as the gun material's `colorDetailMap`. Proof the cells
+# name IMAGES -- stock row 0's `cammo_gunmetal` / `cammo_wood_tile_red` exist verbatim as
+# raw/images/*.iwi and as NO material source. That is why one image covers every weapon, and why
+# this costs an image instead of BOCL's 50 weapon-file forks + 61 xmodels.
+#   16 = cammo_red   -- CONTROL, deliberately a STOCK resident image at an index >15. Proved the
+#                       engine accepts camo indices above 15 (the original open question). Kept as
+#                       a diagnostic: if a gf_camo_* row ever renders wrong, 16 separates "index
+#                       path broke" from "the image never arrived". Cloned from row 3, index only.
+#   17-24 = gf_camo_ crimson/teal/urban/toxic/sand/violet/white/arctic -- our own 512x512 DXT5
+#                       tiling camos from tools/make_camo_iwi.ps1, DELIVERED IN mp_gunfight.iwd
+#                       (images/*.iwi, Deflate), which Plutonium mounts from the mod folder.
+# ⚠ The images are NOT registered as `image,` rows -- the linker never embeds image pixels. They
+#   are pulled in by the CARRIER MATERIALS below, which are mandatory; see that block.
+# Full architecture: docs/notes/custom-camos-bocl-architecture.md
+stringtable,mp/weaponOptions.csv
+# ⚠ CARRIER MATERIALS -- these are what make the camo images actually LOAD, and leaving them out
+# is why the first attempt rendered every custom camo flat WHITE.
+# Diagnosis (storage\t5\main\console_mp.log, 2026-08-16): the .iwd mounted fine
+# (`mp_gunfight.iwd (6 files)` in the FS search path) and the engine really did read our table --
+# it asked for the images BY NAME -- but then `Error: Could not load image "gf_camo_crimson"` for
+# all six. A weaponOptions cell is a runtime string lookup; on its own it does not register an
+# image asset, and the image loader does not go hunting the filesystem for one.
+# The fix is BOCL's, and it is why BOCL ships `material,bo_cl_camo_1..11` NEXT TO images
+# camo_1..11 that its own GSC never uses: a material in the zone references the image by name, so
+# the image gets registered at zone load and resolves out of the .iwd. Material name is
+# deliberately NOT the image name (gf_camo_X_mtl -> image gf_camo_X), mirroring bo_cl_camo_1 ->
+# camo_1. Nothing references these materials directly; they exist purely to pull the image in.
+# ⚠ Do not "clean up" an apparently-unused material row here -- it is load-bearing.
+material,gf_camo_crimson_mtl
+material,gf_camo_teal_mtl
+material,gf_camo_urban_mtl
+material,gf_camo_toxic_mtl
+material,gf_camo_sand_mtl
+material,gf_camo_violet_mtl
+material,gf_camo_white_mtl
+material,gf_camo_arctic_mtl
+# 25-34: textures from the community "BO1 Custom Camos MP SSCv1" pack (2022), re-shipped through
+# OUR pipeline instead of installed its way. As distributed it is a CLIENT-SIDE REPLACEMENT -- its
+# .iwi files are named after STOCK camos (camo_woodland, camo_desert_nevada...) and you drop them
+# into the game's main\ folder, so they repaint stock camos for whoever installs it and nobody
+# else. Re-pointed at NEW indices they reach every player over FastDL automatically and stock
+# camos stay intact. ⚠ Names describe the LOOK, not the stock name they shipped under: the file
+# called camo_desert_nevada is rainbow stripes.
+# ⚠ Gold is deliberately NOT imported: it is a 3-map material (camo_gold_c/env/spec) and the
+#   colorDetailMap route carries one image, so it would not reproduce.
+# ⚠ Third-party art -- credit the pack if these ship publicly.
+material,gf_camo_rainbow_mtl
+material,gf_camo_monogram_mtl
+material,gf_camo_neon_mtl
+material,gf_camo_spiral_mtl
+material,gf_camo_nebula_mtl
+material,gf_camo_weave_mtl
+material,gf_camo_splatter_mtl
+material,gf_camo_ember_mtl
+material,gf_camo_oilslick_mtl
+material,gf_camo_pastel_mtl
 localize,gf
 # Overrides two STOCK engine strings (a mod.ff localizedstring wins over the game's
 # own zone copy): the scoreboard "Score" header -> "Damage", and the between-rounds

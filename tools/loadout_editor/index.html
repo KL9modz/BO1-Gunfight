@@ -174,7 +174,13 @@ const ATT_LABEL = {
 const EQUIP  = [["none","— None —"],["camera_spike_mp","Camera Spike"],["scrambler_mp","Jammer"],["acoustic_sensor_mp","Motion Sensor"],["claymore_mp","Claymore"],["satchel_charge_mp","C4"]];
 const LETHAL = [["frag_grenade_mp","Frag"],["sticky_grenade_mp","Semtex"],["hatchet_mp","Tomahawk"]];
 const TAC    = [["flash_grenade_mp","Flash"],["concussion_grenade_mp","Stun"],["willy_pete_mp","Smoke"],["tabun_gas_mp","Gas"],["nightingale_mp","Decoy"]];
-const CAMO   = [[-1,"Random (per match)"],[0,"Default"],[1,"Dusty"],[2,"Ice"],[3,"Red"],[4,"OD Green"],[5,"Desert Nevada"],[6,"Desert Sahara"],[7,"Jungle ERDL"],[8,"Jungle Tiger"],[9,"Urban German"],[10,"Urban Warsaw"],[11,"Winter Siberia"],[12,"Winter Yukon"],[13,"Woodland"],[14,"Woodland Flora"],[15,"Gold"]];
+const CAMO   = [[-1,"Random (per match)"],[0,"Default"],[1,"Dusty"],[2,"Ice"],[3,"Red"],[4,"OD Green"],[5,"Desert Nevada"],[6,"Desert Sahara"],[7,"Jungle ERDL"],[8,"Jungle Tiger"],[9,"Urban German"],[10,"Urban Warsaw"],[11,"Winter Siberia"],[12,"Winter Yukon"],[13,"Woodland"],[14,"Woodland Flora"],[15,"Gold"],[17,"GF Crimson"],[18,"GF Teal"],[19,"GF Urban"],[20,"GF Toxic"],[21,"GF Sand"],[22,"GF Violet"],[23,"GF White"],[24,"GF Arctic"],[25,"SSC Rainbow"],[26,"SSC Monogram"],[27,"SSC Neon"],[28,"SSC Spiral"],[29,"SSC Nebula"],[30,"SSC Weave"],[31,"SSC Splatter"],[32,"SSC Ember"],[33,"SSC Oilslick"],[34,"SSC Pastel"]];
+// 0-15 are stock. 17-24 are OUR custom camos: one tiling image each, shipped in mp_gunfight.iwd
+// and pulled into the zone by the carrier materials in mod.csv. Index 16 is deliberately NOT
+// listed - it is a diagnostic duplicate of 3 (Red) kept in weaponOptions.csv to tell "index path
+// broke" apart from "the image never arrived". See docs/notes/custom-camos-bocl-architecture.md.
+// ⚠ A custom camo only renders for a client holding the current mod.ff AND the .iwd; both ship
+// over FastDL together (deploy.ps1 publishes them side by side).
 
 // Flat base -> {name, atts}
 const FLAT = {};
