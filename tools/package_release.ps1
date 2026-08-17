@@ -161,6 +161,24 @@ function Build-Staging {
 
     Copy-Item -Force -LiteralPath $ModFf -Destination (Join-Path $StageMod "mod.ff")
 
+    # ⚠ THE .iwd IS NOT OPTIONAL -- mod.ff alone ships VISIBLY BROKEN guns.
+    # The linker never embeds image pixels, so mod.ff carries the camo table (weaponOptions rows
+    # 17-46) and 30 carrier materials that reference images BY NAME. Without the .iwd beside it
+    # those names resolve to nothing and the engine renders the missing texture as FLAT WHITE --
+    # and gf_camoPool() is deliberately NOT strip-marked, so the public build rolls custom camos
+    # like the VPS does (~45% of rolls). Shipping mod.ff without this file is the one packaging
+    # mistake that reaches every public server at once.
+    # Always rebuilt (never -SkipBuild'd): it is a ~1 MB zip of tracked sources, and a stale copy
+    # would silently omit a camo added since.
+    & (Join-Path $PSScriptRoot "make_iwd.ps1") -ModRoot $ModRoot -Verify
+    if ($LASTEXITCODE -ne 0) { throw "make_iwd.ps1 failed -- refusing to ship a release whose camos would render white" }
+    # make_iwd falls back to '<name>.new' when a RUNNING game holds the .iwd open, so take that
+    # copy when it exists -- it is the fresh one.
+    $iwdSrc = Join-Path $ModRoot "mp_gunfight.iwd.new"
+    if (-not (Test-Path -LiteralPath $iwdSrc)) { $iwdSrc = Join-Path $ModRoot "mp_gunfight.iwd" }
+    if (-not (Test-Path -LiteralPath $iwdSrc)) { throw "mp_gunfight.iwd was not produced -- refusing to ship a release whose camos would render white" }
+    Copy-Item -Force -LiteralPath $iwdSrc -Destination (Join-Path $StageMod "mp_gunfight.iwd")
+
     $gscFiles = Get-ChildItem -Recurse -File -LiteralPath (Join-Path $ModRoot "maps") -Filter *.gsc
     $n = 0
     foreach ($file in $gscFiles) {
