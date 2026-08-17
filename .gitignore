@@ -1,6 +1,13 @@
 # Build output
 mod.ff
 tools/dist/
+# The custom-image delivery zip (images/*.iwi packed for FastDL). Nothing on THIS branch builds
+# it — make_iwd.ps1 and deploy.ps1's New-ModIwd live with the camo work — but the artifact is a
+# repo-root file that survives a branch switch (git never touches untracked files), so without
+# this rule it sits here as `??`, one `git add .` away from committing a 389KB binary this branch
+# does not even use. GLOB, because a rebuild against a RUNNING game cannot overwrite the mounted
+# .iwd and falls back to writing `mp_gunfight.iwd.new` beside it.
+mp_gunfight.iwd*
 
 # Offline research scratch: inflated map fastfiles (hundreds of MB of binary dumps) written by
 # tools/inflate_fastfile_zlib.ps1. The catalogs it FEEDS (tools/wager_spawns, tools/wager_entities)
