@@ -132,7 +132,12 @@ material_properties/*
 images/*
 !images/gf_camo_*.iwi
 # Build artifact: the .iwd is just images/*.iwi zipped for delivery. Regenerated on demand.
-mp_gunfight.iwd
+# GLOB, not the exact name: a RUNNING GAME holds the .iwd open (Plutonium mounts it and keeps the
+# handle), so make_iwd.ps1 falls back to writing `mp_gunfight.iwd.new` beside the live file for the
+# caller to swap in. The exact-name rule left that sibling untracked-but-unignored, i.e. permanent
+# `??` clutter that also invites committing a build output. Same near-miss-filename reasoning as
+# the secrets.local.* glob above.
+mp_gunfight.iwd*
 # ⚠ shelved/ is DELIBERATELY TRACKED (no rule here excludes it). Parked work-in-progress plus
 # its restore checklist -- it has to survive a clone to be worth anything. The ignore rules
 # above are path-anchored to the repo ROOT, so a shelved copy of images/ or materials/ is
