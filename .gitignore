@@ -131,6 +131,12 @@ material_properties/*
 # Spike scratch (gf_test.iwi and friends) stays ignored; only gf_camo_* is tracked.
 images/*
 !images/gf_camo_*.iwi
+# ⚠ A RESIDENT-OVERRIDE image is named after the STOCK asset it replaces, so it does NOT match the
+# gf_camo_* negation above and would be silently left behind. That is a DEPLOY bug, not a cosmetic
+# one: deploy.ps1 builds mp_gunfight.iwd on the box FROM this directory, so an untracked override
+# is absent from the VPS clone, absent from its .iwd, and the live server quietly serves the stock
+# texture while the laptop looks correct. Track every override explicitly.
+!images/camo_gold_*.iwi
 # Build artifact: the .iwd is just images/*.iwi zipped for delivery. Regenerated on demand.
 # GLOB, not the exact name: a RUNNING GAME holds the .iwd open (Plutonium mounts it and keeps the
 # handle), so make_iwd.ps1 falls back to writing `mp_gunfight.iwd.new` beside the live file for the

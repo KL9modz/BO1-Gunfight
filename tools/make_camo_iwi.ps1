@@ -74,6 +74,17 @@ $PRESETS = @{
     # no-op that reads as "no camo", while 235-250 keeps the bright look and still shows form.
     'white'   = @{ desc = 'flat near-white (the deliberate version of the missing-texture look)'; cols = @(@(228,232,236), @(240,243,246), @(250,252,255)) }
     'arctic'  = @{ desc = 'white/pale-grey arctic splinter'; cols = @(@(176,184,192), @(214,220,226), @(246,249,252)) }
+    # Second wave, 2026-08-16 (owner asked for blue/yellow/orange by name, plus creative extras).
+    # Same 3-tone dark->light rule as above. Generate these with DIFFERENT -Blobs values (see the
+    # per-preset notes) so the wave reads as different patterns, not one pattern recoloured.
+    'blue'    = @{ desc = 'cobalt / navy / near-black (requested)'; cols = @(@(10,16,40), @(24,60,130), @(64,124,205)) }
+    'yellow'  = @{ desc = 'wasp yellow / dark bronze (requested)'; cols = @(@(42,34,8), @(140,110,20), @(224,184,40)) }
+    'orange'  = @{ desc = 'burnt orange / ember (requested; distinct from SSC "Ember" which is red/black)'; cols = @(@(48,20,6), @(152,72,16), @(232,132,36)) }
+    'midnight'= @{ desc = 'near-black blues -- stealth look, reads almost solid at range (use -Blobs 10)'; cols = @(@(8,10,18), @(20,26,44), @(46,56,88)) }
+    'copper'  = @{ desc = 'copper / rust / bronze (use -Blobs 18)'; cols = @(@(32,16,10), @(112,60,30), @(184,112,62)) }
+    'forest'  = @{ desc = 'deep bottle greens -- the quiet one next to toxic (use -Blobs 12)'; cols = @(@(10,20,12), @(30,60,34), @(72,112,62)) }
+    'storm'   = @{ desc = 'blue-grey overcast (use -Blobs 22, finer grain)'; cols = @(@(24,28,34), @(70,80,92), @(132,142,156)) }
+    'bubblegum'= @{ desc = 'pink / magenta -- the one loud entry of this wave (use -Blobs 16)'; cols = @(@(62,20,42), @(172,70,122), @(242,142,192)) }
     'solid'   = @{ desc = 'single flat colour (use -Solid "R,G,B")'; cols = $null }
 }
 

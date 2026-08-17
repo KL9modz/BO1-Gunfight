@@ -113,6 +113,44 @@ material,gf_camo_splatter_mtl
 material,gf_camo_ember_mtl
 material,gf_camo_oilslick_mtl
 material,gf_camo_pastel_mtl
+# 35-38: AUTHENTIC TREYARCH camo art that MP never exposes. Found in the community
+# "completes-pack-full-dds" asset dump (21,587 .dds) -- these are Treyarch's own faction camos
+# (US/RUS variants across desert, jungle, urban, winter, plus German flecktarn and a digital
+# pattern), present in the game's texture set but referenced by NO row of stock weaponOptions.csv,
+# so no BO1 multiplayer player has ever seen them on a gun. Converted .dds -> .iwi by
+# tools/dds_to_iwi.ps1 (a header swap: both formats hold the same raw DXT blocks).
+# Far better suited to this mode's look than the novelty packs above.
+# ⚠ Four MORE were imported and then DROPPED after a mip-0 pixel-hash comparison proved them
+# byte-identical to stock camos: desert_us == desert_nevada(5), jungle_us == jungle_erdl(7),
+# winter_rus == winter_siberia(11), winter_us == winter_yukon(12). Treyarch shipped the same art
+# under both naming schemes. HASH-COMPARE before importing any "new" camo from an asset dump.
+material,gf_camo_desertrus_mtl
+material,gf_camo_urbanrus_mtl
+material,gf_camo_flecktarn_mtl
+material,gf_camo_digital_mtl
+# 39-46: second generated wave (2026-08-16; owner requested blue/yellow/orange by name, rest are
+# creative extras). Same tools/make_camo_iwi.ps1 pipeline as 17-24, but each preset was generated
+# with a DIFFERENT -Blobs pattern scale (10-22) and its own seed, so the wave reads as different
+# patterns rather than one pattern recoloured.
+material,gf_camo_blue_mtl
+material,gf_camo_yellow_mtl
+material,gf_camo_orange_mtl
+material,gf_camo_midnight_mtl
+material,gf_camo_copper_mtl
+material,gf_camo_forest_mtl
+material,gf_camo_storm_mtl
+material,gf_camo_bubblegum_mtl
+# GOLD IS STOCK, BY CHOICE -- and the capability that would change it is PROVEN, so read this
+# before assuming it cannot be done. Orion's camo_gold_c/_env/_spec were shipped in our .iwd under
+# their exact stock names and BO1's gold camo rendered as Orion in game (2026-08-16). A mod .iwd
+# OUTRANKS an image baked into common_mp.ff -- see docs/notes/custom-camos-bocl-architecture.md.
+# It was reverted because the owner wants gold kept, not because it failed.
+# ⚠ There is exactly ONE reflective camo slot in BO1, so this is gold OR Dark Matter/Orion, never
+#   both: a 3-map camo cannot live at a new index (a weaponOptions cell resolves an IMAGE name
+#   only -- tested, see docs/notes/custom-camos-bocl-architecture.md).
+# To do it again: drop the pack's camo_gold_* .iwi into images\ and add one carrier material per
+# map. Ship only the maps the pack actually provides -- Dark Matter has no _env, and leaving a
+# previous pack's env in place would pair its colour with the wrong reflection.
 localize,gf
 # Overrides two STOCK engine strings (a mod.ff localizedstring wins over the game's
 # own zone copy): the scoreboard "Score" header -> "Damage", and the between-rounds

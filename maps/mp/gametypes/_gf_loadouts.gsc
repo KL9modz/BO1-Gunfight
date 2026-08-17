@@ -381,9 +381,86 @@ gf_bumpReserveAmmo( weapon )
     self SetWeaponAmmoStock( weapon, ammo );
 }
 
+// ── THE CAMO ROTATION — this is the list to edit ────────────────────────────────────────────
+// Every loadout in the pool ships as camo -1 (Random), so THIS function decides which camos
+// players actually see. It used to be a bare `randomInt( 16 )`, which could only ever return
+// 0-15 and therefore made the mod's own custom camos unreachable no matter how many we shipped.
+//
+// TO ADD A CAMO: uncomment its line. TO REMOVE ONE: comment it out. That is the whole edit.
+// ⚠ An index here MUST have a row in mp/weaponOptions.csv AND a carrier material in mod.csv,
+//   or it renders flat WHITE (a missing camo image is white, not absent). Adding a NEW camo is
+//   therefore three files, not one — see docs/notes/custom-camos-bocl-architecture.md.
+// ⚠ Index 16 is deliberately absent: it is a diagnostic duplicate of 3 (Red).
+// Cost note: this runs at POOL BUILD only (53 loadouts x 2 slots, once per match), never per
+// spawn and never per frame, so rebuilding the small array here is free.
+gf_camoPool()
+{
+    p = [];
+    // ── Stock (shipped with the game) ──
+    p[p.size] = 0;    // None (base gun finish)
+    p[p.size] = 1;    // Dusty
+    p[p.size] = 2;    // Ice
+    p[p.size] = 3;    // Red
+    p[p.size] = 4;    // Olive
+    p[p.size] = 5;    // Nevada
+    p[p.size] = 6;    // Sahara
+    p[p.size] = 7;    // ERDL
+    p[p.size] = 8;    // Tiger
+    p[p.size] = 9;    // Berlin
+    p[p.size] = 10;   // Warsaw
+    p[p.size] = 11;   // Siberia
+    p[p.size] = 12;   // Yukon
+    p[p.size] = 13;   // Woodland
+    p[p.size] = 14;   // Flora
+    p[p.size] = 15;   // Gold
+    // ── Gunfight originals (generated, tools/make_camo_iwi.ps1) ──
+  p[p.size] = 17;   // Crimson    - dark red / oxblood
+  p[p.size] = 18;   // Teal       - teal / navy
+//  p[p.size] = 19;   // Urban      - grey splinter
+  p[p.size] = 20;   // Toxic      - acid green
+//  p[p.size] = 21;   // Sand       - desert khaki
+  p[p.size] = 22;   // Violet     - deep plum
+  p[p.size] = 23;   // White      - flat near-white
+//  p[p.size] = 24;   // Arctic     - pale grey splinter
+    // ── Novelty (community SSCv1 pack — loud, not military) ──
+//  p[p.size] = 25;   // Rainbow    - vertical rainbow stripes
+//  p[p.size] = 26;   // Monogram   - red repeating monogram
+//  p[p.size] = 27;   // Neon       - neon triangles
+//  p[p.size] = 28;   // Spiral     - rainbow spiral
+  p[p.size] = 29;   // Nebula     - purple/magenta cloud
+  p[p.size] = 30;   // Weave      - magenta/black weave
+  p[p.size] = 31;   // Splatter   - multicolour splatter
+//  p[p.size] = 32;   // Ember      - red/black
+  p[p.size] = 33;   // Oilslick   - green/purple swirl
+  p[p.size] = 34;   // Pastel     - pastel multicolour
+    // ── Gunfight wave 2 (generated; blue/yellow/orange were owner requests) ──
+  p[p.size] = 39;   // Blue       - cobalt / navy
+  p[p.size] = 40;   // Yellow     - wasp yellow / bronze
+  p[p.size] = 41;   // Orange     - burnt orange / ember
+//  p[p.size] = 42;   // Midnight   - near-black blues, stealth
+//  p[p.size] = 43;   // Copper     - copper / rust
+//  p[p.size] = 44;   // Forest     - deep bottle greens
+//  p[p.size] = 45;   // Storm      - blue-grey, finer grain
+//  p[p.size] = 46;   // Bubblegum  - pink / magenta (loud)
+    // ── Military (authentic Treyarch art MP never exposed) ──
+//  p[p.size] = 35;   // Desert RUS - dark olive/brown organic
+//  p[p.size] = 36;   // Urban RUS  - grey-blue horizontal
+//  p[p.size] = 37;   // Flecktarn  - fine German dots
+//  p[p.size] = 38;   // Digital    - chunky multicam blocks
+    return p;
+}
+
+// One roll from the curated set above.
+gf_rollCamo()
+{
+    p = gf_camoPool();
+    return p[ randomInt( p.size ) ];
+}
+
 // Build one loadout from weapon tokens only — name + HUD icon for every slot are
-// resolved by gf_wdb() from the tables in gf_buildWeaponDB(). camo: 0-15 pins a
-// camo index; -1 = fresh random roll each match (Minigun/M202 forced to stock).
+// resolved by gf_wdb() from the tables in gf_buildWeaponDB(). camo: a pinned index
+// (0-15 stock, 17+ custom); -1 = fresh random roll each match from gf_camoPool()
+// (Minigun/M202 forced to stock).
 // camoSec: the SECONDARY gun's camo, same rules, independent of camo. Optional 7th
 // arg -- if omitted (old 6-arg line) the secondary follows the primary's camo.
 //
@@ -424,11 +501,11 @@ gf_load( pri, sec, equip, lethal, tactical, camo, camoSec, perks )
     if ( !isDefined( camoSec ) )   // 6-arg call (pre-migration line): secondary follows primary
         camoSec = camo;
     if ( camo < 0 )
-        load["camo"] = randomInt( 16 );            // -1 = fresh per-match roll
+        load["camo"] = gf_rollCamo();              // -1 = fresh per-match roll, from the curated set
     else
         load["camo"] = camo;
     if ( camoSec < 0 )
-        load["camoSecondary"] = randomInt( 16 );   // independent secondary roll (only real-base secondaries show it)
+        load["camoSecondary"] = gf_rollCamo();     // independent secondary roll (only real-base secondaries show it)
     else
         load["camoSecondary"] = camoSec;
     // Special primaries reject a real camo — force stock so GiveWeapon doesn't no-op.

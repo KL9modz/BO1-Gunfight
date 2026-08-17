@@ -2372,7 +2372,9 @@ const SRV_SECTIONS = [
     { n:'gf_debug_spawns',        lbl:'Spawn Debug',          type:'tog', def:'0', tip:'gf_debug_spawns\nDraw spawn point entities + team assignments each round.' },
     { n:'gf_debug_hud_pool',      lbl:'HUD Pool Debug',       type:'tog', def:'0', tip:'gf_debug_hud_pool\nLog HUD element pool allocation counts each round.' },
     { n:'gf_debug_elem_probe',    lbl:'Elem Probe',           type:'tog', def:'0', tip:'gf_debug_elem_probe\nProbe available client HUD element slots; prints count.' },
-    { n:'gf_force_camo',          lbl:'Force Camo (test)',    type:'sel', def:'-1', opts:[['-1','Off'],['0','Default'],['1','Dusty'],['2','Ice'],['3','Red'],['4','OD Green'],['5','Desert Nevada'],['6','Desert Sahara'],['7','Jungle ERDL'],['8','Jungle Tiger'],['9','Urban German'],['10','Urban Warsaw'],['11','Winter Siberia'],['12','Winter Yukon'],['13','Woodland'],['14','Woodland Flora'],['15','Gold'],['17','GF Crimson'],['18','GF Teal'],['19','GF Urban'],['20','GF Toxic'],['21','GF Sand'],['22','GF Violet'],['23','GF White'],['24','GF Arctic'],['25','SSC Rainbow'],['26','SSC Monogram'],['27','SSC Neon'],['28','SSC Spiral'],['29','SSC Nebula'],['30','SSC Weave'],['31','SSC Splatter'],['32','SSC Ember'],['33','SSC Oilslick'],['34','SSC Pastel']], tip:'gf_force_camo\nDEV/TEST: force this camo index on BOTH guns every spawn, overriding each loadout’s own camo. Off = use the loadout camo. Handy for checking which secondaries actually RENDER camo (e.g. set Gold and watch the pistols). Works on the dedicated server too — no sv_cheats needed.' },
+    // Force Camo moved out of DEBUG 2026-08-16 -> DASHBOARD > GUNFIGHT, next to Loadout Slots.
+    // With 27 custom camos shipping it is a real cosmetic control, not a debug toggle, and nobody
+    // finds it buried here. Same dvar, same behaviour.
     { n:'gf_force_loadout',       lbl:'Force Loadout (-1=off)', type:'num', def:'-1', tip:'gf_force_loadout\nDEV/TEST: lock ONE loadout on every spawn instead of the round rotation, to inspect it without waiting. Value = index into the live (SHUFFLED) pool, 0-53 — NOT the editor row number, so cycle 0,1,2… and read the on-screen loadout HUD to find the one you want. -1 = off (normal rotation).' },
     // (duplicate Killcam row removed — the one control lives in GAME RULES)
     { n:'compass',                lbl:'Minimap',              type:'tog', def:'1', tip:'compass\n1 = show minimap, 0 = hide.' },
@@ -2464,6 +2466,32 @@ const GF_MATCH_VARS = [
       n:'scr_gf_lethals',             lbl:'Lethals',                  type:'tog', def:'1', tip:'scr_gf_lethals\nON (default): the round’s shared loadout hands out its lethal — frag / Semtex / Tomahawk.\nOFF: nobody gets a lethal at all, on any loadout, and the overview’s lethal slot is hidden.\n\nApplies on the NEXT SPAWN, so anyone already alive keeps theirs until the round ends. Nothing is rebuilt — each loadout still carries its lethal, the give is just skipped, so switching it back on restores exactly the same grenades.' },
     { n:'scr_gf_tacticals',           lbl:'Tacticals',                type:'tog', def:'1', tip:'scr_gf_tacticals\nON (default): the round’s shared loadout hands out its tactical — flash / stun / smoke / gas / decoy.\nOFF: nobody gets a tactical, and the overview’s tactical slot is hidden.\n\nApplies on the NEXT SPAWN (anyone already alive keeps theirs for the round). No pool rebuild — switching it back on restores the same tacticals.' },
     { n:'scr_gf_equipment',           lbl:'Equipment',                type:'tog', def:'1', tip:'scr_gf_equipment\nON (default): the round’s shared loadout hands out its equipment — claymore / C4 / camera spike / jammer / motion sensor — on Action Slot 1.\nOFF: nobody gets equipment, and the overview’s equipment slot is hidden.\n\nApplies on the NEXT SPAWN (anyone already alive keeps theirs for the round). Independent of the per-loadout "none" equipment setting — loadouts authored with no equipment stay empty either way. Bots never receive equipment regardless of this switch.' },
+
+    // Camo override. Options are OPTGROUPed ({grp:...} entries, same mechanism the Vision Set
+    // dropdown uses) because 44 flat entries is unreadable. Index 16 is deliberately absent -- it
+    // is the diagnostic control row (a duplicate of 3/Red) and would just confuse.
+    // ⚠ Keep this list in lockstep with mp/weaponOptions.csv AND the loadout editor's CAMO list;
+    //   an index here that has no row there silently renders nothing.
+    { grp:'Camo',
+      n:'gf_force_camo', lbl:'Force Camo (all players)', type:'sel', def:'-1',
+      opts:[['-1','Off — use each loadout’s own camo'],
+            {grp:'Stock'},['0','None'],['1','Dusty'],['2','Ice'],['3','Red'],['4','Olive'],['5','Nevada'],['6','Sahara'],['7','ERDL'],['8','Tiger'],['9','Berlin'],['10','Warsaw'],['11','Siberia'],['12','Yukon'],['13','Woodland'],['14','Flora'],['15','Gold'],
+            
+            {grp:'Gunfight'},['17','Crimson'],['18','Teal'],['19','Urban'],['20','Toxic'],['21','Sand'],['22','Violet'],['23','White'],['24','Arctic'],['39','Blue'],['40','Yellow'],['41','Orange'],['42','Midnight'],['43','Copper'],['44','Forest'],['45','Storm'],['46','Bubblegum'],
+            {grp:'Novelty'},['25','Rainbow'],['26','Monogram'],['27','Neon'],['28','Spiral'],['29','Nebula'],['30','Weave'],['31','Splatter'],['32','Ember'],['33','Oilslick'],['34','Pastel'],
+            // Treyarch's own SP/campaign camos, absent from every stock weaponOptions row.
+            // ⚠ Four more were imported and then DROPPED 2026-08-16 after a mip-0 pixel-hash
+            // comparison proved them byte-identical to stock camos: desert_us == desert_nevada(5),
+            // jungle_us == jungle_erdl(7), winter_rus == winter_siberia(11),
+            // winter_us == winter_yukon(12). Treyarch shipped the same art under both naming
+            // schemes. Hash-compare before importing any "new" camo from an asset dump.
+            {grp:'Military'},['35','Desert RUS'],['36','Urban RUS'],['37','Flecktarn'],['38','Digital'],
+            // Probe row, kept: a STOCK image at an index >15, so it separates "the index path
+            // broke" from "the image never arrived" if a custom camo ever misrenders.
+            // (A second probe at 44 named a MATERIAL instead of an image; it rendered WHITE, so
+            // camo cells are image-name lookups only. Row and option both removed 2026-08-16.)
+            {grp:'Diagnostic'},['16','16 · Red (control)']],
+      tip:'gf_force_camo\nForce ONE camo on both guns for every player, every spawn, overriding each loadout’s own camo. Off = normal per-loadout camos.\n\nStock 0-15 ship with the game. 17-46 are this mod’s custom camos, delivered to clients in mp_gunfight.iwd — a player only sees them once they have the current mod.ff AND that .iwd.\n\nApplies on the NEXT SPAWN (anyone already alive keeps their current gun until the round ends). Works on the dedicated server — no sv_cheats needed.' },
 
     { grp:'Spawns &amp; Round Time',
       n:'scr_gf_teamspawnmode',       lbl:'Team Spawn Mode',          type:'sel', def:'auto', opts:[['auto','Auto (5+/team → large)'],['large','Force Large'],['small','Force Small']], tip:'scr_gf_teamspawnmode\nauto = switch by the larger team (5+ on a team → large, hard-wired to the HUD skulls→readout switch); large/small = force the mode. (scr_gf_largemode_minplayers is retired.)' },
@@ -2853,7 +2881,17 @@ function srvRow(v, prefix, dEff, dPer, dVia) {
   } else if (v.type === 'btn') {
     ctrl = `<button class="b-gh b-sm ctrl" onclick="${v.act}">${v.btxt || 'Run'}</button>`;
   } else if (v.type === 'sel') {
-    const opts = v.opts.map(o => `<option value="${o[0]}"${o[0]===v.def?' selected':''}>${o[1]}</option>`).join('');
+    // An opts entry is normally [value, label]. It may instead be {grp:'Label'}, which opens an
+    // <optgroup> — needed once a dropdown gets long enough to be unreadable flat (the camo picker
+    // has 40). ⚠ Without this branch a {grp:} entry falls through to o[0]/o[1] and silently emits
+    // `<option value="undefined">undefined</option>`; it does NOT throw, so it survives review.
+    // (The gametype picker has its own separate optgroup loop in buildServerPanel — this is the
+    // one that serves ordinary settings rows.)
+    let grpOpen = false;
+    const opts = v.opts.map(o => {
+      if (o && o.grp) { const s = (grpOpen ? '</optgroup>' : '') + `<optgroup label="${o.grp}">`; grpOpen = true; return s; }
+      return `<option value="${o[0]}"${o[0]===v.def?' selected':''}>${o[1]}</option>`;
+    }).join('') + (grpOpen ? '</optgroup>' : '');
     const oc = v.also ? `sdvv2('${v.n}','${v.also}',this.value)` : `sdvv('${v.n}',this.value)`;
     ctrl = `<select id="${id}" class="ctrl" onchange="${oc}">${opts}</select>`;
   } else if (v.type === 'text') {

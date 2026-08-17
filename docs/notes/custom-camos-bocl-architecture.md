@@ -54,6 +54,58 @@ binary naming the image, so the linker just writes the reference; our molotov ca
 **stock** material whose source the linker then tried to resolve. Ship your own material and the
 `image,` row is not needed.
 
+## ⚠⚠ A mod `.iwd` image BEATS a resident zone image (proven 2026-08-16)
+
+**The big one, and it reaches far past camos.** Everything else here adds images under NEW names.
+This tested the opposite: ship an image whose name already exists inside the game's own
+`common_mp.ff`, and see which wins.
+
+> Staged the "Orion" pack's `camo_gold_c` / `_env` / `_spec` under their exact stock names, with
+> carrier materials, in `mp_gunfight.iwd`. **`gf_force_camo 15` rendered Orion, not gold.**
+
+So a mod-folder `.iwd` **takes precedence over the shipped zones**. Consequences:
+
+- **Any stock texture can be replaced server-side, for everyone**, with no client install — the
+  thing every community camo pack cannot do (they are per-player `storage\t5\images` replacements).
+- **The killcam "Connection Interrupted" PLUG ICON is now solvable.** It is material
+  `net_disconnect` → image `net`, has no dvar, and its position is hardcoded, so transparency was
+  always the only lever — and the blocker was purely "we cannot ship an image". We can. Ship a
+  transparent `net.iwi` (`make_material.ps1 -Payload transparent`; an all-zero DXT5 payload decodes
+  to alpha 0) plus a carrier material. See [[modff-cannot-embed-new-images]],
+  [[connection-interrupted-mitigations]].
+- 3-map camos become reachable **only as a gold REPLACEMENT** (see the cell-resolution finding
+  below): there is exactly one reflective camo slot in BO1 and overriding its three images changes
+  what it looks like. Gold **or** Dark Matter/Orion, never both.
+
+⚠ Cost discipline: an override ships the full image in the `.iwd`, which every new player downloads
+once. Orion's three 1024² maps alone took the `.iwd` from 517 KB to 1.48 MB. Worth it for a feature,
+never for a leftover experiment.
+
+## ⚠ A camo cell resolves an IMAGE NAME ONLY — never a material (tested 2026-08-16)
+
+Directly tested, because it decides whether a **3-map** camo (Dark Matter, Orion, Exclusion Zone —
+all built as gold replacements needing colorMap + envMap + specularMap) can live at a new index:
+
+> Row 17 names the **image** `gf_camo_crimson` → renders crimson.
+> Row 44 named the **material** `gf_camo_crimson_mtl` → rendered **WHITE**.
+
+Same art, same carrier material already in `mod.ff`, only the kind of name in the cell differed. So
+the cell is an image lookup; a material name simply misses and falls through to the missing-texture
+white. Both the row and its panel option were removed.
+
+**Consequences, and they are firm:**
+- A camo is **one image in one slot**, full stop. There is no way to attach an env/spec map from
+  the table, so **no 3-map camo can be added at a new index.**
+- Gold's own cell (`gold`) is neither an image in `raw/images` nor a material in `raw/materials`,
+  so it resolves to something resident and specially handled — not a pattern we can imitate.
+- Therefore Dark Matter/Orion/Exclusion Zone can only ever **replace gold at index 15**, never sit
+  beside it. Whether even that works depends on the separate question of whether a mod `.iwd` image
+  can beat a copy already baked into `common_mp.ff`.
+- This also independently explains **why BOCL forked 50 weapon files** rather than adding camo rows:
+  a per-gun repaint needs a real material, and the table cannot deliver one.
+
+⚠ Do not re-run this probe. The white result is unambiguous and the reasoning above depends on it.
+
 ## ⚠ Stock camos and BOCL camos are not the same kind of thing
 
 This is the distinction that makes the cheap route plausible, and it is easy to miss.
