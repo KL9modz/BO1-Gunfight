@@ -25,6 +25,10 @@ genuine deviation from an engine default, which is exactly what cfg is for per [
 (cfg = deviations only). The dead seed in gf.gsc was removed and replaced with a comment. Verified
 across a cold boot: post-restart live read = `fu`.
 
+> ⚠ The *value* has since changed — GF ships **`hard`** (Hardened) as of 0.8.3, alongside
+> `gf_bot_difficulty "stock"`. The finding above is about **ownership**, not the value: an
+> engine-registered dvar's default is cfg-owned because a GSC seed-if-empty can never fire on it.
+
 **How to apply:** before adding any seed-if-empty, prove the name is NOT engine-registered — bare rcon
 query: a typed `Domain is ...` + a default that doesn't mirror your own set = registered (seed is dead;
 cfg owns the default); `Domain is any text` = user-created (seed works). Same live-read discipline as

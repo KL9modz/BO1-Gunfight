@@ -64,7 +64,9 @@ Everything below is box-local. Group by group, with how it moves.
 | Mod tree | `...\storage\t5\mods\mp_gunfight\` | **From git** - `deploy.ps1 -Mod`. Nothing to carry. |
 
 ⚠ `dedicated.cfg` is the single largest carry risk, because it is where all the *tuned deviations*
-live and none of them are in git: `bot_difficulty fu`, the `gf_sv_botYawSpeed` / `...Ads` overrides,
+live and none of them are in git: `bot_difficulty hard` + `gf_bot_difficulty stock`, the
+`gf_sv_botYawSpeed` / `...Ads` overrides (which define the CUSTOM difficulty and are inert under
+`stock`),
 the four `g_fix_*` values, `sv_timeout 240`, `sv_connectTimeout 200`, `g_inactivity 300`,
 `scr_pregame_timelimit 0`, `scr_elevator_failsafe 1`, `scr_team_maxsize 6`, `party_minplayers`,
 `sv_hostname`, the 28-map `sv_maprotation`, `g_log`/`g_logSync`, and `sv_wwwBaseURL`. Diff it

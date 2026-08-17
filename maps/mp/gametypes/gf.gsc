@@ -300,7 +300,7 @@ onStartGameType()
         thread maps\mp\gametypes\_bot::init();
     }
 
-    // Default bot difficulty — OWNED BY dedicated.cfg (set bot_difficulty "fu"), NOT seeded here.
+    // Default bot difficulty — OWNED BY dedicated.cfg (set bot_difficulty "hard"), NOT seeded here.
     // bot_difficulty is a REAL ENGINE dvar (BO1 Combat Training), registered at process start as an
     // enum: default "normal", domain easy/normal/hard/fu (live rcon read 2026-07-17). It is
     // therefore NEVER empty, so the seed-if-empty that used to sit here was dead code that never
