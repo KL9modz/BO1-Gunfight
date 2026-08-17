@@ -74,8 +74,32 @@ function Invoke-Linker {
         $output | ForEach-Object { Write-Host $_ }
     }
 
-    if ($exitCode -ne 0 -or ($output -match "^ERROR:")) {
-        throw "linker_pc.exe failed for arguments: $($Arguments -join ' ')"
+    # The linker emits an ERROR line for every STOCK asset it cannot RE-BAKE, and it cannot
+    # re-bake any of them: the modtools raw\images holds ~186 sample textures, while every
+    # real game texture lives inside the shipped .ff zones. So the moment a mod asset
+    # references a stock material/model/FX (which a custom weapon def does, by the dozen),
+    # these appear. They are NON-FATAL by design -- the linker degrades to writing the asset
+    # REFERENCE by name, finishes with "link...compress...save...done.", and the CLIENT
+    # resolves that name at runtime from common_mp.ff where the asset is resident. This is
+    # the same reference-only behaviour documented for images in mod.csv's net_disconnect
+    # note, and CLAUDE.md already lists stock-FX image-missing errors as expected noise.
+    #
+    # ⚠ Treating them as failures is not merely noisy, it is WRONG and it silently truncates
+    # the build: the throw fired after the first (named-zone) link and skipped the second
+    # link entirely, so mod.ff was never refreshed while the named zone HAD been written
+    # (2026-08-15). Judge the run on fatal errors + a saved zone, not on the ERROR count.
+    $benign = "^ERROR: (image '.+' is missing|effect '.+' not found)"
+    $fatalErrors = @($output | Where-Object { $_ -match "^ERROR:" -and $_ -notmatch $benign })
+    $benignCount = @($output | Where-Object { $_ -match $benign }).Count
+    $saved = @($output | Where-Object { $_ -match "save\.\.\.done\." }).Count -gt 0
+
+    Write-Host "linker: exit=$exitCode zoneSaved=$saved fatal=$($fatalErrors.Count) benign=$benignCount (stock assets left as by-name references)"
+
+    if ($fatalErrors.Count -gt 0) {
+        throw "linker_pc.exe reported a fatal error for '$($Arguments -join ' ')': $($fatalErrors[0])"
+    }
+    if (-not $saved -and $exitCode -ne 0) {
+        throw "linker_pc.exe failed (exit $exitCode, no zone saved) for arguments: $($Arguments -join ' ')"
     }
 }
 
@@ -139,6 +163,17 @@ foreach ($line in $manifestLines) {
         # for 100% of its deliberately-registered materials). Stage it when we have one; the
         # missing-source path below just warns for stock materials, which ship none of ours.
         "material" { $assetsToStage.Add("materials\$name"); $assetsToStage.Add("material_properties\$name") }
+        # A `weapon,<name>` entry sources OUR <workspace>\weapons\<name> (a plain
+        # backslash-delimited WEAPONFILE text asset). The name MUST carry the `mp/` (or
+        # `sp/`) subdir -- that is the linker's own convention (all 775 stock `weapon,`
+        # lines in the game's zone_source use it) and a root-level name is rejected with
+        # "failed loading ... of type 'weapon'". Keep the FILENAME unique to us
+        # (gf_*) so staging can never overwrite a stock modtools source, which is what the
+        # backup/restore pass below guards.
+        # The linker pulls the weapon's models/anims/FX/materials transitively, so those need
+        # no entry of their own; only assets it cannot FIND a source for go missing, and
+        # image PIXELS are dropped regardless (see the net_disconnect note in mod.csv).
+        "weapon" { $assetsToStage.Add("weapons\$name") }
     }
 }
 
@@ -150,16 +185,62 @@ foreach ($line in $manifestLines) {
 # raw/ copy. Add it to the stage/clean list explicitly.
 $assetsToStage.Add("ui_mp/hud_gf_health.menu")
 
+# EVERY .iwi in our images\ is staged into the game's raw\images for the link, and cleaned
+# out again afterwards. ⚠ This is NOT the same thing as a mod.csv `image,` entry, and adding
+# one buys nothing: re-proven 2026-08-15 with a full valid triplet, the zone grew 32 bytes
+# instead of 65,536 and the sentinel dye never appeared -- this linker writes the image NAME
+# and drops the PIXELS. So these files are staged for exactly one reason: to satisfy the
+# linker's SOURCE LOOKUP while it loads a material.
+#
+# That lookup is not optional. Where an ordinary material degrades to a by-name reference
+# when its image is missing, some materials instead take the linker down hard -- exit
+# -2147483645 (STATUS_BREAKPOINT), no zone written. Two hit us, and the failure looks
+# nothing like a missing texture, so it is worth naming them:
+#   ~-gfxt_decal_scorch_mark  - a DECAL (mc/ + wc/ variants), pulled in by the molotov's
+#                               explosion FX weapon/molotov/fx_molotov_exp.
+#   hud_molotov               - the molotov's HUD icon image, pulled in by the stock
+#                               material hud_icon_molotov.
+# For the scorch mark the pixels are throwaway (the real one is resident in common_mp.ff and
+# resolves at runtime); for hud_molotov they are the actual payload, which has to reach the
+# client BESIDE mod.ff -- see the molotov icon block in mod.csv.
+foreach ($iwi in (Get-ChildItem -LiteralPath (Join-Path $WorkspaceRoot "images") -Filter *.iwi -File -ErrorAction SilentlyContinue)) {
+    $assetsToStage.Add("images/$($iwi.Name)")
+}
+
 # Staging can OVERWRITE a stock file that already lives in the game's raw/ (a material is the
 # case that matters: we ship a patched copy of the stock net_disconnect). The cleanup pass below
 # deletes staged files, which for those would silently REMOVE a stock modtools source from the
 # game install. So back up anything that already existed and restore it instead of deleting.
 $stockBackups = @{}
+# ⚠ Paths WE ACTUALLY WROTE. Cleanup must key off this, never off $assetsToStage: an asset
+# we merely REFERENCE (a mod.csv `material,` row for a stock material we ship no source for)
+# is skipped by staging, so it records no backup -- and the old cleanup then saw the STOCK
+# file sitting at that path, found no backup for it, and DELETED IT from the game install.
+# That is how raw\materials\hud_icon_molotov and its material_properties twin were destroyed
+# on 2026-08-15, which then made the linker assert `fileSize > 0` in a modal dialog (the
+# "hang"). Only ever remove a file this script created.
+$stagedPaths = @{}
 $backupRoot = Join-Path ([IO.Path]::GetTempPath()) "gf_build_stock_backup"
 if (Test-Path -LiteralPath $backupRoot) { Remove-Item -Recurse -Force -LiteralPath $backupRoot }
 
+# ⚠⚠ NEVER PIPE THIS SCRIPT INTO `Select-Object -First N` (or any pipeline-stopping cmdlet).
+# PowerShell implements early pipeline exit by THROWING StopUpstreamCommandsException into the
+# upstream command, which kills this script outright -- `finally` and all. The cleanup below then
+# never runs and every staged file is left in the game's raw\ tree, shadowing the stock install.
+# Worse, the NEXT run sees those leftovers, records them as "stock", and RESTORES them permanently:
+# that is how raw\mp\weaponOptions.csv ended up overwritten with the mod's own copy (2026-08-16).
+# Capture the output instead, then filter it AFTER the script has finished:
+#     $log = & powershell -File tools\build_ff.ps1 2>&1 | Out-String
+#     $log -split "`n" | Where-Object { $_ -match 'linker:|Built:' }
+# `Where-Object` is safe (it never stops the pipeline); `Select-Object -First` is not.
 $stagedCount = 0
-foreach ($asset in ($assetsToStage | Select-Object -Unique)) {
+# ⚠ Normalise BEFORE de-duplicating. Entries arrive in both slash styles ("images/x.iwi"
+# from a hand-written add, "images\x.iwi" from a mod.csv row), and a raw -Unique treats
+# those as two assets: the file is staged, then the second pass sees the copy WE JUST WROTE,
+# records it as a "stock" file to preserve, and the cleanup RESTORES it into the game tree
+# instead of deleting it -- a silent leak of exactly the kind this whole pass exists to
+# prevent (2026-08-15).
+foreach ($asset in ($assetsToStage | ForEach-Object { Convert-AssetPath $_ } | Select-Object -Unique)) {
     $source = Find-SourceFile $asset
     if (!$source) {
         Write-Warning "No local source for $asset; leaving any stock/raw copy in place."
@@ -178,6 +259,7 @@ foreach ($asset in ($assetsToStage | Select-Object -Unique)) {
     }
 
     Copy-StagedFile $source $destination
+    $stagedPaths[$assetPath] = $true
     $stagedCount++
     Write-Host "staged $asset"
 }
@@ -200,28 +282,31 @@ try {
 }
 finally {
     Pop-Location
-}
 
-# Remove staged files from raw/ so they don't override the stock game between builds.
-# Plutonium reads raw/ as a fallback over IWD files, even without a mod loaded.
-$cleanedCount = 0
-$restoredCount = 0
-foreach ($asset in ($assetsToStage | Select-Object -Unique)) {
-    $assetPath = Convert-AssetPath $asset
-    $stagedPath = Join-Path $RawRoot $assetPath
-    if (!(Test-Path -LiteralPath $stagedPath)) { continue }
+    # Remove staged files from raw/ so they don't override the stock game between builds.
+    # Plutonium reads raw/ as a fallback over IWD files, even without a mod loaded.
+    # ⚠ This MUST run in `finally`. It used to sit after the try/finally, so a linker
+    # FAILURE threw straight past it and left every staged file shadowing the stock game
+    # install -- silently, until someone noticed the game behaving like the mod with no mod
+    # loaded. A failed build is exactly when cleanup matters most (2026-08-15).
+    $cleanedCount = 0
+    $restoredCount = 0
+    foreach ($assetPath in @($stagedPaths.Keys)) {
+        $stagedPath = Join-Path $RawRoot $assetPath
+        if (!(Test-Path -LiteralPath $stagedPath)) { continue }
 
-    if ($stockBackups.ContainsKey($assetPath)) {
-        # We overwrote a stock file -- put the original back rather than deleting it.
-        Copy-Item -Force -LiteralPath $stockBackups[$assetPath] -Destination $stagedPath
-        $restoredCount++
-    } else {
-        Remove-Item -Force -LiteralPath $stagedPath
-        $cleanedCount++
+        if ($stockBackups.ContainsKey($assetPath)) {
+            # We overwrote a stock file -- put the original back rather than deleting it.
+            Copy-Item -Force -LiteralPath $stockBackups[$assetPath] -Destination $stagedPath
+            $restoredCount++
+        } else {
+            Remove-Item -Force -LiteralPath $stagedPath
+            $cleanedCount++
+        }
     }
+    if (Test-Path -LiteralPath $backupRoot) { Remove-Item -Recurse -Force -LiteralPath $backupRoot }
+    Write-Host "Cleaned $cleanedCount staged file(s) from raw/; restored $restoredCount stock file(s)."
 }
-if (Test-Path -LiteralPath $backupRoot) { Remove-Item -Recurse -Force -LiteralPath $backupRoot }
-Write-Host "Cleaned $cleanedCount staged file(s) from raw/; restored $restoredCount stock file(s)."
 
 $builtModFf = Resolve-RequiredPath (Join-Path $ZoneEnglishRoot "mod.ff") "Built mod.ff"
 Copy-StagedFile $builtModFf (Join-Path $ModRoot "mod.ff")
