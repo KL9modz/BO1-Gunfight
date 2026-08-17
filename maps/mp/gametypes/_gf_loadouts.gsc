@@ -709,6 +709,8 @@ gf_buildWeaponDB()
     gf_reg( "frag_grenade_mp",    "Frag",     "hud_grenadeicon" );
     gf_reg( "sticky_grenade_mp",  "Semtex",   "hud_icon_sticky_grenade" );
     gf_reg( "hatchet_mp",         "Tomahawk", "hud_hatchet" );
+    // SHELVED 2026-08-15: the Molotov lived here. Everything it needs is parked under
+    // shelved/molotov/ with a restore checklist. See docs/notes/custom-weapon-modff-pipeline.md.
 
     // ── Tactical ──
     gf_reg( "flash_grenade_mp",      "Flash", "hud_us_flashgrenade" );

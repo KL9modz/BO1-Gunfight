@@ -188,6 +188,9 @@ onPrecacheGameType()
     PrecacheItem( "tabun_gas_mp"        );
     PrecacheItem( "nightingale_mp"      );
 
+    // SHELVED 2026-08-15: PrecacheItem( "gf_molotov_mp" ) lived here. The whole molotov is
+    // parked under shelved/molotov/ with a restore checklist.
+
     // Finger Gun easter egg primary. "fingergun_mp" is not a real weapon (an
     // invalid token was relying on the engine's silent fallback, which never
     // actually gives anything without precache — same GiveWeapon-no-op as the

@@ -28,6 +28,9 @@ rawfile,maps/mp/gametypes/gf.txt
 # the map zone's own copy at compile time -- if the map .ff wins this is a harmless no-op.
 rawfile,clientscripts/mp/mp_silo.csc
 fx,misc/fx_ui_flagbase_gf_white
+# SHELVED 2026-08-15: the molotov's `weapon,mp/gf_molotov_mp` + `image,hud_molotov` +
+# `material,hud_icon_molotov` lines lived here. Parked under shelved/molotov/ with a restore
+# checklist; the pipeline findings are in docs/notes/custom-weapon-modff-pipeline.md.
 # NOTE: the "Connection Interrupted" PLUG ICON is NOT hidden, and cannot be from here.
 # Blanking CGAME_CONNECTIONINTERUPTED (localizedstrings/cgame.str) kills only the TEXT. The
 # icon is material `net_disconnect` -> colorMap image `net` (Q3's inherited gfx/2d/net
