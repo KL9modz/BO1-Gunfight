@@ -12,6 +12,18 @@ menufile,ui_mp/hud_gf.txt
 # ⚠ Do NOT also loadMenu this from another of our menufiles -- double registration
 # kills the whole menu system (see the hud_gf_health.menu note in build_ff.ps1).
 menufile,ui_mp/main.menu
+# PAUSE-SCREEN OVERRIDE: fork of STOCK ui_mp/scriptmenus/class.menu, whose `class`
+# menuDef is the in-match pause screen (it shows `pausedbkgnd` + blurWorld). The ONLY
+# edit is swapping stock's `#include "ui/scroller.inc"` for our own ticker -- the
+# engine ownerdraw there renders PLUTONIUM'S promo ("Follow us on Twitter
+# @PlutoniumMod"), which is fetched at runtime and has no dvar, so replacing the
+# itemDef is the only lever. 13 stock menus include that scroller; each one we want
+# costs its own fork (endofgame.menu + the lobby menus are still stock).
+# ⚠ SAFE ONLY BECAUSE class.menu IS A SCRIPTMENU AND IS NOT IN ui_mp/menus.txt.
+# Verified 2026-08-16. A menu that is both loadMenu'd and registered here double-
+# registers and kills the ENTIRE menu system (every gametype vanishes from the UI).
+# Re-check that before adding any further stock menu to this list.
+menufile,ui_mp/scriptmenus/class.menu
 # Empty stub: the engine hard-looks-up ui_mp/mod.txt on every mod load and BLOCKS
 # ~4.6s when it's missing (first-join black-screen contributor). Loads no menus.
 menufile,ui_mp/mod.txt

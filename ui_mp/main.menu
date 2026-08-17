@@ -210,9 +210,21 @@
 
 		// ----------------- BEGIN Scroller --------------------------
 		// GF: stock's #include "ui/scroller.inc" is DELIBERATELY DROPPED. It is an
-		// engine ownerdraw (UI_SCROLLING_MESSAGE / _CATEGORY) fed by the Demonware
-		// scrolling-news channel, which carries nothing on Plutonium. We reuse its
-		// geometry and its stock bar art and put our own copy in it.
+		// engine ownerdraw (UI_SCROLLING_MESSAGE 302 / _CATEGORY 303) whose content
+		// we cannot set. We reuse its geometry and its stock bar art and put our
+		// own copy in it.
+		// ⚠ CORRECTED 2026-08-16: an earlier version of this comment said the
+		// channel "carries nothing on Plutonium". FALSE -- Plutonium feeds it their
+		// own promos (seen live: category "COD", text "Follow us on Twitter
+		// @PlutoniumMod"). So dropping the include REPLACES A PLUTONIUM AD WITH
+		// OURS, it does not fill dead space. The text is NOT in t5mp.exe (searched:
+		// "PlutoniumMod" / "Follow us on Twitter" both absent), so it is fetched at
+		// runtime by the injected client module -- same delivery as the launcher's
+		// ad rotation ([[plutonium-menu-ads-not-moddable]]) and equally unsettable
+		// from our side. Replacing the ITEMDEF is the only lever, which is why this
+		// works here and why changing the SAME ticker on any other screen means
+		// forking THAT screen's .menu too (class.menu, endofgame.menu, the lobby
+		// menus -- 13 stock files include ui/scroller.inc).
 		// ----------------- END Scroller ----------------------------
 
 		// ================= BEGIN gunfight.us ad rotation ====================
