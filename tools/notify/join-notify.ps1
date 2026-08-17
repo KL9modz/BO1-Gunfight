@@ -181,6 +181,83 @@ function Get-Region($addr) {
   return $geo
 }
 
+# ── Connect count ("their 7th connect") ───────────────────────────────────────
+# Counted straight out of conn_logger's day-files (storage\t5\logs\players_*.log) - the box's
+# only COMPLETE connect record. That is what makes it a lifetime total: this notifier's own
+# in-memory state knows nothing before its last restart, and a deploy recycles it routinely.
+# Keyed on GUID (stable across name/IP changes), CONNECT lines only:
+#   * ONLINE lines are conn_logger's cold-start batch ("who was already here"), so counting
+#     them would hand a +1 to whoever happened to be online during a service restart.
+#   * LEFT lines are the other half of a session already counted at its CONNECT.
+# Cost: one pass over every day-file per JOIN alert (day-files are a few hundred lines and a
+# join is a rare event) - deliberately no cache, so the number can't drift from the log.
+# Returns $null - NOT 0 - when the log dir/day-files are absent (a laptop run, a box where
+# conn_logger never ran): with no record at all, every joiner would read as a first-timer,
+# so the alert omits the bit entirely instead of claiming something false.
+$script:ConnLogDir = Join-Path (Resolve-T5Root) 'logs'
+# How recent a logged CONNECT must be to be THIS join. conn_logger diffs admin.json every 5s
+# and we poll every pollMs (12s default), so the line for the join we are announcing may or
+# may not be on disk yet - a straight count would read N one time and N+1 the next for the
+# same event. So: count what is logged, and add the current join only when the log does not
+# already carry it.
+$script:ConnCountFreshSec = 120
+
+function Get-ConnectCount($guid) {
+  $g = ([string]$guid).Trim()
+  if (-not $g -or $g -eq '0') { return $null }        # guid 0 = still connecting: identifies nobody
+  if (-not (Test-Path -LiteralPath $script:ConnLogDir)) { return $null }
+  $files = @(Get-ChildItem (Join-Path $script:ConnLogDir 'players_*.log') -ErrorAction SilentlyContinue)
+  if ($files.Count -eq 0) { return $null }
+  $rx = [regex]('^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+CONNECT\s+ip=\S+\s+name=".*?"\s+guid=' +
+                [regex]::Escape($g) + '(?:\s|$)')
+  $n = 0
+  $newest = $null
+  foreach ($f in $files) {
+    # FileShare::ReadWrite on purpose - conn_logger has today's file open for append on its own
+    # 5s cycle, and a sharing violation here would silently UNDERCOUNT rather than fail loudly.
+    $fs = $null; $sr = $null
+    try {
+      $fs = New-Object System.IO.FileStream($f.FullName, [System.IO.FileMode]::Open,
+                                            [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+      $sr = New-Object System.IO.StreamReader($fs)
+      while ($null -ne ($line = $sr.ReadLine())) {
+        $m = $rx.Match($line)
+        if (-not $m.Success) { continue }
+        $n++
+        $t = [datetime]::MinValue
+        if ([datetime]::TryParseExact($m.Groups[1].Value, 'yyyy-MM-dd HH:mm:ss',
+              [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$t)) {
+          if ($null -eq $newest -or $t -gt $newest) { $newest = $t }
+        }
+      }
+    } catch { continue }
+    finally { if ($sr) { $sr.Dispose() }; if ($fs) { $fs.Dispose() } }
+  }
+  if ($null -eq $newest -or ((Get-Date) - $newest).TotalSeconds -gt $script:ConnCountFreshSec) { $n++ }
+  return $n
+}
+
+# 1 -> "1st", 2 -> "2nd", 11 -> "11th" (the teens are the reason for the %100 branch).
+function Format-Ordinal($n) {
+  $i = [int]$n
+  $h = $i % 100
+  if ($h -ge 11 -and $h -le 13) { return "${i}th" }
+  switch ($i % 10) {
+    1 { return "${i}st" }
+    2 { return "${i}nd" }
+    3 { return "${i}rd" }
+    default { return "${i}th" }
+  }
+}
+
+# The bit that lands at the END of a join alert. A brand-new player is spelled out rather than
+# rendered "1st connect" - a first-time joiner is the one count worth reading at a glance.
+function Format-ConnectCount($n) {
+  if ($null -eq $n -or [int]$n -lt 1) { return '' }
+  if ([int]$n -eq 1) { return 'first connect' }
+  return (Format-Ordinal $n) + ' connect'
+}
+
 # Human-readable session length. 45 -> "45s", 1830000ms -> "30m 30s", 3720000 -> "1h 2m".
 function Format-Duration($ms) {
   $s = [int][Math]::Max(0, [Math]::Round($ms / 1000))
@@ -191,28 +268,32 @@ function Format-Duration($ms) {
   if ($rm) { return "${h}h ${rm}m" } else { return "${h}h" }
 }
 
-# location + ping -> the two bits of a JOIN alert's BODY ("<flag> City, State, Country  |  42ms").
-# Everything scannable (who / how many / where) is in the TITLE - this is the detail underneath.
+# location + ping + connect count -> the bits of a JOIN alert's BODY
+# ("<flag> City, State, Country  |  42ms  |  7th connect"). Everything scannable (who / how
+# many / where) is in the TITLE - this is the detail underneath, and the count sits LAST.
 # A ping >= 999 is the connect-time placeholder (no real RTT settled yet at the moment we
 # first see the joiner in `status`), so it's dropped rather than shown as a misleading
 # "999ms" — join alerts simply omit the ping until it's a real reading.
-function Get-DetailBits($loc, $ping) {
+function Get-DetailBits($loc, $ping, $count) {
   $bits = New-Object System.Collections.ArrayList
   if ($loc) { [void]$bits.Add([string]$loc) }
   if ($null -ne $ping -and $ping -lt 999) { [void]$bits.Add("${ping}ms") }
+  $c = Format-ConnectCount $count
+  if ($c) { [void]$bits.Add($c) }
   return $bits
 }
-# Never returns '' — an empty ntfy message renders as a bodyless alert. Both bits drop out only
-# when geoLookup is off (or the IP is LAN/loopback) AND the ping is still the placeholder.
-function Get-JoinBody($loc, $ping) {
-  $bits = Get-DetailBits $loc $ping
+# Never returns '' — an empty ntfy message renders as a bodyless alert. All three bits drop out
+# only when geoLookup is off (or the IP is LAN/loopback), the ping is still the placeholder, and
+# there are no day-files to count from.
+function Get-JoinBody($loc, $ping, $count) {
+  $bits = Get-DetailBits $loc $ping $count
   if ($bits.Count -gt 0) { return ($bits -join '  |  ') }
   return 'No location data'
 }
 # The console log takes the place WITHOUT the flag: this lands in a text log on a Windows box,
 # where flag emoji don't render.
-function Get-LogDetail($place, $ping) {
-  $bits = Get-DetailBits $place $ping
+function Get-LogDetail($place, $ping, $count) {
+  $bits = Get-DetailBits $place $ping $count
   if ($bits.Count -gt 0) { return "  [" + ($bits -join ', ') + "]" }
   return ''
 }
@@ -334,10 +415,13 @@ function Do-Tick($cfg) {
     if (-not $script:known.ContainsKey($k)) {
       $geo = [pscustomobject]@{ flag = ''; place = '' }
       if ($cfg.geoLookup) { $geo = Get-Region $p.addr }   # <=2s, cached per IP
-      # Body leads with the flag: "🇺🇸 San Diego, California, United States  |  42ms".
+      # Body leads with the flag and ends with the count:
+      # "🇺🇸 San Diego, California, United States  |  42ms  |  7th connect".
       $loc  = ((@($geo.flag, $geo.place) | Where-Object { $_ }) -join ' ')
-      $body = Get-JoinBody $loc $p.ping
-      $logd = Get-LogDetail $geo.place $p.ping          # log gets the place without the flag
+      $cnt  = $null
+      if ($cfg.connectCount) { $cnt = Get-ConnectCount $p.guid }   # day-file scan; $null = no record
+      $body = Get-JoinBody $loc $p.ping $cnt
+      $logd = Get-LogDetail $geo.place $p.ping $cnt     # log gets the place without the flag
       $ptag = Count-Tag $cur.Count                      # 👤 / 👥 by TOTAL players online
       if ($wasEmpty -and -not $firstDone) {
         $firstDone = $true
@@ -399,6 +483,7 @@ $cfg = [pscustomobject]@{
   serverName      = Get-CfgVal $fileCfg 'GF_SERVER_NAME' 'serverName' 'Gunfight'
   quiet           = As-Bool (Get-CfgVal $fileCfg 'GF_QUIET_START' 'quietStart' $false) $false
   geoLookup       = As-Bool (Get-CfgVal $fileCfg 'GF_GEO_LOOKUP' 'geoLookup' $true) $true
+  connectCount    = As-Bool (Get-CfgVal $fileCfg 'GF_CONNECT_COUNT' 'connectCount' $true) $true
 }
 $pw = Get-CfgVal $fileCfg 'GF_RCON_PW' 'password' ''
 if (-not $pw) { $pw = Read-RconPw }
@@ -413,6 +498,7 @@ Write-Log "  poll       $($cfg.pollMs)ms   leaves=$($cfg.notifyLeaves)  firstJoi
 Write-Log "  issues     $(if ($cfg.notifyIssues) { "on (red alert after $($script:IssueFailStreak) failed polls, re-alert $($script:IssueReAlertMins)min)" } else { 'off' })"
 Write-Log "  heartbeat  $(if ($cfg.heartbeatMins -gt 0) { "$($cfg.heartbeatMins) min" } else { 'off' })"
 Write-Log "  geo        $(if ($cfg.geoLookup) { 'on (ip-api.com)' } else { 'off' })"
+Write-Log "  connects   $(if ($cfg.connectCount) { "on ($($script:ConnLogDir))" } else { 'off' })"
 
 if (-not $cfg.ntfyTopic) { Write-Host "`nFATAL: no ntfy topic set. Put ntfyTopic in config.json or env GF_NTFY_TOPIC.`n"; exit 1 }
 if (-not $cfg.password)  { Write-Host "`nFATAL: no rcon_password (not in config/env, not found in dedicated.cfg).`n"; exit 1 }

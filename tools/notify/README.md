@@ -31,10 +31,20 @@ Disturb; the heartbeat is **min** priority so it lands silently as a health chec
 
 **Details in each alert:** every message carries the current `map / gametype`. A **join**
 alert also adds the player's **region** (city, state, and a country flag emoji — geolocated
-from their IP) and **ping** on a second line, e.g. `San Diego, CA 🇺🇸  |  84ms`. The ping is
-omitted when it's still the connect-time placeholder (999), so a fresh joiner's line is often
-just the region. A **leave** alert reports how long they were on, e.g. `PlayerX left after
-34m 10s`.
+from their IP), their **ping**, and how many times they have **connected** before, e.g.
+`San Diego, CA 🇺🇸  |  84ms  |  7th connect`. The ping is omitted when it's still the
+connect-time placeholder (999), so a fresh joiner's line is often just the region. A **leave**
+alert reports how long they were on, e.g. `PlayerX left after 34m 10s`.
+
+> **Connect count** (`connectCount`, on; PowerShell notifier only) is counted per GUID out of
+> conn_logger's day-files (`storage\t5\logs\players_*.log`) — the box's only complete connect
+> record, so it is a **lifetime** total rather than "since this notifier last restarted". A
+> first-time player reads `first connect`. Only `CONNECT` lines count: `ONLINE` lines are
+> conn_logger's cold-start batch, so counting them would credit whoever happened to be online
+> during a service restart. The current join is added on top when the log doesn't carry it yet
+> (conn_logger writes on its own 5s cycle, so the line may land after the alert). With no day-
+> files at all — a laptop run, or a box where conn_logger never ran — the bit is **omitted**
+> rather than reported as a first connect.
 
 > **Region lookup** is one HTTP GET to `ip-api.com` per unique IP, cached for the process
 > lifetime with a 2s timeout — so it never delays a push by more than 2s, and not at all for
@@ -125,6 +135,7 @@ Unregister-ScheduledTask -TaskName "GF Join Notifier" -Confirm:$false
 | `serverName` | `GF_SERVER_NAME` | `Gunfight` | Shown in the push title |
 | `quietStart` | `GF_QUIET_START` | `false` | Skip the "notifier online" push at launch |
 | `geoLookup` | `GF_GEO_LOOKUP` | `true` | Add region (city, state, country flag) to join alerts via `ip-api.com`; `false` = off (no third-party IP lookup) |
+| `connectCount` | `GF_CONNECT_COUNT` | `true` | End a join alert with the player's lifetime connect count (`7th connect` / `first connect`), counted from the `players_*.log` day-files; `false` = off |
 
 **Currently deployed on the VPS:** topic `gunfight`, `notifyLeaves`/`notifyFirstJoin`/
 `notifyEmpty` on, `heartbeatMins` 60. Running as scheduled task "GF Join Notifier".

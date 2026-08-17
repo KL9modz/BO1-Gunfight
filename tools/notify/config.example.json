@@ -15,5 +15,7 @@
   "heartbeatMins": 0,
   "serverName": "Gunfight",
   "quietStart": false,
-  "geoLookup": true
+  "geoLookup": true,
+  "_connectCount": "End a join alert with the player's lifetime connect count ('7th connect' / 'first connect'), counted per GUID from the storage\\t5\\logs\\players_*.log day-files conn_logger writes. Omitted entirely when there are no day-files.",
+  "connectCount": true
 }
