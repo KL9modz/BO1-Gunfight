@@ -241,8 +241,12 @@ function validEntry( lo )
     for ( const key of [ "camo", "camoSec" ] )
     {
         const c = lo[key];
-        if ( !Number.isInteger( c ) || c < -1 || c > 15 )
-            return key + " must be an integer -1..15 (got " + JSON.stringify( c ) + ")";
+        // Upper bound is 34, not 15: 0-15 are stock, 16 is the diagnostic control row and 17-24
+        // are our custom camos (mp/weaponOptions.csv + the carrier materials in mod.csv). ⚠ Raise
+        // this in lockstep with the last gf_camo_* row, or the editor silently refuses to save a
+        // camo the game renders perfectly well.
+        if ( !Number.isInteger( c ) || c < -1 || c > 34 )
+            return key + " must be an integer -1..34 (got " + JSON.stringify( c ) + ")";
     }
     return validPerks( lo.perks );
 }

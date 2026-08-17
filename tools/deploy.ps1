@@ -296,6 +296,33 @@ function Get-ReleaseModFf {
     Write-Host "Got mod.ff ($size bytes)."
 }
 
+function New-ModIwd {
+    # mp_gunfight.iwd carries every custom IMAGE (the weapon camos) to clients. mod.ff CANNOT:
+    # this linker writes an image reference by name and drops the pixel data, so the .iwi files
+    # must travel beside it. Plutonium mounts a mod-folder .iwd - proven in the client log, which
+    # lists `mp_gunfight.iwd (N files)` in the FS search path - and FastDL must then serve it, or
+    # every custom camo renders flat WHITE on everyone but the box that built it.
+    #
+    # Built HERE on the box rather than shipped: it is a pure zip of the TRACKED images\*.iwi, so
+    # it needs no linker (the VPS has none) and stays a build artifact like mod.ff. Building it
+    # into $RepoRoot BEFORE the robocopy is deliberate - that is what carries it into $ModDest,
+    # which is what puts it in the engine's client download set.
+    $imgDir = Join-Path $RepoRoot "images"
+    $maker  = Join-Path $RepoRoot "tools\make_iwd.ps1"
+    if (!(Test-Path -LiteralPath $imgDir) -or !(Test-Path -LiteralPath $maker)) {
+        Write-Host "No images\ or make_iwd.ps1 - skipping .iwd build (no custom images in this build)."
+        return
+    }
+    if (@(Get-ChildItem -LiteralPath $imgDir -Filter *.iwi -File -ErrorAction SilentlyContinue).Count -eq 0) {
+        Write-Host "images\ holds no .iwi - skipping .iwd build."
+        return
+    }
+    if ($DryRun) { Write-Host "(dry run) would build mp_gunfight.iwd from images\*.iwi"; return }
+
+    & powershell -NoProfile -File $maker -ModRoot $RepoRoot
+    if ($LASTEXITCODE -ne 0) { throw "make_iwd.ps1 failed (exit $LASTEXITCODE) - refusing to deploy a table whose camo images no client can fetch" }
+}
+
 function Publish-FastDL {
     # Copy the (clean, release) mod.ff into the IIS web root so connecting clients
     # auto-download it: <WebDest>\mods\<ModName>\mod.ff, fetched by the engine at
@@ -330,6 +357,26 @@ function Publish-FastDL {
     $size = (Get-Item -LiteralPath $fastDlFf).Length
     Write-Host "Published mod.ff ($size bytes) -> $fastDlFf"
     Write-Host "Client fetch URL: <sv_wwwBaseURL>/mods/$ModName/mod.ff"
+
+    # The .iwd rides ALONGSIDE mod.ff. Without it clients get our weaponOptions table (baked into
+    # mod.ff) naming camo images they cannot fetch, and every custom camo renders flat WHITE - the
+    # exact failure seen on 2026-08-16 before the carrier materials + delivery were sorted.
+    # ⚠ Copy it BYTE-IDENTICAL and never compress it server-side (no bz2): a mismatch against the
+    #   server's own copy makes the client fail the download with "Invalid file".
+    # ⚠ IIS must serve the .iwd MIME type or it 404s exactly like .ff did. One-time, same shape as
+    #   the .ff line in the header comment above:
+    #     appcmd set config /section:staticContent /+"[fileExtension='.iwd',mimeType='application/octet-stream']"
+    $iwdName = "$ModName.iwd"
+    $srcIwd  = Join-Path $RepoRoot $iwdName
+    if (Test-Path -LiteralPath $srcIwd) {
+        $dstIwd = Join-Path $fastDlDir $iwdName
+        Copy-Item -LiteralPath $srcIwd -Destination $dstIwd -Force
+        $isize = (Get-Item -LiteralPath $dstIwd).Length
+        if ($isize -ne (Get-Item -LiteralPath $srcIwd).Length) { throw "FastDL $iwdName size mismatch - clients would reject it" }
+        Write-Host "Published $iwdName ($isize bytes) -> $dstIwd"
+    } else {
+        Write-Host "No $iwdName to publish (no custom images in this build)."
+    }
     Write-Host "If clients still can't download: confirm dedicated.cfg has a NON-empty" -ForegroundColor Yellow
     Write-Host "sv_wwwBaseURL and IIS serves the .ff MIME type (see docs/VPS_DEPLOY.md Phase 8)." -ForegroundColor Yellow
 }
@@ -519,6 +566,9 @@ function Deploy-Mod {
     Write-Host ""
     Write-Host "== MOD =="
     Get-ReleaseModFf
+    # Must run BEFORE the robocopy below - that mirror is what carries the .iwd into $ModDest,
+    # and the engine builds its client download set from the live mod folder.
+    New-ModIwd
 
     # Mirror the tracked tree (GSC/menus/strings/csv) + the release mod.ff into
     # the live mod folder. Exclude .git, the website, build junk, and the game

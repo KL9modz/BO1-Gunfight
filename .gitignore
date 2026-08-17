@@ -116,6 +116,24 @@ tools/ff_extract/
 # writes the triplet at the repo root for build_ff staging. Transient until a spike asset
 # goes to production -- the repo IS the mod folder, so a committed images/ deploys to the
 # VPS and FastDL. Lift these deliberately at that point, never by accident.
-materials/
-material_properties/
-images/
+# Same treatment as images\ below: the camo CARRIER materials are production sources (mod.csv
+# registers them, and without them the camo images never load), so they are tracked. Spike
+# scratch under these dirs stays ignored.
+materials/*
+!materials/gf_camo_*_mtl
+material_properties/*
+!material_properties/gf_camo_*_mtl
+# ⚠ images\ is NO LONGER blanket-ignored -- the custom weapon camos went to production
+# 2026-08-16 and their .iwi files are the SOURCE OF TRUTH (nothing regenerates them but
+# tools/make_camo_iwi.ps1 with the exact seed/preset, and mp_gunfight.iwd is built FROM them).
+# Written as `images/*` + a negation, not `images/`, because git cannot re-include a file whose
+# PARENT DIRECTORY is excluded -- with the old `images/` line the `!` below would never match.
+# Spike scratch (gf_test.iwi and friends) stays ignored; only gf_camo_* is tracked.
+images/*
+!images/gf_camo_*.iwi
+# Build artifact: the .iwd is just images/*.iwi zipped for delivery. Regenerated on demand.
+mp_gunfight.iwd
+# ⚠ shelved/ is DELIBERATELY TRACKED (no rule here excludes it). Parked work-in-progress plus
+# its restore checklist -- it has to survive a clone to be worth anything. The ignore rules
+# above are path-anchored to the repo ROOT, so a shelved copy of images/ or materials/ is
+# unaffected by them.
