@@ -172,11 +172,18 @@ function Build-Staging {
     # would silently omit a camo added since.
     & (Join-Path $PSScriptRoot "make_iwd.ps1") -ModRoot $ModRoot -Verify
     if ($LASTEXITCODE -ne 0) { throw "make_iwd.ps1 failed -- refusing to ship a release whose camos would render white" }
-    # make_iwd falls back to '<name>.new' when a RUNNING game holds the .iwd open, so take that
-    # copy when it exists -- it is the fresh one.
-    $iwdSrc = Join-Path $ModRoot "mp_gunfight.iwd.new"
-    if (-not (Test-Path -LiteralPath $iwdSrc)) { $iwdSrc = Join-Path $ModRoot "mp_gunfight.iwd" }
-    if (-not (Test-Path -LiteralPath $iwdSrc)) { throw "mp_gunfight.iwd was not produced -- refusing to ship a release whose camos would render white" }
+    # make_iwd falls back to '<name>.new' when a RUNNING game holds the .iwd open. Take whichever
+    # of the two is NEWEST -- ⚠ not simply '.new when present': make_iwd does not delete a stale
+    # '.new' on a later UNLOCKED run (it only removes the file it is about to write), so a
+    # '.new'-always rule would silently ship bytes from an older build. Timestamp is the only
+    # honest discriminator, and shipping stale camo pixels fails exactly like shipping none.
+    $iwdCandidates = @("mp_gunfight.iwd.new", "mp_gunfight.iwd") |
+        ForEach-Object { Join-Path $ModRoot $_ } |
+        Where-Object { Test-Path -LiteralPath $_ } |
+        Get-Item | Sort-Object LastWriteTime -Descending
+    if (-not $iwdCandidates) { throw "mp_gunfight.iwd was not produced -- refusing to ship a release whose camos would render white" }
+    $iwdSrc = $iwdCandidates[0].FullName
+    Write-Host ("  staging {0} ({1:N0} B, {2})" -f (Split-Path -Leaf $iwdSrc), $iwdCandidates[0].Length, $iwdCandidates[0].LastWriteTime)
     Copy-Item -Force -LiteralPath $iwdSrc -Destination (Join-Path $StageMod "mp_gunfight.iwd")
 
     $gscFiles = Get-ChildItem -Recurse -File -LiteralPath (Join-Path $ModRoot "maps") -Filter *.gsc
