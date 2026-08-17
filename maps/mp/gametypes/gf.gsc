@@ -369,7 +369,11 @@ onStartGameType()
     gf_waitForLoadingClients();
     // #strip-end
 
-    level thread gf_nativePrematchTicker();      // engine matchStartTimer is silent — re-add the per-second tick (start only now, post-hold)
+    // The mod-owned prematch countdown (number + beep + vision + partial lock release; see
+    // _gf_rounds.gsc). Threaded here — after the strip-marked hold above — so the dev lobby pass
+    // (which never returns from gf_waitForLoadingClients) threads no countdown, and it is
+    // registered on prematch_over BEFORE the engine's startGame() fires it at t≈0.
+    level thread gf_prematchCountdown( level.gf_roundGen );
 }
 
 // ─── onStartGameType stage 1: engine dvar forcing + hook/callback installs ─────────────────────
@@ -511,7 +515,10 @@ gf_roundRulesSetup()
     // fill and slow loaders out of the match. Keep the stock ceiling; gf_tryActivateRound
     // closes grace EARLY (the moment every teamed player has spawned, bounded at 8s)
     // so the "everyone dead but round can't end" window never outlives the spawn wave.
-    level.gracePeriod = 15;
+    // ⚠ The VALUE is assigned in gf_roundPresentation, after level.gf_prematchLen: with
+    // level.prematchPeriod pinned to 0 the stock gracePeriod() thread starts its game-time wait
+    // at t≈0, so the ceiling must also cover the mod-owned countdown (gf_prematchLen + the
+    // stock 15). Presentation is stage 5 and this is stage 2, with no yield in between.
 
     // FINAL-KILLCAM SLOW MOTION — the killcam TIMESCALE FLOOR, not a toggle. Full story (and the
     // wall-clock measurements behind the 0.6) in gf_killcamFloor() / gf_killcamSlowmoClamp(),
@@ -555,13 +562,14 @@ gf_roundRulesSetup()
 // an unregistered dvar; the strip-marked blocks inside belong to systems the public build drops.
 gf_roundSeedDvars()
 {
-    // Per-round prematch via the engine's native countdown. The engine zeroes level.prematchPeriod
-    // every round (Callback_StartGameType) and only refills it once per match, so we set it HERE
-    // each round: onStartGameType runs after the engine's prematch randomization and before
-    // startGame()'s prematchPeriod(), so this exact value drives the countdown every round (>=2
-    // required for the engine to render the timer). The native prematch freezes controls (incl.
-    // firing), plays the intro VO, shows the objective hint, and hides the round timer until
-    // prematch_over — gf_tryActivateRound waits for prematch_over before starting our round clock.
+    // Per-round prematch is MOD-OWNED (gf_prematchCountdown, _gf_rounds.gsc): level.prematchPeriod
+    // is pinned to 0 in gf_roundPresentation so the engine's own wait(1.0)-driven countdown never
+    // runs — a gettime() clock draws the number/beep/vision instead, immune to the once-per-round
+    // map_restart frame hitch that made the native countdown run in slow motion. The stock
+    // first-spawn presentation (freeze/sting/splash/VO/hint) is preserved by re-asserting
+    // level.inPrematchPeriod for the countdown window; players get a PARTIAL lock (look/ADS/stance/
+    // switch/melee live; no move/jump/fire/offhand) in place of the stock full freeze.
+    // gf_tryActivateRound still waits for prematch_over — the countdown re-fires it at GO.
     // #strip-begin - match-start machinery (dev/main only; stripped from public release).
     //
     // Everything seeded below belongs to a system the PUBLIC build does not have: the
@@ -571,7 +579,7 @@ gf_roundSeedDvars()
     // no bots — so seeding their dvars would only publish knobs that nothing reads.
     //
     // The prematch LENGTH is the one exception worth keeping tunable here: the public build
-    // pins it to the fixed 20s/7s assigned in gf_roundPresentation (see level.prematchPeriod),
+    // pins it to the fixed 20s/7s assigned in gf_roundPresentation (see level.gf_prematchLen),
     // while dev/VPS gets these two dvars so the RCON panel can retune it live.
     gf_seedDvar( "scr_gf_match_prematch_seconds", "20" );   // first round of the match (longer intro)
     gf_seedDvar( "scr_gf_prematch_seconds", "7" );          // every later round
@@ -764,26 +772,44 @@ gf_roundPresentation()
     game["strings"]["round_limit_reached"] = "Round Limit Reached";
 
     // roundsplayed == 0 is the match's first round (longer intro); later rounds get the shorter one.
-    // These fixed values ARE the public build's prematch — it has no dvars for this (see the
-    // strip-marked seeds above), so the countdown, intro VO, freeze and gun-rack all still play,
-    // they are just not retunable. Dev/VPS overrides both from scr_gf_*_prematch_seconds below.
+    // These fixed values ARE the public build's prematch length — it has no dvars for this (see the
+    // strip-marked seeds above). They feed the MOD-OWNED countdown (gf_prematchCountdown), not the
+    // engine's — level.prematchPeriod is pinned to 0 below.
     if ( game["roundsplayed"] == 0 )
     {
-        level.prematchPeriod = 20;
+        level.gf_prematchLen = 20;
     }
     else
     {
-        level.prematchPeriod = 7;
-        // matchStartTimer setText's game["strings"]["match_starting_in"]; round 1 keeps the engine's
-        // "MATCH STARTING IN", rounds 2+ say "ROUND BEGINS IN" (raw string is fine — no rebuild).
+        level.gf_prematchLen = 7;
+        // gf_prematchCountdown setText's game["strings"]["match_starting_in"]; round 1 keeps the
+        // engine's "MATCH STARTING IN", rounds 2+ say "ROUND BEGINS IN" (raw string — no rebuild).
         game["strings"]["match_starting_in"] = "ROUND BEGINS IN";
     }
     // #strip-begin - RCON-tunable prematch length (dev/main only; the public build keeps the fixed 20/7 above)
     if ( game["roundsplayed"] == 0 )
-        level.prematchPeriod = maps\mp\gametypes\_globallogic_utils::getValueInRange( getDvarInt( "scr_gf_match_prematch_seconds" ), 2, 30 );
+        level.gf_prematchLen = maps\mp\gametypes\_globallogic_utils::getValueInRange( getDvarInt( "scr_gf_match_prematch_seconds" ), 2, 30 );
     else
-        level.prematchPeriod = maps\mp\gametypes\_globallogic_utils::getValueInRange( getDvarInt( "scr_gf_prematch_seconds" ), 2, 20 );
+        level.gf_prematchLen = maps\mp\gametypes\_globallogic_utils::getValueInRange( getDvarInt( "scr_gf_prematch_seconds" ), 2, 20 );
     // #strip-end
+
+    // MOD-OWNED PREMATCH (both builds). Pinning the engine's countdown to 0 makes startGame()'s
+    // prematchPeriod() run yield-free: matchStartTimerSkip (instant map vision — same frame as our
+    // mpIntro re-set, no visible flash), an EMPTY unfreeze loop (nobody has spawned during this
+    // callback), and prematch_over fires at t≈0. gf_prematchCountdown (threaded at the tail of
+    // onStartGameType) consumes that fire, re-asserts level.inPrematchPeriod so every spawn during
+    // the countdown still runs stock's prematch branch verbatim (freeze/sting/splash/VO/hint),
+    // swaps the stock full freeze for the partial lock, and re-fires prematch_over at GO for the
+    // mod's waiters. Pregame note: isPregameGameStarted() forces prematchPeriod=10 BEFORE this
+    // callback runs (_globallogic.gsc:1698), so this 0 wins and the warmup handoff round gets our
+    // countdown too (the warmup itself never runs gf.gsc).
+    level.prematchPeriod = 0;
+
+    // Grace ceiling (see gf_roundRulesSetup): the stock gracePeriod() thread now starts its
+    // game-time wait at t≈0, so the stock 15 must ride on top of the countdown length or grace
+    // would close mid-countdown. gf_closeGraceEarly (GO+3s) stays the real close; this is only
+    // the engine-side ceiling.
+    level.gracePeriod = level.gf_prematchLen + 15;
 }
 
 // ─── onStartGameType stage 6: round state flags, objective text, XP, loadouts, spawns, objects ─
@@ -802,6 +828,13 @@ gf_roundWorldSetup()
     // activator that survived a lobby map_restart(false) can never strand or double-start a
     // round (see gf_tryActivateRound in _gf_rounds.gsc — replaces the old load-gate endon).
     level.gf_roundGen = gettime();
+
+    // Mod-owned prematch window flag — TRUE from here (before any spawn can happen; the engine
+    // threads startGame only after this callback returns) until gf_prematchGo latches it false.
+    // The partial lock keys off THIS, not level.inPrematchPeriod: the engine sets that false at
+    // its t≈0 prematchPeriod() pass and gf_prematchCountdown re-asserts it one notify later, so
+    // there is a ~1-frame window where inPrematchPeriod lies while this flag doesn't.
+    level.gf_prematchActive = true;
 
     gf_rocketOncePerMatch();   // Cosmodrome: stop the launch re-firing every round
 

@@ -507,20 +507,375 @@ gf_resetTimeScale()
     SetTimeScale( 1.0, gettime() );
 }
 
-// The engine's native prematch (matchStartTimer) draws the countdown number but plays NO sound.
-// Mirror a per-second tick so the prematch has the same audible cadence as the overtime tick.
-// Loops while level.inPrematchPeriod, so it self-stops at prematch_over.
-gf_nativePrematchTicker()
+// ─── Mod-owned prematch countdown ───────────────────────────────────────────
+// Replaces the engine's matchStartTimer (and the old gf_nativePrematchTicker beep that mirrored
+// it). WHY OWNED: the native countdown is a wait(1.0) loop, and wait() counts GAME time — the
+// once-per-round map_restart frame hitch (~700-750ms, 99.3% of all GF_HITCH entries) dilates it,
+// so the number visibly ticked in slow motion. This clock recomputes the remaining time from
+// gettime() every pass, so a hitch degrades to one skipped display value and GO lands on the
+// wall clock. (Limitation, accepted: gettime() is wall-clock across FRAME HITCHES but scales
+// under SetTimeScale — no timescale runs during prematch; gf_resetTimeScale in onStartGameType
+// clears killcam leaks.)
+//
+// HOW: gf.gsc pins level.prematchPeriod = 0, so stock startGame()'s prematchPeriod() runs
+// yield-free (matchStartTimerSkip; an EMPTY unfreeze loop — nobody has spawned yet) and fires
+// prematch_over at t≈0. This thread — registered on the notify before startGame even runs —
+// consumes that fire and re-asserts level.inPrematchPeriod, so stock spawn code still runs its
+// prematch branch verbatim for every spawn in the window (full freeze, round-1 spawn sting,
+// faction splash, gametype VO, objective hint, score bar) and BotWarfare's own
+// while(inPrematchPeriod) AI park keeps working. The stock full freeze is swapped for the
+// PARTIAL lock one notify later (gf_prematchLockOnSpawn). At GO the stock end-of-prematch tail
+// is mirrored (unfreeze/enableWeapons/hint/intro VO) and prematch_over is re-fired for the mod's
+// waiters — gf_tryActivateRound's inPrematchPeriod guard holds, so its commit runs unchanged.
+//
+// ⚠ NEVER endon("prematch_over") here: gf_prematchGo notifies it, and a GSC notify kills every
+// thread endon-ing it INCLUDING the caller. endon("game_ended") fires at every round end, so a
+// copy never outlives its round; the gen token covers the lobby's map_restart(false), which
+// fires no game_ended and lets threads survive.
+gf_prematchCountdown( myGen )
 {
     level endon( "game_ended" );
 
+    // Consume the engine's t≈0 fire (same guard shape as gf_tryActivateRound).
+    if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
+        level waittill( "prematch_over" );
+
+    if ( gf_roundGenChanged( myGen ) || !gf_prematchIsActive() )
+        return;
+
+    // ── Re-assert block (yield-free, same frame as the engine fire) ─────────
+    level.gf_enginePrematchFired = true;   // marker for consumers that must anchor on the ENGINE's
+                                           // t≈0 fire, never our GO re-fire (gf_disableRadiationDoors)
+    level.inPrematchPeriod = true;    // stock spawn presentation + bot AI park stay live
+    level.inGracePeriod    = true;    // belt-and-braces; the real ceiling is the gracePeriod raise in gf.gsc
+    // Gate the native time-limit machinery NOW: with prematch_over fired at t≈0 the engine
+    // threads timeLimitClock immediately, and on a 42s timeLimit its match_ending_soon band /
+    // warning VO / expiry would all run DURING the countdown. pauseTimer (idempotent) sets
+    // timerStopped, which gates the whole loop and freezes game["timepassed"] at ~0;
+    // timeLimitOverride early-returns stock checkTimeLimit. gf_startRoundClock re-does both at
+    // GO — harmless.
+    level.timeLimitOverride = true;
+    maps\mp\gametypes\_globallogic_utils::pauseTimer();
+    setGameEndTime( 0 );              // keep the HUD round timer hidden through the countdown
+
+    // Kill jump-strafe travel for the whole window (see the partial-lock block comment below).
+    // ⚠ LEVEL-WIDE via the replicated jump_* family, NOT per-player AllowJump: AllowJump has ZERO
+    // hits under raw/maps/mp (only frontend/_laststand/_zombiemode, i.e. SP/ZM), and a builtin
+    // absent from the MP VM is an `unknown function` that fails the WHOLE server at COMPILE time —
+    // a runtime guard cannot save it. jump_height is MP-proven (stock _globallogic.gsc:87 sets it
+    // for oldschool) and replicates, which is why gf_applyJumpFatigue already drives
+    // jump_slowdownEnable exactly this way. Restored by gf_prematchGo and by the loop's bail path.
+    // ⚠ Never snapshot a non-positive value: if a path ever leaves OUR 0 in the dvar, the next
+    // countdown would "restore" 0 and nobody could jump for the rest of the match. Falling back to
+    // the engine default is self-healing — the one cost is that an ABORTED countdown (admin ends
+    // the round mid-window, killing this thread via endon) resets a custom jump_height to 39.
+    savedJump = getDvarFloat( "jump_height" );
+    if ( savedJump <= 0 )
+        savedJump = 39;                       // engine default
+    level.gf_savedJumpHeight = savedJump;
+    setDvar( "jump_height", 0 );
+
+    // Same server frame as matchStartTimerSkip's map-vision set, so no visible flash expected.
+    visionSetNaked( "mpIntro", 0 );
+
+    // Stock-look HUD (mirrors matchStartTimer, _globallogic.gsc:396): server elements — no
+    // per-client reliable commands; setValue only (no configstring churn); one setText per
+    // round with constant content, exactly what stock burned.
+    matchStartText = createServerFontString( "extrabig", 1.5 );
+    matchStartText setPoint( "CENTER", "CENTER", 0, -40 );
+    matchStartText.sort = 1001;
+    matchStartText setText( game["strings"]["match_starting_in"] );
+    matchStartText.foreground = false;
+    matchStartText.hidewheninmenu = true;
+
+    timerElem = createServerFontString( "extrabig", 2.2 );
+    timerElem setPoint( "CENTER", "CENTER", 0, 0 );
+    timerElem.sort = 1001;
+    timerElem.color = ( 1, 1, 0 );
+    timerElem.foreground = false;
+    timerElem.hidewheninmenu = true;
+    timerElem maps\mp\gametypes\_hud::fontPulseInit();
+
+    endTime = gettime() + int( level.gf_prematchLen * 1000 );
+    level.gf_prematchEnd = endTime;
+    level thread gf_prematchLockWatchdog( myGen, endTime );
+
     tickObj = spawn( "script_origin", ( 0, 0, 0 ) );
-    while ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
+    lastShown = -1;
+    blended = false;
+    while ( gettime() < endTime )
     {
-        tickObj playSound( gf_countdownTickAlias() );
-        wait 1.0;
+        // A stale copy (lobby restart) or a watchdog-forced GO ends the display quietly.
+        if ( gf_roundGenChanged( myGen ) || !gf_prematchIsActive() )
+        {
+            timerElem destroyElem();
+            matchStartText destroyElem();
+            tickObj delete();
+            gf_restoreJumpHeight();   // never leave the window's 0 behind on a bail
+            return;
+        }
+        secs = int( ( endTime - gettime() + 999 ) / 1000 );   // ceil: len..1
+        if ( secs != lastShown )
+        {
+            lastShown = secs;
+            timerElem setValue( secs );
+            timerElem thread maps\mp\gametypes\_hud::fontPulse( level );
+            tickObj playSound( gf_countdownTickAlias() );   // the beep the silent stock countdown lacked
+            if ( secs == 2 && !blended )
+            {
+                // T-2s: 3s blend out of mpIntro — stock's schedule, but into the GF look
+                // (this call replaced gf_applyRoundVision; same key helpers, so the RCON
+                // vision override and the explicit "normal" key still resolve).
+                blended = true;
+                visionSetNaked( gf_visionSetForKey( gf_roundVisionKey() ), 3.0 );
+            }
+        }
+        wait 0.05;
     }
+    if ( !blended )   // unreachable at the clamped 2s minimum length; paranoia net
+        visionSetNaked( gf_visionSetForKey( gf_roundVisionKey() ), 1.0 );
+
+    timerElem destroyElem();
+    matchStartText destroyElem();
     tickObj delete();
+
+    gf_prematchGo( myGen );
+}
+
+// True while the mod-owned prematch window is open. The partial lock keys off THIS flag, not
+// level.inPrematchPeriod — the engine sets that false at its t≈0 pass and the countdown
+// re-asserts it a notify later, so inPrematchPeriod lies for ~1 frame; gf_prematchActive is set
+// in onStartGameType before any spawn can happen and only gf_prematchGo latches it false.
+gf_prematchIsActive()
+{
+    return ( isDefined( level.gf_prematchActive ) && level.gf_prematchActive );
+}
+
+// Undo the countdown's jump lock. Idempotent and safe to call on any exit path; a no-op if the
+// snapshot was never taken (the countdown bailed before the re-assert block, or map_restart wiped
+// level.* out from under a stale copy).
+gf_restoreJumpHeight()
+{
+    if ( !isDefined( level.gf_savedJumpHeight ) )
+        return;
+    setDvar( "jump_height", level.gf_savedJumpHeight );
+    level.gf_savedJumpHeight = undefined;
+}
+
+// GO — the mod's copy of stock prematchPeriod()'s tail (_globallogic.gsc:1539-1554), idempotent
+// and yield-free. Reached from the countdown loop OR the lock watchdog (never both: the
+// gf_prematchActive latch is the first write). Order matters and mirrors stock: locks released
+// and controls unfrozen BEFORE prematch_over fires (stock unfreezes at :1543, then startGame
+// fires the notify at :1507), so players are live the moment the round clock starts.
+gf_prematchGo( myGen )
+{
+    if ( gf_roundGenChanged( myGen ) || !gf_prematchIsActive() )
+        return;
+    level.gf_prematchActive = false;   // idempotency latch
+    level.inPrematchPeriod  = false;
+
+    gf_restoreJumpHeight();            // give jumping back before anyone is unfrozen
+
+    players = level.players;
+    for ( i = 0; i < players.size; i++ )
+    {
+        player = players[i];
+        player gf_releasePrematchLock();
+        player maps\mp\_utility::freeze_player_controls( false );   // idempotent undo of the stock :193 freeze
+        player enableWeapons();
+
+        // Stock objective-hint push (humans that actually spawned; bots have no client).
+        if ( isDefined( player.pers["isBot"] ) && player.pers["isBot"] )
+            continue;
+        hintMessage = maps\mp\gametypes\_globallogic_ui::getObjectiveHintText( player.pers["team"] );
+        if ( !isDefined( hintMessage ) || !isDefined( player.hasSpawned ) || !player.hasSpawned )
+            continue;
+        player setClientDvar( "scr_objectiveText", hintMessage );
+        player thread maps\mp\gametypes\_hud_message::hintMessage( hintMessage );
+    }
+
+    // Intro VO: the engine's own fire ran at t≈0 against a pre-spawn player list, so re-fire at
+    // the moment it stock-fired relative to the countdown. If live testing hears a DOUBLE VO on
+    // rounds 2+ (players can be listed at t≈0 after map_restart(true)), delete these two lines.
+    maps\mp\gametypes\_globallogic_audio::leaderDialog( "offense_obj", game["attackers"], "introboost" );
+    maps\mp\gametypes\_globallogic_audio::leaderDialog( "defense_obj", game["defenders"], "introboost" );
+
+    // LAST: wake the mod's waiters (gf_tryActivateRound commit, wager-zone door/light swap).
+    // The engine's own consumers already took the t≈0 fire; only mod threads see this one.
+    level notify( "prematch_over" );
+}
+
+// The "countdown thread died → everyone locked forever" net. gettime()-anchored like everything
+// else; 10s past the scheduled GO it forces the release. Cannot double-fire — gf_prematchGo
+// latches gf_prematchActive on its first line.
+gf_prematchLockWatchdog( myGen, endTime )
+{
+    level endon( "game_ended" );
+
+    while ( true )
+    {
+        wait 1;
+        if ( gf_roundGenChanged( myGen ) || !gf_prematchIsActive() )
+            return;
+        if ( gettime() > endTime + 10000 )
+        {
+            logPrint( "GF_PREMATCH: watchdog forced GO (countdown thread died)\n" );
+            gf_prematchGo( myGen );
+            return;
+        }
+    }
+}
+
+// ─── Prematch partial lock ──────────────────────────────────────────────────
+// During the countdown a player CANNOT move (WASD translation OR jump-strafe), shoot, throw
+// grenades, or deploy equipment — but CAN look, ADS, crouch, prone, switch weapons, and melee
+// (deliberate: the knife stays live). Stock freezeControls is all-or-nothing (it kills
+// look/ADS/switch too), so the lock is composed instead:
+//   setMoveSpeedScale(0)      — zeroes GROUND translation, leaves view/stance alone
+//   jump_height 0 (level-wide) — jump was in the allow-list, but setMoveSpeedScale only caps
+//                               GROUND speed: a jump still gives an air phase and T5 grants
+//                               baseline air control, so jump-strafing let players drift across
+//                               the map. T5 exposes no per-player air-accel lever, so the only
+//                               way to stop travel-by-jumping is to stop the jump. ⚠ The obvious
+//                               per-player call, AllowJump(false), is NOT USABLE: it has zero
+//                               hits under raw/maps/mp (frontend/_laststand/_zombiemode only), so
+//                               it is SP/ZM-side and would be an `unknown function` failing the
+//                               whole server at compile time. Set once per window in
+//                               gf_prematchCountdown; see that site.
+//   DisableOffhandWeapons()   — grenades + equipment throws (stock last-stand idiom)
+//   ammo-zero (clip+stock)    — the only "no fire, keep ADS+switch" mechanism the engine has
+//                               (FreezeControls is all-or-nothing with no AllowLook escape, and
+//                               the Allow* family has no fire member); snapshots are restored
+//                               exactly at GO. Covers equipment too (belt-and-braces with the
+//                               offhand disable).
+//   ammoCounterHide 1 (push)  — hides the stock weaponinfo HUD block for the window so the
+//                               zeroed clips can't render as "0 / NO AMMO" (the warning is the
+//                               CG_PLAYER_WEAPON_LOW_AMMO_WARNING ownerdraw inside the menu that
+//                               !BIT_AMMO_COUNTER_HIDE gates, raw/ui_mp/hud.menu:322/460). A
+//                               plain runtime client dvar — stock zombies toggles it the same
+//                               way (_zombiemode.gsc:2360/3684); same pushable class as the
+//                               lobby's "compass" push. Restored to 0 at GO, when the counter
+//                               reappears already showing the restored full ammo.
+// Accepted cosmetic: the trigger still dry-clicks during the countdown.
+// Applied to bots too (symmetric; their AI is separately parked by inPrematchPeriod); the
+// ammoCounterHide pushes are humans-only (bots have no client). Self-healing if a GO push is
+// ever missed (disconnect mid-countdown, admin endround): the next countdown's lock re-pushes 1
+// and its GO pushes 0.
+gf_prematchLockOnSpawn()
+{
+    self endon( "disconnect" );
+
+    // Stock's ENTITY notify at _globallogic_spawn.gsc:307 — fires after giveLoadout (:189) and
+    // the stock prematch freeze (:193), so the loadout is complete when the snapshot is taken.
+    self waittill( "spawned_player" );
+
+    if ( !gf_prematchIsActive() )
+        return;
+
+    if ( isDefined( self.gf_prematchLocked ) && self.gf_prematchLocked )
+    {
+        // A RE-spawn inside the same countdown (e.g. an admin pteamforce move): giveLoadout just
+        // granted a fresh full loadout, so the previous spawn's lock state is stale — drop it
+        // WITHOUT restoring (those weapons are gone) and re-apply against the fresh spawn, or the
+        // flag guard would leave the new ammo live for the rest of the countdown.
+        self.gf_prematchLocked  = false;
+        self.gf_savedMoveScale  = undefined;
+    }
+
+    self gf_applyPrematchLock();
+}
+
+gf_applyPrematchLock()
+{
+    if ( isDefined( self.gf_prematchLocked ) && self.gf_prematchLocked )
+        return;
+
+    // Captured AFTER _class.gsc:1676's per-spawn apply, so the restore is exact (class system
+    // scales this by movementSpeedModifier — Lightweight etc. — every spawn).
+    // ⚠ Never snapshot a non-positive scale: if the engine carries moveSpeedScale across a
+    // respawn, a re-lock could read back OUR OWN 0 (and _class.gsc:1676 COMPOUNDS onto the
+    // current value, so an inherited 0 stays 0) — restoring that at GO would freeze the player
+    // for the match. A legit scale is always > 0, so falling back to 1 is self-healing.
+    saved = self getMoveSpeedScale();
+    if ( !isDefined( saved ) || saved <= 0 )
+        saved = 1;
+    self.gf_savedMoveScale = saved;
+    self setMoveSpeedScale( 0 );
+
+    // NOTE: the jump lock is LEVEL-WIDE (jump_height 0, set once in gf_prematchCountdown) rather
+    // than a per-player call here — see the reasoning at that site. Nothing to do per player.
+
+    self DisableOffhandWeapons();
+
+    weps = self getweaponslist();
+    self.gf_lockWeapons = [];
+    self.gf_lockClip    = [];
+    self.gf_lockStock   = [];
+    for ( i = 0; i < weps.size; i++ )
+    {
+        w = weps[i];
+        self.gf_lockWeapons[i] = w;
+        self.gf_lockClip[i]    = self getWeaponAmmoClip( w );
+        self.gf_lockStock[i]   = self getWeaponAmmoStock( w );
+        self setWeaponAmmoClip( w, 0 );
+        self setWeaponAmmoStock( w, 0 );
+    }
+
+    // Hide the ammo widget while the clips read 0 (see the block comment above). ONE reliable
+    // command on the spawn burst — mirrored by the "0" push in gf_releasePrematchLock.
+    if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+        self setClientDvar( "ammoCounterHide", "1" );
+
+    // LAST: swap the stock full freeze for the partial lock only once it is armed — same
+    // frame, so there is no window where the player can fire or walk.
+    self maps\mp\_utility::freeze_player_controls( false );
+
+    self.gf_prematchLocked = true;
+}
+
+gf_releasePrematchLock()
+{
+    if ( !isDefined( self.gf_prematchLocked ) || !self.gf_prematchLocked )
+        return;
+    self.gf_prematchLocked = false;
+
+    // Reveal the ammo widget again — unconditional for humans (even a dead player's HUD must
+    // come back), and pushed in the same frame the snapshot below restores the real counts, so
+    // the counter reappears already full.
+    if ( !isDefined( self.pers["isBot"] ) || !self.pers["isBot"] )
+        self setClientDvar( "ammoCounterHide", "0" );
+
+    // Restore ammo only on weapons still carried (a mid-countdown death drops them).
+    if ( self.health > 0 && isDefined( self.gf_lockWeapons ) )
+    {
+        current = self getweaponslist();
+        for ( i = 0; i < self.gf_lockWeapons.size; i++ )
+        {
+            w = self.gf_lockWeapons[i];
+            carried = false;
+            for ( j = 0; j < current.size; j++ )
+            {
+                if ( current[j] == w )
+                {
+                    carried = true;
+                    break;
+                }
+            }
+            if ( !carried )
+                continue;
+            self setWeaponAmmoClip( w, self.gf_lockClip[i] );
+            self setWeaponAmmoStock( w, self.gf_lockStock[i] );
+        }
+    }
+
+    if ( isDefined( self.gf_savedMoveScale ) )
+        self setMoveSpeedScale( self.gf_savedMoveScale );
+    self EnableOffhandWeapons();
+
+    self.gf_lockWeapons   = undefined;
+    self.gf_lockClip      = undefined;
+    self.gf_lockStock     = undefined;
+    self.gf_savedMoveScale = undefined;
 }
 
 // #strip-begin - MATCH-START HOLD + LOBBY->MATCH TRANSFER (dev/main only; stripped from public release)
@@ -1196,8 +1551,13 @@ gf_waitForLoadingClients()
     if ( stillLoading > 0 )
     {
         loadGrace = gf_cfgFloat( "scr_gf_load_grace", 20, 0, 60 );   // 0 = don't hold grace for loaders
-        if ( loadGrace > level.gracePeriod )
-            level.gracePeriod = loadGrace;
+        // scr_gf_load_grace is measured from GO (the countdown's end), but the stock
+        // gracePeriod() thread now starts its wait at t≈0 (level.prematchPeriod is pinned to 0),
+        // so the backstop must span the mod-owned countdown too: gf_prematchLen + loadGrace.
+        // (Before the owned countdown this compared loadGrace directly — the stock thread used
+        // to start AT prematch_over.)
+        if ( level.gf_prematchLen + loadGrace > level.gracePeriod )
+            level.gracePeriod = level.gf_prematchLen + loadGrace;
     }
 
     logPrint( "GF_LOADGATE: released after " + ( gettime() - start ) + "ms, " + stillLoading + " client(s) still loading, expected=" + expected + " (roster expectation " + expectOn + ")\n" );
@@ -2745,6 +3105,11 @@ gf_playerSpawnedCB()
         // this one — and because it still runs before stock latches pers["music"].spawn.
         self gf_armRoundUnderscore();
     }
+    // Partial lock for the mod-owned prematch countdown: waits for stock's entity notify
+    // "spawned_player" (fires after giveLoadout + the stock freeze, same spawn), then swaps
+    // the full freeze for the partial lock while gf_prematchActive. Bots included.
+    self thread gf_prematchLockOnSpawn();
+
     self thread gf_onSpawned();
 
     // Drive the entire per-player health panel in the PLAYER's own context (create +
@@ -2788,11 +3153,12 @@ gf_playerSpawnedCB()
 // saturation 1, contrast 1.2), the contrast pop the mod is meant to look like. This is core, not an
 // admin tweak, so it lives here (shipped) rather than in the bridge, and every build gets it.
 //
-// It CANNOT be applied from onStartGameType: the stock prematch flow stomps vision AFTERWARDS —
-// matchStartTimer forces "mpIntro" for the countdown and at T-2s blends back to the MAP vision over
-// 3s (_globallogic.gsc:398/424). So we wait for prematch_over and take over the tail of that blend
-// (a newer visionSetNaked call retargets the in-progress lerp). The 3.0s transition mirrors the
-// stock blend it replaces, so the reveal reads as native rather than as a snap.
+// The APPLY lives inside gf_prematchCountdown: the mod-owned countdown forces "mpIntro" for the
+// window and at T-2s blends into gf_visionSetForKey(gf_roundVisionKey()) over 3s — the same
+// schedule stock matchStartTimer used, but landing on the GF look instead of the bare map vision.
+// (The old gf_applyRoundVision thread, which took over the tail of the STOCK blend at
+// prematch_over, is retired: with level.prematchPeriod pinned to 0 the engine fires that notify
+// at t≈0, which would have blended mid-countdown.)
 //
 // visionSetNaked is a BARE builtin in the MP VM (level-global, all clients) — the self-method form
 // throws unknown-function ([[vector-scale-in-common-scripts-utility]]).
@@ -2801,17 +3167,7 @@ gf_playerSpawnedCB()
 // has to re-run every round. Called from onStartGameType.
 gf_initRoundVision()
 {
-    level.gf_defaultVision = getDvar( "mapname" );   // the map's OWN vision set — what "normal" means
-    level thread gf_applyRoundVision();
-}
-
-gf_applyRoundVision()
-{
-    level endon( "game_ended" );
-
-    level waittill( "prematch_over" );
-
-    visionSetNaked( gf_visionSetForKey( gf_roundVisionKey() ), 3.0 );
+    level.gf_defaultVision = getDvar( "mapname" );   // the map's OWN vision set — what "normal" means (the bridge reads this)
 }
 
 // ─── Round Ambient Music (the UNDERSCORE bed) ──────────────────────────────
@@ -3137,13 +3493,14 @@ gf_tryActivateRound()
     level.gf_warnedLastPlayer = [];
     gf_forceHealthHUDUpdate();
 
-    // The engine's native per-round prematch (set up in onStartGameType via level.prematchPeriod)
-    // owns the countdown, player freeze, intro VO, objective hint, and timer-hide. We reach here
-    // ~0.2s INTO it (players spawn frozen during the prematch, and that first spawn is what
-    // triggers gf_tryActivateRound), so wait for the prematch to finish before starting the round
-    // clock — otherwise it draws the round timer over the countdown AND burns round time. While
-    // the clock isn't running, timeLimitOverride stays false, so the engine hides the timer for
-    // the whole prematch (clean, no flicker), exactly like SD.
+    // The MOD-OWNED prematch (gf_prematchCountdown — level.prematchPeriod is pinned to 0, the
+    // engine's own countdown never runs) owns the countdown number/beep, the partial lock, the
+    // mpIntro vision, intro VO, objective hint, and timer-hide. We reach here ~0.2s into it
+    // (players spawn during the window and that first spawn triggers gf_tryActivateRound), and
+    // inPrematchPeriod is true because the countdown RE-ASSERTED it — so this parks on the
+    // prematch_over that gf_prematchGo re-fires at GO, and the commit below runs exactly when it
+    // always did. Starting the round clock earlier would draw the timer over the countdown AND
+    // burn round time.
     if ( isDefined( level.inPrematchPeriod ) && level.inPrematchPeriod )
         level waittill( "prematch_over" );
 

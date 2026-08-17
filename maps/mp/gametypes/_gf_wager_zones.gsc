@@ -68,9 +68,18 @@ gf_disableRadiationDoors()
     level._door_switch_trig1 common_scripts\utility::trigger_off();
     level._door_switch_trig2 common_scripts\utility::trigger_off();
 
-    // Same gate as the map's double_doors_open_at_start / switch_lights, so we
-    // share their timeline no matter what the prematch period is this round.
-    if ( level.prematchPeriod > 0 && level.inPrematchPeriod == true )
+    // Same gate as the map's double_doors_open_at_start / switch_lights, so we share their
+    // timeline. ⚠ MUST anchor on the ENGINE's t≈0 prematch_over fire (level.prematchPeriod is
+    // pinned to 0 by the mod-owned countdown, gf.gsc) — the same fire the map's own listeners
+    // consume, because the auto-open notify lands at that fire +0.3s and the swap below has to
+    // beat it. inPrematchPeriod is NOT a usable gate here: gf_prematchCountdown re-asserts it
+    // true right after the engine fire, so parking on it could strand this thread until the GO
+    // re-fire — 0.3s AFTER the doors already auto-opened on the real triggers. The countdown
+    // stamps gf_enginePrematchFired in the same notify dispatch, so: unset → the fire hasn't
+    // happened, park with the map threads; set → it just happened this frame, fall through.
+    // (Either way the doors/lights sequence runs at countdown START, not GO — players are
+    // locked then; cosmetic.)
+    if ( !isDefined( level.gf_enginePrematchFired ) || !level.gf_enginePrematchFired )
         level waittill( "prematch_over" );
     wait 0.2;
 
