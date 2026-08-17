@@ -4,6 +4,7 @@
 #   security_watch.ps1  Resolve-ServiceImagePath   the four ImagePath shapes Event 7045 emits
 #   security_watch.ps1  Get-BinaryTrust            the Authenticode tiering that decides pushes
 #   conn_logger.ps1     Convert-PanelStatus        the panel-fallback shape conversion
+#   watchdog.ps1        Get-FileAgeSeconds         the atomically-replaced-json stat race (BOTH halves)
 #   join-notify.ps1     Get-ConnectCount           the day-file connect tally behind "7th connect"
 #                       Format-Ordinal / Format-ConnectCount
 #
@@ -45,6 +46,7 @@ function Get-FunctionText {
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'vps_services\security_watch.ps1') 'Resolve-ServiceImagePath')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'vps_services\security_watch.ps1') 'Get-BinaryTrust')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'conn_logger\conn_logger.ps1') 'Convert-PanelStatus')))
+. ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'vps_services\watchdog.ps1') 'Get-FileAgeSeconds')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-ConnectCount')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Format-Ordinal')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Format-ConnectCount')))
@@ -95,6 +97,45 @@ Describe "Get-BinaryTrust (security_watch) - the tiering that decides what pages
         $t = Get-BinaryTrust ''
         Assert-False $t.exists "empty path = missing"
     }
+}
+
+Describe "Get-FileAgeSeconds (watchdog) - both halves of the atomic-replace stat race" {
+    # status_service replaces admin.json with Move-Item -Force (delete THEN move), so a reader can
+    # land mid-replace and see either no file (paged a false alarm 2026-08-14 02:29:04) or a file
+    # whose LastWriteTime is the ZERO FILETIME, 1601-01-01 (paged another 2026-08-17 08:38:03, via
+    # an Int32 overflow on a 13,431,458,283-second age). Both must degrade to "unknown", never to a
+    # number - a huge age would make check 3b KILL THE BOOTSTRAPPER on a healthy server.
+    $work = Join-Path $env:TEMP ("gf_agetest_" + [IO.Path]::GetRandomFileName())
+    New-Item -ItemType Directory -Path $work -Force | Out-Null
+    $f = Join-Path $work 'admin.json'
+    'x' | Set-Content $f
+
+    It "a normal file gives a sane age in seconds" {
+        (Get-Item $f).LastWriteTime = (Get-Date).AddSeconds(-42)
+        $age = Get-FileAgeSeconds $f
+        Assert-True ($age -ge 40 -and $age -le 45) "expected ~42, got $age"
+    }
+    It "a MISSING file is null, never a throw (the 2026-08-14 half)" {
+        Assert-True ($null -eq (Get-FileAgeSeconds (Join-Path $work 'gone.json'))) "missing = null"
+    }
+    It "the ZERO FILETIME (1601) is null, not an Int32 overflow (the 2026-08-17 half)" {
+        (Get-Item $f).LastWriteTime = [datetime]'1601-01-01 00:00:00'
+        # sanity: this really is the overflowing shape, or the test proves nothing
+        $raw = (New-TimeSpan -Start (Get-Item $f).LastWriteTime -End (Get-Date)).TotalSeconds
+        Assert-True ($raw -gt 2147483647) "fixture must exceed Int32 max; got $raw"
+        Assert-True ($null -eq (Get-FileAgeSeconds $f)) "1601 timestamp = failed stat = null"
+    }
+    It "a small clock skew still reads as FRESH (must not be nulled)" {
+        (Get-Item $f).LastWriteTime = (Get-Date).AddSeconds(2)
+        $age = Get-FileAgeSeconds $f
+        Assert-True ($null -ne $age -and $age -le 0) "small future = small negative, got [$age]"
+    }
+    It "an absurd future timestamp is null" {
+        (Get-Item $f).LastWriteTime = (Get-Date).AddDays(10)
+        Assert-True ($null -eq (Get-FileAgeSeconds $f)) "10d future = failed stat = null"
+    }
+
+    Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 Describe "Convert-PanelStatus (conn_logger) - the panel-fallback shape" {

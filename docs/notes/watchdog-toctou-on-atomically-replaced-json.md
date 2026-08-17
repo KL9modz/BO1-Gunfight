@@ -1,6 +1,12 @@
 # Watchdog TOCTOU on an atomically-replaced JSON snapshot
 
-**Date:** 2026-08-14 **Status:** FIXED (`tools/vps_services/watchdog.ps1`)
+**Date:** 2026-08-14, **recurred with a second symptom 2026-08-17**
+**Status:** FIXED both halves (`tools/vps_services/watchdog.ps1`), regression-tested
+(`tools/tests/service_functions.Tests.ps1`)
+
+> ⚠ **The replace window has TWO failure modes and the 08-14 fix only closed one.** Missing file
+> (below) *and* **present file with a blank timestamp** (2026-08-17, see the section at the end).
+> Same file, same race, same self-healing ~30s blip, same false `WATCHDOG down` page.
 
 ## Symptom
 
@@ -79,5 +85,68 @@ cycle is far more likely to be the watchdog *crashing on one run* than a real ou
 `storage\t5\logs\services\GF-Watchdog.log` for a `TERMINATING:` line before assuming the box is sick —
 that log only exists because of the `run_service.ps1` flight recorder
 ([[vps-status-log-notify-services]]).
+
+---
+
+## Recurrence 2026-08-17 08:38:03 — the OTHER half: a present file with a 1601 timestamp
+
+Identical outward symptom (one urgent `WATCHDOG down`, self-cleared, game server never affected —
+28s of blind monitoring), completely different crash:
+
+```
+[08:38:03] panel probe OK
+[08:38:03] TERMINATING: watchdog.ps1 : Cannot convert value "13431458283.0755" to type
+           "System.Int32". Error: "Value was either too large or too small for an Int32."
+[08:38:03] ----- service DIED (exit 1) -----
+[08:38:30] ALERT [urgent] Gunfight - WATCHDOG down :: GF-Watchdog : LastTaskResult=0x1
+[08:38:31] ----- run_service start -----   <- restarted, clean; 08:41:33 "watchdog OK"
+```
+
+**13,431,458,283 seconds is 425 years** — `Now` minus it lands on **1601-01-01, the zero Windows
+FILETIME**. So `Get-Item` *succeeded* (the 08-14 null-guard passed) and handed back a file whose
+`LastWriteTime` had not been populated yet, mid-`Move-Item`-replace. `[int]` of 13.4 billion
+overflows Int32 (max 2,147,483,647) → terminating under `$ErrorActionPreference = 'Stop'`.
+
+Corroboration that the file really does blink this way: `GF-ConnLogger` independently logged
+`admin.json unusable this tick - roster read from the panel instead` at 08:28:43 and 09:35:26 the
+same morning. Every consumer of these snapshots is exposed, not just the watchdog.
+
+### ⚠ The trap in the obvious fix
+
+**Widening `[int]` to `[long]` is WORSE THAN THE CRASH.** A 425-year age does not merely fit in a
+long — it reads as *catastrophically stale*, and `$hardAge` feeds **check 3b, which kills the
+bootstrapper** to recover a "hung" server. You would trade 28 seconds of blind monitoring for a
+real, unnecessary game-server restart on a perfectly healthy box.
+
+### Fix
+
+An implausible timestamp is not data, it is a **failed stat** — report it as unknown, exactly like
+a missing file, and let the next 3-minute run settle it:
+
+```powershell
+$secs = (New-TimeSpan -Start $item.LastWriteTime -End (Get-Date)).TotalSeconds
+if ($secs -gt 315360000 -or $secs -lt -86400) { return $null }   # >10y stale or >1d future
+return [int]$secs
+```
+
+Small negatives pass through deliberately: clock granularity can put a just-written file
+microseconds in the future, and the callers read a negative as "fresh", which it is.
+
+### The rule, extended
+
+⚠ **A tolerant read is not enough — the VALUE it returns must be sanity-checked too.** The 08-14
+rule ("one tolerant stat, branch on `$null`") is necessary but not sufficient: a racing writer can
+hand back a *successful* read of garbage. Any derived number that feeds a remediation decision
+needs a plausibility gate, and the failure direction must be chosen deliberately — here, "unknown"
+is safe and "very stale" triggers a kill.
+
+⚠ Diagnosing the next one: the flight-recorder log **wraps long error text onto continuation
+lines**, so a `Where-Object`/grep on the timestamp pattern shows only `... : Cannot ` and hides the
+actual cause. Read the raw lines around the `TERMINATING:` index, not a filtered view.
+
+**Deeper option, not taken:** make `status_service` use a genuinely atomic `File.Replace` /
+`MoveFileEx` instead of PowerShell's delete-then-move. That would close the window at the source,
+but readers should be tolerant regardless (ConnLogger hits the same window), so the reader fix
+ships first.
 
 Related: [[vps-status-log-notify-services]], [[gf-admin-connection-history]].

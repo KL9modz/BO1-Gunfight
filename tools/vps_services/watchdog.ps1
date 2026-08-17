@@ -111,10 +111,25 @@ function Log($msg) {
 # admin.json fine, check 3b missed it in the SAME second, the watchdog exited 1, and GF-SecurityWatch's
 # reciprocal dead-man check paged "WATCHDOG down" for what was a self-healing 35s blip. One tolerant
 # stat, null-guarded by the caller ([[watchdog-toctou-on-atomically-replaced-json]]).
+#
+# ⚠ That replace window has TWO failure modes and the fix above only covered one. The second bit
+# 2026-08-17 08:38:03: the file EXISTED but its LastWriteTime read as the ZERO FILETIME
+# (1601-01-01), so the age came back 13,431,458,283s (425 YEARS), [int] overflowed, and the run
+# died exactly as before - GF-SecurityWatch paged "WATCHDOG down" for another self-healing 28s blip.
+# ⚠⚠ Do NOT "fix" this by widening to [long]: that is WORSE THAN THE CRASH. A 425-year age is not
+# just a big number, it reads as catastrophically stale - and $hardAge feeds check 3b, which KILLS
+# THE BOOTSTRAPPER to recover a "hung" server. You would trade 28s of blind monitoring for a real,
+# unnecessary game-server restart on a perfectly healthy box.
+# An implausible timestamp is not data, it is a FAILED STAT: report it as unknown (same as a missing
+# file, same null-guarded callers) and let the next 3-minute run settle it. Small negatives are
+# deliberately ALLOWED through - clock granularity can put a just-written file microseconds in the
+# future, and the callers read a negative as "fresh", which it is.
 function Get-FileAgeSeconds($path) {
     $item = Get-Item $path -ErrorAction SilentlyContinue
     if (-not $item) { return $null }
-    return [int]((New-TimeSpan -Start $item.LastWriteTime -End (Get-Date)).TotalSeconds)
+    $secs = (New-TimeSpan -Start $item.LastWriteTime -End (Get-Date)).TotalSeconds
+    if ($secs -gt 315360000 -or $secs -lt -86400) { return $null }   # >10y stale or >1d future
+    return [int]$secs
 }
 
 # ---- log hygiene -------------------------------------------------------------
