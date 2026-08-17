@@ -2373,7 +2373,7 @@ const SRV_SECTIONS = [
     { n:'gf_debug_hud_pool',      lbl:'HUD Pool Debug',       type:'tog', def:'0', tip:'gf_debug_hud_pool\nLog HUD element pool allocation counts each round.' },
     { n:'gf_debug_elem_probe',    lbl:'Elem Probe',           type:'tog', def:'0', tip:'gf_debug_elem_probe\nProbe available client HUD element slots; prints count.' },
     // Force Camo moved out of DEBUG 2026-08-16 -> DASHBOARD > GUNFIGHT, next to Loadout Slots.
-    // With 27 custom camos shipping it is a real cosmetic control, not a debug toggle, and nobody
+    // With 30 custom camos shipping it is a real cosmetic control, not a debug toggle, and nobody
     // finds it buried here. Same dvar, same behaviour.
     { n:'gf_force_loadout',       lbl:'Force Loadout (-1=off)', type:'num', def:'-1', tip:'gf_force_loadout\nDEV/TEST: lock ONE loadout on every spawn instead of the round rotation, to inspect it without waiting. Value = index into the live (SHUFFLED) pool, 0-53 — NOT the editor row number, so cycle 0,1,2… and read the on-screen loadout HUD to find the one you want. -1 = off (normal rotation).' },
     // (duplicate Killcam row removed — the one control lives in GAME RULES)

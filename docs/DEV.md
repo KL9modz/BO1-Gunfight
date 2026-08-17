@@ -23,6 +23,9 @@ mp_gunfight/                          (GitHub: KL9modz/BO1-Gunfight)
   .claude/CLAUDE.md                   project instructions / engine notes
   mod.csv                             build manifest the linker reads
   mp/gametypesTable.csv               registers the 'gf' gametype row in the UI
+  mp/weaponOptions.csv                OVERRIDE of stock's camo table + our camo rows 16-46
+  images/gf_camo_*.iwi                custom camo textures — SOURCE OF TRUTH (ship in mp_gunfight.iwd)
+  materials/ + material_properties/   CARRIER materials: the only thing that makes those images load
   localizedstrings/gf.str             localized UI strings (assets named GF_<REFERENCE>)
   localizedstrings/cgame.str          OVERRIDES of stock engine strings (SB_SCORE, the banner blank)
   ui_mp/
@@ -32,7 +35,7 @@ mp_gunfight/                          (GitHub: KL9modz/BO1-Gunfight)
   maps/mp/gametypes/
     gf.gsc                            ENTRY POINT: main(), callbacks, precache, spawn pipeline
     _gf_rounds.gsc                    round lifecycle, overtime, damage/score, team-size mode
-    _gf_loadouts.gsc                  loadout pool, shuffle, give, camo randomizer
+    _gf_loadouts.gsc                  loadout pool, shuffle, give, camo rotation (gf_camoPool)
     _gf_hud.gsc                       health panel + loadout overview + score popup
     _gf_locations.gsc                 per-map curated spawns + overtime flag points
     _gf_wager_zones.gsc               wager compass material + map-specific helpers
@@ -41,7 +44,8 @@ mp_gunfight/                          (GitHub: KL9modz/BO1-Gunfight)
     _bot.gsc             (dev only)   bot framework integration
   maps/mp/bots/          (dev only)   vendored bot framework (_bot_loadout/_bot_script/_bot_utility)
   raw/fx/misc/*.efx                   custom overtime apron FX source
-  tools/                 (dev only)   build/release/deploy scripts + web RCON panel
+  tools/                 (dev only)   build/release/deploy scripts, web RCON panel, loadout editor,
+                                      camo pipeline (make_camo_iwi / dds_to_iwi / preview_iwi / make_iwd)
 ```
 
 The entry point is `gf.gsc::main()` — there is no `mp_gunfight.gsc`.
@@ -93,6 +97,8 @@ When the compiler throws `unknown function: @ scripts/mp/<file>::<func>`, the br
 **A rebuild is only needed when a *compiled* asset changes:**
 
 - `mp/gametypesTable.csv`
+- `mp/weaponOptions.csv` (**the camo table** — our override of stock's camo/lens/reticle table)
+- `mod.csv` itself (e.g. adding a carrier-material row for a new camo)
 - `localizedstrings/gf.str`
 - `localizedstrings/cgame.str` (**overrides of stock engine strings** — a localizedstring in our `mod.ff` beats the game's own shipped-zone copy. The asset name is `<STR FILENAME>_<REFERENCE>`, so an engine `CGAME_*` string only takes effect from a file literally named `cgame.str`; the same entry in `gf.str` would compile to `GF_*` and be read by nothing.)
 - `ui_mp/hud_gf.txt` or `ui_mp/hud_gf_health.menu` (menu **structure**)
@@ -115,6 +121,39 @@ The linker needs the **licensed Black Ops 1 tree** with its modtools (`bin/linke
 ```
 
 GSC rawfile errors from the linker are expected (Plutonium loads those directly). FX "image missing" errors for stock T5 materials are harmless — those images live in the base game fastfiles and resolve at runtime.
+
+### ⚠ `mod.ff` is only half the delivery — images ship in `mp_gunfight.iwd`
+
+**The linker never embeds image pixel data** — it writes an image *reference* by name. So a custom texture (today: the camos) reaches clients through a second artifact, a mod-folder **`.iwd`** (a plain zip, forward slashes, Deflate) that Plutonium mounts client-side. Both artifacts are gitignored build outputs; the tracked `images/*.iwi` are the **source of truth**.
+
+```powershell
+.\tools\make_iwd.ps1          # zip images\*.iwi -> mp_gunfight.iwd
+```
+
+On the VPS this is automatic: `deploy.ps1`'s `New-ModIwd` builds the `.iwd` **on the box** from its own clone (there is no linker there), which is why an untracked `.iwi` is a deploy bug rather than a cosmetic one — the live server would quietly serve the stock texture while the laptop looked correct.
+
+⚠ **A rebuild against a RUNNING game cannot overwrite the mounted `.iwd`** (Plutonium holds the handle) and falls back to writing `mp_gunfight.iwd.new` beside it — swap it in yourself. The `.gitignore` rule is a glob for exactly this reason.
+
+**Adding one camo is three files, and skipping any one of them fails silently:**
+
+| # | File | Miss it and… |
+|---|---|---|
+| 1 | a row in `mp/weaponOptions.csv` | the index resolves to nothing. ⚠ Fill **all 17** weapon-parent columns, not just the first, or it renders on one parent and falls through elsewhere |
+| 2 | `material,gf_camo_<x>_mtl` in `mod.csv` | **flat WHITE.** A weaponOptions cell is a runtime *string* lookup that registers no image asset; the carrier material is the only thing that pulls the image into the zone. Nothing references these materials directly — do not "clean up" an apparently-unused row |
+| 3 | the `.iwi` in `images/` (+ `.iwd` rebuild) | **flat WHITE** again, from the other direction |
+
+Then add the index to **`gf_camoPool()`** in `_gf_loadouts.gsc` or nothing will ever roll it, and raise the loadout editor's bound (`tools/loadout_editor/server.js`) and the panel's Force Camo list in lockstep with the last `gf_camo_` row.
+
+**Camo tooling** (all `tools/`, laptop-only):
+
+| Script | Does |
+|---|---|
+| `make_camo_iwi.ps1` | generates a tiling 512² DXT5 camo `.iwi` from a preset (`-Blobs` pattern scale + a seed). ⚠ Nothing regenerates a shipped camo but the exact same seed/preset, which is why the `.iwi` is tracked |
+| `dds_to_iwi.ps1` | imports a `.dds` (e.g. from an asset dump) by **header swap** — both formats hold the same raw DXT blocks. ⚠ Hash-compare mip 0 before importing a "new" camo: four Treyarch imports turned out byte-identical to stock camos |
+| `preview_iwi.ps1` | renders an `.iwi` to look at without launching the game |
+| `make_iwd.ps1` | packs `images/*.iwi` into the delivery `.iwd` |
+
+⚠ A mod `.iwd` image also **beats a resident zone image**, so any stock texture is replaceable server-side for every player with no client install. Full architecture, incl. why a camo cell resolves an image name and never a material (so no 3-map camo can live at a new index) → `docs/notes/custom-camos-bocl-architecture.md`.
 
 ---
 

@@ -16,11 +16,16 @@ services. Don't restate their content here; a second copy drifts.
 | Verifiers (pre-commit gates) | `verify_release_strip.ps1`, `verify_locations.ps1`, `verify_loadouts.ps1`, `hooks/` | DEV.md → *Strip markers* |
 | Admin panel | `rcon/` (loopback-only Node panel — **never** web-deployed) | DEV.md → *RCON tools* |
 | Loadout authoring | `loadout_editor/` | CLAUDE.md → *Per-loadout perks* |
+| Custom camos | `make_camo_iwi.ps1` (generate), `dds_to_iwi.ps1` (import a `.dds` by header swap), `preview_iwi.ps1` (look at one), `make_iwd.ps1` (pack `images/*.iwi` into the delivery `.iwd`) | DEV.md → *`mod.ff` is only half the delivery* |
 | Box services | `status_service/`, `conn_logger/`, `notify/` (each has its own README) | VPS_DEPLOY.md |
 | Shared libs | `common.ps1`, `status_parse.js` + `status_parse.ps1` (the **single-sourced** `status` parser — extend it, never copy the parsing form), `ignore_list.ps1`, `map_names.ps1`, `ntfy.ps1` | — |
 | Tests | `tests/` (Pester; `fixtures/status_reply.txt` pins both parser twins), `rcon/test/` + `../site/test/` (node:test) | — |
 | Measurement | `ts_sample.ps1` (samples timescale from **outside** the GSC VM — the only wall clock we have) | CLAUDE.md → *Final-killcam slow motion* |
 | Wager-zone extraction | see below | this file |
+
+Gitignored **build outputs** (regenerated on demand, never committed): `mod.ff` and the image
+delivery zip `mp_gunfight.iwd` — ⚠ the tracked `images/*.iwi` are the source of truth for the
+latter, so a new camo texture must be **committed** or the box builds an `.iwd` without it.
 
 Gitignored, never committed: `dist/`, `ff_extract/`, and the `*.local.json` stores —
 `ops.local.json`, `ignore.local.json`, `security.local.json`, `rcon/secrets.local.json`,

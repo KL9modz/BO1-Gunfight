@@ -489,6 +489,9 @@ mp_gunfight/  (GitHub: KL9modz/BO1-Gunfight)
   .claude/CLAUDE.md                  <- this file
   mod.csv                            <- build manifest the linker reads
   mp/gametypesTable.csv              <- registers the 'gf' (+ wager gun/oic/hlnd/shrp) UI rows
+  mp/weaponOptions.csv               <- OVERRIDE of stock's camo/lens/reticle table + our camo rows 16-46
+  images/gf_camo_*.iwi               <- custom camo textures, SOURCE OF TRUTH (shipped in mp_gunfight.iwd)
+  materials/ + material_properties/  <- CARRIER materials: the only thing that makes those images LOAD
   localizedstrings/gf.str            <- localized UI strings (assets are named GF_<REFERENCE>)
   localizedstrings/cgame.str         <- OVERRIDES of stock engine strings (see below)
   ui_mp/
@@ -498,7 +501,7 @@ mp_gunfight/  (GitHub: KL9modz/BO1-Gunfight)
   maps/mp/gametypes/
     gf.gsc                           <- ENTRY POINT: main(), callbacks, precache, spawn pipeline
     _gf_rounds.gsc                   <- round lifecycle, clocks, overtime, match-start/lobby, team-size, damage/score
-    _gf_loadouts.gsc                 <- shared loadout pool, shuffle, give, camo
+    _gf_loadouts.gsc                 <- shared loadout pool, shuffle, give, camo rotation (gf_camoPool)
     _gf_hud.gsc                      <- menu-driven HUD (health panel, loadout overview, score popup)
     _gf_locations.gsc                <- per-map curated spawns + overtime flag points
     _gf_wager_zones.gsc              <- wager compass material + map-specific zone helpers
@@ -508,7 +511,8 @@ mp_gunfight/  (GitHub: KL9modz/BO1-Gunfight)
   maps/mp/bots/          (dev only)  <- vendored BotWarfare framework (_bot_loadout/_bot_script/_bot_utility)
   raw/fx/misc/*.efx                  <- custom overtime apron FX (white ring; gold/red use stock FX)
   site/wwwroot/                      <- PUBLIC static website (gunfight.us). NOT the RCON panel.
-  tools/                 (dev only)  <- build_ff, packagers, deploy, RCON panel, box services, loadout editor
+  tools/                 (dev only)  <- build_ff, packagers, deploy, RCON panel, box services, loadout editor,
+                                        camo pipeline (make_camo_iwi / dds_to_iwi / preview_iwi / make_iwd)
 ```
 > Entry point is `gf.gsc::main()`. `(dev only)` files are excluded from public release outputs by
 > `package_release.ps1`. There is no `mp_gunfight.gsc`.
@@ -836,8 +840,18 @@ exist in T5). Base perks: no-fall-damage (Lightweight Pro — the speed half `mo
 weapon switch is **not** in the base set (admins add it via `gf_perk_on`).
 
 Per-slot camo via `CalcWeaponOptions` (primary + independent secondary); rolled once at pool build.
-Camo only renders on real-base weapons (the crossbow is the one pool secondary that shows it); pistols/
-launchers are neutral-base no-ops. Special weapons need `PrecacheItem` in `onPrecacheGameType` or
+**The rotation is a curated list — `gf_camoPool()` in `_gf_loadouts.gsc`, and that function IS the
+edit surface**: uncomment an index to add it, comment it out to drop it. Every pool line ships as camo
+`-1` (Random), so `gf_rollCamo()` picks from that list at pool build (53 loadouts × 2 slots, once per
+match — never per spawn, never per frame, so rebuilding the small array there is free). ⚠ **It used to
+be a bare `randomInt( 16 )`, which could only ever return 0-15 and therefore made every custom camo
+UNREACHABLE no matter how many shipped** — if a newly added camo never appears in a live round, check
+this list before suspecting the assets. ⚠ An index here **must** have a `weaponOptions.csv` row **and**
+a carrier material or it renders flat white (see *Camo* in the T5 asset reference — adding one is three
+files). ⚠ Keep the loadout editor's upper bound (`tools/loadout_editor/server.js`) and the panel's Force
+Camo list in lockstep with the last `gf_camo_` row, or the editor silently refuses to save a camo the
+game renders fine. Camo only renders on real-base weapons (the crossbow is the one pool secondary that
+shows it); pistols/launchers are neutral-base no-ops. Special weapons need `PrecacheItem` in `onPrecacheGameType` or
 `GiveWeapon` silently no-ops: `minigun_wager_mp`/`m202_flash_wager_mp` (the `_wager` builds, NOT the
 killstreak names — those fire the "called-in" announcer + holster-lock), the `tabun_gas_mp`/
 `nightingale_mp` tacticals, and `defaultweapon` (the Finger-Gun easter-egg, a real SP weapon def; icon =
@@ -1677,9 +1691,19 @@ Gunfight controls (still seeded for the vendored BotWarfare AI — don't delete 
 
 `mod.ff` is a **gitignored build output** (registers the UI rows + strings + menus, compiles the custom
 FX). **Pure GSC changes never need a rebuild** — edit + `map_restart`. Rebuild only when a *compiled*
-asset changes: `mp/gametypesTable.csv`, `localizedstrings/gf.str`, `localizedstrings/cgame.str`,
-`ui_mp/hud_gf.txt` or `ui_mp/hud_gf_health.menu` **structure** (dvar values/positions are
-runtime-tunable), or a `raw/fx/misc/*.efx`.
+asset changes: `mp/gametypesTable.csv`, **`mp/weaponOptions.csv`** (the camo table), `mod.csv` itself
+(e.g. a new carrier-material row), `localizedstrings/gf.str`, `localizedstrings/cgame.str`,
+`ui_mp/hud_gf.txt` / `ui_mp/main.menu` / `ui_mp/scriptmenus/class.menu` / `ui_mp/hud_gf_health.menu`
+**structure** (dvar values/positions are runtime-tunable), or a `raw/fx/misc/*.efx`.
+
+⚠ **`mod.ff` is only HALF the delivery — images ride in `mp_gunfight.iwd`, and it is a SEPARATE build.**
+The linker never embeds image pixels, so an `.iwi` under `images/` reaches clients only via that zip
+(`tools/make_iwd.ps1` locally; `deploy.ps1`'s `New-ModIwd` on the box, built from the tracked `images/`).
+So a camo change can need **both** artifacts (a new row/material → rebuild `mod.ff`; a new/edited `.iwi`
+→ rebuild the `.iwd`), and shipping one without the other is the classic flat-**white** camo. ⚠ The
+`.iwd` is gitignored — it is a build output, and the tracked `images/*.iwi` are the source of truth.
+⚠ A rebuild against a **running game** cannot overwrite the mounted `.iwd` and falls back to writing
+`mp_gunfight.iwd.new` beside it (hence the ignore is a glob) — swap it in yourself.
 
 ⚠ **A clean build is NOT proof the game is running it — the mod folder is also the CLIENT's FastDL
 download directory.** Joining the live server makes the client checksum-compare and **download the
@@ -1713,18 +1737,19 @@ for genuine lag; do **not** cite it as evidence a symptom is unfixable.
 ([[killcam-slowmo-timescale-usercmd-backlog]], [[connection-interrupted-mitigations]])
 ⚠ It also suppresses the
 warning for **genuine** lag/packet loss.
-⚠ **Only the TEXT is gone — the PLUG ICON still renders** (material `net_disconnect` → colorMap image
+⚠ **Only the TEXT is gone — the PLUG ICON still renders here** (material `net_disconnect` → colorMap image
 `net`, Q3's inherited phone-jack; no dvar, position hardcoded). The linker writes an image *reference*
 by name and drops the pixel data — both 2026-07-12 attempts built clean as a no-op / a would-be
-**missing-texture checkerboard**. ⚠ **But "cannot be removed" is no longer settled — a prepared spike
-tests it** ([[modff-cannot-embed-new-images]], updated 2026-08-14): Classixz's BOCL mod ships 132
-custom images on exactly that reference-only model (material registered in the ff, `.iwi` delivered
-loose beside it — never the Asset Manager), the raw material format is fully decoded, and
-`tools/material_spike/` holds a corpus-validated generator + verifier + runbook. Laptop-only (no
-linker on the VPS); the expected delivery is a mod-folder **`.iwd`** (snife ships `mod.ff` + an iwd
-holding exactly its 169 `.iwi`s; Plutonium provably mounts mod-folder iwds client-side and its T5
-FastDL doc requires the `.iwd`/`.iwi` MIME types), pending the runbook's end-to-end proof. A
-transparent `net.iwi` (all-zero DXT5 = alpha 0) is the payoff. ⚠ Keep overrides to single-purpose keys: the scoreboard's other
+**missing-texture checkerboard**. ⚠ **"Cannot be removed" is now RETIRED, not merely unsettled — the
+capability shipped** ([[modff-cannot-embed-new-images]], [[custom-camos-bocl-architecture]]): the custom
+camos went to production 2026-08-16 on exactly the reference-only model this note predicted (material
+registered in the ff, `.iwi` delivered beside it in the mod-folder **`mp_gunfight.iwd`** — never the Asset
+Manager). And a mod `.iwd` image **beats a resident zone image** (proven: Orion's `camo_gold_*` shipped
+under their stock names repainted BO1's gold camo), so `net` is reachable like any other. The remaining
+step is purely to take it: a transparent `net.iwi` (all-zero DXT5 = alpha 0) + a carrier material, the
+same three-file shape as a camo. ⚠ **Its cost is the same as the string blank's** — it hides the warning
+for genuine lag and packet loss too, and the underlying stall was already fixed by the slow-mo floor, so
+this is cosmetic remnant removal, not a cure. ⚠ Keep overrides to single-purpose keys: the scoreboard's other
 columns are `MPUI_*`, which the combat record / leaderboards / after-action report also use — renaming one
 changes it **everywhere**. ⚠ Overrides only reach clients that downloaded `mod.ff`, i.e. players **already
 on the server** — a messaging surface, never an ads/acquisition one. Full detail →
@@ -2118,12 +2143,36 @@ baked into the name (`famas_reflex_mp`, `python_speed_mp`). Grenades AND equipme
 equipment also needs `SetActionSlot(1,"weapon",equip)`.
 
 **Camo** — `camoOpts = int(self CalcWeaponOptions(camoIdx, lensIdx, reticleIdx, reticleColorIdx)); self
-GiveWeapon(weapon, 0, camoOpts);`. Camo indices 0-15: 0 Default, 1 Dusty, 2 Ice, 3 Red, 4 OD Green,
+GiveWeapon(weapon, 0, camoOpts);`. **STOCK** indices 0-15: 0 Default, 1 Dusty, 2 Ice, 3 Red, 4 OD Green,
 5 Desert Nevada, 6 Desert Sahara, 7 Jungle ERDL, 8 Jungle Tiger, 9 Urban German, 10 Urban Warsaw,
 11 Winter Siberia, 12 Winter Yukon, 13 Woodland, 14 Woodland Flora, 15 Gold. Pattern camos (5-14) don't
 show on neutral-base weapons (python/knife/pistols/launchers). `crossbow_explosive` is the exception
 (patterns + gold show). `custom_class["camo_num"]` is a dead end here (only affects the on-back model +
 requires a CUSTOM class). Special primaries (minigun/m202/defaultweapon) reject camo — force index 0.
+
+⚠ **15 IS NOT THE CEILING — this mod ships its own camos at 17-46, working in game since 2026-08-16.**
+**A T5 camo is ONE TILING IMAGE, not a material:** the engine reads the cell at (camo index, weapon-parent
+column) in `mp/weaponOptions.csv` and plugs it in as the gun material's `colorDetailMap`. That is why one
+image covers every weapon — and why this cost an image instead of BOCL's 50 weapon-file forks + 61
+xmodels. **Adding one camo is THREE files, never one:**
+1. a row in **`mp/weaponOptions.csv`** — ⚠ overriding that table means shipping the **whole** stock 148-line
+   file (it also carries the lens/reticle blocks), and ⚠ fill **all 17 weapon-parent columns**, not just the
+   first, or the camo resolves on one parent and falls through everywhere else;
+2. a **CARRIER MATERIAL** row in `mod.csv` (`material,gf_camo_<x>_mtl`) — ⚠ **mandatory**. A weaponOptions
+   cell is a runtime *string* lookup that registers no image asset, and the loader never hunts the
+   filesystem; without a material in the zone naming the image the camo renders **flat WHITE**. Nothing
+   references these materials directly — **do not "clean up" an apparently-unused row**;
+3. the **`.iwi` in `images/`**, delivered in the mod-folder **`mp_gunfight.iwd`** (built by
+   `tools/make_iwd.ps1`, and on the box by `deploy.ps1`), NOT baked into `mod.ff` — the linker writes an
+   image *reference* and drops pixel data.
+⚠ A camo cell resolves an **image name only, never a material** (tested: a row naming `gf_camo_crimson_mtl`
+rendered white). So **no 3-map camo** (Dark Matter/Orion — colorMap + envMap + specularMap) can live at a new
+index; those can only ever *replace* gold at 15. ⚠ A mod `.iwd` image also **beats a resident zone image**,
+so any stock texture is replaceable server-side for everyone, with no client install. ⚠ Index **16** is a
+deliberate diagnostic (a stock resident image at an index >15): if a custom camo misrenders, 16 separates
+"the index path broke" from "the image never arrived". Full architecture, incl. the tooling
+(`make_camo_iwi.ps1` generator, `dds_to_iwi.ps1` header-swap importer, `preview_iwi.ps1`) →
+[[custom-camos-bocl-architecture]].
 
 **Perks** (`SetPerk`/`hasPerk`/`UnSetPerk`). **A CAC perk is a `|`-delimited GROUP of `specialty_*`
 tokens, and a Pro ability is just EXTRA tokens in that group** (`_class::validatePerkGroup` splits it,
