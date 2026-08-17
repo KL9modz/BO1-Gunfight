@@ -142,7 +142,10 @@
         <div class="fold-body">
           <p>Black Ops 1 has a long-standing quirk: <strong>you can&rsquo;t aim down sights while the Sprint key (Shift) is held.</strong> Normally you have to fully release Shift before you can aim, which loses gunfights. One <a href="#console">console</a> command fixes it.</p>
           <p>Open the <a href="#console">console</a> (<code>~</code>) and paste:</p>
-          <pre class="cmd"><code>bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"</code></pre>
+          <div class="copybox">
+            <button type="button" class="btn btn-ghost copy-btn" data-copy-target="adsbind">Copy</button>
+            <pre class="oneline" id="adsbind"><code>bind MOUSE2 "+speed_throw; -breath_sprint; -sprint"</code></pre>
+          </div>
           <p>Now you can <strong>ADS without releasing Sprint.</strong> What it does: aiming (<code>+speed_throw</code>) also clears the sprint input (<code>-breath_sprint</code>) so the engine stops blocking your aim. The trailing <code>-sprint</code> is a required no-op: it absorbs the key event so the sprint release actually fires.</p>
           <p>The game sometimes strips custom <code>MOUSE2</code> binds on restart. If ADS goes dead, just <strong>re-paste the line</strong>.</p>
         </div>
