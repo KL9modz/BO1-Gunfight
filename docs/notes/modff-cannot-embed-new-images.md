@@ -69,13 +69,34 @@ instead), whether the dedicated binary must hold the .iwd to advertise it, and t
 downloader manifest — the runbook's empirical tests + a FastDL access-log watch on a
 clean join close all three. Runbook: `tools/material_spike/README.md`.
 
-**RESULTS (fill in after the laptop run):** _pending._
+**RESULTS — RESOLVED 2026-08-16: CUSTOM IMAGES WORK.** Shipped and confirmed in game: 8 custom
+weapon camos. The finding above stands unchanged (the linker still embeds no pixels), but the
+delivery half is now answered:
+
+1. **Route: a mod-folder `.iwd`.** Plutonium mounts it — the client log lists
+   `mp_gunfight.iwd (N files)` in the FS search path. Plain zip of `images/<name>.iwi`, forward
+   slashes, **Deflate** (snife's shipped 68 MB `.iwd` uses `Defl:N`; the "store to be safe" guess
+   in the spike README was wrong). Built by `tools/make_iwd.ps1`.
+2. ⚠ **A mounted image is NOT a loaded image.** Delivery alone rendered everything WHITE. Anything
+   referenced only by a runtime string lookup (a `weaponOptions` camo cell) never gets registered,
+   and the image loader does not search the filesystem. It needs a **carrier material** in the zone
+   naming the image — which is why BOCL ships `material,bo_cl_camo_1..11` for images its GSC never
+   uses. See [[custom-camos-bocl-architecture]].
+3. So the working shape is: **material in `mod.ff` (by-name image reference) + the `.iwi` beside it
+   in the `.iwd`** — exactly the BOCL/snife model this note predicted.
+
+**Consequence for the plug icon below:** the blocker is gone. A transparent `net.iwi`
+(`-Payload transparent`, all-zero DXT5 = alpha 0) plus a `material,net_disconnect` carrier is now a
+concrete, testable change rather than an unproven one.
 
 **If delivery works, first users:** transparent `net` image (`-Payload transparent`, an
 all-zero DXT5 payload decodes to alpha 0) to finally kill the plug icon below; gunfight.us
-HUD branding; custom camos via BOCL's `weaponOptions.csv` pattern (rows 17+ `NN,camo,<image>`
-feed the same `CalcWeaponOptions` camo index we already roll — carrier material pulls the
-image, no weapon-file forks).
+HUD branding; custom camos. ⚠ **The camo claim here — "BOCL's `weaponOptions.csv` pattern,
+rows 17+ feed the same `CalcWeaponOptions` camo index, no weapon-file forks" — is WRONG and
+was never evidence-backed.** Reading the actual mod (2026-08-16): BOCL's camo dvars clamp to
+0..15 and its custom camos are **separate weapons** built from forked weapon files + viewmodel
+xmodels + per-gun repainted `.iwi`s. Whether any camo index >15 works is open; probe shipped.
+See [[custom-camos-bocl-architecture]].
 
 ---
 

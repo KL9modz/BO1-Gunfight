@@ -1,5 +1,19 @@
 # Custom-material spike: can we ship our own images?
 
+# ✅ ANSWERED 2026-08-16 — YES. This spike is CLOSED; 8 custom weapon camos ship today.
+#
+# The steps below are kept as the reference recipe, but the open questions are settled:
+#   * delivery route  = a mod-folder `.iwd` (plain zip of `images/<name>.iwi`, forward slashes,
+#     **Deflate** — NOT "store", correcting step 5.1 below). Plutonium mounts it; the client log
+#     shows `mp_gunfight.iwd (N files)` in the FS search path. Built by `tools/make_iwd.ps1`.
+#   * ⚠ delivery ALONE IS NOT ENOUGH. A mounted image is not a loaded one: an image referenced
+#     only by a runtime string lookup never gets registered, and everything rendered WHITE until
+#     a **carrier material** naming it shipped in `mod.ff`. That is why BOCL carries
+#     `material,bo_cl_camo_1..11`. See docs/notes/custom-camos-bocl-architecture.md.
+#   * the `ui_gf_skull_mat` look-test in step 6 was never needed — the camos themselves were the
+#     end-to-end proof.
+# Next candidate user, now unblocked: the transparent `net` image for the killcam plug icon.
+
 **Question under test:** can `mp_gunfight` ship a custom image (HUD art, killfeed icons,
 custom camos, a transparent `net` to hide the killcam plug icon) on Plutonium T5?
 
@@ -116,6 +130,13 @@ no rebuild, no new menu. (Server pushes re-set the dvar each spawn; set it after
   deliberately — a committed `images\` deploys to the VPS and FastDL like everything else.
 - **If it all works**, the first production users, in order of payoff: transparent `net`
   image for the killcam plug (`-Payload transparent`, needs the `material,net_disconnect`
-  route from the note), gunfight.us HUD branding, custom camos via `weaponOptions.csv`
-  rows 17+ (the BOCL pattern: carrier material + `NN,camo,<image>` row + the
-  `CalcWeaponOptions` camo index we already drive).
+  route from the note), gunfight.us HUD branding, and custom camos.
+  ⚠ **The camo line here used to read "via `weaponOptions.csv` rows 17+ … *the BOCL
+  pattern* … no weapon-file forks". That was wrong** — inferred, never checked, and
+  reading the actual mod (2026-08-16) disproved it: BOCL's camo dvars clamp to **0..15**
+  and its custom camos are **separate weapons** (`GiveWeapon("camo1_ak47_mp")`) built from
+  a forked weapon file + viewmodel xmodel + material + a **per-gun repainted** `.iwi`.
+  Rows 17+ do sit in their table, but their GSC can never produce those indices. Whether
+  a camo index >15 works at all is genuinely **open**, with a probe now shipped for it —
+  see [[custom-camos-bocl-architecture]]. ⚠ Also: delivery is **Deflate, not stored**
+  (snife's shipped `.iwd` uses `Defl:N`), correcting step 5.1 above.
