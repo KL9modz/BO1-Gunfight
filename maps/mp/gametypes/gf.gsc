@@ -196,6 +196,21 @@ onPrecacheGameType()
     // — precache it here so the loadout pool entry actually delivers the gun.
     PrecacheItem( "defaultweapon"       );
 
+    // #strip-begin - fun/mod-menu assets (dev/main only; _gf_fun.gsc is dropped from public builds)
+    // The ported mod-menu features (_gf_fun.gsc) fire weapons and spawn models the Gunfight pool
+    // never contains, and MagicBullet/setModel obey the SAME rule as GiveWeapon above: an
+    // unprecached asset silently does nothing. Precache is a phase, not a call you can make later,
+    // so the dev-only feature set registers its assets HERE even though everything that uses them
+    // lives in a dropped file. ⚠ DELIBERATELY MINIMAL (owner's load-time concern, 2026-08-15 prune):
+    // exactly what the kept features touch, nothing speculative. Standard MP guns are already
+    // auto-precached as create-a-class selectables; minigun_wager_mp is registered above.
+    PrecacheItem( "rpg_mp"        );   // funbullet_ launcher modes + Give Weapon "Special" options
+    PrecacheItem( "m72_law_mp"    );
+    PrecacheItem( "china_lake_mp" );
+    PrecacheModel( "mp_supplydrop_ally" );   // funbullet_care crates
+    PrecacheModel( "test_sphere_silver" );   // funadventure_ ride sphere
+    // #strip-end
+
     // OT apron FX — initial registration. NOTE: these handles are wiped by the
     // map_restart(true) that _globallogic::endGame runs between rounds, and
     // onPrecacheGameType only runs once per match — so gf_createOvertimeZone calls

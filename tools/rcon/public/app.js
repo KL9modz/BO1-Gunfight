@@ -926,8 +926,10 @@ const FAV_DEFAULT=['dv:scr_gf_scorelimit','dv:scr_gf_timelimit','dv:scr_gf_overt
 const FAV_CATS=[
   { name:'MATCH START',    blocks:['MATCH START'] },
   { name:'GAMEPLAY',       blocks:['GUNFIGHT','GAMEPLAY','GAME RULES','MOVEMENT','PERKS','PERK MULTIPLIERS','ENGINE GAMEPLAY'] },
-  { name:'BOTS & PLAYERS', blocks:['BOTS','BOT TUNING','TEAMS','PLAYER','PLAYER STATE','ADMIN'] },
-  { name:'FUN & VISUALS',  blocks:['FUN & VISION','GAME MODIFIERS','VISUAL TWEAKS','HUD ELEMENTS','CLIENT BINDS'] },
+  { name:'BOTS & PLAYERS', blocks:['BOTS','BOT TUNING','TEAMS','PLAYER','PLAYER STATE','ADMIN','CHAOS & ACCOUNT'] },
+  // MOD TOOLS / CHAOS & ACCOUNT / CLIENT-ONLY MODS are the EnCoRe V8.3 port (pruned 2026-08-15),
+  // merged into DASHBOARD/ADVANCED per the owner — no separate MODS tab.
+  { name:'FUN & VISUALS',  blocks:['FUN & VISION','MOD TOOLS','GAME MODIFIERS','VISUAL TWEAKS','HUD ELEMENTS','CLIENT BINDS','CLIENT-ONLY MODS'] },
   { name:'SERVER',         blocks:['GENERAL','KILLCAM','CLIENT-LOCAL','CUSTOM DVAR','DEBUG','COMMAND REFERENCE'] },
 ];
 const FAV_CAT_FALLBACK='SERVER';
@@ -1597,6 +1599,29 @@ async function broadcastMsg(){
   else toast('Broadcast failed','err');
 }
 
+// Vision Set router. The one select carries TWO transports: the 9 keyed sets ride vision_<key>
+// (persisted in gf_vis_vision, re-applied every round), while the "raw:" options are EnCoRe's raw
+// engine vision names and ride funvision_<name> — DELIBERATELY transient, because the round-start
+// re-apply would overwrite a persisted raw name anyway. The optgroup labels tell the admin which
+// behaviour they are picking.
+function visApply(v){
+  if(v.startsWith('raw:')) bridge('funvision_'+v.slice(4));
+  else bridge('vision_'+v);
+}
+
+// Text-payload verbs (team names, splash, loading tip). Same two-step and the same reasoning as
+// broadcastMsg above: free text cannot ride the one-word gf_cmd token, and the two writes MUST be
+// one chained rcon command — as separate packets they race on the rate-limited queue and the text
+// one can drop, leaving the bridge to act on an empty string. Same character stripping, so a
+// message can't break out of the chained command.
+async function funText(verb,inputId){
+  const inp=g(inputId),m=inp.value.trim().replace(/["'`;\\]/g,'');
+  if(!m){toast('Enter some text','err');return;}
+  const r=await batchCmds([`set gf_fun_text "${m}";set gf_cmd ${verb}`],60);
+  if(r&&r.ok){toast('Sent','ok');actLog(verb+': '+m,'in');inp.value='';}
+  else toast('Failed','err');
+}
+
 // ─── Perks ─────────────────────────────────────────────────────────────────
 // Perks the GF loadout already grants every spawn. Toggling one of these OFF
 // goes in the force-OFF list; toggling a non-base perk ON goes in force-ON.
@@ -1989,6 +2014,17 @@ async function copySprintAdsFix(){
     clogAdd(SPRINT_ADS_FIX,'ls');
   } else toast('Clipboard copy failed','err');
 }
+// MODS tab: copy a whole console LINE (often several dvars at once — EnCoRe's "infections" are
+// blocks of them). copyClientDvar handles the single-dvar rows; this is for the multi-dvar ones.
+// ⚠ These only work from the MAIN MENU console: sv_disableClientConsole 1 blocks the in-game
+// console on our server, so telling a player to paste mid-game would be advice that cannot be taken.
+async function copyModsLine(line){
+  if(await copyText(line)){
+    toast('Copied — paste into your console from the MAIN MENU','ok');
+    actLog('Copied console line: '+line,'in');
+    clogAdd(line,'ls');
+  } else toast('Clipboard copy failed','err');
+}
 async function copyClientDvar(dv,val){
   const cmd=dv+' '+val;
   if(await copyText(cmd)){
@@ -2336,7 +2372,7 @@ const SRV_SECTIONS = [
     { n:'gf_debug_spawns',        lbl:'Spawn Debug',          type:'tog', def:'0', tip:'gf_debug_spawns\nDraw spawn point entities + team assignments each round.' },
     { n:'gf_debug_hud_pool',      lbl:'HUD Pool Debug',       type:'tog', def:'0', tip:'gf_debug_hud_pool\nLog HUD element pool allocation counts each round.' },
     { n:'gf_debug_elem_probe',    lbl:'Elem Probe',           type:'tog', def:'0', tip:'gf_debug_elem_probe\nProbe available client HUD element slots; prints count.' },
-    { n:'gf_force_camo',          lbl:'Force Camo (test)',    type:'sel', def:'-1', opts:[['-1','Off'],['0','Default'],['1','Dusty'],['2','Ice'],['3','Red'],['4','OD Green'],['5','Desert Nevada'],['6','Desert Sahara'],['7','Jungle ERDL'],['8','Jungle Tiger'],['9','Urban German'],['10','Urban Warsaw'],['11','Winter Siberia'],['12','Winter Yukon'],['13','Woodland'],['14','Woodland Flora'],['15','Gold']], tip:'gf_force_camo\nDEV/TEST: force this camo index on BOTH guns every spawn, overriding each loadout’s own camo. Off = use the loadout camo. Handy for checking which secondaries actually RENDER camo (e.g. set Gold and watch the pistols). Works on the dedicated server too — no sv_cheats needed.' },
+    { n:'gf_force_camo',          lbl:'Force Camo (test)',    type:'sel', def:'-1', opts:[['-1','Off'],['0','Default'],['1','Dusty'],['2','Ice'],['3','Red'],['4','OD Green'],['5','Desert Nevada'],['6','Desert Sahara'],['7','Jungle ERDL'],['8','Jungle Tiger'],['9','Urban German'],['10','Urban Warsaw'],['11','Winter Siberia'],['12','Winter Yukon'],['13','Woodland'],['14','Woodland Flora'],['15','Gold'],['17','GF Crimson'],['18','GF Teal'],['19','GF Urban'],['20','GF Toxic'],['21','GF Sand'],['22','GF Violet'],['23','GF White'],['24','GF Arctic'],['25','SSC Rainbow'],['26','SSC Monogram'],['27','SSC Neon'],['28','SSC Spiral'],['29','SSC Nebula'],['30','SSC Weave'],['31','SSC Splatter'],['32','SSC Ember'],['33','SSC Oilslick'],['34','SSC Pastel']], tip:'gf_force_camo\nDEV/TEST: force this camo index on BOTH guns every spawn, overriding each loadout’s own camo. Off = use the loadout camo. Handy for checking which secondaries actually RENDER camo (e.g. set Gold and watch the pistols). Works on the dedicated server too — no sv_cheats needed.' },
     { n:'gf_force_loadout',       lbl:'Force Loadout (-1=off)', type:'num', def:'-1', tip:'gf_force_loadout\nDEV/TEST: lock ONE loadout on every spawn instead of the round rotation, to inspect it without waiting. Value = index into the live (SHUFFLED) pool, 0-53 — NOT the editor row number, so cycle 0,1,2… and read the on-screen loadout HUD to find the one you want. -1 = off (normal rotation).' },
     // (duplicate Killcam row removed — the one control lives in GAME RULES)
     { n:'compass',                lbl:'Minimap',              type:'tog', def:'1', tip:'compass\n1 = show minimap, 0 = hide.' },

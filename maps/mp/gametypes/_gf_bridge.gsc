@@ -93,6 +93,48 @@
 //   adminmsg           - print the contents of dvar gf_adminsay to the ADMINS ONLY (killfeed).
 //                        The box services' channel for admin-only notices (GF-ConnLogger's
 //                        "who just joined, and from where"); see gf_bridgeAdminSay.
+//   funreset           - MASTER KILL SWITCH for everything in _gf_fun.gsc (the EnCoRe V8.3 port,
+//                        pruned 2026-08-15): collapse every fun loop, delete every tracked entity,
+//                        clear the toggles and re-lock gf_fun_cheats. Run it before a real match.
+//                        (Account writes are persistent by nature and are NOT undone.) The features
+//                        live in _gf_fun.gsc, dropped from public builds wholesale; the full
+//                        accounting is docs/notes/encore-v8-feature-port.md.
+//   fungive_<weapon>   - give+switch a weapon to every live human. ⚠ CURRENT LIFE ONLY: the shared
+//                        loadout is rebuilt on every spawn, which is the rule the mode rests on.
+//   funtakeall         - takeAllWeapons on every live human (returns next spawn) — the mid-life undo
+//   funbullet_<mode>   - what every shot does on impact: off|rpg|law|chinalake|minigun|care|tele|
+//                        fx_electric|fx_green|fx_red|fx_boom|fx_blood (EnCoRe's FX Bullets: loadfx
+//                        lazily per round, impact effects tracked + timed-deleted — spawnFx entities
+//                        outlive their visual). 120ms per-player throttle, same guard as expbullets.
+//   funtele/funsave/funload/funclone - one-shot: teleport each human to their OWN crosshair (never a
+//                        shared point — that telefrags), save/load one position each (pers[], the
+//                        only store surviving map_restart), clonePlayer() corpse copies (tracked).
+//   funsound_<alias>   - playSoundOnPlayers to everyone
+//   funnade_<0|1>      - ride your own grenade (LinkTo, bounded 6s so nobody is stranded frozen)
+//   funvision_<name>   - raw visionSetNaked by name (EnCoRe's ~35 sets). TRANSIENT — the next round
+//                        start re-applies the persistent set; vision_<key> is the one that sticks.
+//   funantiquit_<0|1>  - keep every human's ESC menu closed (2 Hz, NOT EnCoRe's 20 Hz — that is a
+//                        reliable-command stream). ⚠ Menu only: Alt-F4/console/net-drop still quit.
+//   fungersh_<num>     - hand ONE player a frag that teleports them to wherever it lands
+//   funadventure_<num> - sphere-ride ONE player 2000u into the sky, then drop them (gated — the
+//                        landing can spend a life)
+//   funteamname_<allies|axis|both> / funmotd / funtip - text verbs; the panel writes gf_fun_text
+//                        FIRST in the SAME chained rcon command (a separate packet can drop on the
+//                        paced queue), reader clears it. funtip = the loading-screen "didyouknow"
+//                        string (whether Plutonium's loading UI renders it is unverified).
+//
+// GATED on gf_fun_cheats (default 0, re-locked by funreset) — server-side, so they genuinely decide
+// a live public round, or write a profile with no undo:
+//   pfunaim_<num>_<snap|silent|off> - aimbot on ONE human. "snap" drags the view (client-authoritative,
+//                        so it fights back and reads as violent aim assist); "silent" leaves the view
+//                        alone and MagicBullets the target's head on each shot — the one that works.
+//   functeamgod_<allies|axis>_<0|1> - invulnerability for ONE side (refereeing a 1vN, walking a demo)
+//   funprestige_<num>_<p> - set prestige (EnCoRe's exact setDStat plevel + setRank sequence)
+//   funlevel50_<num>   - max rank XP (statSet rankxp 1262500, EnCoRe's exact write)
+//   funcodpoints_<n>   - CoD points for all humans | fununlockpro - all pro perks, all humans
+//                        ⚠ All account writes land on THIS MOD'S stats namespace
+//                        (players\mods\mp_gunfight\mpstats) — nobody's real BO1 rank is touched.
+//   funclear           - delete every tracked fun entity (clones, FX, spheres) without a full reset
 //
 // Config dvar (panel-managed):
 //   gf_admin_guids -> comma-separated player GUID allowlist. gf_bridgeNotify prints command
@@ -186,6 +228,12 @@ gf_bridgeInit()
     // re-begin wave, so it could quiet-seat the target + drive a SECOND spawnClient while the
     // target's own re-begin spawn was mid-flight — resurrecting the raced-switch "enemy spawns /
     // 1 HP" bug (live repro: KL9, mp_cairo). Do not bring the watcher back.
+
+    // Ported mod-menu features (EnCoRe V8.3 + guest patches). Seeds its own gf_fun_* dvars and
+    // re-applies whatever is still switched on — map_restart wipes level.*, so that state lives in
+    // dvars and has to be re-asserted per round. Fully qualified BOTH ways (it calls
+    // gf_bridgeNotify back) so the two dropped files never form an #include cycle.
+    maps\mp\gametypes\_gf_fun::gf_funInit();
 
     level.gf_paused        = false;
     level.gf_infAmmo       = false;
@@ -550,6 +598,53 @@ gf_bridgeDispatch( cmd )
     if ( cmd == "invis_on"       ) { gf_bridgeInvisible( true );   return; }
     if ( cmd == "invis_off"      ) { gf_bridgeInvisible( false );  return; }
     if ( cmd == "quake"          ) { gf_bridgeQuake();             return; }
+    // funreset — the master kill switch for everything ported from the mod-menu packs: collapse
+    // every fun loop, delete every spawned entity, restore every engine dvar those features
+    // touched, and re-lock the cheat gate. One click, because the realistic failure is an admin who
+    // left something on and a real match starting.
+    if ( cmd == "funreset"       ) { maps\mp\gametypes\_gf_fun::gf_funReset(); return; }
+
+    // --- Ported mod-menu features (_gf_fun.gsc), PRUNED 2026-08-15 to the owner's keep-list. All
+    // act on HUMANS, never bots (the reconciler owns bot composition). The client-dvar features
+    // (infections, name/clantag/class names, sun/fog colour) have NO verbs on purpose -- a dedicated
+    // server cannot push them, so they ship as CLIENT-ONLY clipboard rows in the panel.
+    t = gf_bridgeTail( cmd, "fungive_"    );  if ( isDefined( t ) ) { maps\mp\gametypes\_gf_fun::gf_funGiveWeapon( t );   return; }
+    t = gf_bridgeTail( cmd, "funbullet_"  );  if ( isDefined( t ) ) { maps\mp\gametypes\_gf_fun::gf_funBulletMode( t );   return; }
+    t = gf_bridgeTail( cmd, "funsound_"   );  if ( isDefined( t ) ) { maps\mp\gametypes\_gf_fun::gf_funSound( t );        return; }
+    if ( cmd == "funtakeall"     ) { maps\mp\gametypes\_gf_fun::gf_funTakeAll();         return; }
+    if ( cmd == "funtele"        ) { maps\mp\gametypes\_gf_fun::gf_funTeleportToAim();   return; }
+    if ( cmd == "funsave"        ) { maps\mp\gametypes\_gf_fun::gf_funSavePos();         return; }
+    if ( cmd == "funload"        ) { maps\mp\gametypes\_gf_fun::gf_funLoadPos();         return; }
+    if ( cmd == "funclone"       ) { maps\mp\gametypes\_gf_fun::gf_funClonePlayers();    return; }
+    t = gf_bridgeTail( cmd, "funnade_"    );  if ( isDefined( t ) ) { maps\mp\gametypes\_gf_fun::gf_funNadeRide( t == "1" );  return; }
+    t = gf_bridgeTail( cmd, "funvision_"  );  if ( isDefined( t ) ) { maps\mp\gametypes\_gf_fun::gf_funRawVision( t );        return; }
+    t = gf_bridgeTail( cmd, "funantiquit_" ); if ( isDefined( t ) ) { maps\mp\gametypes\_gf_fun::gf_funAntiQuit( t == "1" );  return; }
+    t = gf_bridgeTail( cmd, "fungersh_"      );  if ( isDefined( t ) ) { maps\mp\gametypes\_gf_fun::gf_funGersh( t );     return; }
+    t = gf_bridgeTail( cmd, "funadventure_"  );  if ( isDefined( t ) ) { maps\mp\gametypes\_gf_fun::gf_funAdventure( t ); return; }
+    // Text-payload verbs: the panel writes gf_fun_text first (free text cannot ride the one-word
+    // gf_cmd token), same two-step as gf_say/saymsg. The reader clears the slot. Team names are
+    // per-side verbs because g_TeamName_Allies / g_TeamName_Axis are separate server dvars.
+    t = gf_bridgeTail( cmd, "funteamname_" ); if ( isDefined( t ) ) { maps\mp\gametypes\_gf_fun::gf_funTeamName( t ); return; }
+    if ( cmd == "funmotd"        ) { maps\mp\gametypes\_gf_fun::gf_funMotd();            return; }
+    if ( cmd == "funtip"         ) { maps\mp\gametypes\_gf_fun::gf_funTip();             return; }
+
+    // --- Player-affecting cheats + account editors. Every one is gated on gf_fun_cheats inside
+    // _gf_fun.gsc (default 0, re-locked by funreset) and reports its refusal rather than no-opping.
+    // The account writes are PERSISTENT (this mod's own stats namespace, no undo) -- that is why
+    // they share the gate.
+    t = gf_bridgeTail( cmd, "pfunaim_"   );  if ( isDefined( t ) ) { gf_bridgeFunAim( t );  return; }
+    t = gf_bridgeTail( cmd, "functeamgod_" ); if ( isDefined( t ) ) { gf_bridgeFunTeamGod( t ); return; }
+    t = gf_bridgeTail( cmd, "funprestige_"  );  if ( isDefined( t ) ) { gf_bridgeFunPrestige( t );  return; }
+    t = gf_bridgeTail( cmd, "funlevel50_"   );  if ( isDefined( t ) ) { maps\mp\gametypes\_gf_fun::gf_funLevel50( t );    return; }
+    t = gf_bridgeTail( cmd, "funcodpoints_" );  if ( isDefined( t ) ) { maps\mp\gametypes\_gf_fun::gf_funCodPoints( t );  return; }
+    if ( cmd == "fununlockpro" ) { maps\mp\gametypes\_gf_fun::gf_funUnlockPro(); return; }
+
+    if ( cmd == "funclear" )
+    {
+        n = maps\mp\gametypes\_gf_fun::gf_funClearEnts();
+        gf_bridgeNotify( "^2Deleted " + n + " spawned entities" );
+        return;
+    }
     if ( cmd == "tpall"          ) { gf_bridgeTeleportAll();       return; }
     if ( cmd == "saymsg"         ) { gf_bridgeBroadcast();         return; }
     if ( cmd == "adminmsg"       ) { gf_bridgeAdminSay();          return; }
@@ -1320,6 +1415,43 @@ gf_allSpecialties()
 // sequenced move (gf_seqTeamMove: die + late-spawn onto the new team if the round admits it, else sit
 // out; free during prematch/grace), bypassing the next-round defer. The panel's default team-move
 // click sends this (pteamforce_); its ⏭ button sends the deferred pteam_. The team-size cap still holds.
+// Two-part args for the MODS-tab cheat verbs, split exactly like gf_bridgeTeamCmd below: "<num>_<mode>"
+// and "<team>_<0|1>". Both report a malformed arg instead of guessing, for the same reason -- a
+// silent ack reads as a broken button.
+gf_bridgeFunAim( arg )
+{
+    parts = strTok( arg, "_" );
+    if ( parts.size < 2 )
+    {
+        gf_bridgeNotify( "^1Bad aim arg '" + arg + "' (want <num>_<snap|silent|off>)" );
+        return;
+    }
+    maps\mp\gametypes\_gf_fun::gf_funAimbot( parts[0], parts[1] );
+}
+
+gf_bridgeFunTeamGod( arg )
+{
+    parts = strTok( arg, "_" );
+    if ( parts.size < 2 )
+    {
+        gf_bridgeNotify( "^1Bad team-god arg '" + arg + "' (want <allies|axis>_<0|1>)" );
+        return;
+    }
+    maps\mp\gametypes\_gf_fun::gf_funTeamGod( parts[0], parts[1] == "1" );
+}
+
+// funprestige_<num>_<prestige> -- same split shape as the aim/team-god args above.
+gf_bridgeFunPrestige( arg )
+{
+    parts = strTok( arg, "_" );
+    if ( parts.size < 2 )
+    {
+        gf_bridgeNotify( "^1Bad prestige arg '" + arg + "' (want <num>_<prestige>)" );
+        return;
+    }
+    maps\mp\gametypes\_gf_fun::gf_funPrestige( parts[0], parts[1] );
+}
+
 gf_bridgeTeamCmd( arg, force )
 {
     if ( !isDefined( force ) )

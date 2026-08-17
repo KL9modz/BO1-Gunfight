@@ -24,7 +24,11 @@ $script:DevFiles = @(
     "maps/mp/bots/_bot_script.gsc",
     "maps/mp/bots/_bot_utility.gsc",
     "maps/mp/gametypes/_gf_bridge.gsc",
-    "maps/mp/gametypes/_gf_debug.gsc"
+    "maps/mp/gametypes/_gf_debug.gsc",
+    # Ported mod-menu features (EnCoRe V8.3 + guest patches). Dropped WHOLESALE rather than
+    # strip-marked: it is reached only from _gf_bridge.gsc (also dropped), so the public build loses
+    # the whole feature set with no marker to get wrong and no hole for the verifier to miss.
+    "maps/mp/gametypes/_gf_fun.gsc"
 )
 
 # Dvars that must NOT survive into the public build. Every one is read only by dev
@@ -66,7 +70,11 @@ $script:StrippedDvars = @(
     "gf_team_nextmatch", "gf_teamcarry", "gf_teamstage", "gf_expectcount",
     "scr_gf_load_expect", "scr_gf_load_expect_wait",
     # Debug probes / bot-difficulty selector added after the original list was written.
-    "gf_debug_loadgap", "gf_bot_difficulty"
+    "gf_debug_loadgap", "gf_bot_difficulty",
+    # Ported fun/mod-menu features. Readers live only in _gf_fun.gsc + _gf_bridge.gsc (both dropped),
+    # so a surviving read is by definition a leak. The gf_fun_prev_* snapshots are covered by the
+    # PREFIX list below rather than named one-per-engine-dvar.
+    "gf_fun_cheats", "gf_fun_bullet", "gf_fun_nade", "gf_fun_antiquit", "gf_fun_text"
 )
 
 # Dev-only dvar PREFIXES. The gf_sv_* bot-tuning mirrors are one per engine dvar (13+ names,
