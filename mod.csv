@@ -1,4 +1,17 @@
 menufile,ui_mp/hud_gf.txt
+# MAIN MENU OVERRIDE: our fork of the STOCK ui_mp/main.menu (gunfight.us ad block,
+# ticker copy, JOIN GUNFIGHT button). A mod.ff menufile beats the game's own copy --
+# the client log shows `Loading fastfile 'mod'` BEFORE 'patch_ui_mp'/'en_ui_mp'/'ui_mp',
+# so ours registers first and stock's is discarded. Same route mp_league (BOCL) uses.
+# ⚠ REACH IS RETENTION, NOT ACQUISITION: only a client that already downloaded our
+# mod.ff renders it, i.e. someone who has played here. fs_game persists after a
+# disconnect, so they keep our menu until they join a differently-modded server.
+# ⚠ This is the only place we stage a file OVER a stock raw/ asset the game itself
+# reads. build_ff.ps1 backs the stock copy up and restores it after the link; if a
+# build dies mid-run, confirm raw/ui_mp/main.menu came back before playing offline.
+# ⚠ Do NOT also loadMenu this from another of our menufiles -- double registration
+# kills the whole menu system (see the hud_gf_health.menu note in build_ff.ps1).
+menufile,ui_mp/main.menu
 # Empty stub: the engine hard-looks-up ui_mp/mod.txt on every mod load and BLOCKS
 # ~4.6s when it's missing (first-join black-screen contributor). Loads no menus.
 menufile,ui_mp/mod.txt
