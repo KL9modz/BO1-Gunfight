@@ -557,9 +557,19 @@ down), so persistent loops are collapsed to one copy via a re-init notify (`bot_
 
 ### Round lifecycle & activation
 `onStartGameType` stamps `level.gf_roundGen = gettime()` (monotonic across restarts) and resets round
-flags. The round runs on the **engine's native prematch** (`level.prematchPeriod`): countdown, freeze,
-intro VO, hint, timer-hide are all stock; the only addition is `gf_nativePrematchTicker()` (a 1 Hz beep
-the silent stock countdown lacks). Activation is spawn-driven: `gf_onSpawned` threads
+flags. The prematch is **MOD-OWNED** (`gf_prematchCountdown`, `_gf_rounds.gsc`): `level.prematchPeriod`
+is pinned to **0**, so stock `prematchPeriod()` runs yield-free and fires `prematch_over` at t≈0; the
+countdown consumes that fire and **re-asserts `level.inPrematchPeriod`**, so stock's spawn presentation
+(freeze, round-1 sting, faction splash, VO, hint) and BotWarfare's AI park keep running verbatim. It
+draws the number/beep off a `gettime()` clock (the native `wait(1.0)` loop was dilated by the
+once-per-round `map_restart` hitch — the slow-mo countdown), blends out of `mpIntro` at T-2s into the GF
+look, and at GO mirrors stock's tail and **re-fires `prematch_over`** for the mod's waiters. Per spawn
+the stock full freeze is swapped for a **partial lock** (look/ADS/stance/switch/melee live; no
+move/jump/fire/offhand) via `setMoveSpeedScale(0)` + `DisableOffhandWeapons` + ammo-zero +
+`ammoCounterHide`. ⚠ The jump half is **level-wide `jump_height 0`, never `AllowJump`** — that builtin
+has zero `raw/maps/mp` hits (SP/ZM only) and would be an `unknown function` failing the whole server.
+`gf_prematchLockWatchdog` forces GO 10s late if the countdown thread dies. Activation is spawn-driven:
+`gf_onSpawned` threads
 `gf_tryActivateRound`, which dedups (0.2s), `waittill("prematch_over")`, then in one **yield-free**
 block sets `gf_roundActive`, threads `gf_roundWatchdog(myGen)`, closes grace early
 (`gf_closeGraceEarly`, prematch_over+3s floor), captures the team-mode snapshot, and starts the round
