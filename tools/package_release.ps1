@@ -170,8 +170,12 @@ function Build-Staging {
     # mistake that reaches every public server at once.
     # Always rebuilt (never -SkipBuild'd): it is a ~1 MB zip of tracked sources, and a stale copy
     # would silently omit a camo added since.
+    # ⚠ Do NOT test $LASTEXITCODE here. It reflects the last NATIVE executable only -- a .ps1 call
+    # leaves it untouched, so a stale non-zero from an earlier linker run reads as "make_iwd failed"
+    # and blocks every release. make_iwd sets $ErrorActionPreference='Stop' and throws, and this
+    # script does too, so a real failure already aborts. The freshness assert below is the guard.
+    $iwdBuiltAfter = (Get-Date).AddSeconds(-5)
     & (Join-Path $PSScriptRoot "make_iwd.ps1") -ModRoot $ModRoot -Verify
-    if ($LASTEXITCODE -ne 0) { throw "make_iwd.ps1 failed -- refusing to ship a release whose camos would render white" }
     # make_iwd falls back to '<name>.new' when a RUNNING game holds the .iwd open. Take whichever
     # of the two is NEWEST -- ⚠ not simply '.new when present': make_iwd does not delete a stale
     # '.new' on a later UNLOCKED run (it only removes the file it is about to write), so a
@@ -183,6 +187,9 @@ function Build-Staging {
         Get-Item | Sort-Object LastWriteTime -Descending
     if (-not $iwdCandidates) { throw "mp_gunfight.iwd was not produced -- refusing to ship a release whose camos would render white" }
     $iwdSrc = $iwdCandidates[0].FullName
+    if ($iwdCandidates[0].LastWriteTime -lt $iwdBuiltAfter) {
+        throw ("stale {0} (written {1}) -- make_iwd did not produce a fresh archive this run, and shipping old camo pixels fails like shipping none" -f (Split-Path -Leaf $iwdSrc), $iwdCandidates[0].LastWriteTime)
+    }
     Write-Host ("  staging {0} ({1:N0} B, {2})" -f (Split-Path -Leaf $iwdSrc), $iwdCandidates[0].Length, $iwdCandidates[0].LastWriteTime)
     Copy-Item -Force -LiteralPath $iwdSrc -Destination (Join-Path $StageMod "mp_gunfight.iwd")
 
