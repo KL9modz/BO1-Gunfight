@@ -203,6 +203,7 @@ $script:LocalOnlyFiles = @(
     "prefs.local.json",       # RCON panel: FAVORITES pinboard (box-local UI state)
     "ignore.local.json",      # muted players - holds GUIDs
     "players.local.json",     # guid -> Discord user id link table - holds GUIDs
+    "backup.local.json",      # passphrase for the encrypted box-state archives
     "security.local.json",    # GF-SecurityWatch trust store (ssh key fingerprints)
     "security_state.json",    # its event bookmarks + learned baseline
     "config.json",            # tools/notify: ntfy topic + optional rcon password
