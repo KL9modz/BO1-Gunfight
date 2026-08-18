@@ -159,3 +159,28 @@ Describe "Find-LeakHits (rule B end-to-end over a temp tree)" {
 
     Remove-Item -Recurse -Force $tmp
 }
+
+Describe "Shipped JSON templates must parse" {
+    # A template is COPIED to make the real config, so a malformed one breaks setup for whoever
+    # follows the docs - and it is invisible until someone tries. Added 2026-08-18 after a
+    # hand-escaped quote inside a "_comment" string shipped an unparseable config.example.json
+    # (the value said do not "fix" it; the inner quotes closed the JSON string early). Building
+    # such values with ConvertTo-Json/JSON.stringify instead of hand-escaping avoids the whole class.
+    $repoRoot = Split-Path -Parent (Split-Path -Parent $here)   # $here is file-scope (line 17); $MyInvocation is NULL inside a Describe
+    $templates = @(Get-ChildItem $repoRoot -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like '*.example.json' -or $_.Name -like '*.json.example' } |
+        Where-Object { $_.FullName -notmatch [regex]::Escape([IO.Path]::DirectorySeparatorChar + '.git' + [IO.Path]::DirectorySeparatorChar) })
+
+    It "finds the templates at all (guards against a silently empty test)" {
+        Assert-True ($templates.Count -ge 4) "expected several templates, found $($templates.Count)"
+    }
+    foreach ($t in $templates) {
+        $name = $t.Name
+        $full = $t.FullName
+        It "$name is valid JSON" {
+            $raw = Get-Content -LiteralPath $full -Raw
+            try { $null = $raw | ConvertFrom-Json }
+            catch { throw "ASSERT: $name is not valid JSON -- $($_.Exception.Message)" }
+        }
+    }
+}
