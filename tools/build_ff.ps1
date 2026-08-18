@@ -111,7 +111,13 @@ function Invoke-Linker {
 # subfolder (mods\$ModName), or inside the mod folder itself
 # (mods\$ModName\tools\). Pick the deployed mod folder accordingly so we never
 # double-nest into mods\$ModName\mods\$ModName.
-if ((Split-Path -Leaf $WorkspaceRoot) -eq $ModName) {
+# ⚠ Decided on CONTENT, not on the folder NAME. The name test
+#   ((Split-Path -Leaf $WorkspaceRoot) -eq $ModName) fails in a git WORKTREE, whose
+#   folder is named mp_gunfight_exp or similar -- so it took the repo-root branch and
+#   wrote mp_gunfight_exp\mods\mp_gunfight\mod.ff, i.e. exactly the double-nest this
+#   guard exists to prevent, silently and off to one side of the real build. A
+#   workspace holding mod.csv at its root IS the mod folder, whatever it is called.
+if (Test-Path -LiteralPath (Join-Path $WorkspaceRoot "mod.csv")) {
     $ModRoot = $WorkspaceRoot
 } else {
     $ModRoot = Join-Path $WorkspaceRoot "mods\$ModName"
