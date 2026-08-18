@@ -32,6 +32,7 @@ param(
     [string] $Restore     = '',
     [string] $To          = '',
     [switch] $IncludeClaudeCreds,    # OFF by default - see the note at the collection list
+    [switch] $Encrypt,               # local archives only; the repo path is plaintext by decision
     [switch] $WhatIf
 )
 $ErrorActionPreference = 'Stop'
@@ -180,41 +181,74 @@ function Unprotect-File($inFile, $outFile, $pass) {
 }
 
 
-# ── push to the private backup repo ────────────────────────────────────────────────────────────
-# Off-box storage is what turns this from "a file on the box it protects" into a backup. The
-# archive is already encrypted, so a private GitHub repo is a reasonable home: versioned, off-site,
-# and it needs no new service on the box.
+# ── publish to the private backup repo ─────────────────────────────────────────────────────────
+# PLAINTEXT BY DECISION (owner's call, 2026-08-18). What that buys and what it costs:
 #
-# ⚠ THE MARKER GUARD IS NOT OPTIONAL. This function pushes an archive containing live credentials
-# and player GUIDs. Pointed at the wrong clone - the PUBLIC BO1-Gunfight tree sits on this same box
-# - it would publish all of it, and git history is permanent (the two burned rcon passwords are
-# still in main's history precisely because a push cannot be taken back). So it refuses to write
-# anywhere that does not carry a .gf-backup-repo marker file, which only the setup step creates.
-# A wrong path fails closed and loudly; it never "helpfully" guesses.
-function Publish-Backup($archive, $gitDir) {
+#   buys  - git does real work. Day-files are append-only, so a day already committed is stored
+#           ONCE and costs nothing again; only genuinely changed bytes cost anything. An encrypted
+#           archive is a fresh incompressible blob every run (~116 KB/day forever, changed or not),
+#           so plaintext is roughly 5-10x cheaper AND diffable, browsable and restorable one file
+#           at a time from the GitHub UI.
+#   costs - the repo now holds live credentials (rcon_password + g_password out of dedicated.cfg,
+#           the panel's stored passwords, the Discord webhook URLs) and PLAYER PII (IPs and GUIDs
+#           in the day-files and the geo cache), in a form anyone with read access can use.
+#
+# ⚠ THEREFORE, THE ONLY THING PROTECTING ALL OF IT IS THAT THE REPO STAYS PRIVATE. Git history is
+# permanent: if the repo is ever made public, forked, or its access leaks, deleting a file does not
+# undo it - the remedy is rotating every credential in it, and the player data cannot be recalled
+# at all. Treat "is this repo still private" as a standing check, not a setup step.
+#
+# ⚠ The marker guard below matters MORE now, not less. Encrypted, a mispush leaked ciphertext;
+# plaintext, it leaks the lot. It refuses any tree without .gf-backup-repo, and refuses outright if
+# origin looks like the public mod repo.
+function Publish-BackupTree($stagingDir, $gitDir) {
     if (-not (Test-Path $gitDir)) { throw "backup repo clone not found: $gitDir" }
-    $marker = Join-Path $gitDir '.gf-backup-repo'
-    if (-not (Test-Path $marker)) {
-        throw "refusing to push: $gitDir has no .gf-backup-repo marker. That marker is what distinguishes the private backup clone from every other git tree on this box."
+    if (-not (Test-Path (Join-Path $gitDir '.gf-backup-repo'))) {
+        throw "refusing to publish: $gitDir has no .gf-backup-repo marker. That marker is what distinguishes the private backup clone from every other git tree on this box."
     }
     $remote = (& git -C $gitDir remote get-url origin 2>$null)
     if (-not $remote) { throw "no origin remote in $gitDir" }
-    # Belt to the marker's braces: never the mod repo, whatever the marker says.
     if ($remote -match 'BO1-Gunfight(\.git)?$') {
-        throw "refusing to push: origin of $gitDir is the PUBLIC mod repo ($remote)"
+        throw "refusing to publish: origin of $gitDir is the PUBLIC mod repo ($remote)"
     }
 
-    $destDir = Join-Path $gitDir 'archives'
-    if (-not (Test-Path $destDir)) { $null = New-Item -ItemType Directory -Path $destDir -Force }
-    Copy-Item -LiteralPath $archive -Destination $destDir -Force
+    # MIRROR, not merge: a file that stops being collected must disappear from the repo tip too, or
+    # the tree slowly becomes a museum of paths that no longer exist. History still holds it, which
+    # is the point of using git at all.
+    $stateDir = Join-Path $gitDir 'state'
+    $null = robocopy $stagingDir $stateDir /MIR /NFL /NDL /NJH /NJS /NP /R:1 /W:1
+    if ($LASTEXITCODE -ge 8) { throw "robocopy failed mirroring into $stateDir (exit $LASTEXITCODE)" }
 
-    & git -C $gitDir add -- 'archives' | Out-Null
-    $msg = "backup {0} ({1:N0} KB)" -f (Split-Path -Leaf $archive), ((Get-Item $archive).Length / 1KB)
-    & git -C $gitDir -c user.name='GF-Backup' -c user.email='gf-backup@localhost' commit -q -m $msg 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { Write-Host 'nothing new to commit'; return }
+    if (-not (Test-Path (Join-Path $gitDir 'README.md'))) {
+        @(
+            '# BO1-Gunfight box state'
+            ''
+            'Everything the mod repo cannot rebuild: connect history, Discord links, panel prefs,'
+            'caches, box config, scheduled task definitions, and the live credentials the server'
+            'runs on. Written daily by `tools/backup_box_state.ps1` on the game server.'
+            ''
+            '**This repo must stay private.** It contains live credentials and player IPs/GUIDs in'
+            'plaintext. If it is ever exposed, rotate everything in `state/` that `MANIFEST.txt`'
+            'marks ROTATE; the player data cannot be recalled.'
+            ''
+            'Restore guidance is in `state/MANIFEST.txt`, which classes every file CARRY, ROTATE or'
+            'CONFIG. Pair it with `docs/MIGRATION.md` in the mod repo.'
+            ''
+            '`mod.ff` and `mp_gunfight.iwd` are deliberately absent: they live on the mod repo'
+            "'s `release` branch (`git checkout origin/release -- mod.ff mp_gunfight.iwd`)."
+        ) -join "`r`n" | Set-Content -Path (Join-Path $gitDir 'README.md') -Encoding UTF8
+    }
+
+    & git -C $gitDir add -A | Out-Null
+    $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm'
+    & git -C $gitDir -c user.name='GF-Backup' -c user.email='gf-backup@localhost' commit -q -m "box state $stamp" 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Host 'no changes since the last backup - nothing committed'; return }
     & git -C $gitDir push -q origin HEAD 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "git push failed (deploy key missing or revoked?) - the archive is committed locally and will push on the next run" }
-    Write-Host "pushed $(Split-Path -Leaf $archive) to $remote"
+    if ($LASTEXITCODE -ne 0) {
+        throw "git push failed (deploy key missing or revoked?) - the commit is local and the next run will push it"
+    }
+    $n = (& git -C $gitDir rev-list --count HEAD).Trim()
+    Write-Host "published to $remote (commit $n)"
 }
 
 # ── verify / restore ───────────────────────────────────────────────────────────────────────────
@@ -310,33 +344,57 @@ if ($WhatIf) {
 
 $manifest -join "`r`n" | Set-Content -Path (Join-Path $staging 'MANIFEST.txt') -Encoding UTF8
 
-$pass = Get-BackupPassphrase
+# ── publish ────────────────────────────────────────────────────────────────────────────────────
+# The repo path is the primary one, and it is PLAINTEXT by decision: git then stores each
+# append-only day-file once instead of re-storing an opaque blob every run, and the tree stays
+# diffable and restorable file-by-file. See Publish-BackupTree for what that costs.
+if ($GitDir) {
+    try {
+        Publish-BackupTree $staging $GitDir
+        Write-Host ("collected {0} file(s), {1:N0} KB ({2} missing)" -f $copied, ($bytes / 1KB), $missing)
+    } catch {
+        # A failed publish must not also destroy the local copy - leave staging for inspection.
+        Write-Host "PUBLISH FAILED: $($_.Exception.Message)"
+        Write-Host "collected files left at: $staging"
+        return
+    }
+    Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
+    return
+}
+
+# ── or a local archive (no repo configured) ────────────────────────────────────────────────────
+# Plain .zip unless -Encrypt. Encryption is opt-in rather than removed: the code is written and
+# tested, and an archive leaving this box for anywhere OTHER than the private repo (a laptop, a USB
+# stick, a cloud drive) still wants it.
 if (-not (Test-Path $OutDir)) { $null = New-Item -ItemType Directory -Path $OutDir -Force }
 $zip = Join-Path $env:TEMP "gf_backup_$stamp.zip"
 Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip -Force
-$out = Join-Path $OutDir "gf_box_state_$stamp.gfbk"
-Protect-File $zip $out $pass
-Remove-Item $zip -Force -ErrorAction SilentlyContinue
-Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
 
-# Verify the artifact we just wrote by DECRYPTING it. An unverified backup is a belief, not a
-# backup, and the failure mode this catches (bad passphrase source, truncated write) is silent.
-$check = Join-Path $env:TEMP "gf_backup_check_$stamp.zip"
-Unprotect-File $out $check $pass
-$entries = 0
-try {
-    $z = [System.IO.Compression.ZipFile]::OpenRead($check); $entries = $z.Entries.Count; $z.Dispose()
-} finally { Remove-Item $check -Force -ErrorAction SilentlyContinue }
-
-Write-Host ("backup: {0}  ({1:N0} KB encrypted, {2} files, {3} missing, verified {4} entries)" -f `
-    $out, ((Get-Item $out).Length / 1KB), $copied, $missing, $entries)
-
-# Push BEFORE pruning: if the push throws, the local archive is still there and retention has not
-# run, so nothing is lost by a failed off-box leg.
-if ($GitDir) {
-    try { Publish-Backup $out $GitDir }
-    catch { Write-Host "off-box push FAILED (backup itself is fine): $($_.Exception.Message)" }
+if ($Encrypt) {
+    $pass = Get-BackupPassphrase
+    $out = Join-Path $OutDir "gf_box_state_$stamp.gfbk"
+    Protect-File $zip $out $pass
+    Remove-Item $zip -Force -ErrorAction SilentlyContinue
+    # Verify by DECRYPTING what we just wrote. An unverified backup is a belief, not a backup, and
+    # the failures this catches (wrong passphrase source, truncated write) are otherwise silent.
+    $check = Join-Path $env:TEMP "gf_backup_check_$stamp.zip"
+    Unprotect-File $out $check $pass
+    $entries = 0
+    try {
+        $z = [System.IO.Compression.ZipFile]::OpenRead($check); $entries = $z.Entries.Count; $z.Dispose()
+    } finally { Remove-Item $check -Force -ErrorAction SilentlyContinue }
+    Write-Host ("backup: {0}  ({1:N0} KB encrypted, {2} files, {3} missing, verified {4} entries)" -f `
+        $out, ((Get-Item $out).Length / 1KB), $copied, $missing, $entries)
+} else {
+    $out = Join-Path $OutDir "gf_box_state_$stamp.zip"
+    Move-Item -LiteralPath $zip -Destination $out -Force
+    $entries = 0
+    $z = [System.IO.Compression.ZipFile]::OpenRead($out)
+    try { $entries = $z.Entries.Count } finally { $z.Dispose() }
+    Write-Host ("backup: {0}  ({1:N0} KB, {2} files, {3} missing, verified {4} entries)" -f `
+        $out, ((Get-Item $out).Length / 1KB), $copied, $missing, $entries)
 }
+Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
 
 if ($CopyTo) {
     if (-not (Test-Path $CopyTo)) { $null = New-Item -ItemType Directory -Path $CopyTo -Force }
@@ -347,7 +405,8 @@ if ($CopyTo) {
 # Retention. Only ever prunes files this script names, in the directory it owns.
 if ($KeepDays -gt 0) {
     $cut = (Get-Date).AddDays(-$KeepDays)
-    $old = @(Get-ChildItem $OutDir -Filter 'gf_box_state_*.gfbk' -ErrorAction SilentlyContinue |
+    $old = @(Get-ChildItem $OutDir -ErrorAction SilentlyContinue |
+             Where-Object { $_.Name -like 'gf_box_state_*.gfbk' -or $_.Name -like 'gf_box_state_*.zip' } |
              Where-Object { $_.LastWriteTime -lt $cut })
     foreach ($o in $old) { Remove-Item $o.FullName -Force -ErrorAction SilentlyContinue }
     if ($old.Count) { Write-Host "pruned $($old.Count) archive(s) older than $KeepDays days" }
