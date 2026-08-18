@@ -105,6 +105,49 @@ Describe "Discord badge/colour maps cover the vocabulary actually in use" {
         $missing = @($tags | Where-Object { -not $script:GfDiscordEmoji.ContainsKey($_) })
         Assert-Eq ($missing -join ',') '' "tags with no Discord emoji mapping"
     }
+    # The -Tags scan above only sees a LITERAL named argument, which is why it reported full
+    # coverage while every join alert was losing its badge: join-notify passes tags POSITIONALLY,
+    # and by variable (Count-Tag's return). Two more collectors close that:
+    #   * string literals inside an @(...) argument of a send call - catches @('wave')
+    #   * string literals RETURNED by a *-Tag helper - catches the join 👤/👥 pair
+    # Restricted to the send commands and to tag helpers on purpose: a blanket scan for string
+    # arrays would flag every unrelated @('allies','axis') in the tree as an unmapped tag.
+    It 'tags passed positionally or via a *-Tag helper are covered too' {
+        $sendCmds = @('send-ntfy','send-gfalert','send-gfdiscord','send-gfntfy')
+        $files = Get-ChildItem $toolsRoot -Recurse -Filter '*.ps1' -ErrorAction SilentlyContinue |
+                 Where-Object { $_.FullName -notmatch [regex]::Escape([IO.Path]::DirectorySeparatorChar + "tests" + [IO.Path]::DirectorySeparatorChar) }
+        $found = @()
+        foreach ($f in $files) {
+            $fAst = [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$null)
+            if (-not $fAst) { continue }
+
+            foreach ($c in $fAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+                $name = ''
+                if ($c.CommandElements.Count -gt 0) { $name = [string]$c.CommandElements[0].Extent.Text }
+                if ($sendCmds -notcontains $name.ToLower()) { continue }
+                foreach ($arr in $c.FindAll({ param($n) $n -is [System.Management.Automation.Language.ArrayExpressionAst] }, $true)) {
+                    foreach ($s in $arr.FindAll({ param($n) $n -is [System.Management.Automation.Language.StringConstantExpressionAst] }, $true)) {
+                        $found += $s.Value
+                    }
+                }
+            }
+
+            foreach ($fn in $fAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+                if ($fn.Name -notmatch '-Tags?$') { continue }
+                foreach ($s in $fn.FindAll({ param($n) $n -is [System.Management.Automation.Language.StringConstantExpressionAst] }, $true)) {
+                    $found += $s.Value
+                }
+            }
+        }
+        $found = @($found | Where-Object { $_ -and $_ -match '^[a-z0-9_]+$' } | Sort-Object -Unique)
+        Assert-True ($found.Count -ge 3) "sanity: expected to find the positional tags, found $($found.Count)"
+        # The incident itself, pinned: these three were live and unmapped.
+        foreach ($t in @('bust_in_silhouette','busts_in_silhouette','wave')) {
+            Assert-True ($found -contains $t) "collector no longer sees '$t' - the positional/helper scan stopped working"
+        }
+        $missing = @($found | Where-Object { -not $script:GfDiscordEmoji.ContainsKey($_) })
+        Assert-Eq ($missing -join ',') '' "tags with no Discord emoji mapping (positional/helper call sites)"
+    }
     It "every priority the senders accept has a colour" {
         foreach ($p in @('min','low','default','high','urgent','max')) {
             Assert-True ($script:GfDiscordColor.ContainsKey($p)) "colour for priority '$p'"

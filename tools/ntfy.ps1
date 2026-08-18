@@ -120,6 +120,21 @@ $script:GfDiscordEmoji = @{
     information_source     = [char]::ConvertFromUtf32(0x2139)
     arrows_counterclockwise = [char]::ConvertFromUtf32(0x1F504)
     warning                = [char]::ConvertFromUtf32(0x26A0)
+    # Player-activity vocabulary. These arrive POSITIONALLY (join-notify passes Count-Tag's
+    # return, not a -Tags literal), which is how they went unmapped while the drift guard
+    # below reported full coverage: ntfy renders a shortcode natively, so the badge showed on
+    # the phone and silently vanished from the Discord embed.
+    bust_in_silhouette     = [char]::ConvertFromUtf32(0x1F464)
+    busts_in_silhouette    = [char]::ConvertFromUtf32(0x1F465)
+    wave                   = [char]::ConvertFromUtf32(0x1F44B)
+    # join-notify's own lifecycle set, positional for the same reason and unmapped for the same
+    # reason. red/green are its poll-failure EDGE pair, so on Discord those two were the least
+    # affordable to lose: down and back-up read identically without the badge.
+    red_circle             = [char]::ConvertFromUtf32(0x1F534)
+    green_circle           = [char]::ConvertFromUtf32(0x1F7E2)
+    green_heart            = [char]::ConvertFromUtf32(0x1F49A)
+    satellite_antenna      = [char]::ConvertFromUtf32(0x1F4E1)
+    zzz                    = [char]::ConvertFromUtf32(0x1F4A4)
 }
 
 # Embed stripe colour by priority. Recovery is special-cased by the caller's tag, because
