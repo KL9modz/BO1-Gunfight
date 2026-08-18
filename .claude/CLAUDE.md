@@ -1163,7 +1163,10 @@ animates (`gf_slideLoadout`). Related: [[menu-rendered-loadout-overview]]. Full 
 ### Damage scoring, friendly fire, flinch, vision
 - **Score = total damage dealt** (`gf_onPlayerDamage`), capped per hit at the victim's current HP (no
   overkill inflation), pushed silently (bypasses the stock rank-popup so score doesn't flash each hit).
-- **Rank XP is ~5× stock and lives ONLY in `registerScoreInfo`** (`gf.gsc onStartGameType`): **kill 500**,
+- **Rank XP is ~5× stock and lives ONLY in `registerScoreInfo`** (`gf.gsc onStartGameType`) — and
+  ⚠ since we ship **`modStats 0`** it accrues to the player's **REAL Black Ops profile**, not a
+  private per-mod ladder, so changing any value here changes how fast people rank up *everywhere*
+  ([[plutonium-stats-are-namespaced-per-mod]]): **kill 500**,
   **headshot 150** (stacks on the kill → 650 on a headshot kill), **assist 200** (the flat tier
   `gf_onPlayerKilled` pays every damager; the `assist_25/50/75` tiers are registered but unreachable),
   **capture 500** (OT flag — wired, see below), and the win/loss/tie **match-bonus
@@ -1378,7 +1381,8 @@ team-switch `gf_seqTeamMove` — never count; captures ride the existing `pers["
 last-flushed mark). ⚠ The flush takes the round number **as an argument** — its two call sites sit on
 opposite sides of stock `endGame`'s `roundsplayed++` (`:927` increments, `:985` invokes
 `onRoundEndGame`), so the rescue site passes `roundsplayed - 1`. ⚠ **Deliberately NOT stock's `incPersStat`/`statAdd` chain** — that writes the
-per-mod Demonware blob the server can never read back ([[plutonium-stats-are-namespaced-per-mod]]), and
+Demonware profile blob the server can never read back ([[plutonium-stats-are-namespaced-per-mod]] —
+the player's **real** one now that we ship `modStats 0`, which only raises the stakes), and
 parts of it are dead under `overridePlayerScore`. Flush is **double-sited and zero-safe** (counters
 zeroed on flush; all-zero lines skipped): `gf_endRound` (pre-notify block, before endGame's
 `roundsplayed++` — the round-win predicate reads `pers["gf_spawnedRound"] == roundsplayed`) plus
@@ -1707,6 +1711,33 @@ exposes them under ADVANCED → ENGINE GAMEPLAY. The VPS's
 `dedicated.cfg` lives on the box and is **not** shipped by `deploy.ps1`, so a change here reaches the VPS
 only via the panel (toggle live, then 💾 Save to persist) or a hand edit. ⚠ `g_print_entity_leaks 1` logs
 leaks as they happen — the way to actually verify the entity-leak fix rather than assume it.
+
+**`modStats 0` — Gunfight is a REAL ranked server: players bring their actual BO1 rank.** Plutonium
+normally keys the player stats profile to `fs_game`, so a modded server is a private level-1 ladder
+(`players\mods\mp_gunfight\mpstats`) and rank carries neither in nor out. **`modStats` is the
+server-side opt-out** — another cfg-owned Plutonium engine dvar, same class as the `g_fix_*` family
+above (no GSC writes it, and a seed-if-empty could never fire: it is engine-registered, never empty).
+`0` = read/write the **BO1 coregame profile**, shared with vanilla and every other unmodded ranked
+server; `1` = the per-mod ladder (Plutonium's default). ⚠ **This file used to state that no
+server-side opt-out existed — that was wrong** and it closed the question for months; the corrected
+evidence, incl. the live typed read (`default:"1" Domain is 0 or 1`, versus the inert
+`g_fix_viewkick_dupe`'s `Domain is any text`) lives in
+[[plutonium-stats-are-namespaced-per-mod]]. Four consequences, all deliberate:
+- **It is TWO-WAY.** The ~5× `registerScoreInfo` XP above now inflates players' **real** ranks ~5×.
+- **It covers STATS ONLY.** `config_mp.cfg` (settings, binds, FOV) is a *different* layer driven by
+  `fs_game`, which we cannot drop without losing `mod.ff` — so a player's first join still looks
+  like their settings reset, and only a player-side copy/junction fixes that half. Do not promise
+  both.
+- **The `_gf_fun` account editors now edit real accounts** (`funlevel50_`, `funprestige_`,
+  `funcodpoints_`, `fununlockpro`), permanently, no undo. **Intended** — that is the rank-restoration
+  path for a player who wants their Gunfight progress folded into their real profile. Rare-use by
+  policy, behind the panel's Cheat Verbs gate. ⚠ Do not re-widen them, and do not "restore" the old
+  sandboxed wording in `_gf_fun.gsc`.
+- **Not retroactive** — rank already earned in the per-mod file stays stranded there.
+Panel: ADVANCED → ENGINE GAMEPLAY → *Player Stats Profile*, badged `RESTART` (whether the engine
+latches it is unverified, and clients pick their stat set at connect, so cfg + restart is the only
+shape trusted). ⚠ Its neighbour **`use_localStats` is an unrelated axis** (local filesystem vs
+Demonware storage) — leave it at 0.
 
 ⚠ **Keep every `dedicated.cfg` comment semicolon-free** — the cfg parser splits on `;` *inside* a `//`
 comment and executes each fragment ([[unknown-command-cd-and-cfg-semicolon-parse]]).

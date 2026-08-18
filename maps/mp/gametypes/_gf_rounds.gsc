@@ -5177,7 +5177,8 @@ gf_setPlayerScoreSilent( player, score )
 // last-flushed mark instead of a second live counter.
 //
 // Deliberately NOT tracked from stock's incPersStat/statAdd chain: that writes the
-// Demonware per-mod profile blob ([[plutonium-stats-are-namespaced-per-mod]]), which
+// Demonware profile blob ([[plutonium-stats-are-namespaced-per-mod]] — the COREGAME
+// one now that we ship modStats 0, which only raises the stakes), which
 // the server can never read back — and pieces of it route through score paths that
 // level.overridePlayerScore turns off. Everything here is mod-owned state the mod
 // already computes.
