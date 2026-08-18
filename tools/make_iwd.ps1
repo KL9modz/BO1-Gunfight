@@ -28,6 +28,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# The IWi v13 header shape (Read-IwiHeader), shared with the camo writers + preview tool.
+. (Join-Path $PSScriptRoot 'iwi_common.ps1')
+
 if (-not $ModRoot) {
     $scriptDir = $PSScriptRoot
     if (-not $scriptDir) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
@@ -47,16 +50,12 @@ if ($files.Count -eq 0) { throw "images\ holds no .iwi files" }
 # pack, deploy and FastDL perfectly happily, then simply fail to render -- the exact silent, hard-
 # to-attribute failure the carrier-material bug already cost a debug cycle on. Fail at build time.
 # Header: "IWi" + version byte; every stock T5 image and every working camo we ship reads 0x0D.
+# Read-IwiHeader (tools\iwi_common.ps1) owns the header shape for every tool that writes or reads
+# one; it reports instead of throwing, which is exactly what a batch validator wants.
 $badFmt = @()
 foreach ($f in $files) {
-    $h = New-Object byte[] 4
-    $fs = [System.IO.File]::OpenRead($f.FullName)
-    try { $read = $fs.Read($h, 0, 4) } finally { $fs.Close() }
-    if ($read -lt 4 -or $h[0] -ne 0x49 -or $h[1] -ne 0x57 -or $h[2] -ne 0x69) {
-        $badFmt += "$($f.Name): not an IWi file"
-    } elseif ($h[3] -ne 0x0D) {
-        $badFmt += ("$($f.Name): IWi v$($h[3]), not T5's v13 (art from another game - it will not render)")
-    }
+    $h = Read-IwiHeader -Path $f.FullName
+    if (-not $h.ok) { $badFmt += "$($f.Name): $($h.reason)" }
 }
 if ($badFmt.Count) { throw "Refusing to package - wrong-format image(s):`n  " + ($badFmt -join "`n  ") }
 

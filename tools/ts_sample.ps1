@@ -40,7 +40,7 @@ param(
   [string]$Pw    = "",
   # 3000 is correct for BOTH documented ways of running this: it is the panel's own port ON
   # the box, and the port the laptop SSH tunnel forwards to it (ssh -L 3000:127.0.0.1:3000).
-  # The LAPTOP's own panel is a DIFFERENT server on 3005 - tools\rcon\start.bat pins it there
+  # The LAPTOP's own panel is a DIFFERENT server on 3005 - tools\rcon\rcon_start.bat pins it there
   # so it can never collide with that tunnel - so to sample a local listen server instead,
   # pass -Panel http://127.0.0.1:3005.
   [string]$Panel = "http://127.0.0.1:3000"

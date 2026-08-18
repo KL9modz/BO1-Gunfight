@@ -321,6 +321,56 @@ function New-ModIwd {
 
     & powershell -NoProfile -File $maker -ModRoot $RepoRoot
     if ($LASTEXITCODE -ne 0) { throw "make_iwd.ps1 failed (exit $LASTEXITCODE) - refusing to deploy a table whose camo images no client can fetch" }
+
+    # make_iwd EXITS 0 on its lock fallback: when its own output file is held open it writes
+    # <name>.iwd.new beside the real one and only WARNS. Nothing downstream reads that sibling, so
+    # without this the deploy would mirror and publish the OLD bytes while reporting success, and
+    # clients would fetch an .iwd missing the newly added camo images - flat white camos, the exact
+    # failure this whole delivery path exists to prevent. Promote it; if even that is blocked,
+    # FAIL rather than ship stale pixels under a "Published" line.
+    $newIwd = Join-Path $RepoRoot "$ModName.iwd.new"
+    if (Test-Path -LiteralPath $newIwd) {
+        Write-Host "make_iwd hit its lock fallback (wrote $ModName.iwd.new) - promoting it." -ForegroundColor Yellow
+        try {
+            Move-Item -LiteralPath $newIwd -Destination (Join-Path $RepoRoot "$ModName.iwd") -Force -ErrorAction Stop
+        } catch {
+            throw "$ModName.iwd is locked in the clone and its .new sibling could not replace it ($($_.Exception.Message)). Close whatever holds it and re-run - deploying now would publish stale camo images."
+        }
+    }
+}
+
+function Copy-ModIwd {
+    # The .iwd is the ONE file in the mirrored tree that the RUNNING server holds open: Plutonium
+    # mounts it at load and keeps the handle (make_iwd.ps1's own documented lock finding). That is
+    # why Deploy-Mod /XF-es it out of the robocopy instead of letting /MIR carry it - a mirror that
+    # tries to overwrite the mounted file gets ERROR 32, robocopy exits >= 8, and Invoke-Robocopy
+    # throws, aborting the deploy BEFORE the FastDL publish and before the restart. (The first-ever
+    # camo deploy only worked because no destination .iwd existed yet to be locked.)
+    #
+    # So the copy happens HERE instead, driven from Restart-Server's -WhileDown window where the
+    # bootstrapper has been killed and the bat has not yet relaunched it.
+    #
+    # Returns $true when the destination is current (or there is nothing to ship), $false when it
+    # is still locked and therefore STALE - the caller must SAY so rather than report success: a
+    # stale .iwd renders every custom camo flat white on every client.
+    param([int]$RetrySeconds = 0)
+
+    $src = Join-Path $RepoRoot "$ModName.iwd"
+    if (!(Test-Path -LiteralPath $src)) { return $true }    # no custom images in this build
+    if ($DryRun) { Write-Host "(dry run) would copy $ModName.iwd -> $ModDest"; return $true }
+
+    $dst = Join-Path $ModDest "$ModName.iwd"
+    $deadline = (Get-Date).AddSeconds($RetrySeconds)
+    for (;;) {
+        try {
+            Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop
+            Write-Host "Deployed $ModName.iwd ($((Get-Item -LiteralPath $dst).Length) bytes) -> $dst"
+            return $true
+        } catch {
+            if ((Get-Date) -ge $deadline) { return $false }
+            Start-Sleep -Milliseconds 500
+        }
+    }
 }
 
 function Publish-FastDL {
@@ -469,6 +519,11 @@ function Wait-ForServerBack {
 }
 
 function Restart-Server {
+    # -WhileDown runs in the window between killing the bootstrapper and the bat relaunching it -
+    # the only moment a file the RUNNING server holds open can be replaced (today: the mounted
+    # mp_gunfight.iwd; see Copy-ModIwd).
+    param([scriptblock]$WhileDown)
+
     if ($NoRestart -or $DryRun) {
         Write-Host "Skipping server restart$(if ($DryRun) { ' (dry run)' }) - relaunch manually to load the new mod."
         return
@@ -485,6 +540,9 @@ function Restart-Server {
     if ($boot) {
         $boot | Stop-Process -Force
         Write-Host "Bootstrapper killed; the restart-loop bat will bring it back up."
+        # Its file handles are released now, and the bat re-runs the updater check before it
+        # remounts anything, so this is the window for a copy the live server would have blocked.
+        if ($WhileDown) { & $WhileDown }
         # Verify it actually returns, and auto-recover the known `-update-only` wedge
         # instead of leaving the server silently DOWN for a human to notice.
         if (-not (Wait-ForServerBack)) {
@@ -493,6 +551,8 @@ function Restart-Server {
         }
     } else {
         Write-Host "Bootstrapper was NOT running - the game server is DOWN." -ForegroundColor Yellow
+        # Nothing holds the mod folder open, so the deferred copy is free here.
+        if ($WhileDown) { & $WhileDown }
         Write-Host "Start it manually (your server start .bat). The restart loop only" -ForegroundColor Yellow
         Write-Host "relaunches after a kill; it cannot start a fully-stopped server." -ForegroundColor Yellow
     }
@@ -614,13 +674,29 @@ function Deploy-Mod {
     # $LocalOnlyGlobs rides along because robocopy /XF takes wildcards: without it the
     # ops crib sheet (tools\ops.local.*, whatever extension the operator used) would be
     # PURGED off the box by /MIR every deploy.
-    $xf = $LocalOnlyFiles + $LocalOnlyGlobs + @("console_mp.log*")
+    # $ModName.iwd rides the SEPARATE Copy-ModIwd path below, never /MIR: the running server holds
+    # the mounted .iwd open, so a mirror carrying it dies on ERROR 32 and throws away the entire
+    # deploy (see Copy-ModIwd). /XF here is what keeps the tree mirror unable to fail on it.
+    $xf = $LocalOnlyFiles + $LocalOnlyGlobs + @("console_mp.log*", "$ModName.iwd")
     Invoke-Robocopy -Source $RepoRoot -Destination $ModDest -ExtraArgs (@("/XD") + $xd + @("/XF") + $xf)
     Write-Host "Mod tree + mod.ff deployed$(if ($DryRun) { ' (dry run - nothing changed)' }) to $ModDest"
 
+    # Try it now - this succeeds outright when the server is already down, and on the first camo
+    # deploy to a box with no destination .iwd yet. Otherwise the restart's down-window gets it.
+    $script:IwdDeployed = Copy-ModIwd
+
     Publish-FastDL
 
-    Restart-Server
+    Restart-Server -WhileDown { $script:IwdDeployed = Copy-ModIwd -RetrySeconds 25 }
+    if (-not $script:IwdDeployed) {
+        Write-Host ""
+        Write-Host "WARNING: $ModName.iwd could NOT be written to $ModDest (still locked)." -ForegroundColor Red
+        Write-Host "         The mod tree and mod.ff ARE deployed, but the mod folder still holds the" -ForegroundColor Red
+        Write-Host "         OLD images - custom camos will render flat white for everyone. Stop the" -ForegroundColor Red
+        Write-Host "         server and copy it by hand, or re-run deploy without -NoRestart:" -ForegroundColor Red
+        Write-Host "           Copy-Item '$(Join-Path $RepoRoot "$ModName.iwd")' '$(Join-Path $ModDest "$ModName.iwd")' -Force" -ForegroundColor Red
+    }
+
     Restart-Panel        # keep the admin panel's node process on the same code as the game
     Restart-BoxServices  # recycle the load-once box services (status/conn/join) onto the new code
 

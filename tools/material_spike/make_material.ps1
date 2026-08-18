@@ -48,6 +48,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# The IWi v13 header shape, shared with make_camo_iwi.ps1 and dds_to_iwi.ps1 (this script sits one
+# level down, hence the '..').
+. (Join-Path $PSScriptRoot '..\iwi_common.ps1')
 if ($Height -eq 0) { $Height = $Width }
 if (-not $OutRoot) { $OutRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot) }
 
@@ -107,20 +111,12 @@ $props[4] = 1                                   # u32 0, u32 1, u32 0 (2d mirror
 $iwi = $null
 if (-not $SkipIwi) {
     $payloadLen = $Width * $Height              # DXT5 = 1 byte/px (dims >= 4)
-    $fileLen = 48 + $payloadLen
-    $iwi = New-Object byte[] $fileLen
-    $hdr = [byte[]]@(0x49, 0x57, 0x69, 0x0D, 0x0D, 0xC3)   # "IWi" v13, DXT5, flags C3
-    [Array]::Copy($hdr, $iwi, 6)
-    [Array]::Copy([BitConverter]::GetBytes([uint16]$Width),  0, $iwi, 6, 2)
-    [Array]::Copy([BitConverter]::GetBytes([uint16]$Height), 0, $iwi, 8, 2)
-    [Array]::Copy([BitConverter]::GetBytes([uint16]1),       0, $iwi, 10, 2)
-    # EIGHT u32 end-offset slots at 0x10..0x2F, all = file size (single mip, no chain).
-    # ⚠ Read off the real corpus bytes - the first recon pass dumped only 32 header bytes and
-    # called it four slots; regenerating with 4 diverged from bocl_rank30.iwi at offset 0x20.
-    for ($m = 0; $m -lt 8; $m++) {
-        [Array]::Copy([BitConverter]::GetBytes([uint32]$fileLen), 0, $iwi, 0x10 + 4 * $m, 4)
-    }
-    if ($Payload -eq 'sentinel') { for ($i = 48; $i -lt $fileLen; $i++) { $iwi[$i] = 0xAB } }
+    # Header shape (incl. the EIGHT u32 size slots) lives in tools\iwi_common.ps1, shared with
+    # make_camo_iwi and dds_to_iwi. The corpus byte-compare in material_spike.Tests.ps1 is what
+    # pins it for all three.
+    $iwi = New-IwiBuffer -Width $Width -Height $Height -PayloadBytes $payloadLen
+    $off = Get-IwiPayloadOffset
+    if ($Payload -eq 'sentinel') { for ($i = $off; $i -lt $iwi.Length; $i++) { $iwi[$i] = 0xAB } }
     # transparent = leave zeros: DXT5 alpha0=alpha1=0, indices 0 -> alpha 0 everywhere
 }
 

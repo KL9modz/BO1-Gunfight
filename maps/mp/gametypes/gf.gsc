@@ -234,6 +234,7 @@ onPrecacheGameType()
     precacheString( &"MP_OVERTIME_CAPS" );
     precacheString( &"GF_POPUP_ELIMINATION" );   // mod.ff localized strings (gf.str) —
     precacheString( &"GF_POPUP_ASSIST" );        // zone assets, no dynamic string table
+    precacheString( &"GF_POPUP_CAPTURE" );       // (so a new one needs a mod.ff rebuild)
 
     gf_precacheWagerZoneAssets();
 }
@@ -441,6 +442,14 @@ gf_roundEngineSetup()
     // The public build has neither a lobby nor a bot reconciler, so it installs NO hook — stock
     // maySpawn guards with isDefined( level.maySpawn ) and falls through to its own grace/lives logic.
     level.maySpawn = ::gf_lobbyMaySpawn;
+
+    // MID-ROUND GAP REPAIR: when a player leaves a live round while ALIVE, re-seat one parked
+    // reserve bot onto their side within a frame instead of playing a man down until the boundary
+    // (gf_gap_repair, default 1 — full rationale on _bot::gf_onSeatLeave). Installed on the same
+    // per-round schedule and for the same reason as level.maySpawn above: SetupCallbacks resets
+    // level.onPlayerDisconnect to ::blank every map_restart, so a once-per-match install would
+    // survive exactly one round. Stock's default here is a no-op, so nothing is being displaced.
+    level.onPlayerDisconnect = maps\mp\gametypes\_bot::gf_onSeatLeave;
     // #strip-end
 
     // #strip-begin - mid-match human-balance autoassign (dev/main only; public keeps stock autoassign)
@@ -623,6 +632,7 @@ gf_roundSeedDvars()
     gf_seedDvar( "gf_team_switch", "1" );         // 1 = players may switch teams themselves (immediately; alive mid-round = die + sit out); 0 = self-switching disabled
     gf_seedDvar( "scr_gf_latespawn", "1" );       // 1 = a joiner/mover may spawn INTO a live round while their team has >=1 alive (never in OT); 0 = spectate until next round
     gf_seedDvar( "gf_team_reclaim", "1" );        // 1 = at each boundary, re-seat a human the untraced mis-seater stranded in spectator (reason UNTRACED) onto the lighter side, so they aren't forced to the ranked team/class menu; 0 = leave them (diagnostic-only)
+    gf_seedDvar( "gf_gap_repair", "1" );          // 1 = when a player leaves a LIVE round while ALIVE, re-seat one PARKED reserve bot onto their side within a frame (never a fresh add_bot); 0 = the gap stands until the round boundary
     gf_seedDvar( "gf_teamplan", "" );             // lobby->match transfer: "<guid>:<a|x|s>,..." snapshot written pre-restart, re-applied post-restart (survives map_restart(false))
     gf_seedDvar( "gf_teamstage", "" );            // NEXT-MATCH staging: same "<guid>:<a|x|s>,..." format, written by the panel (one raw set); one-shot — wins over gf_teamplan at the next match start, cleared on consume
     gf_seedDvar( "gf_teamcarry", "" );            // "1" marks gf_teamplan as a carried end-of-match snapshot (written with it by gf_writeNextMatchPlan; consumed together — a marker-less plan on a plain map load is stale and ignored)
@@ -661,6 +671,14 @@ gf_roundSeedDvars()
     gf_seedDvar( "scr_gf_lethals", "1" );         // lethal grenade slot   (frag / Semtex / Tomahawk)
     gf_seedDvar( "scr_gf_tacticals", "1" );       // tactical slot         (flash / stun / smoke / gas / decoy)
     gf_seedDvar( "scr_gf_equipment", "1" );       // equipment slot        (claymore / C4 / camera spike / jammer / motion sensor)
+
+    // CAMO CLASS SWITCHES — which camo FAMILIES the rotation may hand out (1 = allowed, both default
+    // on). Public build keeps them: gf_camoPool() ships public, so the custom camos roll on a public
+    // server too and an owner needs the same switch. Read at pool build AND at each spawn's give
+    // (_gf_loadouts::gf_camoAllowed / gf_resolveCamo), so a change lands on the NEXT spawn.
+    // ⚠ Gold (15) belongs to BOTH sets — it is only gone when both switches are off.
+    gf_seedDvar( "scr_gf_camo_base", "1" );       // stock camos 1-14 + Gold
+    gf_seedDvar( "scr_gf_camo_modded", "1" );     // this mod's own camos, 17-46 (+ Gold)
 
     // #strip-begin - dev debug dvars: seed to 0 so the RCON panel's DEBUG section reads them
     // cleanly (they're otherwise read via getDvarInt, which never registers them → "Unknown cmd"

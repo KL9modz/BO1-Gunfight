@@ -220,6 +220,12 @@
       <label class="tog ctrl"><input type="checkbox" id="cbLateSpawn" checked onchange="bridge('latespawn_'+(this.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
       <span class="shint">immediate</span>
     </div>
+    <div class="srow" data-dvar="gf_gap_repair" data-tip="gf_gap_repair&#10;ON (default) = when a HUMAN LEAVES a live round while still ALIVE, one PARKED reserve bot is re-seated onto their side within a frame, so the round is not played a man down for up to 42s. The bot spawns in through the same Mid-Round Late Spawn gap rule (3v2 becomes 3v3).&#10;Reserve bots only - a fresh bot is NEVER connected mid-round (a client connect mid-firefight is the killcam-stall suspect). If the parked pool is empty nothing happens and the next round boundary rebuilds the fill.&#10;A player who leaves while DEAD is never backfilled: their life was already spent, so their team lost no body this round. A BOT leaving is never backfilled either - that is either the fill's own churn or your own bot kick, and re-adding it would undo the kick instantly.&#10;Inert while Team Size is 0 (manual bot mode).&#10;Bridge: gaprepair_0 / gaprepair_1.">
+      <span class="slbl">Backfill On Leave</span>
+      <span style="flex:1"></span>
+      <label class="tog ctrl"><input type="checkbox" id="cbGapRepair" checked onchange="bridge('gaprepair_'+(this.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
+      <span class="shint">immediate</span>
+    </div>
     <div class="sgroup">Difficulty <span style="font-weight:400;text-transform:none;letter-spacing:0">(GSC bridge)</span></div>
     <div class="drow" data-tip="Bridge: botdiff_easy / botdiff_normal / botdiff_hard / botdiff_fu&#10;Sets bot reaction speed and accuracy via _bot::bot_set_difficulty()">
       <!-- BO1 Combat Training names; the dvar values stay easy/normal/hard/fu (closed enum). -->

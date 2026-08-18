@@ -899,7 +899,9 @@ gf_getPerkShader( specialty )
 // and the stock one is parked offscreen per spawn (gf_parkStockScorePopup) —
 // unconditional, no gates to argue with. The enableText/ui_xpText sets remain in
 // gf_playerSpawnedCB as defense in depth.
-// popupType: 2 = elimination, 1 = assist. pri keeps Elimination from being stomped by Assist.
+// popupType: 3 = OT capture, 2 = elimination, 1 = assist. pri keeps a lower-value popup from
+// stomping a higher one — Capture outranks Elimination outranks Assist, so the round-winning
+// event always survives a kill landing in the same second.
 // SIZE knob: gf_popupSize() (resting fontscale). It's applied via baseFontScale/maxFontScale, NOT
 // .fontscale — fontPulse (_hud.gsc) always animates the element back to baseFontScale, so a plain
 // .fontscale set is immediately overwritten by the pulse.
@@ -927,6 +929,8 @@ gf_showScorePopup( popupType, pri )
     text = &"GF_POPUP_ASSIST";
     if ( popupType == 2 )
         text = &"GF_POPUP_ELIMINATION";
+    else if ( popupType == 3 )
+        text = &"GF_POPUP_CAPTURE";
 
     self notify( "gf_dmg_popup" );
     self endon( "gf_dmg_popup" );

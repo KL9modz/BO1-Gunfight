@@ -320,8 +320,15 @@ function Get-LogPath {
 function Write-Event {
     param([string]$dir, [string]$verb, [hashtable]$p, [string]$extra = '')
     $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    # ⚠ STRIP QUOTES (and newlines) FROM THE NAME. name="..." is the one free-text field in this
+    # record, so a name containing a double quote makes the whole line AMBIGUOUS to every reader:
+    # a player called  x"  guid=<someone-else>  ping=1  writes a line that parses, correctly, as a
+    # record for THAT other guid. No reader-side regex can undo it (greedy, lazy and [^"]* all
+    # match the forged reading), so the fix has to be here, at the writer. Same reasoning as the
+    # admin-notice sanitizer, which strips " and ; before a name can reach an rcon command.
+    $safeName = ([string]$p.name) -replace '["\r\n]', "'"
     $line  = '{0}  {1,-8} ip={2}  name="{3}"  guid={4}  ping={5}{6}' -f `
-             $stamp, $verb, $p.ip, $p.name, $p.guid, $p.ping, $extra
+             $stamp, $verb, $p.ip, $safeName, $p.guid, $p.ping, $extra
     foreach ($attempt in 1, 2) {
         try {
             Add-Content -Path (Get-LogPath $dir) -Value $line -Encoding UTF8

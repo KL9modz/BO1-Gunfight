@@ -1049,6 +1049,10 @@ gf_waitForLoadingClients()
     // (lobbystart feedback) and mirrored into gf_state telemetry so the panel can
     // show/enable "Start Match" exactly when a hold is up. Cleared the instant we break.
     level.gf_inLobbyHold = true;
+    // When this hold started. Read ONLY by _bot::gf_lobbyFillDeferred, which suppresses bot
+    // padding while a hold is still young — see the note there for why a short hold must not
+    // pay for a fill it is about to throw away.
+    level.gf_lobbyHoldStart = gettime();
 
     // Auto/Manual lobby: desaturated vision + overview cam + the lobby flags/threads — see
     // gf_gateEnterLobbyPresentation (everything it sets is wiped free by the release restart,
@@ -1694,11 +1698,22 @@ gf_autoassignPlanned()
 // tracer attributes stock's write instead of flagging it UNTRACED — stock writes pers["team"]
 // with no token, and the "UNTRACED human spectator -> axis" live capture (KL9, mp_hanoi
 // 2026-07-20) was exactly a player clicking Auto Assign into gf_autoJoinBalance's balanced-split
-// stock fallback. The stamp-BEFORE-the-write rule can't apply here (the target is unknowable
-// until stock picks); stamping after is safe because menuAutoAssign's team write is synchronous —
-// there is no yield between the write and this stamp for the sampler to misattribute across.
+// stock fallback.
+//
+// ⚠ The stamp-AFTER-the-call was NOT safe, and the "no yield between the write and this stamp"
+// reasoning was wrong: menuAutoAssign's TAIL re-enters our code before it returns. It ends with
+// beginClassChoice() -> `self thread [[level.spawnClient]]()`, and a GSC `thread` runs the callee
+// immediately up to ITS first wait — so spawnClient reaches the level.maySpawn hook, and the hook's
+// gf_teamTrace("pre-spawn") checkpoint (gf.gsc), while pers["team"] already holds stock's new pick
+// and this stamp has not been written yet. That is the entire source of the every-match-start
+// "UNTRACED bot <name> allies -> axis - last stamp stockauto -> allies ... at pre-spawn" noise: a
+// stamping blind spot, NOT an unknown writer. So pre-stamp a WILDCARD target ("*", which the tracer
+// accepts for any team) to cover stock's own execution window, then overwrite it with the concrete
+// team below. The wildcard therefore exists only while stock is running — it can never linger and
+// absolve a genuinely untraced later move, which is the whole point of the single-use token.
 gf_stockAutoassignStamped()
 {
+    self gf_stampTeamWriter( "stockauto", "*" );
     self [[level.gf_stockAutoassign]]();
     if ( isDefined( self.pers["team"] ) )
     {
@@ -2697,6 +2712,13 @@ gf_playerSpawnedCB()
     // stats only count real participants. A mid-round joiner is team-assigned but never
     // spawns this round (they spectate) — without this they'd inflate the team's max
     // health and shrink the bar even though they contribute no current health.
+    //
+    // The match-stats human tally is recorded HERE, at the spawn, and deduped against that same
+    // mark so a second spawn in one round can't count twice. It has to happen at the spawn
+    // because the flush reads it AFTER players may have left — see gf_statHumansSpawned.
+    if ( !isDefined( self.pers["gf_spawnedRound"] ) || self.pers["gf_spawnedRound"] != game["roundsplayed"] )
+        self gf_statNoteSpawn();
+
     self.pers["gf_spawnedRound"] = game["roundsplayed"];
 
     // Level-side stats publisher — start once per round; the player panels read its output.
@@ -3229,6 +3251,9 @@ gf_roundWatchdog( myGen )
 
     activeSince = gettime();
     emptySince  = undefined;
+    lastTick    = gettime();
+    liveMs      = 0;                  // round time that actually COUNTS (admin-paused time excluded)
+    hungCap     = gf_hungRoundCapMs();
 
     for ( ;; )
     {
@@ -3266,7 +3291,47 @@ gf_roundWatchdog( myGen )
             }
         }
 
-        // (2) WIPE-NOT-DETECTED RECOVERY. A team is fully eliminated but the round did
+        // (2) HUNG-ROUND CAP — the last-resort net for a round that stops progressing with both
+        // teams alive, which recovery (1) cannot see (it treats an ACTIVE overtime as healthy) and
+        // recovery (3) cannot see (it needs a team at 0 alive). The live case that motivated it:
+        // the overtime clock is PAUSED for capture and never resumes, so nothing can end the round
+        // — the OT clock is frozen, the capture cannot complete, no team is wiped, and the round
+        // runs forever (mp_mountain round 2, 2026-08-17: no round end was ever emitted and the
+        // player quit). gf_pauseOvertimeForCapture has no ceiling of its own by design (a capture
+        // may legitimately hold the clock for as long as someone stands in the zone), so the cap
+        // lives out here where it can bound EVERY stall shape at once rather than one of them.
+        //
+        // Deliberately coarse: the round's own budget (length + overtime) plus a full 5 minutes.
+        // Nothing legitimate comes close — a Gunfight round is 42s + 15s OT — so a fire here is
+        // always a real hang, and the margin means it can never truncate a slow-but-live round.
+        // ⚠ Admin-paused time does NOT count: an admin may hold a pause indefinitely and that is
+        // not a hang, so the accumulator advances only while the match is unpaused.
+        if ( !( isDefined( level.gf_matchPaused ) && level.gf_matchPaused ) )
+            liveMs += ( now - lastTick );
+        lastTick = now;
+
+        if ( liveMs > hungCap )
+        {
+            otState = "0";
+            if ( isDefined( level.gf_overtimeActive ) && level.gf_overtimeActive )
+            {
+                otState = "1";
+                if ( isDefined( level.gf_overtimePaused ) && level.gf_overtimePaused )
+                    otState = "1-paused";
+            }
+
+            hpWinner = gf_getHPWinner();
+            logPrint( "GF_WATCHDOG: round hung " + liveMs + "ms (cap " + hungCap + "ms, overtime "
+                      + otState + ", allies=" + gf_getTeamHP( "allies" ) + "hp axis="
+                      + gf_getTeamHP( "axis" ) + "hp) — forcing round end -> " + hpWinner + "\n" );
+            level.gf_endReasonText = gf_reasonText( "health", hpWinner );
+            // THREADED for the same reason as the wipe recovery below: the end path notifies
+            // "gf_round_over", which THIS thread endon()s.
+            level thread gf_hungRoundForceEnd( hpWinner );
+            return;
+        }
+
+        // (3) WIPE-NOT-DETECTED RECOVERY. A team is fully eliminated but the round did
         // not end. Judged only out of grace (during grace a team legitimately reads 0
         // alive mid-spawn) and only after the empty state PERSISTS a few seconds — then
         // force the round decision. Recovery (1) force-closes a stuck grace first, so a
@@ -3307,6 +3372,34 @@ gf_roundWatchdog( myGen )
         else
             emptySince = undefined;
     }
+}
+
+// The hung-round ceiling: everything this round could legitimately spend, plus a 5-minute margin.
+// Computed ONCE when the watchdog arms (the budget can't meaningfully change mid-round, and the
+// margin swamps any drift) so the 1 Hz loop stays read-free. Deliberately generous — this must
+// never truncate a live round, only break a round that has genuinely stopped progressing.
+gf_hungRoundCapMs()
+{
+    roundLen = 0.7;                                   // same fallback gf_startRoundClock uses
+    if ( isDefined( level.timeLimit ) && level.timeLimit > 0 )
+        roundLen = level.timeLimit;
+
+    budget = ( roundLen * 60 * 1000 ) + ( gf_getOvertimeLimit() * 1000 );
+    return int( budget + 300000 );
+}
+
+// End a hung round on HP. Mirrors gf_onTimeLimit's decision exactly so a forced end is
+// indistinguishable from a normal expiry: an ACTIVE overtime resolves through its own path (which
+// runs the OT teardown), anything else ends the round directly. Always called on a FRESH thread —
+// both paths lead to notify("gf_round_over"), which the caller endon()s.
+gf_hungRoundForceEnd( winner )
+{
+    if ( isDefined( level.gf_overtimeActive ) && level.gf_overtimeActive )
+    {
+        if ( gf_resolveOvertime( winner ) )
+            return;
+    }
+    gf_endRound( winner );
 }
 
 // POST-ROUND WATCHDOG — the round-END half of the safety net. gf_roundWatchdog is
@@ -4717,10 +4810,12 @@ gf_onPlayerKilled( eInflictor, attacker, iDamage, sMeansOfDeath, sWeapon, vDir, 
             {
                 damager thread maps\mp\gametypes\_rank::giveRankXP( "assist" );
                 // Match stats: same flat-assist rule the XP uses (every non-killer
-                // damager) — but only on a HUMAN victim (bot rule; the XP itself
-                // stays as-is, it is server-side and free). Bot damagers may
-                // increment too — harmless, they are never emitted.
-                if ( gf_isHuman( self ) )
+                // damager) — under the shared bot rule (the XP itself stays as-is, it
+                // is server-side and free). Identical outcome for humans to the old
+                // victim-only gate, which leaned on bot lines never being emitted;
+                // asking the same predicate as every other bump site is what makes the
+                // rule auditable rather than re-derived per site.
+                if ( gf_statCountsPair( damager, self ) )
                     damager gf_statBump( "gf_stA", 1 );
             }
         }
@@ -4870,7 +4965,7 @@ gf_onPlayerDamage( eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, sWeap
         // shows the round you actually played — so the stats need their own counter
         // rather than a mark against pers["gf_damage"]. Same capped value: overkill
         // never inflates either number.
-        if ( gf_isHuman( self ) && gf_isHuman( eAttacker ) )
+        if ( gf_statCountsPair( eAttacker, self ) )
             eAttacker gf_statBump( "gf_stDmg", damage );
 
         // Per-target damage for kill popup
@@ -4982,6 +5077,29 @@ gf_awardOvertimeCapture()
     // capture score path (givePlayerScore) returns on its first line under
     // level.overridePlayerScore, so it awards nothing. Server-side and free.
     self thread maps\mp\gametypes\_rank::giveRankXP( "capture" );
+
+    // "Position Secure" — the SAME medal Domination pays for a flag cap
+    // (dom.gsc::give_capture_credit), and the same splash pipeline as Double Kill /
+    // First Blood / Longshot: processMedal -> giveMedal -> medalNotifyQueue ->
+    // _popups::displayMedal. 100% stock and already live in this mod (_medals::init
+    // runs from _persistence, scr_game_medalsenabled self-seeds true, kill medals ride
+    // the untouched Callback_PlayerKilled -> _missions::playerKilled callback) — the OT
+    // capture was simply the one event never wired to it.
+    // Stock guards do the rest: bots are skipped (is_bot()), it pays its own medal XP
+    // on top of the 500 above, and it no-ops if the medal table lacks the row.
+    // NOTE it sets self.doingNotify while the splash plays, and this fires immediately
+    // before gf_resolveOvertime -> gf_endRound -> endGame, whose roundEndWait() spins on
+    // exactly that flag. Bounded by the splash itself, and gf_postRoundWatchdog force-
+    // clears it at 20s regardless — but that is the interaction to look at first if a
+    // capture-won overtime ever hangs at the round end.
+    self maps\mp\_medals::positionSecure();
+
+    // "+1 Capture" on the SAME element the kill/assist popups use (gf_popupElem) — no new
+    // hudelem, nothing against the per-client drawn cap. pri 3 is the top of the ladder:
+    // a kill landing in the same second must not stomp the round-winning event.
+    // ⚠ The text is GF_POPUP_CAPTURE in localizedstrings/gf.str, a COMPILED asset — this
+    // line only renders once mod.ff is rebuilt and delivered.
+    self thread gf_showScorePopup( 3, 3 );
 }
 
 gf_initDamageScore()
@@ -5042,8 +5160,9 @@ gf_setPlayerScoreSilent( player, score )
 // leaderboard that counted bot kills would be farmable solo. Enforced at three layers:
 // K/D/A/HS/DMG bump only when BOTH parties are human (a suicide still counts a death —
 // no bot involved); a round win / OT capture needs at least one HUMAN on the opposing
-// team that round (gf_statHumansSpawned); a match W/L/T is only emitted when both
-// teams hold a human at match end. The in-game SCOREBOARD deliberately keeps counting
+// team that round (gf_statHumansSpawned); a match W/L/T is only emitted for a match that
+// was genuinely human-vs-human (game["gf_statMatchHvH"] — both teams holding a human in
+// the SAME round, at any point in the match). The in-game SCOREBOARD deliberately keeps counting
 // bot damage/kills — it shows the round actually played; only the persistent stats
 // are bot-blind, which is why damage has its own pers["gf_stDmg"] counter instead of
 // a mark against pers["gf_damage"].
@@ -5088,6 +5207,21 @@ gf_statGet( key )
 // ⚠ BOT RULE: nothing involving a bot counts. A kill on a bot is not a kill, a death
 // to a bot is not a death, a headshot on a bot is not a headshot — bot fill is on by
 // default, so anything less makes the leaderboard farmable solo against bots.
+// THE BOT RULE AS ONE PREDICATE: a combat stat counts only when BOTH parties are human. Every
+// K/D/A/HS/DMG bump site gates on this, so the rule is auditable in one place instead of being
+// re-derived per site in a slightly different shape — it used to be spelled three ways (the damage
+// site gated both parties, the assist site only the victim and leaned on emission-time filtering
+// to drop bot damagers, the kill site wrote it out again), which is how the next stat added ends up
+// silently countable against bots.
+// ⚠ The DEATH half of gf_statNoteKill is deliberately NOT this predicate and must not be folded in:
+// a suicide (fall damage, own grenade) has no attacker at all and still counts as a death, so that
+// site asks the different question "was the victim human, and was the killer not a bot".
+gf_statCountsPair( attacker, victim )
+{
+    return ( isDefined( attacker ) && isDefined( victim )
+        && gf_isHuman( attacker ) && gf_isHuman( victim ) );
+}
+
 gf_statNoteKill( attacker, sMeansOfDeath )
 {
     // Only live-round deaths are stats. Outside the active round the only deaths are
@@ -5106,7 +5240,7 @@ gf_statNoteKill( attacker, sMeansOfDeath )
 
     if ( !isDefined( attacker ) || !isPlayer( attacker ) || attacker == self )
         return;
-    if ( !gf_isHuman( attacker ) || !gf_isHuman( self ) )
+    if ( !gf_statCountsPair( attacker, self ) )
         return;   // bot killer or bot victim: no kill, no headshot
     if ( !isDefined( attacker.pers["team"] ) || !isDefined( self.pers["team"] ) )
         return;
@@ -5128,25 +5262,59 @@ gf_statMatchId()
     return 0;
 }
 
+// Record one HUMAN's spawn into the current round for the bot-rule gate below. Called from the
+// spawn path (deduped there against pers["gf_spawnedRound"]).
+//
+// ⚠ level.* is the right home and the round boundary is why: a round's spawns and its flush share
+// ONE level lifetime — map_restart(true) runs inside endGame's tail, AFTER gf_endRound has already
+// flushed, and the match-end rescue flush in gf_onRoundEndGame is reached with no restart in
+// between either. So this is always the round being flushed, and it resets itself for free.
+gf_statNoteSpawn()
+{
+    if ( !gf_isHuman( self ) )
+        return;
+    team = self.pers["team"];
+    if ( !isDefined( team ) || ( team != "allies" && team != "axis" ) )
+        return;
+
+    // Stamped with the round it describes, so the reader can PROVE it is looking at the right
+    // round's tally instead of assuming it (level.* is wiped every round, so the stamp is fresh
+    // by construction — it is here to make a wrong answer impossible, not because one is likely).
+    if ( !isDefined( level.gf_statHumans ) || !isDefined( level.gf_statHumansRound )
+        || level.gf_statHumansRound != game["roundsplayed"] )
+    {
+        level.gf_statHumans = [];
+        level.gf_statHumans["allies"] = 0;
+        level.gf_statHumans["axis"]   = 0;
+        level.gf_statHumansRound = game["roundsplayed"];
+    }
+    level.gf_statHumans[team]++;
+}
+
 // How many HUMANS spawned into round roundNum on each team — the bot-rule gate for
 // round wins and captures: an outcome earned against a team with no human on it
 // (bot-only opposition) is not a stat. Returns an array keyed "allies"/"axis".
+//
+// ⚠ READ FROM THE AT-SPAWN TALLY, NEVER BY WALKING level.players. The walk this replaced could
+// only see players still CONNECTED, so the loser rage-quitting during the killcam — the single
+// most common way a 1v1 round ends — retroactively made the round "bot-only opposition" and
+// DELETED the winner's round win and OT capture.
+// ⚠ And it is the tally ALONE, not a union with the old walk: the two disagree about a mid-round
+// team switcher (the tally holds their SPAWN team, the walk their CURRENT one), so a union would
+// show one solo human on BOTH teams and hand a bot-farming session the human-vs-human match
+// result the whole bot rule exists to deny.
+// A round the tally does not describe reports zero — the conservative direction, matching what
+// the old walk already did whenever the players in question had left.
 gf_statHumansSpawned( roundNum )
 {
     counts = [];
     counts["allies"] = 0;
     counts["axis"]   = 0;
-    players = level.players;
-    for ( i = 0; i < players.size; i++ )
+    if ( isDefined( level.gf_statHumans ) && isDefined( level.gf_statHumansRound )
+        && level.gf_statHumansRound == roundNum )
     {
-        player = players[i];
-        if ( !isDefined( player ) || !gf_isHuman( player ) )
-            continue;
-        if ( !isDefined( player.pers["gf_spawnedRound"] ) || player.pers["gf_spawnedRound"] != roundNum )
-            continue;
-        team = player.pers["team"];
-        if ( isDefined( team ) && ( team == "allies" || team == "axis" ) )
-            counts[team]++;
+        counts["allies"] = level.gf_statHumans["allies"];
+        counts["axis"]   = level.gf_statHumans["axis"];
     }
     return counts;
 }
@@ -5168,6 +5336,17 @@ gf_statFlushRound( winner, roundNum )
 {
     matchid = gf_statMatchId();
     humans  = gf_statHumansSpawned( roundNum );
+
+    // Match-level "this really was a human-vs-human match" mark for gf_statEmitMatch, set from
+    // THIS round's tally. game[] because it must span the whole match (map_restart(true) keeps it;
+    // a map change or map_restart(false) wipes it, which is correct — both start a new match).
+    // ⚠ It must be the two teams SIMULTANEOUSLY, never a per-team "has held a human" flag: sides
+    // SWITCH every scr_gf_roundswitch rounds, so one human farming bots sits on allies and then on
+    // axis, which would light both team flags by itself and hand them the very match result the
+    // bot rule exists to deny.
+    if ( humans["allies"] > 0 && humans["axis"] > 0 )
+        game["gf_statMatchHvH"] = 1;
+
     players = level.players;
     for ( i = 0; i < players.size; i++ )
     {
@@ -5234,8 +5413,10 @@ gf_statFlushRound( winner, roundNum )
 // stock invokes that at exactly one site, inside endGame's match-end tail, on EVERY
 // end path; players are frozen but still connected, so pers["team"] is intact
 // (the same window the team-carry snapshot trusts).
-// ⚠ BOT RULE: a match result only counts when BOTH teams hold at least one human at
-// match end — a W earned against a bot-only enemy (solo vs fill) is not a stat.
+// ⚠ BOT RULE: a match result only counts for a match that WAS human-vs-human — a W earned
+// against a bot-only enemy (solo vs fill) is not a stat. Judged over the whole match
+// (game["gf_statMatchHvH"]), not at the final instant, so a quit at match point cannot
+// delete the results of a match that was contested for real.
 gf_statEmitMatch( result )
 {
     humansA = 0;
@@ -5249,8 +5430,16 @@ gf_statEmitMatch( result )
         if ( player.pers["team"] == "allies" )    humansA++;
         else if ( player.pers["team"] == "axis" ) humansX++;
     }
+    // ⚠ Fall back to the MATCH-level mark before refusing. Testing only the final instant meant a
+    // loser quitting at match point deleted the W/L for EVERYONE, the winner included, after a
+    // full human-vs-human match whose every round had already logged human GF_STAT lines. The mark
+    // is set per-round from both teams simultaneously (gf_statFlushRound), so a solo-vs-bots match
+    // still never sets it and is still refused here.
     if ( humansA == 0 || humansX == 0 )
-        return;
+    {
+        if ( !isDefined( game["gf_statMatchHvH"] ) || !game["gf_statMatchHvH"] )
+            return;
+    }
 
     matchid = gf_statMatchId();
     mapname = getDvar( "mapname" );

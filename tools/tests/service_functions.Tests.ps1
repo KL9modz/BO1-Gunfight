@@ -164,6 +164,18 @@ Describe "Get-ConnectCount (join-notify) - the day-file connect tally" {
             -Value "$now  CONNECT  ip=203.0.113.5:28960  name=`"Old Timer`"  guid=111  ping=50"
         Assert-Eq (Get-ConnectCount 111) 3 "fresh line IS this join - still 3, not 4"
     }
+    It "a guid forged INSIDE a name cannot inflate that guid's count" {
+        # name="..." is the one free-text field, so a player renamed to  x"  guid=7777  ping=1
+        # writes a line whose FRONT reads as a complete record for 7777 while their own record
+        # sits at the end. Only the end anchor separates them. conn_logger's Write-Event now
+        # strips quotes so this line stops being written at all; this pins the READER's half,
+        # which is what covers the day-files already on disk. Dated OLD so the "add the current
+        # join" step applies - that is what makes a miscount visible as 2 instead of 1.
+        Add-Content (Join-Path $tmp ('players_{0}.log' -f $oldDay.ToString('yyyy-MM-dd'))) -Encoding UTF8 `
+            -Value "$old  CONNECT  ip=203.0.113.7:28960  name=`"x`"  guid=7777  ping=1`"  guid=222  ping=9"
+        Assert-Eq (Get-ConnectCount 7777) 1 "forged front is not a record for 7777 - no history, just this join"
+        Assert-Eq (Get-ConnectCount 222) 2 "the REAL end-of-line record still counts: 1 logged + this join"
+    }
     It "returns null (bit omitted) for an unusable guid or a missing log dir" {
         Assert-True ($null -eq (Get-ConnectCount '0')) "guid 0 identifies nobody"
         Assert-True ($null -eq (Get-ConnectCount '')) "empty guid"

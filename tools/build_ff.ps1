@@ -98,8 +98,12 @@ function Invoke-Linker {
     if ($fatalErrors.Count -gt 0) {
         throw "linker_pc.exe reported a fatal error for '$($Arguments -join ' ')': $($fatalErrors[0])"
     }
-    if (-not $saved -and $exitCode -ne 0) {
-        throw "linker_pc.exe failed (exit $exitCode, no zone saved) for arguments: $($Arguments -join ' ')"
+    # NO ZONE SAVED IS A FAILURE WHATEVER THE EXIT CODE SAYS. This used to also require
+    # $exitCode -ne 0, so a run that exited 0 without ever printing "save...done." passed - and
+    # the copy-back step then shipped the PREVIOUS mod.ff as though it were this build's output.
+    # The saved zone is the artifact; the exit code is only a hint about it.
+    if (-not $saved) {
+        throw "linker_pc.exe wrote no zone (exit $exitCode, no 'save...done.') for arguments: $($Arguments -join ' ')"
     }
 }
 
@@ -185,6 +189,13 @@ foreach ($line in $manifestLines) {
 # raw/ copy. Add it to the stage/clean list explicitly.
 $assetsToStage.Add("ui_mp/hud_gf_health.menu")
 
+# ui_mp/gf_ticker.inc is #include'd by BOTH menu forks (main.menu + scriptmenus/class.menu) and is
+# resolved by the linker's PREPROCESSOR out of raw\, so it has to be staged for exactly the same
+# reason hud_gf_health.menu does -- and for exactly the same reason it must NEVER get a mod.csv
+# menufile row: an .inc registers nothing, and double-registering a menu kills the whole UI.
+# Without this the link fails on a missing include, or silently compiles a stale raw\ copy.
+$assetsToStage.Add("ui_mp/gf_ticker.inc")
+
 # EVERY .iwi in our images\ is staged into the game's raw\images for the link, and cleaned
 # out again afterwards. ⚠ This is NOT the same thing as a mod.csv `image,` entry, and adding
 # one buys nothing: re-proven 2026-08-15 with a full valid triplet, the zone grew 32 bytes
@@ -205,6 +216,40 @@ $assetsToStage.Add("ui_mp/hud_gf_health.menu")
 # client BESIDE mod.ff -- see the molotov icon block in mod.csv.
 foreach ($iwi in (Get-ChildItem -LiteralPath (Join-Path $WorkspaceRoot "images") -Filter *.iwi -File -ErrorAction SilentlyContinue)) {
     $assetsToStage.Add("images/$($iwi.Name)")
+}
+
+# ── Carrier-material art cross-check (pre-link) ──────────────────────────────
+# Invoke-Linker treats the WHOLE "ERROR: image '<x>' is missing" class as benign, and it has to:
+# every custom weapon def raises dozens for stock art, and reference-only IS how images travel
+# (the pixels ride the .iwd). But for a material WE ship naming art WE ship, that identical line
+# means the opposite -- the camo renders flat WHITE on every client -- and the build would still
+# report success. The text cannot tell the two apart, so check the thing itself BEFORE linking:
+# a carrier material stores its asset name, its image token and the map keyword as plain strings,
+# so read the token back out and require the matching images\<token>.iwi to exist. Catches a
+# typo'd colorMap, a renamed .iwi, and a material row whose art was never added.
+# ⚠ Scoped to OUR gf_* namespace on purpose: a stock image name referenced by one of our patched
+# stock materials is resolved by the client from its resident zone, which is legitimate.
+$missingArt = @()
+foreach ($rel in $assetsToStage) {
+    if (-not $rel.StartsWith("materials\")) { continue }
+    $mtlPath = Join-Path $WorkspaceRoot $rel
+    if (!(Test-Path -LiteralPath $mtlPath)) { continue }   # stock material, we ship no source
+    $mtlName = Split-Path -Leaf $rel
+    $bytes = [IO.File]::ReadAllBytes($mtlPath)
+    $runs = -join ($bytes | ForEach-Object { if ($_ -ge 32 -and $_ -lt 127) { [char]$_ } else { "`n" } })
+    foreach ($tok in ($runs -split "`n")) {
+        if ($tok.Length -lt 3 -or $tok -eq $mtlName -or $tok -notlike 'gf_*') { continue }
+        if (!(Test-Path -LiteralPath (Join-Path $WorkspaceRoot "images\$tok.iwi"))) {
+            $missingArt += "  $mtlName references '$tok' -> images\$tok.iwi NOT FOUND"
+        }
+    }
+}
+if ($missingArt.Count -gt 0) {
+    Write-Host ""
+    Write-Host "REFUSING TO BUILD - a carrier material names art this repo does not ship:" -ForegroundColor Red
+    $missingArt | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+    Write-Host "  (the linker would call this benign and the camo would render flat WHITE)" -ForegroundColor Red
+    throw "Missing image source for $($missingArt.Count) carrier material reference(s)."
 }
 
 # Staging can OVERWRITE a stock file that already lives in the game's raw/ (a material is the

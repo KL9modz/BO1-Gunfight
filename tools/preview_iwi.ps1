@@ -22,20 +22,29 @@ param(
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing | Out-Null
 
-$b = [System.IO.File]::ReadAllBytes($Path)
-if ($b.Length -lt 48 -or $b[0] -ne 0x49 -or $b[1] -ne 0x57 -or $b[2] -ne 0x69) { throw "not an IWi: $Path" }
+# The IWi v13 header shape, shared with the three writers.
+. (Join-Path $PSScriptRoot 'iwi_common.ps1')
 
-$ver = $b[3]; $fmt = $b[4]
-$w = [BitConverter]::ToUInt16($b, 6); $h = [BitConverter]::ToUInt16($b, 8)
+$b = [System.IO.File]::ReadAllBytes($Path)
+
+# Header parsing (and the block-size table) live in tools\iwi_common.ps1, shared with the three
+# writers. Read-IwiHeader reports rather than throwing, so turn its verdict into this tool's throw.
+$hdr = Read-IwiHeader -Bytes $b
+if (-not $hdr.ok -and $hdr.reason -eq 'not an IWi file') { throw "not an IWi: $Path" }
+if (-not $hdr.ok) { throw ("{0}: {1}" -f $Path, $hdr.reason) }
+
+$ver = $hdr.version; $fmt = [byte]$hdr.format
+$w = $hdr.width; $h = $hdr.height
 switch ($fmt) {
-    0x0B { $blockBytes = 8;  $colorOff = 0; $fmtName = 'DXT1' }
-    0x0C { $blockBytes = 16; $colorOff = 8; $fmtName = 'DXT3' }
-    0x0D { $blockBytes = 16; $colorOff = 8; $fmtName = 'DXT5' }
+    0x0B { $colorOff = 0; $fmtName = 'DXT1' }
+    0x0C { $colorOff = 8; $fmtName = 'DXT3' }
+    0x0D { $colorOff = 8; $fmtName = 'DXT5' }
     default { throw ("unsupported IWi format 0x{0:X2} in {1} (only DXT1/3/5)" -f $fmt, $Path) }
 }
+$blockBytes = Get-IwiBlockBytes -Format $fmt
 
 $bw = [int][Math]::Ceiling($w / 4.0); $bh = [int][Math]::Ceiling($h / 4.0)
-$need = 48 + $bw * $bh * $blockBytes
+$need = (Get-IwiPayloadOffset) + $bw * $bh * $blockBytes
 if ($b.Length -lt $need) { throw ("truncated: need $need B for ${w}x${h} $fmtName, file is $($b.Length) B") }
 
 # ⚠ Every element is fully parenthesised. In PowerShell the COMMA binds TIGHTER than arithmetic,
@@ -56,7 +65,7 @@ $buf = New-Object byte[] ($stride * $outH)
 
 for ($by = 0; $by -lt $bh; $by++) {
     for ($bx = 0; $bx -lt $bw; $bx++) {
-        $o = 48 + (($by * $bw) + $bx) * $blockBytes + $colorOff
+        $o = (Get-IwiPayloadOffset) + (($by * $bw) + $bx) * $blockBytes + $colorOff
         $c0 = [BitConverter]::ToUInt16($b, $o); $c1 = [BitConverter]::ToUInt16($b, $o + 2)
         $idx = [BitConverter]::ToUInt32($b, $o + 4)
         $p0 = From565 $c0; $p1 = From565 $c1

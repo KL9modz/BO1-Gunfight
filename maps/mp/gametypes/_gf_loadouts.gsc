@@ -196,8 +196,13 @@ gf_giveCustomLoadout()
 
     self maps\mp\gametypes\_wager::setupBlankRandomPlayer( true, true );
 
-    camoIdx    = load["camo"];
-    secCamoIdx = load["camoSecondary"];
+    // Camo class switches (scr_gf_camo_base / scr_gf_camo_modded, both default 1) are read HERE as
+    // well as at pool build, so a panel flip lands on the NEXT SPAWN rather than the next match (the
+    // pool is built once per match). The substitute is DERIVED from the loadout's own index, never
+    // rolled — every client resolves the same camo, so the "everyone carries the identical gun"
+    // guarantee survives a mid-match flip.
+    camoIdx    = gf_resolveCamo( load["camo"] );
+    secCamoIdx = gf_resolveCamo( load["camoSecondary"] );
     // #strip-begin
     fc = getDvar( "gf_force_camo" );   // DEV: force this camo index (0-15) on BOTH guns every spawn (-1/unset = off)
     if ( fc != "" && int( fc ) >= 0 ) { camoIdx = int( fc ); secCamoIdx = int( fc ); }
@@ -391,6 +396,9 @@ gf_bumpReserveAmmo( weapon )
 //   or it renders flat WHITE (a missing camo image is white, not absent). Adding a NEW camo is
 //   therefore three files, not one — see docs/notes/custom-camos-bocl-architecture.md.
 // ⚠ Index 16 is deliberately absent: it is a diagnostic duplicate of 3 (Red).
+// ⚠ The two RCON class switches (scr_gf_camo_base / scr_gf_camo_modded) filter this list on the way
+//   out — an index commented out here can never come back, but an index left in can still be turned
+//   off server-side at runtime. See gf_camoAllowed().
 // Cost note: this runs at POOL BUILD only (53 loadouts x 2 slots, once per match), never per
 // spawn and never per frame, so rebuilding the small array here is free.
 gf_camoPool()
@@ -447,13 +455,67 @@ gf_camoPool()
 //  p[p.size] = 36;   // Urban RUS  - grey-blue horizontal
 //  p[p.size] = 37;   // Flecktarn  - fine German dots
 //  p[p.size] = 38;   // Digital    - chunky multicam blocks
-    return p;
+    return gf_camoClassFilter( p );
+}
+
+// ── THE TWO ADMIN CAMO-CLASS SWITCHES (scr_gf_camo_base / scr_gf_camo_modded, both default ON) ──
+// A coarser control than the curated list above: base = the stock camos the game shipped with,
+// modded = every camo this mod adds (17+). Empty/unset reads as ON, like the slot switches, so a
+// server that has never touched them behaves exactly as it always did.
+//
+// ⚠ GOLD (15) BELONGS TO BOTH SETS, deliberately — it is the one camo every BO1 player knows, so it
+//   survives either switch and disappears only when BOTH are off.
+// ⚠ Index 0 (None = the base gun finish) is not a camo at all and is ALWAYS allowed. That is also
+//   what makes "both off" degrade to plain-finish guns instead of an empty pool, and it is why the
+//   Minigun / M202 / Finger Gun (pinned to 0 by gf_load) are never touched by these switches.
+gf_camoAllowed( idx )
+{
+    baseOn = getDvar( "scr_gf_camo_base" )   != "0";
+    modOn  = getDvar( "scr_gf_camo_modded" ) != "0";
+    if ( idx <= 0 )                       // None / a pinned-stock special: not a camo
+        return true;
+    if ( idx == 15 )                      // Gold rides in both sets
+        return baseOn || modOn;
+    if ( idx < 15 )                       // 1-14: stock patterns
+        return baseOn;
+    return modOn;                         // 16+: ours (16 is the diagnostic row)
+}
+
+// Drop every disabled index from the rotation. Runs at pool build (once per match), so the getDvar
+// per entry costs nothing. This half constrains the -1 (Random) rolls; a camo PINNED on a pool line
+// bypasses it and is caught instead by gf_resolveCamo at give time — either way a disabled family
+// never reaches a gun.
+gf_camoClassFilter( p )
+{
+    out = [];
+    for ( i = 0; i < p.size; i++ )
+    {
+        if ( gf_camoAllowed( p[i] ) )
+            out[ out.size ] = p[i];
+    }
+    return out;
+}
+
+// Give-time half of the same switches: an already-built loadout carrying a now-disabled camo is
+// remapped DETERMINISTICALLY (index modulo the enabled set), never re-rolled — a roll would hand
+// two players different guns from the same shared loadout. Returns 0 (plain finish) if the enabled
+// set is somehow empty.
+gf_resolveCamo( idx )
+{
+    if ( gf_camoAllowed( idx ) )
+        return idx;
+    p = gf_camoPool();                    // already class-filtered
+    if ( p.size == 0 )
+        return 0;
+    return p[ idx % p.size ];
 }
 
 // One roll from the curated set above.
 gf_rollCamo()
 {
     p = gf_camoPool();
+    if ( p.size == 0 )                    // both classes off and 0 dropped from the list
+        return 0;
     return p[ randomInt( p.size ) ];
 }
 

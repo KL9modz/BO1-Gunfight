@@ -65,6 +65,7 @@ $script:StrippedDvars = @(
     # autoassign + stock team menus. Backfilled 2026-07-28: none of these were covered, so a strip
     # hole around any of them would have passed the verifier silently.
     "gf_team_balance", "gf_team_lock", "gf_team_switch", "scr_gf_latespawn", "gf_team_reclaim",
+    "gf_gap_repair",
     # Match-to-match team carry/staging + the roster-expectation load gate — plan plumbing dvars
     # written/consumed only by the match-start hold machinery (strip-marked).
     "gf_team_nextmatch", "gf_teamcarry", "gf_teamstage", "gf_expectcount",
@@ -72,8 +73,9 @@ $script:StrippedDvars = @(
     # Debug probes / bot-difficulty selector added after the original list was written.
     "gf_debug_loadgap", "gf_bot_difficulty",
     # Ported fun/mod-menu features. Readers live only in _gf_fun.gsc + _gf_bridge.gsc (both dropped),
-    # so a surviving read is by definition a leak. The gf_fun_prev_* snapshots are covered by the
-    # PREFIX list below rather than named one-per-engine-dvar.
+    # so a surviving read is by definition a leak. The whole family (including the gf_fun_prev_*
+    # engine-dvar snapshots, which are named per dvar) is covered by the "gf_fun_" PREFIX below —
+    # these exact names are kept only so the common ones report by name.
     "gf_fun_cheats", "gf_fun_bullet", "gf_fun_nade", "gf_fun_antiquit", "gf_fun_text"
 )
 
@@ -83,7 +85,12 @@ $script:StrippedDvars = @(
 # hole by definition, so the verifier matches the family by prefix rather than chasing an
 # exact-name list that would drift the day the allowlist grows.
 $script:StrippedDvarPrefixes = @(
-    "gf_sv_"
+    "gf_sv_",
+    # Same argument for the fun/mod-menu family: it grows a name per feature (and gf_fun_prev_*
+    # grows one per ENGINE dvar the text verbs snapshot), and every reader lives in a dropped
+    # file, so the family is covered by prefix rather than by an exact-name list that would drift
+    # the day someone adds gf_fun_<next>.
+    "gf_fun_"
 )
 
 # Remove every "// #strip-begin ... // #strip-end" region (dev wiring) inclusive.
