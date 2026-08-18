@@ -239,3 +239,43 @@ Describe "Format-Ordinal / Format-ConnectCount (join-notify)" {
         Assert-Eq (Format-ConnectCount 0) '' "0 = no bit"
     }
 }
+
+Describe "watchdog check 1d (Claude RC) - the fail-safe structure, not the happy path" {
+    # This check can Stop/Start GF-ClaudeRC, which ends every live remote-control session on the
+    # box - including the one an operator may be watching it from. So the structural property
+    # worth pinning is not "does it detect a dead server" but "can it ever act on ABSENT EVIDENCE".
+    # Both guards below encode a decision that is invisible in the happy path and expensive to
+    # rediscover.
+    $wd = Join-Path $toolsRoot 'vps_services\watchdog.ps1'
+    $wdAst = [System.Management.Automation.Language.Parser]::ParseFile($wd, [ref]$null, [ref]$null)
+
+    It "the 'server gone' branch is gated behind the query-failed branch" {
+        $ifs = @($wdAst.FindAll({
+            param($n) $n -is [System.Management.Automation.Language.IfStatementAst]
+        }, $true) | Where-Object { $_.Extent.Text -match 'RC SERVER GONE' })
+        Assert-True ($ifs.Count -gt 0) "no if-statement mentions 'RC SERVER GONE' - check 1d renamed or removed?"
+
+        # The tightest enclosing if IS the whole elseif chain, so its FIRST clause must be the
+        # query-failed escape. If a later edit reorders these, the down branch becomes reachable
+        # on a failed/blind query and remediation kills live sessions for no reason.
+        $chain = $ifs | Sort-Object { $_.Extent.Text.Length } | Select-Object -First 1
+        $firstCond = $chain.Clauses[0].Item1.Extent.Text
+        Assert-True ($firstCond -match 'queryOk') `
+            "the first clause of the RC branch chain is [$firstCond] - it must be the query-failed escape, or a blind run can Stop/Start the RC task"
+
+        $conds = @($chain.Clauses | ForEach-Object { $_.Item1.Extent.Text })
+        Assert-True (($conds -join ' ') -match 'anyClaude') `
+            "no clause tests `$anyClaude - claude.exe running with unreadable command lines would be judged 'gone'"
+    }
+
+    It 'GF-ClaudeRC is not also in the plain $Tasks list' {
+        $paramBlock = $wdAst.ParamBlock
+        Assert-True ($null -ne $paramBlock) "watchdog.ps1 lost its param block"
+        $tasksParam = @($paramBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'Tasks' }) | Select-Object -First 1
+        Assert-True ($null -ne $tasksParam) "no `$Tasks parameter found"
+        # Check 1 (task State) and check 1d (process truth) would both fire on one outage. Two
+        # pushes for one event is how an alert channel gets muted.
+        Assert-False ($tasksParam.DefaultValue.Extent.Text -match 'ClaudeRC') `
+            "GF-ClaudeRC is in the `$Tasks default - it would double-alert alongside check 1d"
+    }
+}

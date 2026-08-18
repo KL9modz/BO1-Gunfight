@@ -193,7 +193,7 @@ Describe "join-notify config build - every transport survives the rebuild" {
         Assert-True (Test-Path $jn) "not found: $jn"
     }
 
-    It "the \$cfg literal carries discordWebhooks" {
+    It 'the $cfg literal carries discordWebhooks' {
         $ast = [System.Management.Automation.Language.Parser]::ParseFile($jn, [ref]$null, [ref]$null)
         $assign = $ast.FindAll({
             param($n)

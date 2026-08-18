@@ -1974,8 +1974,23 @@ and spawns one child per session. ⚠ The **`--remote-control` FLAG is a differe
 needs a real console, dies headless) — do not substitute it. ⚠ `setup-token` tokens are **rejected** for
 Remote Control; it needs full-scope OAuth. ⚠ **Exactly one server may run** (two ⇒ `ambiguous: multiple
 remote-control servers match name`); its parent must be `svchost.exe`, and unregistering the task does
-**not** kill the process. ⚠ **Security: the Claude account is now equivalent to the SSH key** — a permanent
-admin agent on the live server, drivable by whoever holds that account.
+**not** kill the process. **`watchdog.ps1` check 1d watches all three of those** and pushes through the
+normal ntfy + Discord alert path: a **restart** (every session open at the time is orphaned — the app
+shows *Environment deleted* and cannot be resumed, which is otherwise silent, since the task's own
+repetition quietly relaunches the server and the first evidence is a session that won't open), a
+**second server** (a total ops outage while both processes look perfectly healthy), and a
+**non-`svchost` parent** (hand-started ⇒ dies with that console). A genuinely absent server is
+Stop/Start-restarted, so an outage is bounded by the 3-min watchdog cadence rather than the RC task's
+own 5-min poll. ⚠ It is deliberately **not** run under `run_service.ps1` like the other services — that
+wrapper would reparent the server under `powershell.exe` and break Remote Control, i.e. the flight
+recorder would destroy the thing it was added to watch; check 1d is the substitute, which is why it
+lives in the watchdog and not in a new always-on service. ⚠ **It never acts on absent *evidence***: a
+failed process query, or `claude.exe` processes whose command lines it cannot read, degrade to *no
+judgement*, never to "gone" — remediation Stop/Starts the task and ends every live session, so a false
+positive costs exactly the thing the check exists to protect
+([[claude-rc-restart-orphans-every-session]]). ⚠ **Security: the Claude account is now
+equivalent to the SSH key** — a permanent admin agent on the live server, drivable by whoever holds that
+account.
 ⚠ **Claude Code on the WEB cannot reach the box** (HTTP-only sandbox proxy, raw TCP never passes) and the
 app's **SSH-host** entry is **desktop-brokered** (invisible to the iPad) — both tested; the full dead-end
 table is in `docs/DEV.md` *Working remotely*. Don't re-run that hunt. Box helpers are Scheduled Tasks (`register_services.ps1`):

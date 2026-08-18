@@ -65,6 +65,11 @@ param(
     # judge itself mid-run; security_watch carries the reciprocal check on THIS task.
     [string[]] $PeriodicTasks    = @('GF-SecurityWatch'),
     [int]      $PeriodicMaxAgeMin = 15,  # 5x the 3-min cadence; a trigger that stopped firing shows here
+    # Claude Remote Control (check 1d): the ops session server that makes this box drivable from
+    # the phone. Deliberately NOT listed in $Tasks above - check 1 would alert on the same
+    # outage from a shallower view, and two pushes for one event trains you to ignore both.
+    [string]   $ClaudeRcTask     = 'GF-ClaudeRC',
+    [string]   $ClaudeRcName     = 'gf-vps',
     # RCON panel LIVENESS (check 1c). Task state alone cannot see a hung node process, and the
     # failure is insidious: status_service falls back to direct rcon so admin.json stays fresh
     # and check 2 never fires - meanwhile geo, conn_logger's fallback, and THIS script's own
@@ -373,6 +378,149 @@ if ($panelOk) {
                 -priority 'high' -tags 'warning,robot'
             Set-Item-State $panelKey $true (Get-Date).ToString('o')
         } elseif (-not $WhatIf) { Set-Item-State $panelKey $true (Get-Item-State $panelKey).lastAlert }
+    }
+}
+
+# ---- 1d. Claude Remote Control (the gf-vps ops session) ----------------------
+# GF-ClaudeRC is the `claude rc --name gf-vps` server, the 24/7 process that makes this box
+# drivable from the phone. Check 1 above watches its TASK; this watches the three things task
+# state cannot see:
+#
+#   * a RESTART. Every session is a CHILD PROCESS of that server and lives only inside it - there
+#     is no server-side snapshot to reattach to. So when the server dies, every open session
+#     becomes unresumable and the app shows "Environment deleted" with no explanation. Today that
+#     is silent: the scheduler's own repetition quietly relaunches the server, and the first
+#     evidence is a session that will not open. This is what turns it into a push.
+#   * TWO servers. Claude refuses an ambiguous name ("multiple remote-control servers match"), so
+#     a duplicate is a TOTAL outage of the ops channel while both processes look perfectly healthy.
+#   * a HAND-STARTED server (parent is not the scheduler). It dies with the console that spawned
+#     it, so it is a scheduled outage nobody scheduled.
+#
+# Deliberately NOT wrapped in run_service.ps1 like the other services: that wrapper would make the
+# RC server a child of powershell.exe, and Remote Control requires the scheduler (svchost) as its
+# parent. The flight recorder would break the very thing it was added to watch. THIS check is the
+# substitute, which is also why it lives in the watchdog instead of a new always-on service.
+$rcTask = Get-ScheduledTask -TaskName $ClaudeRcTask -ErrorAction SilentlyContinue
+if (-not $rcTask) {
+    Log "$ClaudeRcTask - NOT REGISTERED (skipping remote-control check)"
+} else {
+    # The SERVER is the process carrying `rc --name <name>`. A session child carries --sdk-url and
+    # no `rc`, so this pattern counts servers only, which is what the ambiguity check needs.
+    $rcProcs   = @()
+    $anyClaude = @()
+    $queryOk   = $true
+    try {
+        $anyClaude = @(Get-CimInstance Win32_Process -Filter "Name='claude.exe'" -ErrorAction Stop)
+        $rcProcs   = @($anyClaude | Where-Object { $_.CommandLine -and $_.CommandLine -match '\src\s' -and
+                                    $_.CommandLine -match ('--name\s+' + [regex]::Escape($ClaudeRcName)) })
+    } catch { $queryOk = $false; Log "claude rc process query FAILED (non-fatal): $($_.Exception.Message)" }
+
+    $rcKey = 'claude-rc'
+    # ⚠ NEVER remediate on absent EVIDENCE, only on an established absence. Remediation here is
+    # a Stop/Start of the RC task, which ends every live session - so a query that failed, or one
+    # that could not read command lines (a privilege drop would blank them and match nothing),
+    # must degrade to "no judgement", never to "the server is gone". The cost of a missed check
+    # is one quiet 3-min tick; the cost of a false positive is the session it exists to protect.
+    if (-not $queryOk) {
+        Log "$ClaudeRcTask - process query failed; no judgement this run"
+    } elseif ($rcProcs.Count -eq 0 -and $anyClaude.Count -gt 0) {
+        Log "$ClaudeRcTask - $($anyClaude.Count) claude.exe running but none matched 'rc --name $ClaudeRcName' (unreadable command line?); no judgement this run"
+    } elseif ($rcProcs.Count -eq 0) {
+        $anyProblem = $true
+        Log "$ClaudeRcTask - RC SERVER GONE (task State=$($rcTask.State)) - remote control unavailable"
+        if (-not $WhatIf -and -not $NoRemediate) {
+            # Stop THEN Start, the GF-GameServer lesson: a task whose State still reads Running
+            # (hung process, or an exe that died under something which survived it) refuses a
+            # plain Start.
+            try { Stop-ScheduledTask -TaskName $ClaudeRcTask -ErrorAction SilentlyContinue } catch { }
+            try { Start-ScheduledTask -TaskName $ClaudeRcTask; Log "$ClaudeRcTask - restart issued" }
+            catch { Log "$ClaudeRcTask - restart FAILED: $($_.Exception.Message)" }
+        }
+        if (-not $WhatIf -and (Should-Alert $rcKey $true)) {
+            Send-Alert -title 'Gunfight VPS - Claude remote control down' `
+                -message "No '$ClaudeRcName' session server is running (task State=$($rcTask.State)). Restart issued. Any session open in the app is orphaned - start a new one." `
+                -priority 'high' -tags 'warning,robot'
+            Set-Item-State $rcKey $true (Get-Date).ToString('o')
+        } elseif (-not $WhatIf) { Set-Item-State $rcKey $true (Get-Item-State $rcKey).lastAlert }
+    } else {
+        $rc       = $rcProcs | Sort-Object CreationDate | Select-Object -First 1
+        $started  = $rc.CreationDate
+        $upMin    = [int]((Get-Date) - $started).TotalMinutes
+        $sessions = 0
+        try { $sessions = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($rc.ProcessId)" -ErrorAction Stop).Count } catch { }
+        $parentName = ''
+        try { $parentName = [string](Get-CimInstance Win32_Process -Filter "ProcessId=$($rc.ParentProcessId)" -ErrorAction Stop).Name } catch { }
+        Log "$ClaudeRcTask - OK (pid $($rc.ProcessId), up $upMin min, $sessions session(s), parent $parentName)"
+
+        if (-not $WhatIf -and (Should-Alert $rcKey $false)) {
+            Send-Alert -title 'Gunfight VPS - Claude remote control back' `
+                -message "The $ClaudeRcName session server is running again (pid $($rc.ProcessId)). Open a NEW session; anything from before the outage is orphaned." `
+                -priority 'default' -tags 'white_check_mark'
+        }
+        if (-not $WhatIf) { Set-Item-State $rcKey $false $null }
+
+        # (restart detection) pid+start identifies the process across runs. A CHANGED signature IS
+        # the orphaning event, and it is reported even though nothing is "down" right now: the
+        # server is healthy, it is the SESSIONS that were lost, and only this transition shows it.
+        # A first-ever run has no previous signature and must stay quiet, or installing the check
+        # would page about a restart that never happened.
+        $sig = "$($rc.ProcessId)|$($started.ToString('o'))"
+        $prevSig = ''
+        if ($state.PSObject.Properties.Name -contains 'claudeRcSig') { $prevSig = [string]$state.claudeRcSig }
+        if ($prevSig -and $prevSig -ne $sig) {
+            $anyProblem = $true
+            Log "$ClaudeRcTask - RESTARTED (was [$prevSig], now [$sig])"
+            if (-not $WhatIf) {
+                $whenTxt = 'just now'
+                if ($upMin -ge 1) { $whenTxt = "$upMin min ago" }
+                Send-Alert -title 'Gunfight VPS - Claude session server restarted' `
+                    -message "Remote control restarted $whenTxt (pid $($rc.ProcessId)). Sessions opened before that show 'Environment deleted' and cannot be resumed - open a new one. The game server is unaffected." `
+                    -priority 'default' -tags 'arrows_counterclockwise'
+            }
+        }
+        if (-not $WhatIf) { $state | Add-Member -NotePropertyName claudeRcSig -NotePropertyValue $sig -Force }
+
+        # (ambiguity) NOT auto-killed on purpose: one of the two may be holding a live session, and
+        # picking wrong costs the very thing this check protects. Alert with the pids and let a
+        # human end the right one.
+        $dupKey = 'claude-rc-dup'
+        if ($rcProcs.Count -gt 1) {
+            $anyProblem = $true
+            $rcPids = ($rcProcs | ForEach-Object { $_.ProcessId }) -join ', '
+            Log "$ClaudeRcTask - $($rcProcs.Count) servers named '$ClaudeRcName' (pids $rcPids) - the app cannot pick one"
+            if (-not $WhatIf -and (Should-Alert $dupKey $true)) {
+                Send-Alert -title 'Gunfight VPS - two Claude remote-control servers' `
+                    -message "$($rcProcs.Count) servers named '$ClaudeRcName' are running (pids $rcPids). Claude refuses an ambiguous name, so remote control is DOWN until one is ended. Not auto-killed: one may be holding your live session." `
+                    -priority 'high' -tags 'warning'
+                Set-Item-State $dupKey $true (Get-Date).ToString('o')
+            } elseif (-not $WhatIf) { Set-Item-State $dupKey $true (Get-Item-State $dupKey).lastAlert }
+        } else {
+            if (-not $WhatIf -and (Should-Alert $dupKey $false)) {
+                Send-Alert -title 'Gunfight VPS - remote control unambiguous again' `
+                    -message "Only one '$ClaudeRcName' server is running now." -priority 'default' -tags 'white_check_mark'
+            }
+            if (-not $WhatIf) { Set-Item-State $dupKey $false $null }
+        }
+
+        # (parentage) An empty $parentName means the QUERY failed, not that the parent is wrong -
+        # alerting on that would page about the watchdog's own blind spot.
+        $parentKey = 'claude-rc-parent'
+        $badParent = ($parentName -and $parentName -notmatch '^svchost\.exe$')
+        if ($badParent) {
+            Log "$ClaudeRcTask - parent is $parentName, not the scheduler (svchost.exe)"
+            if (-not $WhatIf -and (Should-Alert $parentKey $true)) {
+                Send-Alert -title 'Gunfight VPS - Claude RC started outside the scheduler' `
+                    -message "The '$ClaudeRcName' server (pid $($rc.ProcessId)) was started by $parentName, not the task scheduler. It dies with that console and takes every session with it. Restart it through the GF-ClaudeRC task." `
+                    -priority 'default' -tags 'warning'
+                Set-Item-State $parentKey $true (Get-Date).ToString('o')
+            } elseif (-not $WhatIf) { Set-Item-State $parentKey $true (Get-Item-State $parentKey).lastAlert }
+        } else {
+            if (-not $WhatIf -and (Should-Alert $parentKey $false)) {
+                Send-Alert -title 'Gunfight VPS - Claude RC parented correctly again' `
+                    -message "The '$ClaudeRcName' server is running under the task scheduler again." -priority 'default' -tags 'white_check_mark'
+            }
+            if (-not $WhatIf) { Set-Item-State $parentKey $false $null }
+        }
     }
 }
 
