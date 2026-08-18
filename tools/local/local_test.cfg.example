@@ -1,0 +1,61 @@
+// ===========================================================================
+//  LOCAL TEST BOX - override layer
+// ===========================================================================
+//  Copy this file to  %LOCALAPPDATA%\Plutonium\storage\t5\local_test.cfg
+//  (start_local_server.bat installs it there for you on first run).
+//
+//  HOW IT LOADS.  start_local_server.bat execs the SHARED dedicated.cfg first
+//  and this file SECOND, so every line here is a deliberate override of the
+//  live-box value. Last write wins. That split is the whole point: the base cfg
+//  stays a faithful mirror of the VPS (and stays the file the RCON panel's
+//  save button writes), while the handful of knobs that MUST differ on a dev
+//  box live here and cannot be clobbered by copying a cfg down from the VPS.
+//
+//  ONLY put a line here if the local box must genuinely differ. Anything you
+//  want to test the way the VPS runs it belongs in dedicated.cfg, not here.
+//
+//  WARN No semicolons in comments, ever. The cfg parser splits on that
+//  character INSIDE a "//" comment and executes each fragment as a command,
+//  so a comment that contains one is itself a live command. Use a comma.
+// ---------------------------------------------------------------------------
+
+// --- Identity ---------------------------------------------------------------
+// Never let a dev box look like the live one in a browser listing or a log.
+set sv_hostname "^3GF ^7LOCAL TEST"
+
+// --- Isolation: keep test progression OFF the real BO1 profile --------------
+// The live box ships modStats 0 so players bring their real rank. On a dev box
+// that is a hazard, not a feature: 5x XP, bot farming and the _gf_fun account
+// editors (funlevel50_, funprestige_, funcodpoints_, fununlockpro) all write
+// PERMANENTLY to your actual Black Ops profile with no undo. 1 = the private
+// per-mod ladder, which is what a throwaway test server should write to.
+set modStats "1"
+
+// --- Isolation: never serve or fetch the LIVE mod.ff ------------------------
+// Load-bearing, not tidiness. FastDL points a joining client at the server's
+// copy of mod.ff and the client overwrites its own with it. Aim a local server
+// at gunfight.us and joining it downloads the LIVE artifact straight over the
+// build you are trying to test, which reads as "I rebuilt it and nothing
+// changed". Blank base URL plus downloads off means the client uses the mod
+// folder on this machine, which is the repo.
+set sv_wwwBaseURL ""
+set sv_wwwDownload "0"
+set sv_allowDownload "0"
+
+// --- Solo testing -----------------------------------------------------------
+// party_minplayers gates the stock pre-match warmup and counts bots. 2 is the
+// public value, 1 lets a single player start a match alone.
+set party_minplayers "1"
+
+// --- Join password ----------------------------------------------------------
+// Empty ships in the template on purpose. A dev box binds 0.0.0.0 like any
+// other server, so if this machine is reachable from your LAN a test server
+// with dev verbs and the RCON bridge live is joinable by anyone on it. Set a
+// value in your own copy if that applies to you.
+set g_password ""
+
+// --- RCON -------------------------------------------------------------------
+// Inherited from dedicated.cfg so the panel's auto-seed keeps working. Override
+// here only if you want the dev box to carry a different password from the live
+// one, which is the safer habit. Keep it <=23 chars - Plutonium truncates.
+//set rcon_password ""

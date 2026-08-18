@@ -195,8 +195,18 @@ wins** takes the match.
   "FF/settings revert on restart"). Related, root-caused 2026-07-20: **the LAPTOP's dedicated server is
   launcher-started with NO `+exec dedicated.cfg`** — that file (and the panel's 💾 Save, which writes it)
   is decoration locally; only `seta`-archived dvars survive a local restart. The local bot tuning is
-  `seta`-contained; the real fix is a local start bat that execs the cfg like the VPS's
-  ([[local-launcher-no-exec-dedicated-cfg]]).
+  `seta`-contained; the real fix was a local start bat that execs the cfg like the VPS's
+  ([[local-launcher-no-exec-dedicated-cfg]]) — **DONE 2026-08-18: `tools/local/start_local_server.bat`**
+  passes `+exec`, so the local cfg is authoritative and the panel's 💾 Save means what it says there.
+  ⚠ It launches an **isolated** box (`tools/local/setup_test_box.ps1` builds a separate storage tree,
+  `LOCALAPPDATA`-pinned, mod folder junctioned to the repo) on **port 28965**, and BOTH of those are
+  load-bearing: 28960 is the only thing that collides with the game client on the same PC (they
+  otherwise coexist fine — no single-instance lock), and the separate `players/` keeps a test box's
+  5× XP + `_gf_fun` account editors off the **real** BO1 profile that `modStats 0` exposes. ⚠ A
+  dedicated server needs a **valid** server key or it never loads a map (`DW_AUTHORIZING` times out →
+  the TU WAD never fetches → `map_rotate` early-outs forever); use a **separate** key from the live
+  server, since the key's label is the browser name. Runbook: `docs/LOCAL_TESTING.md`
+  ([[local-test-box-port-collision-and-server-key]]).
 > Known design caveat, not a bug: **large/small spawn mode takes effect one round after the HUD readout**
 > (next-round snapshot vs live count — see *Team-size mode*).
 
@@ -342,6 +352,13 @@ external references we use are the official engine sources (see **Resources**).
   rejected — see *XP* below; it is harmless but it is **not** a local-only quirk.)
 - **Test panel/bridge/telemetry changes against a DEDICATED server, not a listen host** — a listen
   server masks RCON queue saturation and the "Unknown cmd" dvar-probe spam that only bite on the VPS.
+  **`tools/local/start_local_server.bat` is that dedicated server** (isolated tree, port 28965, and you
+  can play on the same PC while it runs) → `docs/LOCAL_TESTING.md`.
+- **Before ANY deploy, run `tools\local\preflight.ps1`** — one command for the three static verifiers,
+  both test suites, `mod.ff`/`.iwd` staleness, and whether the work is actually pushed (`deploy.ps1`
+  pulls from `origin`, and `mod.ff` reaches the box only via `origin/release`, so an unpushed commit or
+  an unpublished rebuild silently does not deploy). Exit 1 = do not deploy. It is the **static** half
+  only; the other half is a map load + the smoke checklist in `docs/DEV.md`.
 
 ### 🛑 MARKETING COPY IS THE OWNER'S — NEVER "CORRECT" IT AGAINST THE CODE
 **`site/wwwroot/*.html` and `README.md`'s feature list are ADVERTISING written by the owner, not
@@ -470,6 +487,7 @@ look worse, the safe direction for a probe that gates spending.
 |---|---|
 | `docs/REFERENCE.md` | Authoritative present-tense per-system prose, the full gameplay dvar/var tables, and a per-function reference for the gameplay files. |
 | `docs/DEV.md` | Repo layout, GSC include graph, `build_ff.ps1`, branch/release model + strip markers, deploy pipeline, dev tooling (RCON/bots/debug). |
+| `docs/LOCAL_TESTING.md` | The **local test box** (`tools/local/`): isolated storage tree + dedicated-server launcher that execs the cfg, and `preflight.ps1`, the one-command pre-deploy gate. Run it before every deploy. |
 | `docs/VPS_DEPLOY.md` | 11-phase VPS provisioning + deploy runbook (FastDL, git-pull deploy). |
 | `docs/MIGRATION.md` | Box-to-box migration runbook — the **delta** VPS_DEPLOY doesn't rebuild: what state is box-local and must be carried, what to rotate, cutover order + acceptance checklist. |
 | `docs/VPS_HARDENING.md` | Security runbook (RDP/WinRM/TLS/IIS `web.config`/DNS) with as-applied status. |

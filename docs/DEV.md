@@ -292,6 +292,11 @@ static verifiers (`verify_release_strip` / `verify_loadouts` / `verify_locations
 from the tier1 gate (`docs/REFACTOR_TIER1_CHECKLIST.md`, now historical); this is the copy to
 keep current.
 
+> **Run it on the local test box** — `tools\local\start_local_server.bat`, a real *dedicated*
+> server on port 28965 that you can join from this same PC while playing normally. The three
+> static verifiers plus both test suites are one command: `tools\local\preflight.ps1`. Setup and
+> the full pre-deploy gate → [LOCAL_TESTING.md](LOCAL_TESTING.md).
+
 - [ ] **Compile**: `loadMod mp_gunfight` + `map_restart`; zero `unknown function` / compile
       errors in `console_mp.log`. For strip-region changes, ALSO load a `package_release.ps1`
       output on a second local server — the verifier proves symbols, never a parse.
@@ -410,7 +415,8 @@ Dev-only, gated behind dvars set **before** loading the map. Stripped from publi
 
 - **Develop on `main`.** It carries the full source, history, and tooling. (A fresh clone lands on `release`; `git checkout main` first.)
 - **Edit GSC freely** — no rebuild needed; `map_restart` to reload. Only rebuild `mod.ff` (via `.\tools\build_ff.ps1`) when you touch menus, strings, `gametypesTable.csv`, or FX.
-- **Test on a listen server** in the Plutonium client (`loadMod mp_gunfight`, `g_gametype gf`, `map mp_havoc`); bots and the dev RCON tools are available there.
+- **Test on the local test box** — `tools\local\start_local_server.bat` runs a real *dedicated* server (isolated storage tree, port 28965) that you can join from the same PC while playing normally; bots and the dev RCON tools are available there, and unlike a listen host it reproduces the RCON queue saturation and dvar-probe spam that only bite on the VPS. One-time setup + the pre-deploy gate → [LOCAL_TESTING.md](LOCAL_TESTING.md). A listen server in the client (`loadMod mp_gunfight`, `g_gametype gf`, `map mp_havoc`) still works for quick gameplay checks.
+- **Run `tools\local\preflight.ps1` before deploying.** Static verifiers, both test suites, `mod.ff`/`.iwd` staleness, and whether the work is pushed. Exit 1 = do not deploy.
 - **Push** with `.\tools\push_all.ps1`. Cut public/server artifacts with `package_release.ps1` / `package_server.ps1` only when releasing.
 - Keep new dev-only wiring inside `// #strip-begin … // #strip-end` so it never reaches public builds, and never hardcode an `rcon_password` in GSC (the server packager will fail the build).
 
