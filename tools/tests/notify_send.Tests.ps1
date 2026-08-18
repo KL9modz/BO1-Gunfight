@@ -177,3 +177,38 @@ Describe "New-StatusEmbed (discord_status) - the live card rendering" {
         Assert-True ((@($e.fields) | Where-Object { $_.name -eq 'State' }).value -eq 'Pregame lobby') "lobby state"
     }
 }
+
+Describe "join-notify config build - every transport survives the rebuild" {
+    # join-notify.ps1 does NOT use Get-GfNtfyConfig: it builds its own $cfg so each field can be
+    # overridden by an env var. That hand-rolled literal is the failure mode this guards - it
+    # shipped once WITHOUT discordWebhooks, and the result was invisible: Send-GfAlert resolves no
+    # webhook, skips Discord, reports no error (an unset webhook is a legitimate config), so joins
+    # pushed to ntfy and never reached the channel. Nothing failed loudly enough to notice.
+    #
+    # AST, not a text grep: the point is that the KEY is in the object literal assigned to $cfg,
+    # which survives reformatting and comment churn.
+    $jn = Join-Path $toolsRoot 'notify\join-notify.ps1'
+
+    It "join-notify.ps1 exists where the test expects it" {
+        Assert-True (Test-Path $jn) "not found: $jn"
+    }
+
+    It "the \$cfg literal carries discordWebhooks" {
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($jn, [ref]$null, [ref]$null)
+        $assign = $ast.FindAll({
+            param($n)
+            $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+            $n.Left.Extent.Text -eq '$cfg' -and
+            $n.Right.Extent.Text -like '*pscustomobject*'
+        }, $true) | Select-Object -First 1
+        Assert-True ($null -ne $assign) "no `$cfg = [pscustomobject]@{...} assignment found - renamed?"
+
+        $keys = @($assign.Right.FindAll({
+            param($n) $n -is [System.Management.Automation.Language.HashtableAst]
+        }, $true) | ForEach-Object { $_.KeyValuePairs } | ForEach-Object { $_.Item1.Extent.Text })
+
+        Assert-True ($keys -contains 'discordWebhooks') `
+            "the config object drops discordWebhooks - every alert from this service degrades to ntfy-only, silently. Keys: $($keys -join ', ')"
+        Assert-True ($keys -contains 'ntfyTopic') "the config object drops ntfyTopic"
+    }
+}

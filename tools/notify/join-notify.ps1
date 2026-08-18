@@ -530,6 +530,13 @@ $cfg = [pscustomobject]@{
   quiet           = As-Bool (Get-CfgVal $fileCfg 'GF_QUIET_START' 'quietStart' $false) $false
   geoLookup       = As-Bool (Get-CfgVal $fileCfg 'GF_GEO_LOOKUP' 'geoLookup' $true) $true
   connectCount    = As-Bool (Get-CfgVal $fileCfg 'GF_CONNECT_COUNT' 'connectCount' $true) $true
+  # Carried through VERBATIM from the file config. Send-GfAlert reads $Config.discordWebhooks to
+  # pick a channel, so a rebuilt config object that DROPS this field silently degrades every alert
+  # to ntfy-only - and logs nothing, because an unresolved webhook is indistinguishable from a box
+  # that never configured Discord at all. That is exactly how joins reached the phone but not the
+  # channel. Deliberately not env-overridable: a webhook URL is a credential and config.json is
+  # the one place it lives.
+  discordWebhooks = $(if ($fileCfg) { $fileCfg.discordWebhooks } else { $null })
 }
 $pw = Get-CfgVal $fileCfg 'GF_RCON_PW' 'password' ''
 if (-not $pw) { $pw = Read-RconPw }
@@ -540,6 +547,9 @@ Write-Log 'GF Join Notifier starting'
 Write-Log "  server     $($cfg.host):$($cfg.port)"
 Write-Log "  rcon pw    $(if ($pwLen) { "($pwLen chars)" } else { 'MISSING' })"
 Write-Log "  ntfy       $($cfg.ntfyServer)/$(if ($cfg.ntfyTopic) { $cfg.ntfyTopic } else { '(NO TOPIC SET)' })"
+# The banner is the only place a MISSING transport is visible - a silent one cannot be debugged
+# from the log after the fact.
+Write-Log "  discord    $(if (Get-GfDiscordWebhook -Config $cfg -Category 'joins') { 'on (joins channel, falls back to default)' } else { 'off (no webhook configured)' })"
 Write-Log "  poll       $($cfg.pollMs)ms   leaves=$($cfg.notifyLeaves)  firstJoin=$($cfg.notifyFirstJoin)  empty=$($cfg.notifyEmpty)"
 Write-Log "  issues     $(if ($cfg.notifyIssues) { "on (red alert after $($script:IssueFailStreak) failed polls, re-alert $($script:IssueReAlertMins)min)" } else { 'off' })"
 Write-Log "  heartbeat  $(if ($cfg.heartbeatMins -gt 0) { "$($cfg.heartbeatMins) min" } else { 'off' })"
