@@ -31,6 +31,16 @@ $script:IgnoreFile = Join-Path $PSScriptRoot '..\ignore.local.json'
 # Get-GfMapName: shared map id -> display name, so an alert says "Nuketown", not "mp_nuked".
 . (Join-Path $PSScriptRoot '..\map_names.ps1')
 
+# Get-GfPlayerLinks / Get-GfPlayerMention: box-local guid -> Discord user id, so a join card can
+# name a known player as themselves in Discord. No table (or an unlinked player) = no mention,
+# which is the normal state and never an error.
+. (Join-Path $PSScriptRoot '..\player_links.ps1')
+$script:PlayerLinkFile = Join-Path $PSScriptRoot '..\players.local.json'
+
+# Joins own their colour: dark green regardless of priority, because a first join still rides at
+# 'high' to push through on a phone and would otherwise render in the priority stripe's orange.
+$script:JoinColor = 0x1F8B4C
+
 # Send-GfNtfy: the shared ntfy sender (JSON publish, unicode-safe titles).
 . (Join-Path $PSScriptRoot '..\ntfy.ps1')
 
@@ -120,11 +130,12 @@ function P-Key($p) {
 # this script's own (cfg, title, message, priority, tags) call shape and to LOG a failure; the
 # shared sender deliberately returns $false instead of throwing, so nothing here can be taken
 # down by a push.
-function Send-Ntfy($cfg, $title, $message, $priority, $tags) {
+function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, $discordPrefix = '') {
   # Send-GfAlert fans out to every configured transport; 'joins' routes Discord to the
   # player-activity channel (falls back to the default webhook when that one is unset).
   $r = Send-GfAlert -Config $cfg -Title ([string]$title) -Message ([string]$message) `
-                    -Priority ([string]$priority) -Tags ([string[]]@($tags)) -Category 'joins'
+                    -Priority ([string]$priority) -Tags ([string[]]@($tags)) -Category 'joins' `
+                    -DiscordColor ([int]$discordColor) -DiscordPrefix ([string]$discordPrefix)
   if ($r.ntfyError)    { Write-Log "[ntfy] send failed: $($r.ntfyError)" }
   if ($r.discordError) { Write-Log "[discord] send failed: $($r.discordError)" }
   return $r.anySent
@@ -331,6 +342,16 @@ function Get-DetailBits($loc, $ping, $count) {
 # Never returns '' — an empty ntfy message renders as a bodyless alert. All three bits drop out
 # only when geoLookup is off (or the IP is LAN/loopback), the ping is still the placeholder, and
 # there are no day-files to count from.
+# Join title. Two rules, both deliberate: an empty-server join says nothing about the server
+# being empty (the alert IS that news, and the old "(1)" was noise), and once others are already
+# playing the head count trails the map name, where it reads as context rather than as a label on
+# the player. Kept as a function so the format is testable without a live server.
+function Get-JoinTitle($name, $mapName, $count) {
+  $t = "$name joined"
+  if ($mapName)          { $t += "  $mapName" }
+  if ([int]$count -gt 1) { $t += "  ($count)" }
+  return $t
+}
 function Get-JoinBody($loc, $ping, $count) {
   $bits = Get-DetailBits $loc $ping $count
   if ($bits.Count -gt 0) { return ($bits -join '  |  ') }
@@ -435,10 +456,8 @@ function Do-Tick($cfg) {
   # unlisted id falls through to the raw "mp_*" rather than vanishing.
   $mapName = ''
   if ($st.map) { $mapName = Get-GfMapName $st.map }
-  # Join titles carry the map alone; $ctx (map + gametype) still backs the heartbeat/empty
-  # alerts and the watcher's own status line.
-  $mapSuffix = ''
-  if ($mapName) { $mapSuffix = "  $mapName" }
+  # Join titles carry the map alone (Get-JoinTitle); $ctx (map + gametype) still backs the
+  # heartbeat/empty alerts and the watcher's own status line.
   $ctx = ''
   if ($mapName) { $ctx = $mapName; if ($st.gametype) { $ctx = "$ctx / $($st.gametype)" } }
   $ctxSuffix = ''
@@ -469,18 +488,21 @@ function Do-Tick($cfg) {
       $body = Get-JoinBody $loc $p.ping $cnt
       $logd = Get-LogDetail $geo.place $p.ping $cnt     # log gets the place without the flag
       $ptag = Count-Tag $cur.Count                      # 👤 / 👥 by TOTAL players online
+      $title = Get-JoinTitle $p.name $mapName $cur.Count
+      # Discord-only: a mention is meaningless on ntfy and would render as literal <@123…> there.
+      # In an embed description it draws the chip WITHOUT notifying anyone (embeds never notify),
+      # which is what we want - the player who just joined does not need their phone buzzed.
+      $mention = Get-GfPlayerMention (Get-GfPlayerLinks $script:PlayerLinkFile) $p.guid
       if ($wasEmpty -and -not $firstDone) {
         $firstDone = $true
         Write-Log "FIRST $($p.name)  (server now active, $($cur.Count) online)$logd"
         if ($cfg.notifyFirstJoin) {
-          [void](Send-Ntfy $cfg "$($p.name) joined an empty server  ($($cur.Count))$mapSuffix" `
-            $body 'high' @($ptag))
+          [void](Send-Ntfy $cfg $title $body 'high' @($ptag) $script:JoinColor $mention)
           continue
         }
       }
       Write-Log "JOIN  $($p.name)  ($($cur.Count) online)$logd"
-      [void](Send-Ntfy $cfg "$($p.name) joined  ($($cur.Count))$mapSuffix" `
-        $body 'default' @($ptag))
+      [void](Send-Ntfy $cfg $title $body 'default' @($ptag) $script:JoinColor $mention)
     }
   }
 
@@ -550,6 +572,8 @@ Write-Log "  ntfy       $($cfg.ntfyServer)/$(if ($cfg.ntfyTopic) { $cfg.ntfyTopi
 # The banner is the only place a MISSING transport is visible - a silent one cannot be debugged
 # from the log after the fact.
 Write-Log "  discord    $(if (Get-GfDiscordWebhook -Config $cfg -Category 'joins') { 'on (joins channel, falls back to default)' } else { 'off (no webhook configured)' })"
+$linkCount = (Get-GfPlayerLinks $script:PlayerLinkFile).Count
+Write-Log "  links      $linkCount player(s) linked to a Discord id$(if ($linkCount -eq 0) { ' (add ids in tools\players.local.json)' })"
 Write-Log "  poll       $($cfg.pollMs)ms   leaves=$($cfg.notifyLeaves)  firstJoin=$($cfg.notifyFirstJoin)  empty=$($cfg.notifyEmpty)"
 Write-Log "  issues     $(if ($cfg.notifyIssues) { "on (red alert after $($script:IssueFailStreak) failed polls, re-alert $($script:IssueReAlertMins)min)" } else { 'off' })"
 Write-Log "  heartbeat  $(if ($cfg.heartbeatMins -gt 0) { "$($cfg.heartbeatMins) min" } else { 'off' })"

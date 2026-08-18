@@ -50,6 +50,7 @@ function Get-FunctionText {
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-ConnectCount')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Format-Ordinal')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Format-ConnectCount')))
+. ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinTitle')))
 
 Describe "Resolve-ServiceImagePath (security_watch)" {
     It "resolves a %SystemRoot%-relative path (the KslD shape)" {
@@ -277,5 +278,78 @@ Describe "watchdog check 1d (Claude RC) - the fail-safe structure, not the happy
         # pushes for one event is how an alert channel gets muted.
         Assert-False ($tasksParam.DefaultValue.Extent.Text -match 'ClaudeRC') `
             "GF-ClaudeRC is in the `$Tasks default - it would double-alert alongside check 1d"
+    }
+}
+
+Describe "Get-JoinTitle (join-notify) - the owner's join card format" {
+    # Format rules, and each one is a decision rather than a default:
+    #   * an empty-server join does NOT say "empty server" and does NOT carry a count - the alert
+    #     arriving IS that news, and "(1)" was noise
+    #   * once others are playing, the head count trails the MAP, reading as context instead of a
+    #     label stuck to the player's name
+    #   * the map is the public display name, resolved upstream by Get-GfMapName
+    It 'a join into an empty server carries neither count nor empty-server text' {
+        Assert-Eq (Get-JoinTitle 'fentfella' 'Havana' 1) 'fentfella joined  Havana' 'first join'
+    }
+    It 'a join with others already on puts the total AFTER the map name' {
+        Assert-Eq (Get-JoinTitle 'KL9' 'Havana' 3) 'KL9 joined  Havana  (3)' 'later join'
+    }
+    It 'an unknown map degrades to name + count, never a dangling separator' {
+        Assert-Eq (Get-JoinTitle 'KL9' '' 3) 'KL9 joined  (3)' 'no map, others on'
+        Assert-Eq (Get-JoinTitle 'KL9' '' 1) 'KL9 joined'      'no map, alone'
+    }
+    It 'a count of 0 or a non-numeric count never renders a count' {
+        Assert-Eq (Get-JoinTitle 'KL9' 'Zoo' 0) 'KL9 joined  Zoo' 'zero'
+    }
+}
+
+Describe "Get-GfPlayerLinks / Get-GfPlayerMention - the Discord link table" {
+    . (Join-Path $toolsRoot 'player_links.ps1')
+
+    function New-LinkFile($obj) {
+        $p = Join-Path $env:TEMP ("gf_links_" + [IO.Path]::GetRandomFileName() + ".json")
+        ($obj | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath $p -Encoding UTF8
+        return $p
+    }
+
+    It 'resolves a linked guid to a mention' {
+        $f = New-LinkFile @{ links = @{ '1234567' = @{ discordId = '987654321098765432'; note = 'someone' } } }
+        $links = Get-GfPlayerLinks $f
+        Assert-Eq (Get-GfPlayerMention $links '1234567') '<@987654321098765432>' 'linked guid'
+        Remove-Item $f -Force
+    }
+    It 'an unlinked guid, an empty id and a missing table all yield no mention' {
+        $f = New-LinkFile @{ links = @{ '1234567' = @{ discordId = ''; note = 'seeded, not filled in' } } }
+        $links = Get-GfPlayerLinks $f
+        # A seeded row is the NORMAL state of a pre-populated table - it must not become a mention
+        # of nobody, and must not throw.
+        Assert-Eq (Get-GfPlayerMention $links '1234567') '' 'empty discordId'
+        Assert-Eq (Get-GfPlayerMention $links '7654321') '' 'guid not in table'
+        Assert-Eq (Get-GfPlayerMention (Get-GfPlayerLinks (Join-Path $env:TEMP 'gf_no_such_links.json')) '1234567') '' 'missing file'
+        Remove-Item $f -Force
+    }
+    It 'sanitises the id to digits, so a bad value cannot smuggle in another mention' {
+        # The table is hand-edited; a stray paste like "everyone> <@&12345" would otherwise be
+        # interpolated straight into text Discord parses.
+        $f = New-LinkFile @{ links = @{ '1234567' = @{ discordId = 'everyone>  <@&11111>'; note = 'hostile' } } }
+        $m = Get-GfPlayerMention (Get-GfPlayerLinks $f) '1234567'
+        Assert-Eq $m '<@11111>' 'reduced to digits'
+        Assert-False ($m -match 'everyone') 'no everyone token survives'
+        Remove-Item $f -Force
+    }
+    It 'an unreadable table yields no links instead of throwing' {
+        $f = Join-Path $env:TEMP ("gf_links_bad_" + [IO.Path]::GetRandomFileName() + ".json")
+        '{ this is not json' | Set-Content -LiteralPath $f -Encoding UTF8
+        Assert-Eq (Get-GfPlayerLinks $f).Count 0 'bad json is empty, not fatal'
+        Remove-Item $f -Force
+    }
+    It 'picks up an EDIT without a restart (the mtime cache must not go stale)' {
+        $f = New-LinkFile @{ links = @{ '1234567' = @{ discordId = '111111111111111111'; note = 'before' } } }
+        Assert-Eq (Get-GfPlayerMention (Get-GfPlayerLinks $f) '1234567') '<@111111111111111111>' 'first read'
+        (@{ links = @{ '1234567' = @{ discordId = '222222222222222222'; note = 'after' } } } | ConvertTo-Json -Depth 5) |
+            Set-Content -LiteralPath $f -Encoding UTF8
+        (Get-Item $f).LastWriteTimeUtc = (Get-Item $f).LastWriteTimeUtc.AddSeconds(5)   # beat same-tick granularity
+        Assert-Eq (Get-GfPlayerMention (Get-GfPlayerLinks $f) '1234567') '<@222222222222222222>' 'edit picked up'
+        Remove-Item $f -Force
     }
 }

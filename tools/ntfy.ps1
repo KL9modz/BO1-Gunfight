@@ -162,9 +162,14 @@ function Get-GfDiscordWebhook {
 
 # One webhook POST. Returns $true/$false and never throws - an alert transport that can take a
 # service down is worse than no alert. $Category selects the channel (joins / alerts / security).
+# $Color overrides the priority stripe when a caller owns its own colour language (joins are
+# always dark green, whatever priority the ntfy push rides at). $Prefix is a DISCORD-ONLY first
+# line of the description - it exists so a Discord mention never reaches the ntfy push, where
+# <@123…> would render as literal junk on a phone.
 function Send-GfDiscord {
     param($Config, [string]$Title, [string]$Message, [string]$Priority = 'default',
-          [string[]]$Tags = @(), [string]$Category = 'default')
+          [string[]]$Tags = @(), [string]$Category = 'default', [int]$Color = 0,
+          [string]$Prefix = '')
 
     $script:GfDiscordLastError = ''
     $url = Get-GfDiscordWebhook -Config $Config -Category $Category
@@ -177,10 +182,12 @@ function Send-GfDiscord {
     # A recovery reads green whatever its priority - it is the one case where the TAG carries the
     # severity and the priority does not (recoveries are sent at 'default' so they do not buzz).
     if (@($Tags) -contains 'white_check_mark') { $color = 0x57F287 }
+    # Explicit LAST: a caller that names a colour has said the most about its own alert.
+    if ($Color -gt 0) { $color = $Color }
 
     $embed = [ordered]@{
         title       = (($badge + $Title).Trim())
-        description = [string]$Message
+        description = $(if ($Prefix) { ([string]$Prefix + "`n" + [string]$Message).Trim() } else { [string]$Message })
         color       = $color
         footer      = @{ text = $(if ($Config.serverName) { [string]$Config.serverName } else { 'Gunfight' }) }
         timestamp   = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
@@ -214,7 +221,8 @@ function Send-GfDiscord {
 # that reaches a phone, and vice versa.
 function Send-GfAlert {
     param($Config, [string]$Title, [string]$Message, [string]$Priority = 'default',
-          [string[]]$Tags = @(), [string]$Category = 'default')
+          [string[]]$Tags = @(), [string]$Category = 'default', [int]$DiscordColor = 0,
+          [string]$DiscordPrefix = '')
 
     $ntfyOk = $false; $ntfyTried = $false
     if ($null -ne $Config -and $Config.ntfyTopic) {
@@ -224,7 +232,7 @@ function Send-GfAlert {
     $dscOk = $false; $dscTried = $false
     if (-not [string]::IsNullOrWhiteSpace((Get-GfDiscordWebhook -Config $Config -Category $Category))) {
         $dscTried = $true
-        $dscOk = Send-GfDiscord -Config $Config -Title $Title -Message $Message -Priority $Priority -Tags $Tags -Category $Category
+        $dscOk = Send-GfDiscord -Config $Config -Title $Title -Message $Message -Priority $Priority -Tags $Tags -Category $Category -Color $DiscordColor -Prefix $DiscordPrefix
     }
     return [pscustomobject]@{
         ntfy        = $ntfyOk
