@@ -174,6 +174,26 @@ material,gf_camo_bubblegum_mtl
 # To do it again: drop the pack's camo_gold_* .iwi into images\ and add one carrier material per
 # map. Ship only the maps the pack actually provides -- Dark Matter has no _env, and leaving a
 # previous pack's env in place would pair its colour with the wrong reflection.
+# GOLD COLT PYTHON -- a RESIDENT WEAPON-TEXTURE override, the second use of the .iwd route after
+# the custom camos, and the first that repaints a WEAPON MODEL rather than a camo
+# layer or a 2d icon. Imported from the community "Gold_Colt_Python" pack (CUSTOM ASSETS).
+# Both files are shipped under their EXACT stock asset names, so stock's own material
+# `gt5_weapon_coltpython` keeps doing the work and simply reads different pixels:
+#   images\~-gt5_weapon_coltpython_c.iwi                    512x512 DXT1 -- diffuse; the pack
+#                       darkens the wood grips to near-black so the gold reads as the whole gun.
+#   images\~~-gt5_weapon_coltpython_sc-r~b84aeb2b.iwi       512x512 DXT5 -- specular/colour, and
+#                       THIS is where the gold actually lives. Shipping only the _c would look
+#                       like a black python, not a gold one -- the pair is the asset.
+# ⚠ Stock's `_n` (normal) and `_env` maps are deliberately NOT overridden: the pack does not
+#   provide them, and stock's own are what the gold reflects against.
+# ⚠ This is UNCONDITIONAL, not a camo -- the python is gold in every loadout for every player,
+#   and it also repaints `python_speed_mp` (same model + material). That is the point; the python
+#   is a neutral-base weapon that shows no pattern camo anyway (see CLAUDE.md, Camo).
+# ⚠ CARRIER MATERIALS, same rule as the camos above: a mod .iwd outranks a resident zone image,
+#   but the image still has to be REGISTERED for our copy to be the one that loads. Nothing
+#   references these two materials -- do not "clean up" an apparently-unused row.
+material,gf_python_c_mtl
+material,gf_python_sc_mtl
 localize,gf
 # Overrides two STOCK engine strings (a mod.ff localizedstring wins over the game's
 # own zone copy): the scoreboard "Score" header -> "Damage", and the between-rounds

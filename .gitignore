@@ -148,6 +148,9 @@ images/*
 # is absent from the VPS clone, absent from its .iwd, and the live server quietly serves the stock
 # texture while the laptop looks correct. Track every override explicitly.
 !images/camo_gold_*.iwi
+# The gold Colt Python pair (see mod.csv). Glob, because the stock specular carries a content
+# hash in its name (`~~-...sc-r~b84aeb2b`) that no one should have to retype to keep it tracked.
+!images/*coltpython*.iwi
 # Build artifact: the .iwd is just images/*.iwi zipped for delivery. Regenerated on demand.
 # GLOB, not the exact name: a RUNNING GAME holds the .iwd open (Plutonium mounts it and keeps the
 # handle), so make_iwd.ps1 falls back to writing `mp_gunfight.iwd.new` beside the live file for the
