@@ -130,11 +130,18 @@ function P-Key($p) {
 # this script's own (cfg, title, message, priority, tags) call shape and to LOG a failure; the
 # shared sender deliberately returns $false instead of throwing, so nothing here can be taken
 # down by a push.
-function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, $discordPrefix = '', $discordTitle = '') {
-  # Send-GfAlert fans out to every configured transport; 'joins' routes Discord to the
-  # player-activity channel (falls back to the default webhook when that one is unset).
+function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, $discordPrefix = '', $discordTitle = '', $category = 'default') {
+  # Send-GfAlert fans out to every configured transport. $category picks the DISCORD channel and
+  # defaults to 'default' deliberately: the joins channel is for PLAYERS JOINING, and only the two
+  # join call sites pass 'joins'. This service also emits notifier-online, heartbeat and
+  # poll-failure alerts, which are the notifier talking about ITSELF - they belong with the rest
+  # of the ops traffic, not in the channel someone watches to see who is playing. It used to
+  # hardcode 'joins' here, so every one of them landed in the wrong place (and a service restart
+  # put a "notifier online" card in there each time).
+  # ⚠ Default to the QUIET channel, never to 'joins': a new call site added later then has to opt
+  # IN to the player-facing channel rather than leak into it by inheriting a wrong default.
   $r = Send-GfAlert -Config $cfg -Title ([string]$title) -Message ([string]$message) `
-                    -Priority ([string]$priority) -Tags ([string[]]@($tags)) -Category 'joins' `
+                    -Priority ([string]$priority) -Tags ([string[]]@($tags)) -Category ([string]$category) `
                     -DiscordColor ([int]$discordColor) -DiscordPrefix ([string]$discordPrefix) `
                     -DiscordTitle ([string]$discordTitle)
   if ($r.ntfyError)    { Write-Log "[ntfy] send failed: $($r.ntfyError)" }
@@ -518,14 +525,16 @@ function Do-Tick($cfg) {
           # mention field.
           [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $true) `
                            -message $body -priority 'high' -tags @($ptag) `
-                           -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle)
+                           -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle `
+                           -category 'joins')
           continue
         }
       }
       Write-Log "JOIN  $($p.name)  ($($cur.Count) online)$logd"
       [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $false) `
                        -message $body -priority 'default' -tags @($ptag) `
-                       -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle)
+                       -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle `
+                       -category 'joins')
     }
   }
 

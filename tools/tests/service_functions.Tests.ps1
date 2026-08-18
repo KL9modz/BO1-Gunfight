@@ -374,3 +374,42 @@ Describe "Get-JoinTitleNtfy (join-notify) - the PHONE format, deliberately not t
         Assert-False ((Get-JoinTitleNtfy 'KL9' 'Discovery' 1 $true) -eq (Get-JoinTitleDiscord 'KL9' 'Discovery' 1)) 'first join differs'
     }
 }
+
+Describe "join-notify alert routing - the joins channel is for JOINS" {
+    # The joins channel is watched to see who is playing. This service also emits notifier-online,
+    # heartbeat and poll-failure alerts, which are it talking about ITSELF; those belong with the
+    # ops traffic. Send-Ntfy used to hardcode Category 'joins' for all of them, so a service
+    # restart posted "notifier online" into the player channel every time.
+    #
+    # Structural, not textual: assert the DEFAULT is the quiet channel and that only the two join
+    # sites opt in. A new alert added later then has to ask for the player channel rather than
+    # inherit it.
+    $jn = Join-Path $toolsRoot 'notify\join-notify.ps1'
+    $jnAst = [System.Management.Automation.Language.Parser]::ParseFile($jn, [ref]$null, [ref]$null)
+
+    It 'Send-Ntfy defaults to the default channel, not to joins' {
+        $fn = $jnAst.FindAll({
+            param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Send-Ntfy'
+        }, $true) | Select-Object -First 1
+        Assert-True ($null -ne $fn) 'Send-Ntfy not found - renamed?'
+        $catParam = @($fn.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'category' }) | Select-Object -First 1
+        Assert-True ($null -ne $catParam) 'Send-Ntfy has no $category parameter - routing collapsed back to one channel?'
+        Assert-Eq $catParam.DefaultValue.Extent.Text "'default'" 'the default channel must be the quiet one'
+    }
+
+    It 'only the two join call sites ask for the joins channel' {
+        $calls = @($jnAst.FindAll({
+            param($n) $n -is [System.Management.Automation.Language.CommandAst] -and
+                      $n.CommandElements.Count -gt 0 -and
+                      ([string]$n.CommandElements[0].Extent.Text) -eq 'Send-Ntfy'
+        }, $true))
+        Assert-True ($calls.Count -ge 6) "sanity: expected several Send-Ntfy calls, found $($calls.Count)"
+
+        $joinsCalls = @($calls | Where-Object { $_.Extent.Text -match "-category\s+'joins'" })
+        Assert-Eq $joinsCalls.Count 2 "exactly the first-join and later-join sites may target the joins channel"
+        foreach ($c in $joinsCalls) {
+            Assert-True ($c.Extent.Text -match 'Get-JoinTitleNtfy') `
+                'a non-join alert is targeting the joins channel'
+        }
+    }
+}
