@@ -2001,7 +2001,35 @@ every 3 min so it can't exhaust a retry budget; restarts dead tasks, recovers we
 stuck match). Every `register_services.ps1` task runs through the **`run_service.ps1` flight recorder**:
 all service output incl. the terminating error that killed it → `storage\t5\logs\services\<Task>.log`
 (timestamped, size-capped, outside the mirror; `GF-RconPanel` deliberately not routed — different
-registrar). Before 2026-08-02 a dead service left NO evidence ([[vps-status-log-notify-services]]). ⚠ **`GF-Watchdog` judges the GAME server by the `plutonium-bootstrapper-win32` PROCESS +
+registrar). Before 2026-08-02 a dead service left NO evidence ([[vps-status-log-notify-services]]).
+
+**BOX-STATE BACKUP — `GF-Backup` (daily 05:12) → the PRIVATE repo `KL9modz/BO1-Server-Backup`.**
+⚠ **`tools/carry.ps1` is the SINGLE source of truth for what is box-local** (its authority is
+`.gitignore`, it carries a per-item restore note, and it *deliberately excludes*
+`security_state.json` — a copied trust baseline false-alarms on the new box forever — plus the
+transient watchdog/conn/dvar caches). **`tools/backup_box_state.ps1` only PUBLISHES**: it shells
+out to `carry.ps1 -SkipHitchBaseline`, mirrors the result as a **plaintext tree** into
+`C:\gfbackup\BO1-Server-Backup\state\`, commits and pushes (~340KB, 65 files/run). It briefly
+carried its own parallel list and drifted within a day — collecting the three files `carry.ps1`
+refuses on purpose while missing `bots.txt`, `gamestats.local.json` and `players.local.json`
+entirely. **Add a new box-local file to `carry.ps1`, never here.** ⚠ `-SkipHitchBaseline` exists
+because that extract is ~6MB (93% of a commit) of *derived diagnostic*; migration still gets it by
+default — it is the acceptance test for a new box. ⚠ **The repo holds live credentials and PLAYER
+PII (IPs + GUIDs) in plaintext — the owner chose plaintext over encryption deliberately
+(2026-08-18)** so git stores each append-only day-file once and single files stay restorable; the
+ONLY thing protecting it is the repo staying private, and git history is permanent (if exposed:
+rotate everything `MANIFEST.txt` marks SECRET; the player data cannot be recalled). Auth is a
+**deploy key scoped to that one repo** (`~/.ssh/id_ed25519_gfbackup`, ssh alias `github-gfbackup`,
+`IdentitiesOnly yes`) — deliberately NOT `gh auth login`, which would put account-wide GitHub
+access on a box that also runs a permanent admin agent. ⚠ **The `.gf-backup-repo` marker is a
+safety interlock, not decoration**: publishing refuses any tree lacking it, and refuses outright if
+`origin` matches the mod repo, because the PUBLIC clone lives on this same box and a push cannot be
+recalled. ⚠ `mod.ff` + `mp_gunfight.iwd` are deliberately **not** collected — they are on
+`origin/release` (`git checkout origin/release -- mod.ff mp_gunfight.iwd`); if they ever leave that
+branch they must come BACK into `carry.ps1`, since `mod.ff` needs the dev desktop's linker +
+`S:\zone_source`. ⚠ Not in the watchdog's `$PeriodicTasks` list: that check assumes a 3-min cadence
+and would call a daily task stale every run. For a bundle leaving the box by any other route
+(scp/USB), use **`carry.ps1 -Zip`** and delete both copies once verified. ⚠ **`GF-Watchdog` judges the GAME server by the `plutonium-bootstrapper-win32` PROCESS +
 `admin.json` liveness, never by `GF-GameServer`'s task State** — a GSC **compile crash** (`SV_Shutdown`)
 drops the game exe while the task's `cmd.exe`/bat wrapper survives, so State reads `Running` while the
 server is DOWN. Escalation ladder in `watchdog.ps1`: **3a** kills a wedged `plutonium.exe` updater
