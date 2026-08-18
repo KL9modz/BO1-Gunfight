@@ -48,6 +48,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# The IWi v13 header shape, shared with dds_to_iwi.ps1 and material_spike\make_material.ps1.
+. (Join-Path $PSScriptRoot 'iwi_common.ps1')
+
 # ⚠ Resolve here, not in the param default: $PSScriptRoot is empty in a param() default under
 # `powershell -File`, which made every invocation die on Split-Path.
 if (-not $OutRoot) {
@@ -164,20 +167,12 @@ function SampleNoise([double]$u, [double]$v) {
 # Opaque everywhere: a0=a1=255 and all alpha indices 0 -> alpha = a0.
 $bw = $Width / 4; $bh = $Height / 4
 $payloadLen = $Width * $Height
-$fileLen = 48 + $payloadLen
-$iwi = New-Object byte[] $fileLen
-
-$hdr = [byte[]]@(0x49, 0x57, 0x69, 0x0D, 0x0D, 0xC3)      # "IWi" v13, DXT5, flags C3
-[Array]::Copy($hdr, $iwi, 6)
-[Array]::Copy([BitConverter]::GetBytes([uint16]$Width),  0, $iwi, 6, 2)
-[Array]::Copy([BitConverter]::GetBytes([uint16]$Height), 0, $iwi, 8, 2)
-[Array]::Copy([BitConverter]::GetBytes([uint16]1),       0, $iwi, 10, 2)
-for ($m = 0; $m -lt 8; $m++) {
-    [Array]::Copy([BitConverter]::GetBytes([uint32]$fileLen), 0, $iwi, 0x10 + 4 * $m, 4)
-}
+# Header shape lives in tools\iwi_common.ps1 (shared with dds_to_iwi + material_spike, and pinned
+# by the corpus byte-compare in material_spike.Tests.ps1).
+$iwi = New-IwiBuffer -Width $Width -Height $Height -PayloadBytes $payloadLen
 
 $jit = New-Object System.Random(($Seed + 7))
-$off = 48
+$off = Get-IwiPayloadOffset
 for ($by = 0; $by -lt $bh; $by++) {
     for ($bx = 0; $bx -lt $bw; $bx++) {
         # Straight 0..1 sweep -- one pass over the noise field per texture. The field itself wraps

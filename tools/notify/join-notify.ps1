@@ -202,36 +202,79 @@ $script:ConnLogDir = Join-Path (Resolve-T5Root) 'logs'
 # already carry it.
 $script:ConnCountFreshSec = 120
 
+# ⚠ SELF-CONTAINED ON PURPOSE: tools\tests\service_functions.Tests.ps1 extracts this function by
+# AST name and evaluates it alone, so a helper split out of here would fail the tests with
+# CommandNotFound. Split it only together with that test's extraction list.
 function Get-ConnectCount($guid) {
   $g = ([string]$guid).Trim()
   if (-not $g -or $g -eq '0') { return $null }        # guid 0 = still connecting: identifies nobody
   if (-not (Test-Path -LiteralPath $script:ConnLogDir)) { return $null }
   $files = @(Get-ChildItem (Join-Path $script:ConnLogDir 'players_*.log') -ErrorAction SilentlyContinue)
   if ($files.Count -eq 0) { return $null }
-  $rx = [regex]('^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+CONNECT\s+ip=\S+\s+name=".*?"\s+guid=' +
-                [regex]::Escape($g) + '(?:\s|$)')
+  # ⚠ END-ANCHORED, mirroring status_service's canonical $ConnLineRx over this same format. The
+  # old pattern stopped at (?:\s|$) straight after the guid, which is forgeable: name="..." is the
+  # one free-text field, so a player renamed to  x"  guid=<victim>  ping=1  writes a line whose
+  # FRONT reads as a complete record for the victim while their real one sits at the end. Only the
+  # trailing $ can tell those apart -- ping= is the last field on a CONNECT line (conn_logger
+  # passes -extra for LEFT only), so the real record is the one that runs to end-of-line.
+  # Belt and braces: Write-Event now also strips quotes out of the name, which stops the ambiguous
+  # line being written at all. This half is what covers day-files already on disk.
+  # name stays .*? (status_service's exact grammar) rather than [^"]*: on a legacy line that DOES
+  # carry a quote, the lazy form still resolves the record to its real owner, where [^"]* would
+  # throw the whole line away. The end anchor is the part doing the security work.
+  # One GUID-agnostic pattern, so a file can be tallied ONCE for every player rather than
+  # re-scanned per guid. Same end-anchored grammar as above; group 2 is the guid.
+  $rx = [regex]'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+CONNECT\s+ip=\S+\s+name=".*?"\s+guid=(\S+)\s+ping=\S+\s*$'
+
+  # PER-FILE guid->count maps, cached on (length, mtime). The old code opened and regex-scanned
+  # EVERY day-file on EVERY call: day-files accrue one per day with no pruning, and a post-match
+  # reconnect wave calls this once per joiner inside a single 12s poll tick, so the cost was
+  # (players x days) file reads and grew forever. Day-files are append-only and only TODAY's can
+  # change, so after the first pass a lookup re-reads one file instead of the whole history.
+  # Drift-free by construction - any change to a file's size or timestamp invalidates its entry,
+  # which is what the original "deliberately no cache" note was protecting against.
+  if ($null -eq $script:ConnFileCache) { $script:ConnFileCache = @{} }
+
   $n = 0
   $newest = $null
   foreach ($f in $files) {
-    # FileShare::ReadWrite on purpose - conn_logger has today's file open for append on its own
-    # 5s cycle, and a sharing violation here would silently UNDERCOUNT rather than fail loudly.
-    $fs = $null; $sr = $null
-    try {
-      $fs = New-Object System.IO.FileStream($f.FullName, [System.IO.FileMode]::Open,
-                                            [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-      $sr = New-Object System.IO.StreamReader($fs)
-      while ($null -ne ($line = $sr.ReadLine())) {
-        $m = $rx.Match($line)
-        if (-not $m.Success) { continue }
-        $n++
-        $t = [datetime]::MinValue
-        if ([datetime]::TryParseExact($m.Groups[1].Value, 'yyyy-MM-dd HH:mm:ss',
-              [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$t)) {
-          if ($null -eq $newest -or $t -gt $newest) { $newest = $t }
+    $ent = $script:ConnFileCache[$f.FullName]
+    if ($null -eq $ent -or $ent.len -ne $f.Length -or $ent.mtime -ne $f.LastWriteTimeUtc) {
+      $counts = @{}; $stamps = @{}
+      # FileShare::ReadWrite on purpose - conn_logger has today's file open for append on its own
+      # 5s cycle, and a sharing violation here would silently UNDERCOUNT rather than fail loudly.
+      $fs = $null; $sr = $null
+      $read = $false
+      try {
+        $fs = New-Object System.IO.FileStream($f.FullName, [System.IO.FileMode]::Open,
+                                              [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        $sr = New-Object System.IO.StreamReader($fs)
+        while ($null -ne ($line = $sr.ReadLine())) {
+          $m = $rx.Match($line)
+          if (-not $m.Success) { continue }
+          $lg = $m.Groups[2].Value
+          if ($counts.ContainsKey($lg)) { $counts[$lg]++ } else { $counts[$lg] = 1 }
+          $t = [datetime]::MinValue
+          if ([datetime]::TryParseExact($m.Groups[1].Value, 'yyyy-MM-dd HH:mm:ss',
+                [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$t)) {
+            if (-not $stamps.ContainsKey($lg) -or $t -gt $stamps[$lg]) { $stamps[$lg] = $t }
+          }
         }
+        $read = $true
+      } catch { }
+      finally { if ($sr) { $sr.Dispose() }; if ($fs) { $fs.Dispose() } }
+      # A failed/partial read is NOT cached - it would pin an undercount for the process lifetime.
+      if (-not $read) { continue }
+      $ent = @{ len = $f.Length; mtime = $f.LastWriteTimeUtc; counts = $counts; stamps = $stamps }
+      $script:ConnFileCache[$f.FullName] = $ent
+    }
+    if ($ent.counts.ContainsKey($g)) {
+      $n += $ent.counts[$g]
+      if ($ent.stamps.ContainsKey($g)) {
+        $t = $ent.stamps[$g]
+        if ($null -eq $newest -or $t -gt $newest) { $newest = $t }
       }
-    } catch { continue }
-    finally { if ($sr) { $sr.Dispose() }; if ($fs) { $fs.Dispose() } }
+    }
   }
   if ($null -eq $newest -or ((Get-Date) - $newest).TotalSeconds -gt $script:ConnCountFreshSec) { $n++ }
   return $n

@@ -47,6 +47,7 @@
 //   teamswitch_<0|1>   - players may switch teams themselves (gf_team_switch, default 1; admin moves unaffected)
 //   latespawn_<0|1>    - joiners/movers may spawn INTO a live round while their team has >=1 alive (scr_gf_latespawn, default 1)
 //   reclaim_<0|1>      - re-seat a human the untraced mis-seater stranded in spectator, onto the lighter side (gf_team_reclaim, default 1)
+//   gaprepair_<0|1>    - a player leaving a LIVE round while ALIVE is backfilled by one PARKED reserve bot, same frame (gf_gap_repair, default 1)
 //   svset_<dvar>=<val> - set a CHEAT-PROTECTED server dvar (bot tuning, timescale, jump/fall) from GSC,
 //                        which is not cheat-gated — so it works on the dedicated VPS with sv_cheats 0.
 //                        Also mirrors the value into gf_<dvar> so it can persist via dedicated.cfg.
@@ -122,6 +123,9 @@
 //                        FIRST in the SAME chained rcon command (a separate packet can drop on the
 //                        paced queue), reader clears it. funtip = the loading-screen "didyouknow"
 //                        string (whether Plutonium's loading UI renders it is unverified).
+//   funclear           - delete every tracked fun entity (clones, FX, spheres) without a full reset.
+//                        UNGATED like funreset: deleting our own spawned props is cleanup, it
+//                        decides no round and writes no profile.
 //
 // GATED on gf_fun_cheats (default 0, re-locked by funreset) — server-side, so they genuinely decide
 // a live public round, or write a profile with no undo:
@@ -134,7 +138,9 @@
 //   funcodpoints_<n>   - CoD points for all humans | fununlockpro - all pro perks, all humans
 //                        ⚠ All account writes land on THIS MOD'S stats namespace
 //                        (players\mods\mp_gunfight\mpstats) — nobody's real BO1 rank is touched.
-//   funclear           - delete every tracked fun entity (clones, FX, spheres) without a full reset
+//
+// ⚠ pfunaim_<num>_off is the ONE gated verb whose OFF path is deliberately ungated (see
+// _gf_fun::gf_funAimbot): turning a live cheat off must never need the permission that armed it.
 //
 // Config dvar (panel-managed):
 //   gf_admin_guids -> comma-separated player GUID allowlist. gf_bridgeNotify prints command
@@ -576,6 +582,7 @@ gf_bridgeDispatch( cmd )
     t = gf_bridgeTail( cmd, "teamswitch_" );   if ( isDefined( t ) ) { gf_bridgeTeamToggle( "gf_team_switch",   t, "Player team switching" );  return; }
     t = gf_bridgeTail( cmd, "latespawn_"  );   if ( isDefined( t ) ) { gf_bridgeTeamToggle( "scr_gf_latespawn", t, "Mid-round late spawn" );   return; }
     t = gf_bridgeTail( cmd, "reclaim_"    );   if ( isDefined( t ) ) { gf_bridgeTeamToggle( "gf_team_reclaim",  t, "Stranded-human reclaim" ); return; }
+    t = gf_bridgeTail( cmd, "gaprepair_"  );   if ( isDefined( t ) ) { gf_bridgeTeamToggle( "gf_gap_repair",    t, "Mid-round gap repair" );   return; }
 
     // Cheat-protected SERVER dvars, written from GSC so they work with sv_cheats 0 (the only
     // correct value on a dedicated server). Format: svset_<dvar>=<value>. See gf_bridgeServerDvarSet.
@@ -1093,8 +1100,21 @@ gf_bridgeServerDvarSet( arg )
     // Tuning an sv_bot* override IS customizing: flip the selector so the write takes effect
     // immediately — and so the stock preset the admin may have been on stays pure for whoever
     // selects it next (overrides only ever apply under "custom").
+    //
+    // ⚠ RE-BASE TO fu, exactly like botdiff_custom does. CUSTOM is defined as "the Veteran table
+    // plus our overrides", and the shipped overrides are authored against it (yaw hip 12 / ADS 10
+    // SOFTEN fu's 14/14). Flipping only the selector left them sitting on whatever preset was
+    // live, and on the shipped Hardened default (hip 8, ADS 10) the same numbers INVERT: 12
+    // RAISES hip turn 8 → 12 and the ADS line becomes a no-op — one slider drag made bots harder
+    // than any preset intends. Keyed off the BASE, not the selector, so the seeded-custom state
+    // (gf_bot_difficulty custom with a cfg-set hard base) self-corrects too. bot_set_difficulty
+    // writes bot_difficulty itself, so diffBots keeps re-basing on fu from here on.
     if ( gf_bridgeIsBotTuning( name ) )
+    {
+        if ( getDvar( "bot_difficulty" ) != "fu" )
+            maps\mp\gametypes\_bot::bot_set_difficulty( "fu" );
         setDvar( "gf_bot_difficulty", "custom" );
+    }
 
     setDvar( name, value );
 
@@ -1418,37 +1438,42 @@ gf_allSpecialties()
 // Two-part args for the MODS-tab cheat verbs, split exactly like gf_bridgeTeamCmd below: "<num>_<mode>"
 // and "<team>_<0|1>". Both report a malformed arg instead of guessing, for the same reason -- a
 // silent ack reads as a broken button.
-gf_bridgeFunAim( arg )
+// Split a two-part verb arg, reporting the malformed case with the verb's own usage text.
+// Returns undefined on a bad arg, so every caller is `parts = ...; if ( !isDefined( parts ) ) return;`
+// -- one place owning the split, the error shape and the usage wording.
+gf_bridgeSplit2( arg, usage )
 {
     parts = strTok( arg, "_" );
     if ( parts.size < 2 )
     {
-        gf_bridgeNotify( "^1Bad aim arg '" + arg + "' (want <num>_<snap|silent|off>)" );
-        return;
+        gf_bridgeNotify( "^1Bad arg '" + arg + "' (want " + usage + ")" );
+        return undefined;
     }
+    return parts;
+}
+
+gf_bridgeFunAim( arg )
+{
+    parts = gf_bridgeSplit2( arg, "<num>_<snap|silent|off>" );
+    if ( !isDefined( parts ) )
+        return;
     maps\mp\gametypes\_gf_fun::gf_funAimbot( parts[0], parts[1] );
 }
 
 gf_bridgeFunTeamGod( arg )
 {
-    parts = strTok( arg, "_" );
-    if ( parts.size < 2 )
-    {
-        gf_bridgeNotify( "^1Bad team-god arg '" + arg + "' (want <allies|axis>_<0|1>)" );
+    parts = gf_bridgeSplit2( arg, "<allies|axis>_<0|1>" );
+    if ( !isDefined( parts ) )
         return;
-    }
     maps\mp\gametypes\_gf_fun::gf_funTeamGod( parts[0], parts[1] == "1" );
 }
 
 // funprestige_<num>_<prestige> -- same split shape as the aim/team-god args above.
 gf_bridgeFunPrestige( arg )
 {
-    parts = strTok( arg, "_" );
-    if ( parts.size < 2 )
-    {
-        gf_bridgeNotify( "^1Bad prestige arg '" + arg + "' (want <num>_<prestige>)" );
+    parts = gf_bridgeSplit2( arg, "<num>_<prestige>" );
+    if ( !isDefined( parts ) )
         return;
-    }
     maps\mp\gametypes\_gf_fun::gf_funPrestige( parts[0], parts[1] );
 }
 
@@ -1885,6 +1910,34 @@ gf_expBulletsConnectWatch()
     }
 }
 
+// --- Shared shot primitives (used here AND by _gf_fun.gsc's bullet modes) -----
+//
+// Per-shot throttle, in ms. Full-auto fire otherwise queues one impact per round per player and
+// buries the frame -- the anti-lag guard every "do something where they shot" feature needs. It
+// lives here, once, because it had already been re-typed per feature.
+gf_bridgeShotThrottleMs()
+{
+    return 120;
+}
+
+// Where the player is aiming: trace from the eye along the view to the first thing hit, 8000
+// units out (past any sightline these maps have). Returns a struct so a caller can take the
+// muzzle direction as well as the impact point -- the bullet modes need both.
+// ⚠ Component-multiplied rather than vector_scale()d ON PURPOSE: vector_scale lives in
+// common_scripts\utility, which this file does not #include, and T5 has no transitive includes
+// ([[vector-scale-in-common-scripts-utility]]). Four hand-written copies of this triple had
+// accumulated across the two dev files, and they had ALREADY drifted cosmetically (manual
+// multiply here vs vector_scale there) -- which is exactly how a real behavioural drift hides.
+gf_bridgeCrosshairTrace()
+{
+    t = spawnstruct();
+    t.eye     = self getEye();
+    t.forward = anglesToForward( self getPlayerAngles() );
+    end       = t.eye + ( t.forward[0] * 8000, t.forward[1] * 8000, t.forward[2] * 8000 );
+    t.pos     = bulletTrace( t.eye, end, false, self )["position"];
+    return t;
+}
+
 gf_expBulletsPlayer()
 {
     self endon( "disconnect" );
@@ -1895,15 +1948,12 @@ gf_expBulletsPlayer()
     for ( ;; )
     {
         self waittill( "weapon_fired" );
-        if ( getTime() - self.gf_expLast < 120 )   // ms throttle vs full-auto
+        if ( getTime() - self.gf_expLast < gf_bridgeShotThrottleMs() )
             continue;
         self.gf_expLast = getTime();
 
-        eye     = self getEye();
-        forward = anglesToForward( self getPlayerAngles() );
-        end     = eye + ( forward[0] * 8000, forward[1] * 8000, forward[2] * 8000 );
-        tr      = bulletTrace( eye, end, false, self );
-        pos     = tr["position"];
+        aim = self gf_bridgeCrosshairTrace();
+        pos = aim.pos;
 
         if ( isDefined( level.gf_fxExplode ) )
             playFx( level.gf_fxExplode, pos );

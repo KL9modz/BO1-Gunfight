@@ -40,8 +40,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$FourCCMap = @{ 'DXT1' = 0x0B; 'DXT3' = 0x0C; 'DXT5' = 0x0D }   # -> IWi format byte
-$BLOCKB = @{ 0x0B = 8;      0x0C = 16;     0x0D = 16 }        # bytes per 4x4 block
+# The IWi v13 header shape + the FourCC/block-size tables, shared with make_camo_iwi.ps1 and
+# material_spike\make_material.ps1 (Get-IwiFormatByte / Get-IwiBlockBytes / New-IwiBuffer).
+. (Join-Path $PSScriptRoot 'iwi_common.ps1')
 
 function Convert-OneDds {
     param([string]$Src, [string]$Dst)
@@ -56,39 +57,35 @@ function Convert-OneDds {
     $cc = [Text.Encoding]::ASCII.GetString($b, 84, 4)
 
     if ($cc -eq 'DX10') { throw "DX10-extension .dds (likely BC7/typed) - not a byte-compatible swap" }
-    if (-not $FourCCMap.ContainsKey($cc)) {
+    $fmt = Get-IwiFormatByte -FourCC $cc
+    if ($null -eq $fmt) {
         $pfFlags = [BitConverter]::ToUInt32($b, 80)
         if (($pfFlags -band 0x4) -eq 0) { throw "uncompressed .dds (no FourCC) - needs real encoding, not a header swap" }
         throw "unsupported FourCC '$cc' (only DXT1/DXT3/DXT5)"
     }
-    $fmt = $FourCCMap[$cc]
 
     # DXT works in 4x4 blocks; dims are padded up, which is what makes non-power-of-two
     # sources (e.g. the 1080x1080 Dark Matter art) convert cleanly.
     $bw = [Math]::Max(1, [Math]::Ceiling($w / 4.0))
     $bh = [Math]::Max(1, [Math]::Ceiling($h / 4.0))
-    $mip0 = [int]($bw * $bh * $BLOCKB[$fmt])
+    $mip0 = [int]($bw * $bh * (Get-IwiBlockBytes -Format $fmt))
 
-    # ⚠ The FourCC lookup is $FourCCMap, NOT $FOURCC. PowerShell variable names are
-    # CASE-INSENSITIVE, so a local `$fourCC` and a table `$FOURCC` are the SAME variable -- reading
-    # the string into it silently destroyed the hashtable, and every conversion died with
-    # "[System.String] does not contain a method named 'ContainsKey'".
+    # ⚠ Both lookup tables now live in iwi_common.ps1 behind Get-IwiFormatByte / Get-IwiBlockBytes,
+    # which also retires a trap worth remembering: PowerShell variable names are CASE-INSENSITIVE,
+    # so the old local `$cc` string and a table named `$CC` would have been the SAME variable --
+    # that is how an earlier version silently overwrote its own hashtable and died with
+    # "[System.String] does not contain a method named 'ContainsKey'". Function calls cannot collide
+    # with a local the way a bare table variable can.
     if ($b.Length -lt 128 + $mip0) { throw "truncated: need $(128 + $mip0) B for ${w}x${h} $cc, file is $($b.Length) B" }
-    if ($w -gt 65535 -or $h -gt 65535) { throw "dimensions exceed the IWi u16 fields" }
 
-    $fileLen = 48 + $mip0
-    $iwi = New-Object byte[] $fileLen
-    [Array]::Copy([byte[]]@(0x49, 0x57, 0x69, 0x0D, $fmt, 0xC3), $iwi, 6)   # "IWi" v13, fmt, flags
-    [Array]::Copy([BitConverter]::GetBytes([uint16]$w), 0, $iwi, 6, 2)
-    [Array]::Copy([BitConverter]::GetBytes([uint16]$h), 0, $iwi, 8, 2)
-    [Array]::Copy([BitConverter]::GetBytes([uint16]1),  0, $iwi, 10, 2)
-    for ($m = 0; $m -lt 8; $m++) {
-        [Array]::Copy([BitConverter]::GetBytes([uint32]$fileLen), 0, $iwi, 0x10 + 4 * $m, 4)
-    }
-    [Array]::Copy($b, 128, $iwi, 48, $mip0)
+    # Header shape lives in tools\iwi_common.ps1, shared with make_camo_iwi + material_spike (and
+    # pinned by the corpus byte-compare in material_spike.Tests.ps1). This is the one caller that
+    # passes a format other than DXT5 through.
+    $iwi = New-IwiBuffer -Width $w -Height $h -PayloadBytes $mip0 -Format $fmt
+    [Array]::Copy($b, 128, $iwi, (Get-IwiPayloadOffset), $mip0)
     [System.IO.File]::WriteAllBytes($Dst, $iwi)
 
-    return [pscustomobject]@{ W = $w; H = $h; Fmt = $cc; Bytes = $fileLen }
+    return [pscustomobject]@{ W = $w; H = $h; Fmt = $cc; Bytes = $iwi.Length }
 }
 
 # ---- gather sources ---------------------------------------------------------------------

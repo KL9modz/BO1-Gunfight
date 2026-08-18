@@ -573,48 +573,7 @@ menuDef
 	// Geometry + copy are deliberately identical to the main-menu ticker so the
 	// two read as one surface; GF_TICKER_X carries stock's own IsInGame() term,
 	// which shifts the bar left by 47 in a match exactly as stock intended.
-#define GF_TICKER_X			( -77 - ( IsInGame() * 47 ) )
-#define GF_TICKER_Y			-100
-#define GF_TICKER_BG_W		455
-#define GF_TICKER_BG_H		15
-#define GF_TICKER_TEXT_Y	( GF_TICKER_Y + 13 )
-#define GF_TICKER_H			12
-
-#define TK_COUNT			2
-#define TK_SLOT_MS			5000
-#define TK_FADE_MS			500
-#define TK_CYCLE_MS			( TK_SLOT_MS * TK_COUNT )
-#define TK_T( n )			( ( milliseconds() + TK_CYCLE_MS - ( n * TK_SLOT_MS ) ) % TK_CYCLE_MS )
-#define TK_VIS( n )			when( TK_T( n ) < TK_SLOT_MS )
-#define TK_ALPHA( n )		( max( 0, min( 1, min( float( TK_T( n ) ) / TK_FADE_MS, float( TK_SLOT_MS - TK_T( n ) ) / TK_FADE_MS ) ) ) )
-
-	itemDef
-	{
-		style			WINDOW_STYLE_SHADER
-		type			ITEM_TYPE_IMAGE
-		rect			0 GF_TICKER_Y GF_TICKER_BG_W GF_TICKER_BG_H HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
-		exp				rect X( GF_TICKER_X )
-		forecolor		0 0 0 0.6
-		exp				material( "menu_mp_bar_shadow" )
-		visible			1
-		decoration
-	}
-
-#define TK_LINE( n, txt )																		\
-	itemDef																						\
-	{																							\
-		type			ITEM_TYPE_TEXT															\
-		rect			0 GF_TICKER_TEXT_Y 440 GF_TICKER_H HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM	\
-		exp				rect X( GF_TICKER_X + 5 )												\
-		textfont		UI_FONT_SMALL															\
-		textscale		0.25																	\
-		textalign		ITEM_ALIGN_LEFT															\
-		forecolor		0.84313 0.84313 0.84313 1												\
-		exp				forecolor a ( TK_ALPHA( n ) );											\
-		exp				text( txt );															\
-		visible			TK_VIS( n );															\
-		decoration																				\
-	}
+#include "ui_mp/gf_ticker.inc"
 
 	// ⚠ ^< IS ORANGE (0.97 0.58 0.11 = #F7941C) -- a REAL T5 colour code, not a typo.
 	// The codes run past ^9 into ASCII punctuation (the engine's table is bounded at

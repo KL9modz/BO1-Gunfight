@@ -2472,8 +2472,14 @@ const GF_MATCH_VARS = [
     // is the diagnostic control row (a duplicate of 3/Red) and would just confuse.
     // ⚠ Keep this list in lockstep with mp/weaponOptions.csv AND the loadout editor's CAMO list;
     //   an index here that has no row there silently renders nothing.
+    // The two CLASS switches sit above Force Camo: they decide which camo families the rotation may
+    // hand out, Force Camo overrides the rotation outright (and ignores both switches — an explicit
+    // admin force wins). Gold (15) counts as BOTH families on purpose, so it survives either switch.
     { grp:'Camo',
-      n:'gf_force_camo', lbl:'Force Camo (all players)', type:'sel', def:'-1',
+      n:'scr_gf_camo_base',           lbl:'Base Camos',               type:'tog', def:'1', tip:'scr_gf_camo_base\nON (default): the round’s shared loadout may roll any of the STOCK camos the game shipped with — Dusty, Ice, Red, Olive, Nevada, Sahara, ERDL, Tiger, Berlin, Warsaw, Siberia, Yukon, Woodland, Flora, Gold.\nOFF: none of them roll.\n\nGOLD counts as BOTH base and modded, so it keeps rolling unless BOTH switches are off. With both off every gun runs its plain factory finish.\n\nApplies on the NEXT SPAWN (anyone already alive keeps their current gun for the round). A loadout carrying a switched-off camo is remapped to an enabled one — the same one for everybody, so the shared loadout stays identical across the server.' },
+    { n:'scr_gf_camo_modded',         lbl:'Modded Camos',             type:'tog', def:'1', tip:'scr_gf_camo_modded\nON (default): the rotation may roll THIS MOD’S own camos (indices 17-46 — Crimson, Teal, Toxic, Violet, White, Nebula, Weave, Splatter, Oilslick, Pastel, Blue, Yellow, Orange, …), whichever of them the rotation list has enabled.\nOFF: only stock camos roll.\n\nGOLD counts as BOTH base and modded, so it keeps rolling unless BOTH switches are off.\n\nThese camos reach a player through mp_gunfight.iwd, so anyone who has not downloaded the current mod.ff + .iwd sees a plain gun regardless of this switch.\n\nApplies on the NEXT SPAWN. Which of the 30 is in the rotation at all is a source-side list (gf_camoPool in _gf_loadouts.gsc); this switch is the runtime master for the whole family.' },
+
+    { n:'gf_force_camo', lbl:'Force Camo (all players)', type:'sel', def:'-1',
       opts:[['-1','Off — use each loadout’s own camo'],
             {grp:'Stock'},['0','None'],['1','Dusty'],['2','Ice'],['3','Red'],['4','Olive'],['5','Nevada'],['6','Sahara'],['7','ERDL'],['8','Tiger'],['9','Berlin'],['10','Warsaw'],['11','Siberia'],['12','Yukon'],['13','Woodland'],['14','Flora'],['15','Gold'],
             

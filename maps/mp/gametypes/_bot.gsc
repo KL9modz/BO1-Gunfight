@@ -197,7 +197,10 @@ handleBots()
 // pressure so a human can always connect; REDUCING the fill number kicks the freed bots too).
 // Mid-round roster changes are deliberately ignored until the next boundary — worst case one
 // ~45s round — which is also why a manual panel move with fill ON only lasts until that
-// boundary (fill OFF = manual bot mode sticks).
+// boundary (fill OFF = manual bot mode sticks). ONE narrow exception exists: gf_gapRepair
+// (gf_gap_repair, below) re-seats a PARKED reserve bot when a player leaves a live round while
+// ALIVE. It never plans composition and never connects a bot — it only refills a hole that just
+// opened, from the pool the boundary's own TRIM keeps for exactly this.
 //
 // Triggers (all run the same gf_boundaryPass):
 //   1. gf_round_over  — every round end; runs 0.5s in, INSIDE the killcam/intermission, where
@@ -351,6 +354,27 @@ gf_matchStartPass()
 		}
 	}
 	gf_boundaryPass();
+
+	// This pass fires ~2s in, so during a pregame lobby hold it is exactly the caller that
+	// gf_lobbyFillDeferred suppresses — and it is also the ONLY fill trigger a lobby ever gets (the
+	// next ones are the gate release, which kicks bots on the armed path, and a round boundary,
+	// which is a whole match away). Left at that, a MANUAL lobby would never pad at all, which is
+	// the one case the padding exists for. So come back once the hold has proven long-lived.
+	//
+	// Both exits are correct: the wait ends when the hold either matures (pad it — a Manual lobby
+	// waiting on an admin START) or releases (return — the release restarts the level and the
+	// post-restart matchStartPass owns the real fill). endon("bot_reinit") covers the restart case
+	// anyway, since _bot::init re-runs and notifies it.
+	if(!gf_lobbyFillDeferred())
+		return;
+
+	while(gf_lobbyFillDeferred())
+		wait 0.5;
+
+	if(!isDefined(level.gf_inLobbyHold) || !level.gf_inLobbyHold)
+		return;                          // released before it matured -> not ours to fill
+
+	gf_boundaryPass();
 }
 
 // True once a team has hit the match win threshold — the same scr_gf_scorelimit-on-
@@ -445,6 +469,7 @@ gf_boundaryPass()
 
 	gf_teamWatchHumans();                // diagnostic: log any human stranded in spectator (untraced mis-seat)
 	gf_reclaimStrandedHumans();          // containment: re-seat an UNTRACED-stranded human onto the lighter side (before the stages count)
+	gf_seatTeamlessBots();               // a bot whose pers was wiped under it (matchrestart) has no team at all -> seat it
 
 	// Checkpoint 1 of 3. Sampling BEFORE the pass plans anything is what makes the pass's own moves
 	// distinguishable from whatever happened during the round — anything reported here changed teams
@@ -465,9 +490,10 @@ gf_boundaryPass()
 	hA = r["a"];
 	hX = r["x"];
 
-	// --- Stage 3+: bots. Skipped entirely at fill 0 (no bot fill; manual bots stick).
+	// --- Stage 3+: bots. Skipped entirely at fill 0 (no bot fill; manual bots stick), and
+	// deferred while a young lobby hold is up (see gf_lobbyFillDeferred).
 	n = gf_fillTarget();
-	if(n <= 0)
+	if(n <= 0 || gf_lobbyFillDeferred())
 		return;
 
 	// Human-driven size: pad both sides to max(bigger human team, target), using the POST-move
@@ -632,30 +658,43 @@ gf_addFillBots(team, count, gen)
 	}
 }
 
-// A freshly add_bot()'d bot connects async: wait for the stock connect flow to land it on
-// SOME team (bots_team "autoassign" usually picks our deficit team anyway — it seats the
-// smaller side), then quiet-correct it if needed. It is marked .gf_fillPending (attributed to
-// `team` in counts) for the whole trip; if it never lands, kick it so a wedged connect can't
-// hold a phantom slot. If the engine already SPAWNED it (possible only in the match-start
-// prematch — boundary adds run while nothing spawns), LEAVE it: it still counts where it
-// stands and the round-1 boundary rebalances. NEVER stock-switch here — that suicide racing
+// A freshly add_bot()'d bot connects async: wait briefly for the stock connect flow to land it on
+// SOME team, then quiet-correct it if needed. It is marked .gf_fillPending (attributed to
+// `team` in counts) for the whole trip. If the engine already SPAWNED it (possible only in the
+// match-start prematch — boundary adds run while nothing spawns), LEAVE it: it still counts where
+// it stands and the round-1 boundary rebalances. NEVER stock-switch here — that suicide racing
 // the async spawn commit was the old "bots kill themselves as they pour in".
+//
+// ⚠ THIS IS NOW THE BACKSTOP FOR THE SEAT ITSELF, not just a correction. Stock autoassigns a
+// teamless connector only in some configurations (_globallogic_player.gsc:312-345: ranked, or
+// level.forceAutoAssign / allow_teamchange 0), and BotWarfare's teamWatch() — which used to cover
+// the rest — is deliberately no longer threaded (it re-ran stock menuAutoAssign 0.05s after the
+// connect, swapping same-frame bot adds between sides and SUICIDING them to do it; see
+// _bot_script::connected). So on timeout we seat the bot OURSELVES on the team this add was
+// planned for. An unseated bot is worse than a mis-seated one: BotWarfare's classWatch gates on
+// pers["team"] being defined, so it would never pick a class and never spawn. The wait is short
+// (2s) because that seat is equivalent to what stock would have done — the fill reconciler already
+// knows where this bot belongs — so there is nothing to gain by waiting longer.
 gf_botDeployWhenReady(team)
 {
 	self endon("disconnect");
 	level endon("bot_reinit");
 
 	ticks = 0;
-	while(ticks < 100 && !isDefined(self.pers["team"]))
+	while(ticks < 20 && !isDefined(self.pers["team"]))
 	{
 		wait 0.1;
 		ticks++;
 	}
 	if(!isDefined(self))
 		return;
+
+	// Nobody seated it: seat it here. (Was a kick — that threw away a usable client on a path
+	// that is now REACHABLE by design rather than only on a wedged connect.)
 	if(!isDefined(self.pers["team"]))
 	{
-		kick(self getEntityNumber(), "EXE_PLAYERKICKED");   // never connected -> free the slot
+		self gf_botQuietSetTeam(team);
+		self.gf_fillPending = undefined;
 		return;
 	}
 
@@ -663,6 +702,214 @@ gf_botDeployWhenReady(team)
 		self gf_botQuietSetTeam(team);
 
 	self.gf_fillPending = undefined;     // landed: counts now read its real pers["team"]
+}
+
+// ============================================================================
+// MID-ROUND GAP REPAIR — the ONE deliberate exception to boundary-only.
+// ----------------------------------------------------------------------------
+// A HUMAN who leaves mid-round while ALIVE takes a body out of a one-life round, and the
+// boundary is up to a whole ~42s round away: the remaining side plays 2v1 with no recourse.
+// This re-seats ONE parked reserve bot onto the short side within a frame of the disconnect.
+//
+// It is a narrow exception, not a repeal of the rule (see the big reconciler block above): the
+// boundary still owns COMPOSITION (who plays where, human balancing, the lock queue, adds and
+// kicks). This only ever fills a hole that just opened, and only from the parked pool.
+//
+// ⚠ RESERVE POOL ONLY — never add_bot() here. A fresh add is a client CONNECT: new configstrings
+// plus reliable commands to every client, and it is the prime mod-owned suspect for the killcam
+// stall (see gf_boundaryListener's endProbeMark note). Mid-firefight is the worst possible moment
+// for one. If the pool is empty we do nothing and the boundary rebuilds — which is exactly why
+// gf_boundaryPass's TRIM keeps `reserve = allies_human + axis_human` parked bots, commented "one
+// parked bot per playing human (each could leave)". This is the consumer that comment predicted.
+//
+// ⚠ ALIVE leavers only. A DEAD player leaving costs their team no body for this round (their life
+// is already spent), so backfilling one would hand that side a free extra combatant mid-round.
+//
+// Accepted cost: the replacement spawns at full health, so a round that goes to time changes the
+// most-remaining-HP decision. Still strictly better than playing the round a man down.
+//
+// Installed as level.onPlayerDisconnect in gf.gsc onStartGameType (strip-marked, re-set every
+// round — SetupCallbacks resets it to ::blank on every map_restart). Runs INSIDE stock
+// Callback_PlayerDisconnect, so this half must stay YIELD-FREE; the repair is threaded.
+// ⚠ By the time this callback runs, removePlayerOnDisconnect (_globallogic_player.gsc:423) has
+// ALREADY spliced self out of level.players — so every count below reads the post-departure
+// roster with no exclusion needed. self.pers / self.name are still valid (stock reads both a few
+// lines later).
+gf_onSeatLeave()
+{
+	if(getDvarInt("gf_gap_repair") != 1)
+		return;
+	if(gf_fillTarget() <= 0)             // fill off = manual bot mode: never place a bot
+		return;
+	// HUMANS only (this also excludes the democlient, which holds no seat). A BOT leaving mid-round
+	// is never a spontaneous event — it is the mod's own churn or an admin's panel kick, and both
+	// already belong to the boundary. Backfilling those would silently revert a deliberate
+	// `botkick_<team>` the same frame it lands, turning a documented "sticks until the boundary"
+	// into "does nothing".
+	if(!maps\mp\gametypes\_gf_rounds::gf_isHuman(self))
+		return;
+	if(!(isDefined(self.pers["team"]) && (self.pers["team"] == "allies" || self.pers["team"] == "axis")))
+		return;
+	if(!(isDefined(self.sessionstate) && self.sessionstate == "playing"))
+		return;                          // dead / spectating: no body lost this round
+	if(!(isDefined(level.gf_roundActive) && level.gf_roundActive))
+		return;                          // prematch / between rounds: the boundary pass owns it
+	if(isDefined(level.gf_roundEnding) && level.gf_roundEnding)
+		return;
+	if(isDefined(level.inOvertime) && level.inOvertime)
+		return;                          // stock blocks every new spawn in OT anyway
+
+	level thread gf_gapRepair(self.pers["team"], self.name);
+}
+
+// Re-seat parked reserve bots onto `team` until it is back at the round's target size.
+// Placement is the same quiet primitive the boundary uses (gf_botQuietSetTeam), and the SPAWN
+// needs no new machinery: that call clears pers["class"], which releases BotWarfare's classWatch
+// (_bot_script.gsc:105 parks on `while(isdefined(pers["team"]) && isdefined(pers["class"]))`), so
+// ~0.5s later it fires its menuresponse and stock menuClass drives spawnClient
+// (_globallogic_ui.gsc:660). maySpawn then admits it through gf.gsc's late-spawn rule 1 — FILL A
+// GAP — which was written for exactly this case ("a team someone left: 3v2 -> 3v3"), with the life
+// restored by gf_botQuietSetTeam so gate A passes.
+gf_gapRepair(team, who)
+{
+	// gf_round_over, not game_ended: this thread lives for one frame and WANTS to die if the round
+	// ends underneath it (a leaver who was their team's last alive ends the round on this very
+	// settle — repairing into that is churn during the killcam).
+	level endon("gf_round_over");
+	level endon("bot_reinit");
+
+	// One frame. The leaver is already out of level.players, but level.aliveCount only re-derives
+	// at frame end (updateTeamStatus runs waittillframeend), and the wipe check rides the same
+	// settle — so this is also what lets the endon above retire us.
+	wait 0.05;
+
+	if(!(isDefined(level.gf_roundActive) && level.gf_roundActive))
+		return;
+	if(isDefined(level.gf_roundEnding) && level.gf_roundEnding)
+		return;
+	if(isDefined(level.inOvertime) && level.inOvertime)
+		return;
+
+	n = gf_fillTarget();
+	if(n <= 0)
+		return;
+
+	// The canonical size formula, same as the boundary pass and gf.gsc's fill-discipline gate:
+	// max(bigger human side, gf_fill_n). Re-derived HERE rather than passed in, because the frame
+	// we waited may have changed the roster (a late joiner taking the seat first is a legal race,
+	// and it makes need <= 0 below — nothing to do).
+	c = gf_reconcileCount();
+	n = gf_teamSizeTarget(c, n);
+	need = n - (c[team + "_human"] + c[team + "_bot"]);
+	if(need <= 0)
+		return;
+
+	filled = 0;
+	players = level.players;
+	for(i = 0; i < players.size && filled < need; i++)
+	{
+		b = players[i];
+		if(!isDefined(b) || !maps\mp\gametypes\_gf_rounds::gf_isRealBot(b))
+			continue;
+		if(isDefined(b.gf_fillPending))
+			continue;                    // mid-connect, already steered at a team
+		if(!(isDefined(b.pers["team"]) && b.pers["team"] == "spectator"))
+			continue;                    // the PARKED reserve only
+		if(isDefined(b.sessionstate) && b.sessionstate == "playing")
+			continue;
+		// ⚠ Already played this round (spawned then displaced/killed): stock resets hasSpawned per
+		// client at each round's re-begin, so a true reserve bot reads false here. maySpawn's
+		// late-spawn gate requires !hasSpawned, so seating one of these would put a body on the
+		// roster that can never spawn — worse than leaving the gap.
+		if(isDefined(b.hasSpawned) && b.hasSpawned)
+			continue;
+
+		b gf_botQuietSetTeam(team);      // + restores pers["lives"]; clearing class drives the spawn
+		filled++;
+	}
+
+	// Logged even at 0 (the reserve was empty) — that is the one outcome worth seeing in
+	// games_mp.log, since it is the case the boundary has to clean up.
+	logPrint("GF_GAPFILL: " + who + " left " + team + " alive mid-round - seated " + filled + "/" + need
+		+ " reserve bot(s) (round " + game["roundsplayed"] + ", size " + n + ")\n");
+}
+
+// True while a pregame lobby hold is up and has NOT yet lasted long enough to be worth filling.
+// Suppresses ONLY the bot stages of the boundary pass — stages 1-2 (human balance, lock queue)
+// still run, which is why this gates the stage and not gf_fillTarget() (the panel reads that for
+// its Bot Fill row via gf_state, and it must keep reporting the configured floor).
+//
+// WHY: a lobby fill is thrown away by the release. gf_gateListener kicks every bot immediately
+// before map_restart(false), and the post-restart gf_matchStartPass rebuilds the whole fill steered
+// at the right teams — so on the common Auto path the lobby's bots exist for about two seconds
+// (measured releases: 1850ms / 2750ms / 2900ms / 3100ms) and cost real money for it:
+//   - the kick-all burst lands in the map_restart(false) window, the exact place the reliable
+//     command ring overflows (see the setClientDvarS note in _gf_rounds.gsc),
+//   - each add_bot is a full client connect (hence the 0.5s stagger) during the prematch, which is
+//     already the mod's worst frame-hitch window,
+//   - and recycling the client slots makes every client print "<old bot> renamed to <new bot>".
+// The stated benefit — the server browser showing a populated server — needs a hold long enough for
+// somebody to actually read it, which the Auto path never has. An idle server does not sit here at
+// all (a 0-human lobby releases immediately), so its fill is the MATCH's, not the lobby's.
+//
+// The threshold therefore splits the two lobby modes by their real behaviour rather than by name:
+// Auto releases on load+min and never reaches it; Manual (scr_gf_lobby 2) holds for an admin START
+// up to scr_gf_lobby_timer and always does. Set to 0 to restore the old always-fill behaviour.
+gf_lobbyFillDeferred()
+{
+	if(!isDefined(level.gf_inLobbyHold) || !level.gf_inLobbyHold)
+		return false;
+	if(!isDefined(level.gf_lobbyHoldStart))
+		return false;                    // no stamp (shouldn't happen) -> behave as before
+
+	return ((gettime() - level.gf_lobbyHoldStart) < 8000);
+}
+
+// Seat any real bot that currently has NO team at all onto the lighter side. Runs at the top of
+// every boundary pass, next to the human reclaim, so the stages below count these bots on a side
+// instead of writing them off as "inflight".
+//
+// ⚠ This is the replacement for the one job BotWarfare's teamWatch() genuinely did (it is no longer
+// threaded — see _bot_script::connected for why). Its loop re-fired whenever a bot's pers["team"]
+// went UNDEFINED, and exactly one path does that to a bot that is already connected:
+// map_restart(false) with the bot surviving it — the bridge's `matchrestart`, which snapshots teams
+// and restarts WITHOUT kicking bots (the lobby release kicks them all first, so that path never
+// produced survivors). Without a re-seat those bots sit teamless forever while the fill adds fresh
+// ones beside them. Seating them quietly is strictly better than teamWatch's route through stock
+// menuAutoAssign, which suicides a spawned bot to move it.
+//
+// Skips: a bot mid-connect (.gf_fillPending — gf_botDeployWhenReady owns that one and will seat it),
+// and a bot deliberately parked in spectator (pers["team"] == "spectator" is a real, intended team).
+gf_seatTeamlessBots()
+{
+	c  = gf_reconcileCount();
+	nA = c["allies_human"] + c["allies_bot"];
+	nX = c["axis_human"]   + c["axis_bot"];
+
+	players = level.players;
+	for(i = 0; i < players.size; i++)
+	{
+		p = players[i];
+		if(!isDefined(p))
+			continue;
+		if(!maps\mp\gametypes\_gf_rounds::gf_isRealBot(p))
+			continue;
+		if(isDefined(p.gf_fillPending))
+			continue;
+		if(isDefined(p.pers["team"]) && p.pers["team"] != "")
+			continue;                    // has a team (incl. an intentional "spectator") -> not ours
+
+		team = "axis";
+		if(nA <= nX)
+			team = "allies";
+
+		p gf_botQuietSetTeam(team);
+		if(team == "allies") nA++;
+		else                 nX++;
+
+		logPrint("GF_BOTSEAT: teamless bot " + p.name + " -> " + team
+			+ " (round " + game["roundsplayed"] + ", allies " + nA + " axis " + nX + ")\n");
+	}
 }
 
 // Trim `count` surplus bots from `team`, quietest first. A bot that is NOT "playing"

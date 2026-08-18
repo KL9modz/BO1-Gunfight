@@ -66,4 +66,8 @@ LANG_ENGLISH        "+1 Kill"
 REFERENCE           POPUP_ASSIST
 LANG_ENGLISH        "+1 Assist"
 
+// The overtime flag capture. Same literal-English reasoning as the two above.
+REFERENCE           POPUP_CAPTURE
+LANG_ENGLISH        "+1 Capture"
+
 ENDMARKER

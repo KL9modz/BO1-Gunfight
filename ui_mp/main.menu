@@ -241,7 +241,7 @@
 		// The billboard and the ticker run DIFFERENT periods on purpose, so they
 		// drift against each other rather than flipping in lockstep.
 
-#define AD_COUNT			7
+#define AD_COUNT			8
 #define AD_SLOT_MS			6000
 #define AD_FADE_MS			600
 #define AD_CYCLE_MS			( AD_SLOT_MS * AD_COUNT )
@@ -249,13 +249,8 @@
 #define AD_VIS( n )			when( AD_T( n ) < AD_SLOT_MS );
 #define AD_ALPHA( n )		( max( 0, min( 1, min( float( AD_T( n ) ) / AD_FADE_MS, float( AD_SLOT_MS - AD_T( n ) ) / AD_FADE_MS ) ) ) )
 
-#define TK_COUNT			2
-#define TK_SLOT_MS			5000
-#define TK_FADE_MS			500
-#define TK_CYCLE_MS			( TK_SLOT_MS * TK_COUNT )
-#define TK_T( n )			( ( milliseconds() + TK_CYCLE_MS - ( n * TK_SLOT_MS ) ) % TK_CYCLE_MS )
-#define TK_VIS( n )			when( TK_T( n ) < TK_SLOT_MS )
-#define TK_ALPHA( n )		( max( 0, min( 1, min( float( TK_T( n ) ) / TK_FADE_MS, float( TK_SLOT_MS - TK_T( n ) ) / TK_FADE_MS ) ) ) )
+// (The TK_* ticker macros used to be declared here as well as beside the bar itself; they now
+// live once in ui_mp/gf_ticker.inc, included at the ticker block below.)
 
 		// ---- surface 1: bottom-left billboard ----
 		// Anchored at x -258 relative to CENTER -- the exact left edge of the
@@ -291,59 +286,31 @@
 		AD_LINE( 0, -112, "50+ unique loadouts",						0.35, COLOR_TITLE )
 		AD_LINE( 0,  -94, "Both teams get the same kit each round",	0.24, GF_BODY_COLOR )
 
-		AD_LINE( 1, -112, "No respawns",								0.35, COLOR_TITLE )
-		AD_LINE( 1,  -94, "One life per round, no health regen",		0.24, GF_BODY_COLOR )
+		AD_LINE( 1, -112, "Exclusive weapon camos",					0.35, COLOR_TITLE )
+		AD_LINE( 1,  -94, "Every stock camo plus exclusive imported camos",	0.24, GF_BODY_COLOR )
 
 		AD_LINE( 2, -112, "All 26 maps & size scaling",				0.35, COLOR_TITLE )
-		AD_LINE( 2,  -94, "Wager-style sizes for smaller lobbies",	0.24, GF_BODY_COLOR )
+		AD_LINE( 2,  -94, "Wager-map sizes for smaller lobbies",	0.24, GF_BODY_COLOR )
 
 		AD_LINE( 3, -112, "First to 6 rounds wins",					0.35, COLOR_TITLE )
-		AD_LINE( 3,  -94, "Most remaining health wins on time",		0.24, GF_BODY_COLOR )
+		AD_LINE( 3,  -94, "Most remaining health wins the round",	0.24, GF_BODY_COLOR )
 
-		AD_LINE( 4, -112, "Real stats & XP",							0.35, COLOR_TITLE )
-		AD_LINE( 4,  -94, "Ranked server. 4XP Enabled!",				0.24, GF_BODY_COLOR )
+		AD_LINE( 4, -112, "Overtime objective",						0.35, COLOR_TITLE )
+		AD_LINE( 4,  -94, "Hold-to-capture flag spawns center-map",	0.24, GF_BODY_COLOR )
 
-		AD_LINE( 5, -112, "Overtime objective",						0.35, COLOR_TITLE )
-		AD_LINE( 5,  -94, "Hold-to-capture flag spawns center-map",	0.24, GF_BODY_COLOR )
+		AD_LINE( 5, -112, "One life per round",						0.35, COLOR_TITLE )
+		AD_LINE( 5,  -94, "No respawns, no health regen",			0.24, GF_BODY_COLOR )
 
-		AD_LINE( 6, -112, "Configurable bots",						0.35, COLOR_TITLE )
-		AD_LINE( 6,  -94, "A.I. bots with tunable difficulty",		0.24, GF_BODY_COLOR )
+		AD_LINE( 6, -112, "Real stats & XP",							0.35, COLOR_TITLE )
+		AD_LINE( 6,  -94, "Ranked server. 4XP Enabled!",			0.24, GF_BODY_COLOR )
+
+		AD_LINE( 7, -112, "Configurable bots",						0.35, COLOR_TITLE )
+		AD_LINE( 7,  -94, "A.I. bots with tunable difficulty",		0.24, GF_BODY_COLOR )
 
 		// ---- surface 2: the ticker bar (stock geometry + stock bar art) ----
-#define GF_TICKER_X			( -77 - ( IsInGame() * 47 ) )
-#define GF_TICKER_Y			-100
-#define GF_TICKER_BG_W		455
-#define GF_TICKER_BG_H		15
-#define GF_TICKER_TEXT_Y	( GF_TICKER_Y + 13 )
-#define GF_TICKER_H			12
-
-		itemDef
-		{
-			style			WINDOW_STYLE_SHADER
-			type			ITEM_TYPE_IMAGE
-			rect			0 GF_TICKER_Y GF_TICKER_BG_W GF_TICKER_BG_H HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM
-			exp				rect X( GF_TICKER_X )
-			forecolor		0 0 0 0.6
-			exp				material( "menu_mp_bar_shadow" )
-			visible			1
-			decoration
-		}
-
-#define TK_LINE( n, txt )																		\
-		itemDef																					\
-		{																						\
-			type			ITEM_TYPE_TEXT														\
-			rect			0 GF_TICKER_TEXT_Y 440 GF_TICKER_H HORIZONTAL_ALIGN_CENTER VERTICAL_ALIGN_BOTTOM	\
-			exp				rect X( GF_TICKER_X + 5 )											\
-			textfont		UI_FONT_SMALL														\
-			textscale		0.25																\
-			textalign		ITEM_ALIGN_LEFT														\
-			forecolor		0.84313 0.84313 0.84313 1											\
-			exp				forecolor a ( TK_ALPHA( n ) );										\
-			exp				text( txt );														\
-			visible			TK_VIS( n );														\
-			decoration																			\
-		}
+		// Geometry, timing and the TK_LINE macro are shared with the pause screen -- see
+		// ui_mp/gf_ticker.inc. Only the copy below is per-surface.
+#include "ui_mp/gf_ticker.inc"
 
 		// The ticker is the LINKS surface only -- the rules/features rotation
 		// lives in the bottom-left billboard above. ^5 = cyan, ^4 = blue

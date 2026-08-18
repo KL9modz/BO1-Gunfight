@@ -10,7 +10,7 @@ REM  the gitignored tools\rcon\servers.local.json -- see servers.local.json.exam
 REM  Pinned to 3005 so it never collides with the VPS SSH-tunnel panel on 3000
 REM  (Desktop "Gunfight RCON.bat"). Two fixed ports = two stable URLs:
 REM    laptop -> http://127.0.0.1:3005   VPS -> http://127.0.0.1:3000
-REM  An explicit first arg still wins, e.g.  start.bat 3006
+REM  An explicit first arg still wins, e.g.  rcon_start.bat 3006
 REM ============================================================================
 set PORT=%~1
 if "%PORT%"=="" set PORT=3005

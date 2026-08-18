@@ -196,7 +196,7 @@ if ($cfgIncluded -and -not $cfgSanitized) {
 }
 $rconLine = ""
 if ($IncludeRconTool) {
-    $rconLine = "  tools\rcon\             -> web RCON panel (Node.js; run 'npm install' then start.bat/node server.js)"
+    $rconLine = "  tools\rcon\             -> web RCON panel (Node.js; run 'npm install' then rcon_start.bat/node server.js)"
 }
 $rconStep = "  1. rcon_password  - set a NEW strong password (rotate the bundled one)."
 if ($cfgRotated) {

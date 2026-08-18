@@ -68,9 +68,9 @@ gf_funInit()
     // Re-apply the persisted toggles. These read their own gf_fun_* dvar rather than a level flag,
     // because map_restart wipes level.* between rounds and an admin expects a toggle to stay on.
     if ( getDvar( "gf_fun_bullet" ) != "" && getDvar( "gf_fun_bullet" ) != "off" )
-        level thread gf_funBulletManager();
+        level thread gf_funManager( "bullet", "gf_fun_bullet_stop", ::gf_funBulletLoop );
     if ( getDvarInt( "gf_fun_nade" ) == 1 )
-        level thread gf_funNadeManager();
+        level thread gf_funManager( "nade", "gf_fun_nade_stop", ::gf_funNadeLoop );
     if ( getDvarInt( "gf_fun_antiquit" ) == 1 )
         level thread gf_funAntiQuitLoop();
 }
@@ -128,6 +128,22 @@ gf_funAdopted( mark )
     return ( isDefined( mark ) && isDefined( level.gf_funGen ) && mark == level.gf_funGen );
 }
 
+// The adoption marks live in ONE keyed array per player rather than a field per feature, so
+// adding a feature adds no field here, no case to gf_funClearFlag and no manager copy.
+gf_funMarkOf( player, which )
+{
+    if ( !isDefined( player.gf_funMark ) )
+        return undefined;
+    return player.gf_funMark[which];
+}
+
+gf_funSetMark( which, value )
+{
+    if ( !isDefined( self.gf_funMark ) )
+        self.gf_funMark = [];
+    self.gf_funMark[which] = value;
+}
+
 // Drop the per-player marks so re-enabling a feature re-adopts everyone immediately rather than at
 // the next round. The threads themselves are already dead (their level endon fired); this only
 // clears the bookkeeping.
@@ -136,8 +152,41 @@ gf_funClearFlag( which )
     players = level.players;
     for ( i = 0; i < players.size; i++ )
     {
-        if ( which == "bullet" ) players[i].gf_funBullet = undefined;
-        if ( which == "nade"   ) players[i].gf_funNade   = undefined;
+        // isDefined guard like every other roster walk here: a field write through an undefined
+        // slot is a runtime error, and this one runs from gf_funReset -- an error partway would
+        // abort the reset before its team-god sweep, leaving a side invulnerable while the admin
+        // has been told the reset completed.
+        if ( !isDefined( players[i] ) || !isDefined( players[i].gf_funMark ) )
+            continue;
+        players[i].gf_funMark[which] = undefined;
+    }
+}
+
+// ONE adoption manager for every per-player toggle feature. Bullet modes and grenade ride ran
+// byte-identical copies of this loop, and gf_funClearFlag mirrored their two field names a third
+// time as a string switch -- three places to keep in step for the generation-stamp trick that this
+// file's whole self-healing rests on (see the STATE MODEL in the header). Miss one and that
+// feature quietly stops re-adopting players after a round boundary.
+//   which      - mark key, and the gf_funClearFlag key
+//   stopNotify - the feature's own collapse notify (funreset's gf_fun_stop is added here)
+//   loopFn     - ::per-player loop, threaded on the player at first adoption
+// ⚠ Both a variable endon() and `player thread [[fn]]()` are stock-proven in the MP VM.
+gf_funManager( which, stopNotify, loopFn )
+{
+    level endon( "game_ended" );
+    level endon( "gf_fun_stop" );
+    level endon( stopNotify );
+    for ( ;; )
+    {
+        humans = gf_funHumans();
+        for ( i = 0; i < humans.size; i++ )
+        {
+            if ( gf_funAdopted( gf_funMarkOf( humans[i], which ) ) )
+                continue;
+            humans[i] gf_funSetMark( which, level.gf_funGen );
+            humans[i] thread [[ loopFn ]]();
+        }
+        wait 2.0;
     }
 }
 
@@ -152,6 +201,13 @@ gf_funTrackEnt( ent )
         return false;
     if ( !isDefined( level.gf_funEnts ) )
         level.gf_funEnts = [];
+    // ⚠ Reclaim dead slots BEFORE judging the cap, or the cap counts TOMBSTONES: a deleted
+    // entity leaves its slot behind (gf_funDeleteAfter frees the entity, not the array entry),
+    // so ~15s of FX-bullet fire fills the registry with dead entries and every later crate /
+    // FX / clone / sphere is spawned and instantly deleted -- the feature set silently dies
+    // until the next map_restart. The cap is meant to bound LIVE entities.
+    if ( level.gf_funEnts.size >= gf_funEntCap() )
+        gf_funCompactEnts();
     if ( level.gf_funEnts.size >= gf_funEntCap() )
     {
         ent delete();
@@ -159,6 +215,19 @@ gf_funTrackEnt( ent )
     }
     level.gf_funEnts[level.gf_funEnts.size] = ent;
     return true;
+}
+
+// Drop slots whose entity is already gone (timed delete, round-end wipe, engine cleanup).
+// Only ever called when the registry looks full, so the walk costs nothing in normal play.
+gf_funCompactEnts()
+{
+    live = [];
+    for ( i = 0; i < level.gf_funEnts.size; i++ )
+    {
+        if ( isDefined( level.gf_funEnts[i] ) )
+            live[live.size] = level.gf_funEnts[i];
+    }
+    level.gf_funEnts = live;
 }
 
 gf_funClearEnts()
@@ -253,25 +322,6 @@ gf_funFxHandle( mode )
     return level.gf_funFx[mode];
 }
 
-gf_funBulletManager()
-{
-    level endon( "game_ended" );
-    level endon( "gf_fun_stop" );
-    level endon( "gf_fun_bullet_stop" );
-    for ( ;; )
-    {
-        humans = gf_funHumans();
-        for ( i = 0; i < humans.size; i++ )
-        {
-            if ( !gf_funAdopted( humans[i].gf_funBullet ) )
-            {
-                humans[i].gf_funBullet = level.gf_funGen;
-                humans[i] thread gf_funBulletLoop();
-            }
-        }
-        wait 2.0;
-    }
-}
 
 gf_funBulletLoop()
 {
@@ -287,15 +337,15 @@ gf_funBulletLoop()
         mode = getDvar( "gf_fun_bullet" );
         if ( mode == "" || mode == "off" )
             continue;
-        if ( gettime() - last < 120 )
+        if ( gettime() - last < maps\mp\gametypes\_gf_bridge::gf_bridgeShotThrottleMs() )
             continue;
         last = gettime();
 
-        eye   = self GetEye();
-        fwd   = AnglesToForward( self GetPlayerAngles() );
-        far   = eye + vector_scale( fwd, 8000 );
-        trace = bulletTrace( eye, far, false, self );
-        hit   = trace["position"];
+        // Shared with Explosive Bullets -- one copy of the trace geometry and one throttle.
+        aim = self maps\mp\gametypes\_gf_bridge::gf_bridgeCrosshairTrace();
+        eye = aim.eye;
+        fwd = aim.forward;
+        hit = aim.pos;
 
         if ( mode == "care" )
         {
@@ -323,10 +373,18 @@ gf_funBulletLoop()
         // Launcher modes: fire a real projectile from the muzzle toward the impact point. The
         // weapon MUST be precached (gf.gsc's strip-marked fun block) or MagicBullet silently
         // does nothing -- the same no-op rule GiveWeapon has.
-        proj = "rpg_mp";
+        // ⚠ EVERY mode is named explicitly and an unknown one is a NO-OP. This used to default
+        // proj to "rpg_mp" and fall through, so a single typo'd verb (funbullet_fx_purple, a
+        // manual `set gf_cmd`, a panel option that drifts from this list) turned every human's
+        // every shot into a live RPG in a one-life round -- and gf_fun_bullet persisted it
+        // across rounds via gf_funInit.
+        proj = "";
+        if ( mode == "rpg"       ) proj = "rpg_mp";
         if ( mode == "law"       ) proj = "m72_law_mp";
         if ( mode == "chinalake" ) proj = "china_lake_mp";
         if ( mode == "minigun"   ) proj = "minigun_wager_mp";
+        if ( proj == "" )
+            continue;
         MagicBullet( proj, eye + vector_scale( fwd, 32 ), hit, self );
     }
 }
@@ -344,7 +402,13 @@ gf_funBulletMode( mode )
         maps\mp\gametypes\_gf_bridge::gf_bridgeNotify( "^7Bullet mode OFF" );
         return;
     }
-    level thread gf_funBulletManager();
+    // Collapse any live manager BEFORE threading a new one (the gf_funAntiQuit shape). Without
+    // this, cycling modes stacked one 2s roster loop per click for the rest of the round --
+    // the every-loop-is-collapsible rule in this file's header. Clearing the marks re-adopts
+    // everyone immediately under the new manager instead of at its first tick.
+    level notify( "gf_fun_bullet_stop" );
+    gf_funClearFlag( "bullet" );
+    level thread gf_funManager( "bullet", "gf_fun_bullet_stop", ::gf_funBulletLoop );
     maps\mp\gametypes\_gf_bridge::gf_bridgeNotify( "^5Bullet mode: ^7" + mode );
 }
 
@@ -362,10 +426,8 @@ gf_funTeleportToAim()
         p = humans[i];
         if ( !isAlive( p ) )
             continue;
-        eye   = p GetEye();
-        far   = eye + vector_scale( AnglesToForward( p GetPlayerAngles() ), 8000 );
-        trace = bulletTrace( eye, far, false, p );
-        p SetOrigin( trace["position"] + ( 0, 0, 16 ) );
+        aim = p maps\mp\gametypes\_gf_bridge::gf_bridgeCrosshairTrace();
+        p SetOrigin( aim.pos + ( 0, 0, 16 ) );
         n++;
     }
     maps\mp\gametypes\_gf_bridge::gf_bridgeNotify( "^5Teleported " + n + " player(s) to their crosshair" );
@@ -420,26 +482,6 @@ gf_funClonePlayers()
 // freezeControls, hide, invulnerability) so it works on dedicated; only EnCoRe's camera dressing is
 // partly out of reach -- cg_thirdPerson pushes fine, but its cg_fov 100 does not (archived client
 // dvar, refused), so the ride is a normal-FOV third-person shot rather than a wide one.
-gf_funNadeManager()
-{
-    level endon( "game_ended" );
-    level endon( "gf_fun_stop" );
-    level endon( "gf_fun_nade_stop" );
-    for ( ;; )
-    {
-        humans = gf_funHumans();
-        for ( i = 0; i < humans.size; i++ )
-        {
-            if ( !gf_funAdopted( humans[i].gf_funNade ) )
-            {
-                humans[i].gf_funNade = level.gf_funGen;
-                humans[i] thread gf_funNadeLoop();
-            }
-        }
-        wait 2.0;
-    }
-}
-
 gf_funNadeLoop()
 {
     self endon( "disconnect" );
@@ -457,7 +499,6 @@ gf_funNadeLoop()
 gf_funRideGrenade( grenade )
 {
     self endon( "disconnect" );
-    self endon( "death" );
 
     self freezeControls( true );
     self enableInvulnerability();
@@ -468,14 +509,33 @@ gf_funRideGrenade( grenade )
     // BOUNDED, and the bound is the point: a grenade entity that is destroyed without ever firing a
     // notify we are waiting on would otherwise strand the rider frozen, invulnerable and invisible
     // for the rest of the round -- on a one-life 42s round that is the whole round.
+    //
+    // ⚠ DEATH AND ROUND END ARE LOOP EXITS, NOT endons. An endon("death") here skipped the restore
+    // block entirely, and one of its writes does NOT heal on respawn: cg_thirdPerson is a pushed
+    // CLIENT dvar, so a rider killed mid-flight (funreset's invulnerability sweep landing on a
+    // linked rider, a sequenced team move, a trigger_hurt) played the REST OF THEIR SESSION in
+    // third person. Everything else here is re-established by the next spawn; that one is not.
     start = gettime();
-    while ( isDefined( grenade ) && gettime() - start < 6000 )
+    for ( ;; )
+    {
+        if ( !isDefined( grenade ) || gettime() - start >= 6000 )
+            break;
+        if ( !isAlive( self ) )
+            break;
+        if ( isDefined( level.gameEnded ) && level.gameEnded )
+            break;
         wait 0.05;
+    }
 
     self unlink();
     self show();
-    self freezeControls( false );
     self setClientDvar( "cg_thirdPerson", 0 );
+    // ⚠ Only unfreeze someone the ENGINE is not deliberately holding: stock freezes every client
+    // for the round-end killcam and the next prematch, so an unconditional unfreeze here let a
+    // rider walk around mid-countdown while everyone else was frozen. A dead/end-of-round rider
+    // gets their controls back from the spawn itself.
+    if ( isAlive( self ) && !( isDefined( level.gameEnded ) && level.gameEnded ) )
+        self freezeControls( false );
     // ⚠ Only drop invulnerability if a global god mode is not standing, or this would quietly cancel
     // the admin's god_on for whoever last threw a grenade.
     if ( !isDefined( level.gf_godMode ) || !level.gf_godMode )
@@ -487,7 +547,11 @@ gf_funNadeRide( enable )
     if ( enable )
     {
         setDvar( "gf_fun_nade", "1" );
-        level thread gf_funNadeManager();
+        // Collapse first, then re-thread -- same reason as gf_funBulletMode above: two ON
+        // clicks without an intervening OFF used to leave two managers running.
+        level notify( "gf_fun_nade_stop" );
+        gf_funClearFlag( "nade" );
+        level thread gf_funManager( "nade", "gf_fun_nade_stop", ::gf_funNadeLoop );
         maps\mp\gametypes\_gf_bridge::gf_bridgeNotify( "^5Grenade ride ON" );
     }
     else
@@ -501,18 +565,62 @@ gf_funNadeRide( enable )
 
 // --- Text verbs -----------------------------------------------------------------
 
+// The text verbs share one refusal. An EMPTY slot means the panel's chained
+// "set gf_fun_text <s>;set gf_cmd <n>:<verb>" write was split or dropped on the paced rcon queue
+// -- returning silently there still acks the seq, so the admin is left looking at a button that
+// did nothing. Refusals are REPORTED (the gf_funCheatGate convention at the top of this file).
+gf_funNoText( verb )
+{
+    maps\mp\gametypes\_gf_bridge::gf_bridgeNotify( "^1" + verb + ": no text arrived (the write raced or dropped) -- click it again" );
+}
+
+// --- Engine-dvar snapshots (so funreset can actually undo the text verbs) ---------
+//
+// The text verbs write ENGINE dvars that survive every map_restart and have no round-start
+// re-apply, so funreset could stop every loop and still leave a real match being played by
+// "CLOWN COLLEGE" vs "CLOWN COLLEGE". Snapshot the pre-fun value on the FIRST write and let
+// funreset put it back.
+// ⚠ A dvar because level.* dies at the next map_restart while these writes outlive every round.
+// ⚠ The "1:" prefix is a presence sentinel: an engine default here can legitimately BE the empty
+// string, which is otherwise indistinguishable from "never snapshotted".
+gf_funSnapshot( name )
+{
+    if ( getDvar( "gf_fun_prev_" + name ) == "" )
+        setDvar( "gf_fun_prev_" + name, "1:" + getDvar( name ) );
+}
+
+gf_funRestore( name )
+{
+    saved = getDvar( "gf_fun_prev_" + name );
+    if ( saved == "" )
+        return false;
+    // 2-arg getSubStr = "from index 2 to the end", stock-proven in MP (_weapons.gsc:525).
+    setDvar( name, getSubStr( saved, 2 ) );
+    setDvar( "gf_fun_prev_" + name, "" );
+    return true;
+}
+
 // Per-team names -- allies / axis / both are separate verbs because g_TeamName_Allies and
 // g_TeamName_Axis are separate plain SERVER dvars (no per-client push needed).
 gf_funTeamName( side )
 {
     text = gf_funTakeText();
     if ( text == "" )
+    {
+        gf_funNoText( "Team name" );
         return;
+    }
 
     if ( side == "allies" || side == "both" )
+    {
+        gf_funSnapshot( "g_TeamName_Allies" );
         setDvar( "g_TeamName_Allies", text );
+    }
     if ( side == "axis" || side == "both" )
+    {
+        gf_funSnapshot( "g_TeamName_Axis" );
         setDvar( "g_TeamName_Axis", text );
+    }
     maps\mp\gametypes\_gf_bridge::gf_bridgeNotify( "^5Team name (" + side + "): ^7" + text );
 }
 
@@ -523,7 +631,10 @@ gf_funMotd()
 {
     text = gf_funTakeText();
     if ( text == "" )
+    {
+        gf_funNoText( "Splash" );
         return;
+    }
     humans = gf_funHumans();
     for ( i = 0; i < humans.size; i++ )
     {
@@ -542,7 +653,11 @@ gf_funTip()
 {
     text = gf_funTakeText();
     if ( text == "" )
+    {
+        gf_funNoText( "Loading tip" );
         return;
+    }
+    gf_funSnapshot( "didyouknow" );
     setDvar( "didyouknow", text );
     maps\mp\gametypes\_gf_bridge::gf_bridgeNotify( "^5Loading tip set: ^7" + text );
 }
@@ -636,9 +751,20 @@ gf_funGershWatch()
     level endon( "game_ended" );
     level endon( "gf_fun_stop" );
 
-    self waittill( "grenade_fire", grenade, weapname );
-    if ( !isDefined( grenade ) || weapname != "frag_grenade_mp" )
-        return;
+    // Wait for THIS player's FRAG, not merely their next throw. Every shared loadout carries a
+    // tactical, so returning on the first non-frag notify silently disarmed the device whenever
+    // the target threw a flash/stun first -- and said nothing to anyone. The endons above bound
+    // this wait (disconnect / death / round end / funreset), so an un-thrown device just expires.
+    grenade = undefined;
+    for ( ;; )
+    {
+        self waittill( "grenade_fire", thrown, weapname );
+        if ( isDefined( thrown ) && weapname == "frag_grenade_mp" )
+        {
+            grenade = thrown;
+            break;
+        }
+    }
 
     // Follow the grenade until it detonates (entity deleted), then send the thrower to its last
     // position. Bounded at 15s so a swallowed grenade can't leave a watcher thread parked forever.
@@ -751,11 +877,26 @@ gf_funAimLoop( mode )
         }
     }
 
+    // ⚠ TARGET re-acquired at 4 Hz, VIEW re-asserted at 20 Hz. Re-picking every tick ran a full
+    // line-of-sight sweep (a GetTagOrigin + bulletTracePassed for every live enemy) twenty times a
+    // second for as long as the aimbot was armed -- up to ~260 traces/sec in a full lobby, on four
+    // SHARED vCPUs, and bulletTrace is among the most expensive builtins here. What a player sees
+    // is the 20 Hz angle write, not the pick behind it, so the effect is unchanged to the eye.
+    target      = undefined;
+    lastAcquire = 0;
     for ( ;; )
     {
         if ( isAlive( self ) )
         {
-            target = gf_funNearestEnemy( self );
+            if ( gettime() - lastAcquire >= 250 )
+            {
+                target      = gf_funNearestEnemy( self );
+                lastAcquire = gettime();
+            }
+            // Drop a target that died or left mid-interval rather than aiming at it for the rest
+            // of the quarter second (a disconnect makes the entity ref itself undefined).
+            if ( isDefined( target ) && !isAlive( target ) )
+                target = undefined;
             if ( isDefined( target ) )
                 self SetPlayerAngles( VectorToAngles( target GetTagOrigin( "j_head" ) - self GetEye() ) );
         }
@@ -765,15 +906,28 @@ gf_funAimLoop( mode )
 
 gf_funAimbot( numStr, mode )
 {
-    if ( !gf_funCheatGate() )
-        return;
-
     target = maps\mp\gametypes\_gf_bridge::gf_bridgeFindPlayer( int( numStr ) );
     if ( !isDefined( target ) )
     {
         maps\mp\gametypes\_gf_bridge::gf_bridgeNotify( "^1No player with client num " + numStr );
         return;
     }
+
+    // ⚠ DISARMING IS DELIBERATELY UNGATED, and it sits ABOVE the gate for that reason. With the
+    // cheat gate first, re-locking Cheat Verbs while an aimbot was running made its own Off
+    // button answer "Locked: enable 'Cheat Verbs' first" -- the loop kept landing head shots and
+    // the refusal named no way to stop it (only a re-unlock or a full funreset). Turning a live
+    // cheat OFF must never require the permission that armed it. ARMING stays gated below.
+    if ( mode == "off" )
+    {
+        target notify( "gf_fun_aim_stop" );
+        maps\mp\gametypes\_gf_bridge::gf_bridgeNotify( "^7Aimbot OFF: " + target.name );
+        return;
+    }
+
+    if ( !gf_funCheatGate() )
+        return;
+
     // ⚠ Humans only. A bot handed an aimbot fights BotWarfare's own aim loop for the same view, and
     // the reconciler owns bot behaviour.
     if ( !maps\mp\gametypes\_gf_rounds::gf_isHuman( target ) )
@@ -782,17 +936,13 @@ gf_funAimbot( numStr, mode )
         return;
     }
 
-    target notify( "gf_fun_aim_stop" );   // collapse any previous mode before arming a new one
-    if ( mode == "off" )
-    {
-        maps\mp\gametypes\_gf_bridge::gf_bridgeNotify( "^7Aimbot OFF: " + target.name );
-        return;
-    }
     if ( mode != "snap" && mode != "silent" )
     {
         maps\mp\gametypes\_gf_bridge::gf_bridgeNotify( "^1Unknown aim mode '" + mode + "' (want snap|silent|off)" );
         return;
     }
+
+    target notify( "gf_fun_aim_stop" );   // collapse any previous mode before arming a new one
     target thread gf_funAimLoop( mode );
     maps\mp\gametypes\_gf_bridge::gf_bridgeNotify( "^1Aimbot " + mode + ": ^7" + target.name );
 }
@@ -947,6 +1097,15 @@ gf_funReset()
     gf_funClearFlag( "bullet" );
     gf_funClearFlag( "nade"   );
 
+    // Put back the ENGINE dvars the text verbs wrote. These survive every map_restart and have no
+    // round-start re-apply, so without this the one-click kill switch stopped every loop and still
+    // let the next REAL match be played by "CLOWN COLLEGE" vs "CLOWN COLLEGE" under a joke loading
+    // tip -- the most VISIBLE fun state was the only state the reset missed.
+    restored = 0;
+    if ( gf_funRestore( "g_TeamName_Allies" ) ) restored++;
+    if ( gf_funRestore( "g_TeamName_Axis"   ) ) restored++;
+    if ( gf_funRestore( "didyouknow"        ) ) restored++;
+
     // Drop any per-team god the CHAOS block granted -- unless the global god_on is standing, which
     // funreset deliberately does not own (it has its own panel toggle).
     if ( !isDefined( level.gf_godMode ) || !level.gf_godMode )
@@ -959,5 +1118,5 @@ gf_funReset()
         }
     }
 
-    maps\mp\gametypes\_gf_bridge::gf_bridgeNotify( "^2Fun reset: ^7loops stopped, " + ents + " entities removed, gate re-locked", true );
+    maps\mp\gametypes\_gf_bridge::gf_bridgeNotify( "^2Fun reset: ^7loops stopped, " + ents + " entities removed, " + restored + " dvar(s) restored, gate re-locked", true );
 }

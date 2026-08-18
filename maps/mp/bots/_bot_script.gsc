@@ -38,7 +38,19 @@ connected()
 	self endon("disconnect");
 
 	self thread classWatch();
-	self thread teamWatch();
+	// gunfight: teamWatch() is DELIBERATELY NOT THREADED — the fill reconciler owns bot team
+	// placement (_bot::gf_addFillBots -> gf_botDeployWhenReady), and teamWatch fought it. It fires
+	// notify("menuresponse", menu_team, bots_team) 0.05s after a bot's team resolves, which lands in
+	// stock menuAutoAssign; that re-picks the side from CountPlayers() alone and, when its pick
+	// differs from where the bot already sits AND the bot has spawned (prematch), calls suicide()
+	// before writing the new team (_globallogic_ui.gsc). With two bots added on the same frame (one
+	// per side) each one's autoassign read the other's half-settled connect, so BOTH swapped sides
+	// and BOTH died — the round-1 "Mistakes were made" pair plus the matching UNTRACED team traces.
+	// Nothing is lost: the seat itself comes from stock's connect autoassign
+	// (_globallogic_player.gsc:312-345) or, when that path doesn't fire, from gf_botDeployWhenReady's
+	// own seat; classWatch (which only gates on pers["team"] being defined) still drives the spawn;
+	// and teamWatch never re-fired after connect anyway (pers survives map_restart(true), so its
+	// "wait for the team to go undefined" tail parked forever).
 
 	self thread maps\mp\bots\_bot_loadout::bot_rank();
 	self thread bot_skip_killcam();
@@ -110,6 +122,10 @@ classWatch()
 
 /*
 	Makes sure the bot is on a team.
+
+	⚠ gunfight: DEAD CODE — no longer threaded from connected(). Do not re-arm it; it suicides
+	freshly-added bots to swap them between sides, fighting the fill reconciler. See the note at
+	the connected() call site for the full mechanism.
 */
 teamWatch()
 {

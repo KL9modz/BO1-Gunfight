@@ -21,7 +21,7 @@
 # gitignored ops notes; the panel's own server list lives in servers.local.json.
 #
 # (Stop any laptop-side server.js on 3000 first, or the tunnel can't bind 3000.
-#  tools/rcon/start.bat pins the LAPTOP panel to 3005 for exactly this reason.)
+#  tools/rcon/rcon_start.bat pins the LAPTOP panel to 3005 for exactly this reason.)
 #
 # Run ELEVATED (Administrator) on the box.  Windows PowerShell 5.1.  ASCII-only.
 #   powershell -ExecutionPolicy Bypass -File setup_rcon_vps.ps1
@@ -110,7 +110,7 @@ if (Test-Path $secrets) {
 # present but unreadable - ignoring it" report. That report exists precisely because the symptom
 # otherwise is a panel with zero passwords "and nothing in any log" (server.js says so in its own
 # comment), and THIS is the box where that file is unattended and nobody is watching a console.
-# The laptop never had the problem - tools\rcon\start.bat keeps a visible console window.
+# The laptop never had the problem - tools\rcon\rcon_start.bat keeps a visible console window.
 #
 # The log lives in the mod's logs\ folder, NOT beside server.js, because deploy.ps1 -Mod mirrors
 # the mod tree with robocopy /MIR: an untracked file inside the mirrored area is an "extra file"

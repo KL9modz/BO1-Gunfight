@@ -1058,7 +1058,13 @@ gf_teamTrace( checkpoint )
         if ( isDefined( p.pers["gf_teamWriter"] ) )
             writer = p.pers["gf_teamWriter"];
 
-        attributed = ( isDefined( p.pers["gf_teamWriterTo"] ) && p.pers["gf_teamWriterTo"] == now );
+        // "*" is the WILDCARD target: a writer that cannot know its own target until the write has
+        // already happened pre-stamps it to cover its own execution window, then overwrites it with
+        // the concrete team (_gf_rounds::gf_stockAutoassignStamped — stock menuAutoAssign re-enters
+        // this very checkpoint from its beginClassChoice tail, before the concrete stamp lands).
+        // Single-use consumption below applies to it exactly as to a concrete token.
+        attributed = ( isDefined( p.pers["gf_teamWriterTo"] )
+                       && ( p.pers["gf_teamWriterTo"] == now || p.pers["gf_teamWriterTo"] == "*" ) );
 
         // Staleness in ms: level.gf_roundGen is a gettime() stamp (monotonic across map_restart),
         // NOT an incrementing counter — so this is a real age, and a large one on an "attributed"

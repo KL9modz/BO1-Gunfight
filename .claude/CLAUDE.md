@@ -843,7 +843,9 @@ Per-slot camo via `CalcWeaponOptions` (primary + independent secondary); rolled 
 **The rotation is a curated list — `gf_camoPool()` in `_gf_loadouts.gsc`, and that function IS the
 edit surface**: uncomment an index to add it, comment it out to drop it. Every pool line ships as camo
 `-1` (Random), so `gf_rollCamo()` picks from that list at pool build (53 loadouts × 2 slots, once per
-match — never per spawn, never per frame, so rebuilding the small array there is free). ⚠ **It used to
+match — never per spawn, never per frame, so rebuilding the small array there is free). **Two runtime
+switches sit on top of that list** — `scr_gf_camo_base` / `scr_gf_camo_modded` (see the dvar table),
+which filter it at pool build and re-resolve at each give, with **Gold in both sets**. ⚠ **It used to
 be a bare `randomInt( 16 )`, which could only ever return 0-15 and therefore made every custom camo
 UNREACHABLE no matter how many shipped** — if a newly added camo never appears in a live round, check
 this list before suspecting the assets. ⚠ An index here **must** have a `weaponOptions.csv` row **and**
@@ -979,7 +981,34 @@ head-count** — at the match-start re-begin wave clients reconnect one at a tim
 humans the plan doesn't name); a stale entry costs at most a 1-gap, which the boundary evens.
 ([[unplanned-joiner-coinflip-opens-two-gap]])
 
-**Boundary-only remains the rule** — ONE yield-free `gf_boundaryPass` per round, triggered by:
+**MID-ROUND GAP REPAIR (`gf_gap_repair`, default 1) — the ONE sanctioned exception to boundary-only.**
+A **human** leaving a live round **while alive** takes a body out of a one-life round, and the boundary
+is up to a whole ~42s round away. `_bot::gf_onSeatLeave` (installed as **`level.onPlayerDisconnect`** in
+`onStartGameType`, strip-marked — SetupCallbacks resets it to `::blank` every `map_restart`, so a
+once-per-match install would survive exactly one round) classifies yield-free inside stock
+`Callback_PlayerDisconnect` and threads `gf_gapRepair`, which after one frame re-seats **parked reserve
+bots** onto the short side until it is back at `max(bigger human side, gf_fill_n)`. It plans no
+composition — the boundary still owns that; it only refills a hole that just opened.
+⚠ **Reserve pool ONLY — never `add_bot()` here.** A fresh add is a client *connect* (configstrings +
+reliable commands to everyone) and is the prime mod-owned suspect for the killcam stall; mid-firefight
+is the worst moment for one. Empty pool = do nothing, the boundary rebuilds. This is the consumer the
+TRIM's `reserve = allies_human + axis_human` ("one parked bot per playing human — **each could leave**")
+was already sized for. ⚠ **ALIVE leavers only** — a dead player's life was already spent, so
+backfilling one hands their side a free extra combatant mid-round. ⚠ **Humans only** — a *bot*
+disconnecting mid-round is always the mod's own churn or an admin `botkick_<team>`, and backfilling
+those would revert a deliberate kick the same frame it lands. ⚠ **No new spawn machinery**:
+`gf_botQuietSetTeam` restores `pers["lives"]` *and* clears `pers["class"]`, which releases BotWarfare's
+`classWatch` (`_bot_script.gsc:105`) → its menuresponse → stock `menuClass` → `spawnClient`
+(`_globallogic_ui.gsc:660`) ~0.5s later, admitted by the maySpawn **late-spawn rule 1 (fill a gap)**
+that was written for this case. ⚠ **Skip a bot with `hasSpawned`** (played already this round): the
+late-spawn gate refuses it, so seating one puts a body on the roster that can never spawn — worse than
+the gap. Retired by `endon("gf_round_over")` (**not** `game_ended`) so a leaver who was their team's
+last alive ends the round instead of triggering churn in the killcam. Logs `GF_GAPFILL` **even at 0
+seated** (empty reserve is the outcome worth seeing). Accepted cost: the replacement spawns at full
+health, so a round that goes to time shifts the most-remaining-HP decision. Inert at `gf_fill_n 0`.
+Bridge `gaprepair_<0|1>`; panel ADVANCED → TEAMS → *Backfill On Leave*.
+
+**Boundary-only remains the rule otherwise** — ONE yield-free `gf_boundaryPass` per round, triggered by:
 `gf_round_over` +0.5s (inside the killcam), the match-start gate release (pre-spawn; the Auto/Manual
 lobby-release instead kicks all bots pre-restart when fill > 0), and one roster-settle pass after init
 (these now run **even at fill 0** — balancing/queue are fill-independent). Bot placement is the quiet
@@ -1467,7 +1496,7 @@ resurrected the "enemy spawns / 1 HP" bug; [[pteam-spawnedplayer-apply-races-res
 `pteamforce_` applies now via the
 **sequenced move** (`_gf_rounds::gf_seqTeamMove` — an alive player **dies + late-spawns** onto the new
 team when the round admits it; never the racy stock switch). Team-system toggles: `balance_`/
-`teamlock_`/`teamswitch_`/`latespawn_`/`reclaim_<0|1>`. Verbs cover bots, balance-teams,
+`teamlock_`/`teamswitch_`/`latespawn_`/`reclaim_`/`gaprepair_<0|1>`. Verbs cover bots, balance-teams,
 match-control (`lobbystart`, endround, the two restarts, pause/resume), gameplay toggles, and fun/visual
 commands. **`roundrestart`** replays the round with no score/loadout-rotation/side-switch by ending it as
 a `"tie"` through `gf_endRound` with `game["roundsplayed"]` pre-decremented (endGame's `++` nets it back)
@@ -1552,6 +1581,7 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_roundswitch` | 2 | Rounds between side switches. |
 | `scr_gf_roundsperloadout` | 2 | Rounds before the shared loadout rotates (clamp 1-9). |
 | `scr_gf_lethals` / `scr_gf_tacticals` / `scr_gf_equipment` | 1 / 1 / 1 | **Per-slot admin switches** — `0` turns that whole loadout slot off server-wide (nobody gets a lethal / tactical / placed equipment, on any loadout), and `_gf_hud` hides the matching overview column (`ui_gf_lo_show2`/`3`/`4`; the row's bracket still spans all three, so the block never reflows). Read **live at each spawn's loadout build** (`_gf_loadouts::gf_slotOn`, empty = on), so a panel flip lands on the next spawn — the next round for anyone already alive. **No pool rebuild**: the loadout still carries the item, only the give is skipped, so flipping one back on restores exactly what it was giving. Composes with, and never overrides, the two existing narrower skips — a loadout authored with `"none"` equipment (`gf_slotEmpty`) and the bot equipment exclusion. Panel: DASHBOARD → GUNFIGHT → *Loadout Slots*. Plain dvar rows, **no bridge verb** (nothing to apply — the give site is the reader). |
+| `scr_gf_camo_base` / `scr_gf_camo_modded` | 1 / 1 | **The two camo-class switches** — `0` on either forbids that whole family from the rotation: base = the stock camos (1-14), modded = this mod's own (17-46). ⚠ **Gold (15) belongs to BOTH sets** deliberately (the one camo every BO1 player knows), so it survives either switch and is gone only when both are off — which leaves every gun on index `0`, the plain factory finish, itself never a camo and **always** allowed (that is also what keeps the Minigun/M202/Finger-Gun `0` pins untouched). Read at **pool build** (`gf_camoPool` filters through `_gf_loadouts::gf_camoAllowed`) **and** at each spawn's give (`gf_resolveCamo`), so a flip lands on the **next spawn**, not the next match. ⚠ A loadout already carrying a disabled camo is remapped **deterministically** (`enabled[ idx % enabled.size ]`), never re-rolled — a roll would hand two players different guns out of the one shared loadout. `gf_force_camo` is applied after the resolve, so an admin force still wins. Plain dvar rows (DASHBOARD → GUNFIGHT → *Camo*), **no bridge verb**. Which indices are in the rotation *at all* remains the source-side `gf_camoPool()` list — these are the runtime masters over it. |
 | `scr_gf_timelimit` / `_large` | 0.7 / 1.5 | Round length in minutes, small / large mode (0.7 = 42s). |
 | `scr_gf_overtimelimit` / `_large` | 15 / 30 | Overtime seconds, small / large; `0` = OT off (HP decides now). |
 | `gf_capture_time` / `_large` | 3.5 / 5 | OT zone hold-to-capture seconds, small / large. |
@@ -1598,6 +1628,7 @@ tables → `docs/REFERENCE.md`.
 | `gf_team_switch` | 1 | Players may switch teams themselves, immediately (alive mid-round = die + sit out the round; prematch/grace = free). 0 = self-switching refused; admin moves still work. Bridge: `teamswitch_<0\|1>`. |
 | `scr_gf_latespawn` | 1 | A joiner/mover makes their FIRST spawn into a live round while their team has ≥1 alive — never in OT, never a respawn. Two ways in, both size-preserving: it **fills a gap** (team stays no bigger than the enemy's, by roster — anyone, bots included), or a **HUMAN takes a bot's spot** (that bot is removed; a bot never displaces anyone; a team full of humans makes the joiner wait for the boundary). 0 = always spectate until next round. Bridge: `latespawn_<0\|1>`. |
 | `gf_team_reclaim` | 1 | Boundary-time **containment** for the untraced human mis-seat: re-seat a human stranded in spectator with **reason UNTRACED** (not a `user`/`moved`/`maxsize` spectate, not lock-queued) onto the lighter HUMAN side, so the NEXT round starts them ON a team instead of the ranked team/class menu. Runs before the balance/fill stages (bots absorb the size); prints `GF_RECLAIM`. Catches the strand one round late (the menu still shows for that round), so it contains, not cures. 0 = leave stranded humans (diagnostic-only). Bridge: `reclaim_<0\|1>`. |
+| `gf_gap_repair` | 1 | **Mid-round backfill on leave — the one sanctioned exception to boundary-only.** A **human** who leaves a LIVE round **while alive** is replaced within a frame by one **parked reserve** bot (`_bot::gf_onSeatLeave` → `gf_gapRepair`, via `level.onPlayerDisconnect`), re-seated up to `max(bigger human side, gf_fill_n)` and spawned through the late-spawn **fill-a-gap** rule. ⚠ Reserve pool only — a bot is **never connected** mid-round; empty pool = wait for the boundary. ⚠ A leaver who was **dead** is never backfilled (their life was already spent). Inert at `gf_fill_n 0`. Logs `GF_GAPFILL`. Bridge: `gaprepair_<0\|1>`. |
 | `gf_fill_kick_floor` | 2 | Client slots kept free for humans; a parked bot is kicked once total ≥ `sv_maxclients − this`. |
 | `bot_difficulty` | normal (engine); cfg ships **hard** (Hardened — was `fu` until 0.8.3) | BotWarfare AI difficulty — the **BASELINE preset** under the `gf_sv_*` override layer below. ⚠ A **REAL ENGINE dvar** (BO1 Combat Training), registered at process start: default `normal`, **CLOSED enum domain** easy/normal/hard/fu (live rcon read 2026-07-17) — never empty (a GSC seed-if-empty can never fire; the one gf.gsc carried was dead code, removed; the VPS's old "fu" was a live panel click that a restart silently reverted), and **a fifth name is domain-refused**, so a "custom difficulty" is a baseline + overrides, never a new enum value. The panel labels the four with the game's names (Recruit/Regular/Hardened/Veteran). The GF default **hard** is owned by `dedicated.cfg` (VPS + example). `_bot::diffBots` re-applies the `sv_bot*` preset from it every 1.5s, so cfg / panel `botdiff_*` changes land within a tick. |
 | `gf_bot_difficulty` | GSC seeds `custom`; **cfg ships `stock`** (since 0.8.3, so the Hardened default runs pure) | **The CUSTOM-difficulty selector.** `custom` = Veteran(fu) base + the `gf_sv_*` overrides (panel CUSTOM button; `botdiff_custom`) — ⚠ **CUSTOM pins its own base**, hardcoding `bot_set_difficulty("fu")`, so clicking it *changes the live difficulty to Veteran*, not "current preset + overrides". That is deliberate ("CUSTOM = Veteran plus our adjustments"), but it means CUSTOM overrides the Hardened default until a `botdiff_*` click or a restart. ⚠ The one path that reaches a mixed state: an `svset_` slider flips the selector to custom **without** re-basing to fu, so the mirrors land on whatever preset is live. `stock` = the four presets run **pure designed values** — `gf_bridgeApplyServerDvars` skips every `sv_bot*` mirror (the stock `botdiff_*` verbs write this sentinel). ⚠ Stock is the explicit string `"stock"`, never `""` — empty is the seed-if-empty state and would flip back to custom each round. Tuning any `sv_bot*` via `svset_` auto-switches to custom (the write is invisible under stock). `gf_state` field 12 reports `custom` when active. |
@@ -1802,7 +1833,8 @@ content), so `git checkout main` after cloning and push `main` with `tools/push_
   `scr_gf_scorelimit` / `_timelimit(_large)` / `_overtimelimit(_large)` / `_roundswitch` /
   `_roundsperloadout` / `_teamspawnmode` / `gf_capture_time(_large)` / `scr_gf_flinch` /
   `scr_gf_headshot_scale` / `scr_gf_jump_fatigue` / `scr_gf_sprint_unlimited` / `scr_gf_lethals` /
-  `scr_gf_tacticals` / `scr_gf_equipment` / `scr_team_maxsize`.
+  `scr_gf_tacticals` / `scr_gf_equipment` / `scr_gf_camo_base` / `scr_gf_camo_modded` /
+  `scr_team_maxsize`.
   ⚠ Two functions are deliberately kept OUTSIDE the strip regions because **live-round code still
   calls them**: `gf_anyTrackedClientLoading()` (called by `gf_roundWatchdog` + `gf_closeGraceEarly`;
   already returns false when the tracker never armed, so it degrades to "nobody is loading") and
