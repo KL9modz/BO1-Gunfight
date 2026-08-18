@@ -111,3 +111,69 @@ Describe "Discord badge/colour maps cover the vocabulary actually in use" {
         }
     }
 }
+
+Describe "New-StatusEmbed (discord_status) - the live card rendering" {
+    # Pure function (data in, embed out), extracted by AST because discord_status.ps1 is a
+    # RUNNABLE script - dot-sourcing it would post to Discord.
+    $sp = Join-Path $toolsRoot 'notify\discord_status.ps1'
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($sp, [ref]$null, [ref]$null)
+    $fn = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'New-StatusEmbed' }, $true) | Select-Object -First 1
+    if (-not $fn) { throw "New-StatusEmbed not found in $sp - renamed?" }
+    . ([scriptblock]::Create($fn.Extent.Text))
+    function Get-GfMapName($m) { return $m }   # stub: the real one lives in map_names.ps1
+
+    $fresh = (Get-Date).ToString('o')
+    $green = 0x57F287; $red = 0xED4245; $grey = 0x95A5A6
+
+    It "online + fresh renders green with map, players and score" {
+        $st = [pscustomobject]@{ updated=$fresh; online=$true; mapName='Drive-In'; humans=2; bots=4
+                                 round=3; score=[pscustomobject]@{allies=2;axis=1} }
+        $e = New-StatusEmbed $st $null 'Gunfight' 120
+        Assert-Eq $e.color $green "green when live"
+        Assert-True ($e.title -match 'Drive-In') "map in title"
+        Assert-True ((@($e.fields) | Where-Object { $_.name -eq 'Players' }).value -eq '2 humans + 4 bots') "player line"
+        Assert-True ((@($e.fields) | Where-Object { $_.name -eq 'Score' }).value -match 'Allies 2 - 1 Axis') "score line"
+    }
+    It "offline renders RED even if the snapshot is fresh" {
+        $st = [pscustomobject]@{ updated=$fresh; online=$false; mapName='Drive-In'; humans=0; bots=0 }
+        $e = New-StatusEmbed $st $null 'Gunfight' 120
+        Assert-Eq $e.color $red "red when offline"
+        Assert-True ($e.title -match 'OFFLINE') "says offline"
+    }
+    It "a STALE snapshot is grey and says so - never a confident frozen roster" {
+        $st = [pscustomobject]@{ updated=((Get-Date).AddMinutes(-30).ToString('o')); online=$true; mapName='X'; humans=9; bots=0 }
+        $e = New-StatusEmbed $st $null 'Gunfight' 120
+        Assert-Eq $e.color $grey "grey when stale"
+        Assert-True ($e.description -match 'stuck|snapshot') "explains the staleness"
+    }
+    It "an UNREADABLE timestamp counts as stale, not as fresh" {
+        $st = [pscustomobject]@{ updated='not-a-date'; online=$true; mapName='X'; humans=1; bots=0 }
+        $e = New-StatusEmbed $st $null 'Gunfight' 120
+        Assert-Eq $e.color $grey "unparseable date must not read as live"
+    }
+    It "no snapshot at all degrades to 'status unknown', never a throw" {
+        $e = New-StatusEmbed $null $null 'Gunfight' 120
+        Assert-Eq $e.color $grey "grey"
+        Assert-True ($e.title -match 'unknown') "says unknown"
+    }
+    It "singular/plural reads correctly for one human and one bot" {
+        $st = [pscustomobject]@{ updated=$fresh; online=$true; mapName='X'; humans=1; bots=1 }
+        $e = New-StatusEmbed $st $null 'Gunfight' 120
+        Assert-Eq ((@($e.fields) | Where-Object { $_.name -eq 'Players' }).value) '1 human + 1 bot' "no stray plurals"
+    }
+    It "a hostile long name cannot exceed Discord's 1024-char field cap" {
+        $long = [pscustomobject]@{ name = ('N' * 400) }
+        $st = [pscustomobject]@{ updated=$fresh; online=$true; mapName='X'; humans=3; bots=0
+                                 players=@($long,$long,$long) }
+        $e = New-StatusEmbed $st $null 'Gunfight' 120
+        $v = (@($e.fields) | Where-Object { $_.name -eq 'Online now' }).value
+        Assert-True ($v.Length -le 1024) "field value must stay under the API cap, got $($v.Length)"
+    }
+    It "uptime and lobby state come from health.json when present" {
+        $st = [pscustomobject]@{ updated=$fresh; online=$true; mapName='X'; humans=0; bots=2 }
+        $he = [pscustomobject]@{ serverUptimeMins = 751; lobbyHold = $true }
+        $e = New-StatusEmbed $st $he 'Gunfight' 120
+        Assert-Eq ((@($e.fields) | Where-Object { $_.name -eq 'Uptime' }).value) '12h 31m' "uptime formatted"
+        Assert-True ((@($e.fields) | Where-Object { $_.name -eq 'State' }).value -eq 'Pregame lobby') "lobby state"
+    }
+}

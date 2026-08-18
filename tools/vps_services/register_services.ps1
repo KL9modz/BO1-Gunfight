@@ -88,6 +88,15 @@ $services = @(
        Args = ''
        RequiresConfig = (Join-Path $toolsRoot 'notify\config.json')
        Periodic = $true }
+    @{ Name = 'GF-DiscordStatus'
+       Script = Join-Path $toolsRoot 'notify\discord_status.ps1'
+       # Rewrites ONE Discord message with live status (it never posts a second one). Reads only
+       # status.json / health.json, so its tick costs zero rcon.
+       # DELIBERATELY NOT in the watchdog $PeriodicTasks health list: a stale status card is
+       # cosmetic, and paging about it would be pure noise.
+       Args = ''
+       RequiresConfig = (Join-Path $toolsRoot 'notify\config.json')
+       Periodic = $true }
 )
 
 if ($Only) { $services = $services | Where-Object { $Only -contains $_.Name } }

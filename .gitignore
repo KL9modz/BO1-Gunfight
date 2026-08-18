@@ -148,3 +148,8 @@ mp_gunfight.iwd*
 # its restore checklist -- it has to survive a clone to be worth anything. The ignore rules
 # above are path-anchored to the repo ROOT, so a shelved copy of images/ or materials/ is
 # unaffected by them.
+
+# Discord live-status card - the remembered message id it keeps rewriting. Box-local and
+# per-channel: copying it to another box would make that box edit THIS box's card. Regenerated
+# on demand (a missing id just posts a fresh card, and the old one is then orphaned).
+tools/notify/discord_status.local.json

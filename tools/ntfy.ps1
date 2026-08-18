@@ -224,3 +224,60 @@ function Send-GfAlert {
         discordError = $(if ($dscTried) { $script:GfDiscordLastError } else { '' })
     }
 }
+
+# ---- Live-card transport (create once, then edit in place) --------------------------------
+# Send-GfDiscord above is fire-and-forget: it posts and forgets the message. A STATUS CARD is
+# the opposite - one message that is rewritten forever, so the channel does not fill with a new
+# "4 players online" every few minutes. Two extra calls make that possible:
+#   New-GfDiscordMessage : POST ?wait=true, which makes Discord RETURN the created message
+#                          (without ?wait it answers 204 with no body and the id is lost forever)
+#   Set-GfDiscordMessage : PATCH .../messages/<id>, the in-place rewrite
+# ⚠ A webhook CANNOT pin (that needs a bot token with MANAGE_MESSAGES) - pin it by hand once.
+
+# Returns the new message id, or '' on failure. $Embed is a hashtable in Discord embed shape.
+function New-GfDiscordMessage {
+    param($Config, $Embed, [string]$Category = 'default')
+    $script:GfDiscordLastError = ''
+    $url = Get-GfDiscordWebhook -Config $Config -Category $Category
+    if ([string]::IsNullOrWhiteSpace($url)) { $script:GfDiscordLastError = 'no webhook configured'; return '' }
+    $payload = [ordered]@{ embeds = @($Embed); allowed_mentions = @{ parse = @() } }
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $payload -Compress -Depth 8))
+        # ?wait=true is what turns a 204-no-body into the created message object.
+        $sep = $(if ($url.Contains('?')) { '&' } else { '?' })
+        $res = Invoke-RestMethod -Uri ($url + $sep + 'wait=true') -Method Post -Body $bytes `
+                   -ContentType 'application/json; charset=utf-8' -TimeoutSec 15
+        if ($res -and $res.id) { return [string]$res.id }
+        $script:GfDiscordLastError = 'no message id in response'
+        return ''
+    }
+    catch { $script:GfDiscordLastError = $_.Exception.Message; return '' }
+}
+
+# Rewrites an existing message. Returns $true, or $false with $script:GfDiscordLastError set.
+# ⚠ A 404 here is EXPECTED and RECOVERABLE, not an error to alert on: it means the message was
+# deleted in Discord (or the webhook was rotated). Callers detect it via -MessageGone and create
+# a fresh card rather than going permanently silent.
+function Set-GfDiscordMessage {
+    param($Config, [string]$MessageId, $Embed, [string]$Category = 'default', [ref]$MessageGone)
+    $script:GfDiscordLastError = ''
+    if ($MessageGone) { $MessageGone.Value = $false }
+    $url = Get-GfDiscordWebhook -Config $Config -Category $Category
+    if ([string]::IsNullOrWhiteSpace($url) -or [string]::IsNullOrWhiteSpace($MessageId)) {
+        $script:GfDiscordLastError = 'no webhook or no message id'; return $false
+    }
+    $payload = [ordered]@{ embeds = @($Embed); allowed_mentions = @{ parse = @() } }
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $payload -Compress -Depth 8))
+        Invoke-RestMethod -Uri ($url + '/messages/' + $MessageId) -Method Patch -Body $bytes `
+            -ContentType 'application/json; charset=utf-8' -TimeoutSec 15 | Out-Null
+        return $true
+    }
+    catch {
+        $script:GfDiscordLastError = $_.Exception.Message
+        $code = $null
+        try { $code = [int]$_.Exception.Response.StatusCode } catch { }
+        if ($code -eq 404 -and $MessageGone) { $MessageGone.Value = $true }
+        return $false
+    }
+}
