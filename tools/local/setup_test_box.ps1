@@ -160,6 +160,19 @@ Write-Host ""
 Write-Host "  Mod folder:" -ForegroundColor Cyan
 New-Junction (Join-Path $TestT5 "mods\mp_gunfight") $RepoRoot
 
+# ...and every SIBLING WORKTREE of this repo gets its own mod folder beside it, so a branch
+# checked out in a worktree (mp_gunfight_exp, the weapon-skin playtest branch) is launchable
+# without re-pointing anything: start_local_server.bat picks one with GFMOD.
+# Matched by "named after this repo folder + _suffix AND holding a .git entry", which is what
+# git worktree add produces -- an unrelated mods\ folder next door is never touched.
+# DISCOVERED, not hardcoded: a worktree added later needs no edit here, and -Force re-links
+# whatever exists today instead of quietly dropping a junction a session made by hand.
+$repoParent = Split-Path -Parent $RepoRoot
+$repoLeaf   = Split-Path -Leaf   $RepoRoot
+Get-ChildItem -LiteralPath $repoParent -Directory -Filter "$($repoLeaf)_*" -ErrorAction SilentlyContinue |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName ".git") } |
+    ForEach-Object { New-Junction (Join-Path $TestT5 "mods\$($_.Name)") $_.FullName }
+
 # --- private to the test box ------------------------------------------------
 Write-Host ""
 Write-Host "  Private to the test box (real directories):" -ForegroundColor Cyan

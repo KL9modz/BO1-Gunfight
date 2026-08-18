@@ -112,6 +112,42 @@ copy as a hard requirement and fails loudly rather than falling back.
 ⚠ A **leftover** bootstrapper trips the same guard — a zombie from a previous session, or a server
 someone started by hand. If the game will not launch, look for a stray process before anything else.
 
+
+### Two per-run flags: `-realstats` and `GFMOD`
+
+Both are opt-in per run and neither can be left switched on by accident.
+
+**`-realstats` runs the box at `modStats 0`, the way the VPS runs it.** `local_test.cfg` pins
+`modStats 1` so a dev session of bot farming at 5x XP cannot land in your real Black Ops profile;
+the flag appends `+set modStats 0` *after* both cfg execs, so it wins for one run and is gone the
+moment you restart without it (the bat clears `REALSTATS` before parsing, so a stray line in
+`local.env.bat` cannot pin it on). It exists for one job: proving the T5 engine actually honours
+`modStats`, which registration alone does not prove.
+
+⚠ **The storage isolation does not cover you here, and that is not a bug in it.** The isolated tree
+gives the *server* its own `players\`, but rank is written against the *client's* account, and the
+client you join with is your normal game running out of the real Plutonium tree. A `-realstats` run
+really does move your real rank. That is the test. **Back up `players\mpstats` and
+`players\globalstats` first**, or join on an account you do not mind moving.
+
+```powershell
+.\tools\local\start_local_server.bat -realstats        # flag position does not matter
+```
+
+**`GFMOD` picks a different worktree.** `setup_test_box.ps1` junctions this repo *and* every sibling
+worktree of it (`mp_gunfight_exp`, the weapon-skin playtest branch), so a branch checked out in a
+worktree is launchable without re-pointing anything. Set `GFMOD` and the launcher points `fs_game`,
+the junction check, and the compile-error log hint at that folder instead.
+
+```powershell
+$env:GFMOD = 'mp_gunfight_exp'; .\tools\local\start_local_server.bat
+```
+
+⚠ **A skin does not need a `.iwd` to be looked at locally.** The mod *folder* sits above all 36 stock
+`iw_*.iwd` in the client's own search path, so a loose `images\<stock name>.iwi` renders on the next
+level load with nothing packaged ([[mod-folder-is-first-in-client-fs-search-path]]). The `.iwd` is a
+delivery vehicle for players who do not have the folder. Never read "it looks right locally" as
+"the artifact is built".
 ### The launcher does not auto-restart
 Deliberate. The VPS bat loops because a live server must come back up unattended; a dev box wants the
 opposite, since a GSC compile error takes the server down (`SV_Shutdown`) and a restart loop would

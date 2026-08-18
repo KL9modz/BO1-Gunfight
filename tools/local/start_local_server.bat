@@ -80,6 +80,13 @@ REM  pasted somewhere it did not belong, and it is the one secret this repo's
 REM  git history never held.
 if exist "%~dp0local.env.bat" call "%~dp0local.env.bat"
 
+REM  MODNAME can have been redirected by local.env.bat (GFMOD, for the skin
+REM  playtest branch), so every path below derives its folder name from it. A
+REM  hardcoded mp_gunfight here would validate and report the WRONG mod: the
+REM  junction check would pass on a folder the server is not loading, and the
+REM  compile-error hint would point at a log that never gets written.
+set "MODDIR=%MODNAME:mods/=%"
+
 REM  Arg scan rather than plain %1/%2, so -realstats can sit in any position.
 REM  "if not defined" is used instead of comparing %P1%: inside a goto loop the
 REM  line is re-parsed each pass, but "defined" needs no expansion at all, which
@@ -141,7 +148,7 @@ if not exist "%TESTT5%\dedicated.cfg" (
     echo        never writes the cfg, logs or player profile your game uses.
     goto :fail
 )
-if not exist "%TESTT5%\mods\mp_gunfight\maps\mp\gametypes\gf.gsc" (
+if not exist "%TESTT5%\mods\%MODDIR%\maps\mp\gametypes\gf.gsc" (
     echo [FAIL] The test box's mod junction is missing or broken.
     echo        Re-link it:  setup_test_box.ps1 -Force
     goto :fail
@@ -240,7 +247,7 @@ echo.
 echo  ---------------------------------------------------------------
 echo   GF LOCAL TEST SERVER
 echo   storage: %TESTPLUTO%   (isolated - your game is untouched)
-echo   mod    : this repo, via junction
+echo   mod    : %MODDIR%   (this repo, via junction)
 echo   cfg    : dedicated.cfg  then  local_test.cfg
 echo   stats  : %STATSMODE%
 echo   port   : %PORT%   maxclients: %MAXCLIENTS%
@@ -277,7 +284,7 @@ bintest\gfserver.exe t5mp "%GAMEPATH%" -dedicated %KEYARG% ^
 echo.
 echo  ---------------------------------------------------------------
 echo   Server exited. If that was not you closing it, read the tail of
-echo   %TESTT5%\mods\mp_gunfight\console_mp.log
+echo   %TESTT5%\mods\%MODDIR%\console_mp.log
 echo   for a GSC compile error (unknown function / SV_Shutdown).
 echo  ---------------------------------------------------------------
 pause
