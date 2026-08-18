@@ -130,12 +130,13 @@ function P-Key($p) {
 # this script's own (cfg, title, message, priority, tags) call shape and to LOG a failure; the
 # shared sender deliberately returns $false instead of throwing, so nothing here can be taken
 # down by a push.
-function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, $discordPrefix = '') {
+function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, $discordPrefix = '', $discordTitle = '') {
   # Send-GfAlert fans out to every configured transport; 'joins' routes Discord to the
   # player-activity channel (falls back to the default webhook when that one is unset).
   $r = Send-GfAlert -Config $cfg -Title ([string]$title) -Message ([string]$message) `
                     -Priority ([string]$priority) -Tags ([string[]]@($tags)) -Category 'joins' `
-                    -DiscordColor ([int]$discordColor) -DiscordPrefix ([string]$discordPrefix)
+                    -DiscordColor ([int]$discordColor) -DiscordPrefix ([string]$discordPrefix) `
+                    -DiscordTitle ([string]$discordTitle)
   if ($r.ntfyError)    { Write-Log "[ntfy] send failed: $($r.ntfyError)" }
   if ($r.discordError) { Write-Log "[discord] send failed: $($r.discordError)" }
   return $r.anySent
@@ -342,15 +343,31 @@ function Get-DetailBits($loc, $ping, $count) {
 # Never returns '' — an empty ntfy message renders as a bodyless alert. All three bits drop out
 # only when geoLookup is off (or the IP is LAN/loopback), the ping is still the placeholder, and
 # there are no day-files to count from.
-# Join title. Two rules, both deliberate: an empty-server join says nothing about the server
-# being empty (the alert IS that news, and the old "(1)" was noise), and once others are already
-# playing the head count trails the map name, where it reads as context rather than as a label on
-# the player. Kept as a function so the format is testable without a live server.
-function Get-JoinTitle($name, $mapName, $count) {
+# THE TWO TRANSPORTS INTENTIONALLY DISAGREE ABOUT THE JOIN HEADLINE. Keep them apart; they are
+# not a duplicated string that wants deduplicating.
+#
+#   ntfy  -> a phone notification, read alone with no surrounding context. It keeps the long-form
+#            wording ("joined an empty server (1) Discovery") because everything it does not say
+#            is unavailable to the reader.
+#   Discord -> a card in a scrolling channel, sitting next to the ones before it. There the same
+#            words are clutter, so an empty-server join simply does not mention being empty (the
+#            alert IS that news) and the head count trails the map, reading as context rather than
+#            as a label stuck to the player's name.
+#
+# Both are functions so each format is testable without a live server.
+function Get-JoinTitleDiscord($name, $mapName, $count) {
   $t = "$name joined"
   if ($mapName)          { $t += "  $mapName" }
   if ([int]$count -gt 1) { $t += "  ($count)" }
   return $t
+}
+# The phone's format, unchanged since before the Discord rework - restored verbatim, including
+# the count that is always present and the map trailing everything.
+function Get-JoinTitleNtfy($name, $mapName, $count, $isFirst) {
+  $mapSuffix = ''
+  if ($mapName) { $mapSuffix = "  $mapName" }
+  if ($isFirst) { return "$name joined an empty server  ($count)$mapSuffix" }
+  return "$name joined  ($count)$mapSuffix"
 }
 function Get-JoinBody($loc, $ping, $count) {
   $bits = Get-DetailBits $loc $ping $count
@@ -488,7 +505,7 @@ function Do-Tick($cfg) {
       $body = Get-JoinBody $loc $p.ping $cnt
       $logd = Get-LogDetail $geo.place $p.ping $cnt     # log gets the place without the flag
       $ptag = Count-Tag $cur.Count                      # 👤 / 👥 by TOTAL players online
-      $title = Get-JoinTitle $p.name $mapName $cur.Count
+      $dTitle = Get-JoinTitleDiscord $p.name $mapName $cur.Count
       # Discord-only: a mention is meaningless on ntfy and would render as literal <@123…> there.
       # In an embed description it draws the chip WITHOUT notifying anyone (embeds never notify),
       # which is what we want - the player who just joined does not need their phone buzzed.
@@ -497,12 +514,18 @@ function Do-Tick($cfg) {
         $firstDone = $true
         Write-Log "FIRST $($p.name)  (server now active, $($cur.Count) online)$logd"
         if ($cfg.notifyFirstJoin) {
-          [void](Send-Ntfy $cfg $title $body 'high' @($ptag) $script:JoinColor $mention)
+          # Named arguments from here on: eight positional slots is how a colour ends up in the
+          # mention field.
+          [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $true) `
+                           -message $body -priority 'high' -tags @($ptag) `
+                           -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle)
           continue
         }
       }
       Write-Log "JOIN  $($p.name)  ($($cur.Count) online)$logd"
-      [void](Send-Ntfy $cfg $title $body 'default' @($ptag) $script:JoinColor $mention)
+      [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $false) `
+                       -message $body -priority 'default' -tags @($ptag) `
+                       -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle)
     }
   }
 

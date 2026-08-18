@@ -50,7 +50,8 @@ function Get-FunctionText {
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-ConnectCount')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Format-Ordinal')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Format-ConnectCount')))
-. ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinTitle')))
+. ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinTitleDiscord')))
+. ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinTitleNtfy')))
 
 Describe "Resolve-ServiceImagePath (security_watch)" {
     It "resolves a %SystemRoot%-relative path (the KslD shape)" {
@@ -281,7 +282,7 @@ Describe "watchdog check 1d (Claude RC) - the fail-safe structure, not the happy
     }
 }
 
-Describe "Get-JoinTitle (join-notify) - the owner's join card format" {
+Describe "Get-JoinTitleDiscord (join-notify) - the Discord card format" {
     # Format rules, and each one is a decision rather than a default:
     #   * an empty-server join does NOT say "empty server" and does NOT carry a count - the alert
     #     arriving IS that news, and "(1)" was noise
@@ -289,17 +290,17 @@ Describe "Get-JoinTitle (join-notify) - the owner's join card format" {
     #     label stuck to the player's name
     #   * the map is the public display name, resolved upstream by Get-GfMapName
     It 'a join into an empty server carries neither count nor empty-server text' {
-        Assert-Eq (Get-JoinTitle 'fentfella' 'Havana' 1) 'fentfella joined  Havana' 'first join'
+        Assert-Eq (Get-JoinTitleDiscord 'fentfella' 'Havana' 1) 'fentfella joined  Havana' 'first join'
     }
     It 'a join with others already on puts the total AFTER the map name' {
-        Assert-Eq (Get-JoinTitle 'KL9' 'Havana' 3) 'KL9 joined  Havana  (3)' 'later join'
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' 'Havana' 3) 'KL9 joined  Havana  (3)' 'later join'
     }
     It 'an unknown map degrades to name + count, never a dangling separator' {
-        Assert-Eq (Get-JoinTitle 'KL9' '' 3) 'KL9 joined  (3)' 'no map, others on'
-        Assert-Eq (Get-JoinTitle 'KL9' '' 1) 'KL9 joined'      'no map, alone'
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' '' 3) 'KL9 joined  (3)' 'no map, others on'
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' '' 1) 'KL9 joined'      'no map, alone'
     }
     It 'a count of 0 or a non-numeric count never renders a count' {
-        Assert-Eq (Get-JoinTitle 'KL9' 'Zoo' 0) 'KL9 joined  Zoo' 'zero'
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' 'Zoo' 0) 'KL9 joined  Zoo' 'zero'
     }
 }
 
@@ -351,5 +352,25 @@ Describe "Get-GfPlayerLinks / Get-GfPlayerMention - the Discord link table" {
         (Get-Item $f).LastWriteTimeUtc = (Get-Item $f).LastWriteTimeUtc.AddSeconds(5)   # beat same-tick granularity
         Assert-Eq (Get-GfPlayerMention (Get-GfPlayerLinks $f) '1234567') '<@222222222222222222>' 'edit picked up'
         Remove-Item $f -Force
+    }
+}
+
+Describe "Get-JoinTitleNtfy (join-notify) - the PHONE format, deliberately not the Discord one" {
+    # The phone keeps the long-form wording on purpose: an ntfy push is read alone, with no
+    # surrounding channel to supply context, so it states the count and the empty-server case
+    # outright. This is a REGRESSION pin - the two formats diverged by request, and the natural
+    # instinct on next reading will be to "deduplicate" them back together.
+    It 'a first join keeps the empty-server wording and the count' {
+        Assert-Eq (Get-JoinTitleNtfy 'fentfella' 'Discovery' 1 $true) 'fentfella joined an empty server  (1)  Discovery' 'first join'
+    }
+    It 'a later join keeps the count BEFORE the map' {
+        Assert-Eq (Get-JoinTitleNtfy 'KL9' 'Discovery' 4 $false) 'KL9 joined  (4)  Discovery' 'later join'
+    }
+    It 'an unknown map just drops the suffix' {
+        Assert-Eq (Get-JoinTitleNtfy 'KL9' '' 4 $false) 'KL9 joined  (4)' 'no map'
+    }
+    It 'the phone and Discord titles genuinely differ (collapsing them is the regression)' {
+        Assert-False ((Get-JoinTitleNtfy 'KL9' 'Discovery' 4 $false) -eq (Get-JoinTitleDiscord 'KL9' 'Discovery' 4)) 'later join differs'
+        Assert-False ((Get-JoinTitleNtfy 'KL9' 'Discovery' 1 $true) -eq (Get-JoinTitleDiscord 'KL9' 'Discovery' 1)) 'first join differs'
     }
 }

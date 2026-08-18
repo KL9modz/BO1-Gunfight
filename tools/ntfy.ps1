@@ -219,10 +219,14 @@ function Send-GfDiscord {
 # per-transport results, so a box with only ntfy, only Discord, or both all work unchanged.
 # ⚠ Independent try/catch per transport: Discord being down must never suppress the ntfy push
 # that reaches a phone, and vice versa.
+# $DiscordTitle lets the two transports disagree about the headline. They are different surfaces:
+# an ntfy push is a phone notification read in isolation, so it states everything; a Discord card
+# sits in a scrolling channel next to its neighbours, where the same words are clutter. Empty =
+# both transports use $Title, which is what every other caller wants.
 function Send-GfAlert {
     param($Config, [string]$Title, [string]$Message, [string]$Priority = 'default',
           [string[]]$Tags = @(), [string]$Category = 'default', [int]$DiscordColor = 0,
-          [string]$DiscordPrefix = '')
+          [string]$DiscordPrefix = '', [string]$DiscordTitle = '')
 
     $ntfyOk = $false; $ntfyTried = $false
     if ($null -ne $Config -and $Config.ntfyTopic) {
@@ -232,7 +236,8 @@ function Send-GfAlert {
     $dscOk = $false; $dscTried = $false
     if (-not [string]::IsNullOrWhiteSpace((Get-GfDiscordWebhook -Config $Config -Category $Category))) {
         $dscTried = $true
-        $dscOk = Send-GfDiscord -Config $Config -Title $Title -Message $Message -Priority $Priority -Tags $Tags -Category $Category -Color $DiscordColor -Prefix $DiscordPrefix
+        $dTitle = $(if ($DiscordTitle) { $DiscordTitle } else { $Title })
+        $dscOk = Send-GfDiscord -Config $Config -Title $dTitle -Message $Message -Priority $Priority -Tags $Tags -Category $Category -Color $DiscordColor -Prefix $DiscordPrefix
     }
     return [pscustomobject]@{
         ntfy        = $ntfyOk
