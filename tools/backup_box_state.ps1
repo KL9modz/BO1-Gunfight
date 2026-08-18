@@ -26,6 +26,7 @@ param(
     [string] $OutDir      = '',
     [string] $Passphrase  = '',
     [string] $CopyTo      = '',      # second destination (a pulled share, a synced folder)
+    [string] $GitDir      = '',      # local clone of the PRIVATE backup repo (see Publish-Backup)
     [int]    $KeepDays    = 30,
     [string] $Verify      = '',
     [string] $Restore     = '',
@@ -82,9 +83,15 @@ $items = @(
     Item 'C:\ProgramData\ssh\sshd_config'                        'CONFIG' 'key-only auth needs BOTH PasswordAuthentication no and KbdInteractiveAuthentication no, in the GLOBAL section'
     Item 'C:\ProgramData\ssh\administrators_authorized_keys'     'CONFIG' 'admin ssh keys (Windows ignores ~/.ssh for admins)'
 
-    # --- build outputs: rebuildable, but only on the dev desktop --------------------------------
-    Item (Join-Path $modRoot 'mod.ff')                           'CARRY'  'needs Windows + the BO1 linker + S:\zone_source - not rebuildable on the box or in the cloud'
-    Item (Join-Path $modRoot 'mp_gunfight.iwd')                  'CARRY'  'camo images delivered to clients over FastDL'
+    # --- build outputs are NOT collected: GitHub already has them -------------------------------
+    # mod.ff and mp_gunfight.iwd both live on origin/release (that is where deploy.ps1 -Mod checks
+    # mod.ff out of), and the .iwd rebuilds from the 30 tracked images\*.iwi. Carrying them here
+    # was 672 KB of a 768 KB archive - 87% of every daily push - to duplicate something already
+    # versioned off-box. Restore them with:
+    #     git checkout origin/release -- mod.ff mp_gunfight.iwd
+    # ⚠ If they are ever dropped from origin/release, put them BACK in this list: mod.ff cannot be
+    # rebuilt on this box or in a cloud session (it needs Windows, the BO1 linker and S:\zone_source
+    # on the dev desktop), so losing both copies at once is unrecoverable without that machine.
 )
 # ⚠ ~\.claude\.credentials.json is DELIBERATELY OPT-IN (-IncludeClaudeCreds). It is a full-scope
 # OAuth token for the Claude account, which is equivalent to the SSH key on this box. Re-running
@@ -170,6 +177,44 @@ function Unprotect-File($inFile, $outFile, $pass) {
         $plain = $aes.CreateDecryptor().TransformFinalBlock($cipher, 0, $cipher.Length)
         [System.IO.File]::WriteAllBytes($outFile, $plain)
     } finally { $aes.Dispose() }
+}
+
+
+# ── push to the private backup repo ────────────────────────────────────────────────────────────
+# Off-box storage is what turns this from "a file on the box it protects" into a backup. The
+# archive is already encrypted, so a private GitHub repo is a reasonable home: versioned, off-site,
+# and it needs no new service on the box.
+#
+# ⚠ THE MARKER GUARD IS NOT OPTIONAL. This function pushes an archive containing live credentials
+# and player GUIDs. Pointed at the wrong clone - the PUBLIC BO1-Gunfight tree sits on this same box
+# - it would publish all of it, and git history is permanent (the two burned rcon passwords are
+# still in main's history precisely because a push cannot be taken back). So it refuses to write
+# anywhere that does not carry a .gf-backup-repo marker file, which only the setup step creates.
+# A wrong path fails closed and loudly; it never "helpfully" guesses.
+function Publish-Backup($archive, $gitDir) {
+    if (-not (Test-Path $gitDir)) { throw "backup repo clone not found: $gitDir" }
+    $marker = Join-Path $gitDir '.gf-backup-repo'
+    if (-not (Test-Path $marker)) {
+        throw "refusing to push: $gitDir has no .gf-backup-repo marker. That marker is what distinguishes the private backup clone from every other git tree on this box."
+    }
+    $remote = (& git -C $gitDir remote get-url origin 2>$null)
+    if (-not $remote) { throw "no origin remote in $gitDir" }
+    # Belt to the marker's braces: never the mod repo, whatever the marker says.
+    if ($remote -match 'BO1-Gunfight(\.git)?$') {
+        throw "refusing to push: origin of $gitDir is the PUBLIC mod repo ($remote)"
+    }
+
+    $destDir = Join-Path $gitDir 'archives'
+    if (-not (Test-Path $destDir)) { $null = New-Item -ItemType Directory -Path $destDir -Force }
+    Copy-Item -LiteralPath $archive -Destination $destDir -Force
+
+    & git -C $gitDir add -- 'archives' | Out-Null
+    $msg = "backup {0} ({1:N0} KB)" -f (Split-Path -Leaf $archive), ((Get-Item $archive).Length / 1KB)
+    & git -C $gitDir -c user.name='GF-Backup' -c user.email='gf-backup@localhost' commit -q -m $msg 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Host 'nothing new to commit'; return }
+    & git -C $gitDir push -q origin HEAD 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "git push failed (deploy key missing or revoked?) - the archive is committed locally and will push on the next run" }
+    Write-Host "pushed $(Split-Path -Leaf $archive) to $remote"
 }
 
 # ── verify / restore ───────────────────────────────────────────────────────────────────────────
@@ -285,6 +330,13 @@ try {
 
 Write-Host ("backup: {0}  ({1:N0} KB encrypted, {2} files, {3} missing, verified {4} entries)" -f `
     $out, ((Get-Item $out).Length / 1KB), $copied, $missing, $entries)
+
+# Push BEFORE pruning: if the push throws, the local archive is still there and retention has not
+# run, so nothing is lost by a failed off-box leg.
+if ($GitDir) {
+    try { Publish-Backup $out $GitDir }
+    catch { Write-Host "off-box push FAILED (backup itself is fine): $($_.Exception.Message)" }
+}
 
 if ($CopyTo) {
     if (-not (Test-Path $CopyTo)) { $null = New-Item -ItemType Directory -Path $CopyTo -Force }
