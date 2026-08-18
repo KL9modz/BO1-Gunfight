@@ -85,6 +85,24 @@ REM  playtest branch), so every path below derives its folder name from it. A
 REM  hardcoded mp_gunfight here would validate and report the WRONG mod: the
 REM  junction check would pass on a folder the server is not loading, and the
 REM  compile-error hint would point at a log that never gets written.
+REM  GFMOD picks a different mod folder for this run: setup_test_box.ps1 junctions
+REM  every sibling WORKTREE of this repo, so a branch checked out in one (the skin
+REM  playtest branch) is launchable without re-pointing anything. Read AFTER
+REM  local.env.bat so either that file or a plain environment variable can set it.
+REM  It is handled HERE, in the TRACKED launcher: it used to live only in the
+REM  gitignored local.env.bat, so a fresh clone got the junctions and no way to
+REM  select one.
+if not "%GFMOD%"=="" set "MODNAME=mods/%GFMOD%"
+
+REM  Then trim trailing spaces, because the obvious one-liner is a trap: in
+REM  `set GFMOD=mp_gunfight_exp && start_local_server.bat` the space BEFORE the &&
+REM  lands INSIDE the value, so fs_game becomes "mods/mp_gunfight_exp " and every
+REM  path built from it misses by one character. That surfaces as [FAIL] mod
+REM  junction missing, which sends you off to re-link something that was never
+REM  wrong. Quoting (set "GFMOD=x") avoids it; the launcher should not have to
+REM  depend on the caller getting that right.
+:trimmod
+if "%MODNAME:~-1%"==" " ( set "MODNAME=%MODNAME:~0,-1%" & goto :trimmod )
 set "MODDIR=%MODNAME:mods/=%"
 
 REM  Arg scan rather than plain %1/%2, so -realstats can sit in any position.
