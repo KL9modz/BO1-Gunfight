@@ -1796,6 +1796,43 @@ inflater) rather than inferring it. ⚠ `build_ff.ps1` is not byte-deterministic
 **one artifact**, never that two builds match ([[modff-drift-vs-gsc-deploy]] — compare SIZE; stale =
 smaller). ([[fastdl-download-clobbers-local-modff]])
 
+### 🛑 The mod.ff override rule: LOAD ORDER decides, not the technique
+**A mod.ff asset beats a stock asset only when the client loads that asset's home zone AFTER
+`mod`.** First registration wins; the later duplicate is discarded. From a client `console_mp.log`,
+one connect sequence: `code_pre_gfx_mp` → **`code_post_gfx_mp`(896)** → `patch_mp` → `plutonium_mp` →
+**`mod`(946)** → `patch_ui_mp` → **`ui_mp`(965)** → **`common_mp`/`en_common_mp`(999)** → map zones.
+
+| Home zone | Overridable by mod.ff? | Proven by |
+|---|---|---|
+| `code_pre_gfx_mp`, `code_post_gfx_mp`, `patch_mp`, `plutonium_mp` | **NO** (they register first) | `mp/didyouknow.csv`, `MPTIP_*` |
+| `patch_ui_mp`, `ui_mp`, `common_mp`, `en_common_mp`, map zones | **yes** | `ui_mp/main.menu`, `CGAME_SB_SCORE`, `CGAME_CONNECTIONINTERUPTED` |
+
+⚠ **This is why the `cgame.str` overrides below work — not because localizedstrings are special.** They
+live in `en_common_mp`. An identical `mptip.str` targeting the load-screen tips is silently discarded
+because `MPTIP_*` lives in `en_code_post_gfx_mp`. Same technique, same file shape, opposite outcome.
+⚠ **A name appearing in a pre-`mod` zone is NOT proof the asset lives there.** `mp/gametypesTable.csv`
+appears in `patch_mp`/`ui_mp` purely as menu `tableLookup` *text*. The real stringtable carries its cell
+data immediately adjacent in the zone; a bare name with unrelated neighbours is a reference.
+Read the zone before assuming an override will land ([[load-screen-tips-connect-menu-fork]]).
+
+### Load-screen tips (`ui_mp/connect.menu` fork)
+The tip under the loadbar on the connecting/map-load screen is the **client** dvar `didyouknow`,
+rendered by an itemDef in `ui_mp/connect.menu`. Stock fills it with
+`selectStringTableEntryInDvar mp/didyouknow.csv 0 didyouknow` (86 `@MPTIP_*` rows). **We render our own
+`GF_TIP_*` strings instead**, via a fork of `connect.menu` (`menufile,ui_mp/connect.menu`) whose only
+edit is that one itemDef: `exp text ( "@GF_TIP_" + string( GF_TIP_INDEX ) )`, with `GF_TIP_INDEX` =
+`( int( milliseconds() / GF_TIP_PERIOD ) % GF_TIP_COUNT )`. `milliseconds()` is the CLIENT's UI clock, so the tip
+**rotates every 4s (`GF_TIP_PERIOD`) while the load screen is up** (stock rolls once per load) and the server pushes nothing.
+⚠ **The two cheaper routes are PROVEN DEAD — do not retry either.** Overriding the pool or the `MPTIP_*`
+text loses to load order (above). Pushing the dvar with `setClientDvar` loses because **the engine re-rolls
+it at map load**: the command is a literal in `BlackOpsMP.exe` (VA `0xA1EEE0`) PUSHed from 4 sites, all in
+map-load/connect code. Seen from outside: stock tips visibly differ from one load screen to the next, and
+the dedicated server never even has the dvar (0 hits in a 9.8MB VPS `console_mp.log`).
+⚠ **Tip refs are POSITIONAL** — built as `"@GF_TIP_" + index`, so `localizedstrings/gf.str` must hold a
+**gapless 0-based run** and `GF_TIP_COUNT` in the menu must equal the entry count. A gap renders blank,
+not an error. ⚠ Not to be confused with `maps/mp/_tutorial.gsc`'s `MPTIP_TRAINING_*` Combat-Training HUD
+tips. ([[load-screen-tips-connect-menu-fork]])
+
 ### Overriding stock engine strings (`localizedstrings/cgame.str`)
 A localizedstring baked into **our** `mod.ff` **overrides the game's own shipped-zone copy** — so any
 single-purpose engine string can be retitled or blanked. ⚠ **The asset name is `<STR FILENAME>_<REFERENCE>`**,

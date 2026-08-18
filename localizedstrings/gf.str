@@ -70,4 +70,41 @@ LANG_ENGLISH        "+1 Assist"
 REFERENCE           POPUP_CAPTURE
 LANG_ENGLISH        "+1 Capture"
 
+// ---------------------------------------------------------------------------
+// LOAD-SCREEN TIPS (GF_TIP_0 .. GF_TIP_<N-1>), rendered by our ui_mp/connect.menu
+// fork. Stock's own tips are UNREACHABLE: the engine picks one with the hardcoded
+// command `selectStringTableEntryInDvar mp/didyouknow.csv 0 didyouknow` into the
+// CLIENT dvar `didyouknow`, and BOTH the table (mp/didyouknow.csv) and the text
+// (MPTIP_*) live in code_post_gfx_mp.ff / en_code_post_gfx_mp.ff, which the client
+// loads BEFORE mod.ff -- first registration wins, so a mod.ff copy is discarded.
+// connect.menu itself lives in ui_mp.ff, which loads AFTER mod.ff, so forking the
+// RENDERER is the only route. See CLAUDE.md "Load-screen tips".
+//
+// ⚠ The reference names are positional: connect.menu builds "@GF_TIP_" + index at
+// runtime, so they MUST stay a gapless 0-based run and GF_TIP_COUNT in
+// ui_mp/connect.menu MUST equal the number of entries here. A gap renders blank.
+// ⚠ English-only by construction, same as the score popups above.
+// ⚠ Player-facing copy: no em dashes (CLAUDE.md house rule).
+
+REFERENCE           TIP_0
+LANG_ENGLISH        "A shared loadout that rotates every other round. All camos plus exclusive imported camos, selected randomly."
+
+REFERENCE           TIP_1
+LANG_ENGLISH        "One life per round. Last team standing wins the round, and the first team to win 6 rounds wins the match."
+
+REFERENCE           TIP_2
+LANG_ENGLISH        "No health regeneration, no custom loadouts, no killstreaks. Learn more at ^<gunfight.us"
+
+REFERENCE           TIP_3
+LANG_ENGLISH        "If time expires, capture the overtime flag to secure the round. Otherwise, the team with the most remaining health wins."
+
+REFERENCE           TIP_4
+LANG_ENGLISH        "All 26 maps (base + DLC), with wager-style sizes for small lobbies and full-map sizes for big ones."
+
+REFERENCE           TIP_5
+LANG_ENGLISH        "This Ranked Server provides real stats & XP. ^<4XP Enabled!^7 Learn more at ^<gunfight.us"
+
+REFERENCE           TIP_6
+LANG_ENGLISH        "Join the Black Ops Gunfight Discord for scrims, updates, and to find people to play with: ^5discord.gg/blackops"
+
 ENDMARKER

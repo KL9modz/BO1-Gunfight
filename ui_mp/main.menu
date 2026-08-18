@@ -287,7 +287,7 @@
 		AD_LINE( 0,  -94, "Both teams get the same kit each round",	0.24, GF_BODY_COLOR )
 
 		AD_LINE( 1, -112, "Exclusive weapon camos",					0.35, COLOR_TITLE )
-		AD_LINE( 1,  -94, "Every stock camo plus exclusive imported camos",	0.24, GF_BODY_COLOR )
+		AD_LINE( 1,  -94, "All camos plus exclusive imported camos",	0.24, GF_BODY_COLOR )
 
 		AD_LINE( 2, -112, "All 26 maps & size scaling",				0.35, COLOR_TITLE )
 		AD_LINE( 2,  -94, "Wager-map sizes for smaller lobbies",	0.24, GF_BODY_COLOR )

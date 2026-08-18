@@ -24,6 +24,29 @@ menufile,ui_mp/main.menu
 # registers and kills the ENTIRE menu system (every gametype vanishes from the UI).
 # Re-check that before adding any further stock menu to this list.
 menufile,ui_mp/scriptmenus/class.menu
+# LOAD-SCREEN OVERRIDE: fork of the STOCK ui_mp/connect.menu (the connecting/map-load
+# screen). The ONLY edit is the tip line under the loadbar: stock binds it to the client
+# dvar 'didyouknow', ours renders our own GF_TIP_* strings from localizedstrings/gf.str.
+# WHY A FORK IS THE ONLY ROUTE (do not retry the cheaper ones, both are proven dead):
+#   - the tip POOL is stringtable mp/didyouknow.csv and the tip TEXT is the MPTIP_*
+#     localizedstrings; both live in code_post_gfx_mp.ff / en_code_post_gfx_mp.ff, which
+#     the client loads BEFORE mod.ff (console_mp.log: code_post_gfx_mp, then mod). First
+#     registration wins, so a mod.ff copy of either is DISCARDED. That is also exactly
+#     why the cgame.str overrides DO work: their zone (en_common_mp) loads AFTER mod.
+#   - pushing the dvar with setClientDvar cannot work either, because the engine re-rolls
+#     it at map load. The command "selectStringTableEntryInDvar mp/didyouknow.csv 0
+#     didyouknow" is a string literal in BlackOpsMP.exe (VA 0xA1EEE0) PUSHed from 4 call
+#     sites, ALL in map-load/connect code (neighbouring literals: "Server changing map
+#     %s, gametype %s", "CM_LoadMapFromBsp", "Can't find map"). The same fact seen from
+#     outside: stock tips visibly differ from one load screen to the next.
+# connect.menu lives in ui_mp.ff, which loads AFTER mod.ff, so the RENDERER is reachable.
+# SAFE because connect.menu is loadMenu-ed by STOCK ui_mp/code.txt and by nothing of ours:
+# the loadMenu resolves to whichever copy registered first, i.e. ours. Same shape as the
+# main.menu fork above (stock ui_mp/menus.txt loadMenu-s that one).
+# Do NOT also loadMenu this from one of our own menufiles. A menu registered here AND
+# loadMenu-ed by our own menufile double-registers and kills the ENTIRE menu system.
+menufile,ui_mp/connect.menu
+
 # Empty stub: the engine hard-looks-up ui_mp/mod.txt on every mod load and BLOCKS
 # ~4.6s when it's missing (first-join black-screen contributor). Loads no menus.
 menufile,ui_mp/mod.txt
