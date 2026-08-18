@@ -113,8 +113,9 @@ function Alert($title, $message, $priority, $tags) {
     Log "ALERT [$priority] $title :: $($message -replace "`n", ' / ')"
     if ($WhatIf -or $Summary) { Log '  (WhatIf - not sent)'; return }
     if ($null -eq $script:notify) { Log '  (no notify config - not sent)'; return }
-    $ok = Send-GfNtfy -Config $script:notify -Title $title -Message $message -Priority $priority -Tags $tags
-    if (-not $ok) { Log "  ntfy send FAILED: $($script:GfNtfyLastError)" }
+    $r = Send-GfAlert -Config $script:notify -Title $title -Message $message -Priority $priority -Tags $tags -Category 'security'
+    if ($r.ntfyError)    { Log "  ntfy send FAILED: $($r.ntfyError)" }
+    if ($r.discordError) { Log "  discord send FAILED: $($r.discordError)" }
 }
 
 # ── event reading ─────────────────────────────────────────────────────────────

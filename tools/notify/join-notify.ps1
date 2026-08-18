@@ -121,10 +121,13 @@ function P-Key($p) {
 # shared sender deliberately returns $false instead of throwing, so nothing here can be taken
 # down by a push.
 function Send-Ntfy($cfg, $title, $message, $priority, $tags) {
-  $ok = Send-GfNtfy -Config $cfg -Title ([string]$title) -Message ([string]$message) `
-                    -Priority ([string]$priority) -Tags ([string[]]@($tags))
-  if (-not $ok) { Write-Log "[ntfy] send failed: $($script:GfNtfyLastError)" }
-  return $ok
+  # Send-GfAlert fans out to every configured transport; 'joins' routes Discord to the
+  # player-activity channel (falls back to the default webhook when that one is unset).
+  $r = Send-GfAlert -Config $cfg -Title ([string]$title) -Message ([string]$message) `
+                    -Priority ([string]$priority) -Tags ([string[]]@($tags)) -Category 'joins'
+  if ($r.ntfyError)    { Write-Log "[ntfy] send failed: $($r.ntfyError)" }
+  if ($r.discordError) { Write-Log "[discord] send failed: $($r.discordError)" }
+  return $r.anySent
 }
 
 # 👤 one player, 👥 more than one. ntfy renders an emoji-shortcode tag immediately BEFORE the

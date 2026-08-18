@@ -77,6 +77,50 @@ Edit `config.json` → `ntfyTopic` = the exact topic you subscribed to. Leave `p
 blank to auto-read `rcon_password` from `dedicated.cfg`. `config.json` is gitignored (it
 holds your secret topic).
 
+## 2b. Discord (optional second transport)
+
+Every alert fans out to **ntfy and Discord**. Either one alone works — ntfy-only is the
+original setup, Discord-only is fine too, both is the point.
+
+Discord side, once per channel: **Channel → Edit Channel → Integrations → Webhooks → New
+Webhook → Copy Webhook URL.** No bot, no application, no OAuth — a webhook is just a URL
+you POST to.
+
+Then in `config.json`:
+
+```json
+"discordWebhooks": {
+  "default":  "https://discord.com/api/webhooks/…",
+  "joins":    "",
+  "alerts":   "",
+  "security": ""
+}
+```
+
+Categories route each service to its own channel; anything left blank falls back to
+`default`. Set only `default` and everything lands in one channel.
+
+| Category | Comes from | Typical alerts |
+|---|---|---|
+| `joins` | GF-JoinNotify | player connected / left, server now active |
+| `alerts` | GF-Watchdog | **server down / recovered**, updater wedged, Plutonium update, match stuck |
+| `security` | GF-SecurityWatch | new service installed, RDP/SSH findings, watchdog dead-man |
+
+Rendering: alerts arrive as embeds with a colour stripe by severity — red urgent, orange
+high, blurple normal, **green for recoveries** — the ntfy emoji tag as a badge on the
+title, and the server name in the footer. Urgent alerts additionally repeat the title as
+message text, because embed text is thin in a mobile push preview.
+
+> ⚠ **The webhook URL is a credential**, not a link: anyone holding it can post to that
+> channel as your server. `config.json` is gitignored, and the pre-commit hook blocks a
+> `discord.com/api/webhooks/…` literal (reporting it with the token redacted). If one ever
+> leaks, delete the webhook in Discord and make a new one — that instantly invalidates it.
+
+> ⚠ **Pings are disabled at the API layer** (`allowed_mentions: {parse: []}`) and must stay
+> that way. Join alerts carry **player names**, and a player can rename themselves
+> `@everyone`. Escaping the text would be the fragile fix; refusing all mentions server-side
+> also covers `@here` and role IDs.
+
 ## 3. Run / test on the VPS
 
 ```

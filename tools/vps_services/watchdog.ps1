@@ -86,6 +86,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $scriptRoot '..\common.ps1')   # Resolve-*Root / Get-RconPassword
+. (Join-Path $scriptRoot '..\ntfy.ps1')     # Get-GfNtfyConfig / Send-GfAlert (ntfy + Discord)
 if (-not $StatePath)        { $StatePath        = Join-Path $scriptRoot 'watchdog_state.json' }
 if (-not $MaintenancePath)  { $MaintenancePath  = Join-Path $scriptRoot 'watchdog_maintenance.json' }
 if (-not $NotifyConfigPath) { $NotifyConfigPath = Join-Path (Split-Path -Parent $scriptRoot) 'notify\config.json' }
@@ -182,23 +183,28 @@ if (Test-Path $MaintenancePath) {
 }
 
 # ---- ntfy alert (plain HTTP POST, no node dependency) ------------------------
+# ⚠ This used to carry its OWN header-form ntfy sender - a second copy that predated
+# tools\ntfy.ps1 and that the shared file's header flagged as "fold it in when convenient".
+# Adding Discord 2026-08-18 made folding it in MANDATORY rather than tidy: leaving the private
+# copy would have shipped a half-feature where joins and security events reached Discord but
+# "SERVER DOWN" - the single alert most worth having there - silently did not.
+# The header form also could not carry a unicode title (HTTP header values are ASCII); the
+# shared JSON sender can, so a flag/emoji in a watchdog title now survives too.
 function Send-Alert($title, $message, $priority, $tags) {
-    if (-not (Test-Path $NotifyConfigPath)) {
-        Log "ALERT (no notify config, not sent): $title - $message"
+    $cfg = Get-GfNtfyConfig -Path $NotifyConfigPath
+    if ($null -eq $cfg) {
+        Log "ALERT (no notify transport configured, not sent): $title - $message"
         return
     }
-    try {
-        $cfg = Get-Content $NotifyConfigPath -Raw | ConvertFrom-Json
-        $topic = $cfg.ntfyTopic
-        $server = if ($cfg.ntfyServer) { $cfg.ntfyServer.TrimEnd('/') } else { 'https://ntfy.sh' }
-        if (-not $topic) { Log "ALERT (no ntfyTopic configured, not sent): $title - $message"; return }
-        $headers = @{ Title = $title; Priority = $priority; Tags = $tags }
-        if ($cfg.ntfyToken) { $headers['Authorization'] = 'Bearer ' + $cfg.ntfyToken }
-        Invoke-RestMethod -Uri "$server/$topic" -Method Post -Headers $headers `
-            -Body ([System.Text.Encoding]::UTF8.GetBytes($message)) -TimeoutSec 10 | Out-Null
-        Log "ALERT sent: $title - $message"
-    } catch {
-        Log "ALERT send FAILED ($($_.Exception.Message)): $title - $message"
+    # $tags arrives from this script's call sites as a COMMA-JOINED STRING (the old header form
+    # took it that way); the shared sender wants a real array.
+    $tagArr = @()
+    if ($tags) { $tagArr = [string[]]@(([string]$tags) -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+    $r = Send-GfAlert -Config $cfg -Title $title -Message $message -Priority $priority -Tags $tagArr -Category 'alerts'
+    if ($r.anySent) {
+        Log "ALERT sent (ntfy=$($r.ntfy) discord=$($r.discord)): $title - $message"
+    } else {
+        Log "ALERT send FAILED (ntfy: $($r.ntfyError); discord: $($r.discordError)): $title - $message"
     }
 }
 
