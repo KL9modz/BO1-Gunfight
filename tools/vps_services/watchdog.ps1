@@ -33,7 +33,7 @@
 
 [CmdletBinding()]
 param(
-    [string[]] $Tasks            = @('GF-GameServer', 'GF-JoinNotify', 'GF-RconPanel', 'GF-StatusService', 'GF-ConnLogger'),
+    [string[]] $Tasks            = @('GF-GameServer', 'GF-JoinNotify', 'GF-RconPanel', 'GF-StatusService', 'GF-ConnLogger', 'GF-DiscordBot'),
     # The scheduled task that runs the game-server launch bat. Its process is the cmd.exe/bat
     # WRAPPER, which survives the game exe's death, so its State is a LIE about server health -
     # the process/RCON checks below are the truth. Named separately so it can be bounced directly.

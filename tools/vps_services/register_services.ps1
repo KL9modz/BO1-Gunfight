@@ -88,6 +88,15 @@ $services = @(
        Args = ''
        RequiresConfig = (Join-Path $toolsRoot 'notify\config.json')
        Periodic = $true }
+    @{ Name = 'GF-DiscordBot'
+       Script = Join-Path $toolsRoot 'discord_bot\run_bot.ps1'
+       # The Discord bot: slash commands for ops + the Discord->game chat relay. A PS shim around
+       # `node bot.js` purely so it rides this flight recorder - a Node task invoked directly would
+       # lose its terminating error to a hidden window.
+       # NOT Periodic: it is a long-running gateway client, like the panel, so the AtStartup trigger
+       # plus RestartOnFailure is the right shape.
+       Args = ''
+       RequiresConfig = (Join-Path $toolsRoot 'discord_bot\config.local.json') }
     @{ Name = 'GF-DiscordStatus'
        Script = Join-Path $toolsRoot 'notify\discord_status.ps1'
        # Rewrites ONE Discord message with live status (it never posts a second one). Reads only

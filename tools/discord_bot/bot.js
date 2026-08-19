@@ -37,12 +37,12 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+// ⚠ THE shared status parser, same module the panel and join-notify use. Its column handling is
+// hard-won (bot names containing spaces, signed-16-bit negative ports, unreadable rows that must
+// never be CLAIMED as bots) - a fresh regex here would re-earn those bugs one at a time.
+const { parseStatusText, stripColors } = require('../status_parse.js');
 
 const API = 'https://discord.com/api/v10';
-// GUILDS(1) | GUILD_MESSAGES(1<<9) | MESSAGE_CONTENT(1<<15). MESSAGE_CONTENT is a PRIVILEGED intent
-// and must be enabled in the Developer Portal, or the gateway closes with 4014 on identify. It is
-// needed only by the relay: slash commands carry their own payload.
-const INTENTS = 1 | (1 << 9) | (1 << 15);
 
 // ── config ─────────────────────────────────────────────────────────────────────────────────────
 const CFG_PATH = path.join(__dirname, 'config.local.json');
@@ -50,22 +50,42 @@ if (!fs.existsSync(CFG_PATH)) {
   console.error(`FATAL: ${CFG_PATH} not found - copy config.example.json and fill it in.`);
   process.exit(1);
 }
-const cfg = JSON.parse(fs.readFileSync(CFG_PATH, 'utf8'));
+// ⚠ Strip a BOM before parsing. PowerShell's Set-Content -Encoding UTF8 and Windows Notepad both
+// write UTF-8 WITH a byte-order mark, and JSON.parse rejects it with a syntax error that points at
+// an invisible character - which is exactly how this file first failed to start. Any hand edit on
+// this box can reintroduce it, so the reader forgives it rather than the human remembering.
+const cfg = JSON.parse(fs.readFileSync(CFG_PATH, 'utf8').replace(/^\uFEFF/, ''));
 for (const k of ['token', 'applicationId', 'guildId', 'adminRoleId']) {
   if (!cfg[k]) { console.error(`FATAL: config.local.json is missing "${k}"`); process.exit(1); }
 }
 const PANEL_PORT = cfg.panelPort || 3000;
 const RCON_HOST  = cfg.rconHost  || '127.0.0.1';
 const RCON_PORT  = cfg.rconPort  || 28960;
+// ⚠ The privileged MESSAGE_CONTENT intent is requested CONDITIONALLY. Identifying with an intent
+// that is not enabled in the Developer Portal closes the gateway with 4014, which is fatal here -
+// so a bot with no relay configured must not ask for it at all. That keeps the ops half working on
+// a fresh install before anyone has touched the portal toggle, and it is least-privilege besides:
+// we ask to read message text only while a relay channel actually exists.
+// GUILDS(1) | GUILD_MESSAGES(1<<9) | MESSAGE_CONTENT(1<<15)
+const RELAY_ON = Boolean(cfg.relayChannelId);
+const INTENTS  = 1 | (RELAY_ON ? (1 << 9) | (1 << 15) : 0);
+
 
 // The rcon password is READ FROM dedicated.cfg, never stored here: one copy of a credential is one
 // place to rotate, and tools/rotate_secrets.ps1 already knows about that file. Re-read per call so
 // a rotation lands without restarting the bot.
 function rconPassword() {
-  const t5 = process.env.LOCALAPPDATA
-    ? path.join(process.env.LOCALAPPDATA, 'Plutonium', 'storage', 't5')
-    : null;
-  const cfgFile = cfg.dedicatedCfgPath || (t5 && path.join(t5, 'dedicated.cfg'));
+  // ⚠ Resolve the T5 root from THIS FILE'S location, not from %LOCALAPPDATA%. A scheduled task
+  // does not necessarily run as the profile that owns the storage tree (GF-GameServer has to pin
+  // LOCALAPPDATA explicitly for exactly this reason), and the env-derived path silently produced
+  // "no rcon password found" the first time this ran as a service. The bot lives at
+  // ...\t5\mods\mp_gunfight\tools\discord_bot, so t5 is four levels up - true for any account.
+  const t5 = path.resolve(__dirname, '..', '..', '..', '..');
+  const envT5 = process.env.LOCALAPPDATA
+    ? path.join(process.env.LOCALAPPDATA, 'Plutonium', 'storage', 't5') : null;
+  const candidates = [cfg.dedicatedCfgPath, path.join(t5, 'dedicated.cfg'),
+                      envT5 && path.join(envT5, 'dedicated.cfg')].filter(Boolean);
+  const cfgFile = candidates.find((f) => { try { return fs.existsSync(f); } catch { return false; } }) || candidates[0];
   try {
     const m = fs.readFileSync(cfgFile, 'utf8').match(/^\s*set\s+rcon_password\s+"?([^"\r\n]+)"?/mi);
     return m ? m[1].trim() : '';
@@ -121,6 +141,18 @@ const MAPS = {
   zoo: 'mp_zoo', drivein: 'mp_drivein', hangar18: 'mp_area51', hazard: 'mp_golfcourse', silo: 'mp_silo',
 };
 
+
+// Reverse of MAPS, built once: the game reports mp_mountain, players know it as Summit. Same table
+// the website and the alerts use, kept here as one line rather than a second hand-typed list.
+const DISPLAY = { array: 'Array', cracked: 'Cracked', crisis: 'Crisis', firingrange: 'Firing Range',
+  grid: 'Grid', hanoi: 'Hanoi', havana: 'Havana', jungle: 'Jungle', launch: 'Launch', nuketown: 'Nuketown',
+  radiation: 'Radiation', summit: 'Summit', villa: 'Villa', wmd: 'WMD', berlinwall: 'Berlin Wall',
+  discovery: 'Discovery', kowloon: 'Kowloon', stadium: 'Stadium', convoy: 'Convoy', hotel: 'Hotel',
+  stockpile: 'Stockpile', zoo: 'Zoo', drivein: 'Drive-In', hangar18: 'Hangar 18', hazard: 'Hazard', silo: 'Silo' };
+const mapName = (id) => {
+  const key = Object.keys(MAPS).find((k) => MAPS[k] === id);
+  return key ? DISPLAY[key] : (id || "unknown map");   // unknown id falls through to the raw mp_*
+};
 const COMMANDS = {
   status: {
     admin: false, description: 'Who is on, which map, what score',
@@ -128,13 +160,17 @@ const COMMANDS = {
       const st = await panelRcon('gf_state', false);
       const sv = await panelRcon('status', false);
       if (!st.ok && !sv.ok) return 'Server did not answer (is it up?).';
-      const f = (st.response || '').match(/gf_state.*?"([^"]*)"/);
+      const s = parseStatusText(sv.response || '');
+      // bot === null means the row could not be classified; it is deliberately NOT counted as a bot,
+      // the same rule the panel and conn_logger follow.
+      const humans = s.players.filter((p) => p.bot === false).length;
+      const bots   = s.players.filter((p) => p.bot === true).length;
+      const f = (st.response || "").match(/gf_state.*?"([^"]*)"/);
       const parts = f ? f[1].split(':') : [];
-      const map = (sv.response || '').match(/map:\s*(\S+)/i);
-      const humans = ((sv.response || '').match(/\n\s*\d+\s+/g) || []).length;
+      const who = `${humans} player${humans === 1 ? "" : "s"}${bots ? ` + ${bots} bots` : ""}`;
       return parts.length >= 5
-        ? `**${map ? map[1] : 'unknown map'}** - round ${parts[2]}, Allies ${parts[0]} - ${parts[1]} Axis, ${humans} connected`
-        : `**${map ? map[1] : 'unknown map'}** - ${humans} connected`;
+        ? `**${mapName(s.map)}** - round ${parts[2]}, Allies ${parts[0]} - ${parts[1]} Axis, ${who}`
+        : `**${mapName(s.map)}** - ${who}`;
     },
   },
   players: {
@@ -142,11 +178,19 @@ const COMMANDS = {
     run: async () => {
       const r = await panelRcon('status', false);
       if (!r.ok) return 'Server did not answer.';
-      const rows = (r.response || '').split(/\r?\n/).slice(3)
-        .map((l) => l.match(/^\s*\d+\s+(-?\d+)\s+\S+\s+(.+?)\s{2,}/))
-        .filter(Boolean)
-        .map((m) => `\`${m[2].replace(/\^\d/g, '').trim()}\` (${m[1]})`);
-      return rows.length ? `**${rows.length} connected**\n${rows.join('\n')}` : 'Nobody is on right now.';
+      const s = parseStatusText(r.response || "");
+      if (!s.players.length) return 'Nobody is on right now.';
+      // TICK rather than escaped backticks inside a template literal: the escaping is a trap in
+      // every shell that edits this file, and the result is identical.
+      const TICK = String.fromCharCode(96);
+      const line = (p) => TICK + stripColors(p.name) + TICK
+        + (p.score !== null ? ' - ' + p.score : '')
+        + (p.ping !== null ? ' (' + p.ping + 'ms)' : '')
+        + (p.bot === true ? ' *[bot]*' : '');
+      const humans = s.players.filter((p) => p.bot !== true).map(line);
+      const bots   = s.players.filter((p) => p.bot === true).map(line);
+      return `**${mapName(s.map)}** - ${humans.length} player${humans.length === 1 ? "" : "s"}` +
+        `${bots.length ? " + " + bots.length + " bots" : ""}\n${humans.concat(bots).join("\n")}`;
     },
   },
   say: {
