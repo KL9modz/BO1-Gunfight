@@ -40,9 +40,10 @@
  * may not name each user, because one drag can move eight people. So an entry credits up to `count`
  * matching changes to that actor, consuming a slot per match, within ATTRIB_MS.
  *
- * ⚠ Without the permission the distinction is unknowable, so the module PROBES at startup and
- * changes its wording rather than lying: with access an unattributed change is provably self-
- * inflicted and says so; without it the line stays a neutral "left".
+ * ⚠ Without the permission, "by @who" can never appear - so the module PROBES at startup and says
+ * which mode it is in IN THE SERVICE LOG, not in the channel. The message text is the same either
+ * way: a plain "left"/"moved" already reads as the self case, and only gains an actor when one is
+ * proven. A missing permission therefore costs detail, never accuracy.
  */
 
 // ⚠ These two decide whether a line is INSTANT or merely fast, so they are not arbitrary.
@@ -141,18 +142,19 @@ module.exports = function voiceLog(ctx) {
   }
 
   function render(ev) {
-    // "(themselves)" is only assertable when we can see the audit log AND nothing claimed this
-    // event. A line claimed by a quiet actor is neither attributed nor self-inflicted.
-    const self = canAttribute && !ev.actor && !ev.byQuietActor;
+    // The plain wording IS the self case - no "(themselves)" tag. A line says what happened, and
+    // only gains "by @who" if an audit entry proves someone else caused it (and that actor is not
+    // quiet). Nice property: the text no longer depends on whether we can read the audit log, so a
+    // missing permission degrades to "less detail" rather than "different sentences".
     if (ev.kind === 'joined') return `🔊 **${ev.who}** joined ${chan(ev.now)}`;
     if (ev.kind === 'left') {
       return ev.actor
         ? `⛔ **${ev.who}** was disconnected from ${chan(ev.prev)} by ${actorTag(ev.actor)}`
-        : `👋 **${ev.who}** left ${chan(ev.prev)}${self ? ' (themselves)' : ''}`;
+        : `👋 **${ev.who}** left ${chan(ev.prev)}`;
     }
     return ev.actor
       ? `↔️ **${ev.who}** was moved ${chan(ev.prev)} → ${chan(ev.now)} by ${actorTag(ev.actor)}`
-      : `➡️ **${ev.who}** moved ${chan(ev.prev)} → ${chan(ev.now)}${self ? ' (themselves)' : ''}`;
+      : `➡️ **${ev.who}** moved ${chan(ev.prev)} → ${chan(ev.now)}`;
   }
 
   const bodyOf = (b) => b.events.map(render).join('\n');
