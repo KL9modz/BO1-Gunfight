@@ -46,7 +46,7 @@ $script:JoinColor = 0xE67E22
 # be a link (raw text, no markdown, no anchors), while an embed DESCRIPTION does render markdown,
 # so [label](url) is clickable there. The embed `url` (whole title blue and clickable) is
 # deliberately NOT used as well: two link affordances on a three-line card reads as clutter.
-$script:JoinLink = '**[Play for free](https://gunfight.us)**'
+$script:JoinLink = "**Play for free** $([char]0x2794) [gunfight.us](https://gunfight.us/)"
 
 # Send-GfNtfy: the shared ntfy sender (JSON publish, unicode-safe titles).
 . (Join-Path $PSScriptRoot '..\ntfy.ps1')
