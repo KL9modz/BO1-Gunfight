@@ -19,7 +19,6 @@ wins** takes the match.
 - Migrate to new host
 - Map/mode vote
 - Website screenshots
-- Add more fun mods from other mod menus
 - Create alt modes: Team Sharpshooter, Team Gun Game
 - **Retail-Steam BO1 port: CLOSED 2026-08-14 — the working server binary is unobtainable, and the
   one person who could ask already did and was refused.** Answered directly by **Classixz**
