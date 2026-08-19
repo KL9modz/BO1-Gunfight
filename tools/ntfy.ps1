@@ -23,24 +23,39 @@ $script:GfNtfyPriority = @{ min = 1; low = 2; default = 3; high = 4; max = 5 }
 # parked here rather than thrown.
 $script:GfNtfyLastError = ''
 
-# Reads the shared notify config (tools\notify\config.json) - the same topic every service
-# pushes to. Returns $null when it's absent/topicless, which every caller must treat as
-# "cannot alert", never as fatal.
+# Reads the shared notify config (tools\notify\config.json) - the transports every service
+# pushes to. Returns $null when it's absent or configures NO transport at all, which every
+# caller must treat as "cannot alert", never as fatal.
+# ⚠ The gate is "any transport", NOT "has an ntfyTopic". It used to be the latter, which would
+# have made a Discord-ONLY box return $null here and silently never alert - the config would
+# look fine and nothing would ever arrive. Adding a transport must never be able to do that
+# again: gate on the union.
 function Get-GfNtfyConfig {
     param([string]$Path)
 
     if (-not (Test-Path $Path)) { return $null }
     try {
         $j = Get-Content $Path -Raw | ConvertFrom-Json
-        if (-not $j.ntfyTopic) { return $null }
         $server = 'https://ntfy.sh'
         if ($j.ntfyServer) { $server = ([string]$j.ntfyServer).TrimEnd('/') }
-        return [pscustomobject]@{
-            ntfyTopic  = [string]$j.ntfyTopic
-            ntfyServer = $server
-            ntfyToken  = [string]$j.ntfyToken
-            serverName = $(if ($j.serverName) { [string]$j.serverName } else { 'Gunfight' })
+        $cfg = [pscustomobject]@{
+            ntfyTopic       = [string]$j.ntfyTopic
+            ntfyServer      = $server
+            ntfyToken       = [string]$j.ntfyToken
+            serverName      = $(if ($j.serverName) { [string]$j.serverName } else { 'Gunfight' })
+            discordWebhooks = $j.discordWebhooks
         }
+        $hasNtfy = -not [string]::IsNullOrWhiteSpace($cfg.ntfyTopic)
+        # ⚠ ANY channel counts, not just 'default'. Checking only the default would return $null
+        # for a config that set nothing but "alerts" - a live, valid setup reported as no-transport.
+        $hasDiscord = $false
+        if ($null -ne $cfg.discordWebhooks) {
+            foreach ($p in $cfg.discordWebhooks.PSObject.Properties) {
+                if (-not [string]::IsNullOrWhiteSpace($p.Value)) { $hasDiscord = $true; break }
+            }
+        }
+        if (-not ($hasNtfy -or $hasDiscord)) { return $null }
+        return $cfg
     }
     catch { return $null }
 }
@@ -76,6 +91,221 @@ function Send-GfNtfy {
     }
     catch {
         $script:GfNtfyLastError = $_.Exception.Message
+        return $false
+    }
+}
+
+# ---- Discord ----------------------------------------------------------------------------
+# Transport #2. WEBHOOKS, deliberately not a bot: a webhook is one HTTPS POST to a per-channel
+# URL - no gateway connection to hold open, no bot process to supervise, no token refresh, and
+# no privileged intents. It is one-way (post only), which is exactly what an alert feed is. A
+# bot only becomes necessary for READING Discord (slash commands, live presence, roles).
+#
+# ⚠ The webhook URL IS the credential - anyone holding it can post to that channel as the
+# server. It lives in the gitignored tools\notify\config.json alongside the ntfy topic, and the
+# pre-commit hook blocks a discord.com/api/webhooks literal the same way it blocks passwords.
+#
+# ⚠⚠ allowed_mentions is pinned to parse:[] and NEVER relaxed. Alert bodies carry PLAYER NAMES,
+# and a player can rename themselves "@everyone" - without this, a join alert would ping the
+# whole Discord. Same class of injection as the rcon-command sanitising in gf_bridgeAdminSay.
+# Blocking it at the API layer beats escaping, because it also covers @here and role IDs.
+
+# ntfy tag shortcodes -> real unicode. Discord renders :shortcode: in MESSAGE content but not
+# reliably inside an embed, so the badge is converted rather than passed through. Unknown tags
+# are dropped (never rendered as literal ":foo:").
+$script:GfDiscordEmoji = @{
+    rotating_light         = [char]::ConvertFromUtf32(0x1F6A8)
+    robot                  = [char]::ConvertFromUtf32(0x1F916)
+    white_check_mark       = [char]::ConvertFromUtf32(0x2705)
+    information_source     = [char]::ConvertFromUtf32(0x2139)
+    arrows_counterclockwise = [char]::ConvertFromUtf32(0x1F504)
+    warning                = [char]::ConvertFromUtf32(0x26A0)
+    # Player-activity vocabulary. These arrive POSITIONALLY (join-notify passes Count-Tag's
+    # return, not a -Tags literal), which is how they went unmapped while the drift guard
+    # below reported full coverage: ntfy renders a shortcode natively, so the badge showed on
+    # the phone and silently vanished from the Discord embed.
+    bust_in_silhouette     = [char]::ConvertFromUtf32(0x1F464)
+    busts_in_silhouette    = [char]::ConvertFromUtf32(0x1F465)
+    wave                   = [char]::ConvertFromUtf32(0x1F44B)
+    # join-notify's own lifecycle set, positional for the same reason and unmapped for the same
+    # reason. red/green are its poll-failure EDGE pair, so on Discord those two were the least
+    # affordable to lose: down and back-up read identically without the badge.
+    red_circle             = [char]::ConvertFromUtf32(0x1F534)
+    green_circle           = [char]::ConvertFromUtf32(0x1F7E2)
+    green_heart            = [char]::ConvertFromUtf32(0x1F49A)
+    satellite_antenna      = [char]::ConvertFromUtf32(0x1F4E1)
+    zzz                    = [char]::ConvertFromUtf32(0x1F4A4)
+}
+
+# Embed stripe colour by priority. Recovery is special-cased by the caller's tag, because
+# "server is back" arrives at default priority and should read green, not grey.
+$script:GfDiscordColor = @{ min = 0x95A5A6; low = 0x95A5A6; default = 0x5865F2; high = 0xE67E22; urgent = 0xED4245; max = 0xED4245 }
+
+$script:GfDiscordLastError = ''
+
+# Pick the webhook for a category, falling back to 'default'. Returns '' when nothing matches -
+# which is the normal state for a box that has not configured Discord at all.
+function Get-GfDiscordWebhook {
+    param($Config, [string]$Category = 'default')
+    if ($null -eq $Config -or $null -eq $Config.discordWebhooks) { return '' }
+    $map = $Config.discordWebhooks
+    foreach ($key in @($Category, 'default')) {
+        if ([string]::IsNullOrWhiteSpace($key)) { continue }
+        $v = $null
+        # PSCustomObject (from ConvertFrom-Json) and Hashtable are both plausible here.
+        if ($map -is [System.Collections.IDictionary]) { if ($map.Contains($key)) { $v = $map[$key] } }
+        elseif ($map.PSObject.Properties.Name -contains $key) { $v = $map.$key }
+        if (-not [string]::IsNullOrWhiteSpace($v)) { return [string]$v }
+    }
+    return ''
+}
+
+# One webhook POST. Returns $true/$false and never throws - an alert transport that can take a
+# service down is worse than no alert. $Category selects the channel (joins / alerts / security).
+# $Color overrides the priority stripe when a caller owns its own colour language (joins are
+# always dark green, whatever priority the ntfy push rides at). $Prefix is a DISCORD-ONLY first
+# line of the description - it exists so a Discord mention never reaches the ntfy push, where
+# <@123…> would render as literal junk on a phone.
+function Send-GfDiscord {
+    param($Config, [string]$Title, [string]$Message, [string]$Priority = 'default',
+          [string[]]$Tags = @(), [string]$Category = 'default', [int]$Color = 0,
+          [string]$Prefix = '')
+
+    $script:GfDiscordLastError = ''
+    $url = Get-GfDiscordWebhook -Config $Config -Category $Category
+    if ([string]::IsNullOrWhiteSpace($url)) { $script:GfDiscordLastError = 'no webhook configured'; return $false }
+
+    $badge = ''
+    foreach ($t in @($Tags)) { if ($script:GfDiscordEmoji.ContainsKey($t)) { $badge += $script:GfDiscordEmoji[$t] + ' ' } }
+    $color = 0x5865F2
+    if ($script:GfDiscordColor.ContainsKey($Priority)) { $color = $script:GfDiscordColor[$Priority] }
+    # A recovery reads green whatever its priority - it is the one case where the TAG carries the
+    # severity and the priority does not (recoveries are sent at 'default' so they do not buzz).
+    if (@($Tags) -contains 'white_check_mark') { $color = 0x57F287 }
+    # Explicit LAST: a caller that names a colour has said the most about its own alert.
+    if ($Color -gt 0) { $color = $Color }
+
+    $embed = [ordered]@{
+        title       = (($badge + $Title).Trim())
+        description = $(if ($Prefix) { ([string]$Prefix + "`n" + [string]$Message).Trim() } else { [string]$Message })
+        color       = $color
+        footer      = @{ text = $(if ($Config.serverName) { [string]$Config.serverName } else { 'Gunfight' }) }
+        timestamp   = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+    }
+    $payload = [ordered]@{
+        embeds           = @($embed)
+        allowed_mentions = @{ parse = @() }   # see the header - never relax this
+    }
+    # Urgent also goes in `content`: embed text is thin in a mobile push preview, and an urgent
+    # alert is exactly the one a phone should be able to read without opening the app.
+    if ($Priority -eq 'urgent' -or $Priority -eq 'max') { $payload['content'] = (($badge + $Title).Trim()) }
+
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $payload -Compress -Depth 6))
+        Invoke-RestMethod -Uri $url -Method Post -Body $bytes `
+            -ContentType 'application/json; charset=utf-8' -TimeoutSec 15 | Out-Null
+        return $true
+    }
+    catch {
+        # 429 = webhook rate limit (5 req / 2s per webhook). Report it and MOVE ON: a retry loop
+        # inside a watchdog tick would stall the very health check that is trying to alert.
+        $script:GfDiscordLastError = $_.Exception.Message
+        return $false
+    }
+}
+
+# ---- The fan-out ------------------------------------------------------------------------
+# THE entry point every service should call. Sends to every configured transport and reports
+# per-transport results, so a box with only ntfy, only Discord, or both all work unchanged.
+# ⚠ Independent try/catch per transport: Discord being down must never suppress the ntfy push
+# that reaches a phone, and vice versa.
+# $DiscordTitle lets the two transports disagree about the headline. They are different surfaces:
+# an ntfy push is a phone notification read in isolation, so it states everything; a Discord card
+# sits in a scrolling channel next to its neighbours, where the same words are clutter. Empty =
+# both transports use $Title, which is what every other caller wants.
+function Send-GfAlert {
+    param($Config, [string]$Title, [string]$Message, [string]$Priority = 'default',
+          [string[]]$Tags = @(), [string]$Category = 'default', [int]$DiscordColor = 0,
+          [string]$DiscordPrefix = '', [string]$DiscordTitle = '')
+
+    $ntfyOk = $false; $ntfyTried = $false
+    if ($null -ne $Config -and $Config.ntfyTopic) {
+        $ntfyTried = $true
+        $ntfyOk = Send-GfNtfy -Config $Config -Title $Title -Message $Message -Priority $Priority -Tags $Tags
+    }
+    $dscOk = $false; $dscTried = $false
+    if (-not [string]::IsNullOrWhiteSpace((Get-GfDiscordWebhook -Config $Config -Category $Category))) {
+        $dscTried = $true
+        $dTitle = $(if ($DiscordTitle) { $DiscordTitle } else { $Title })
+        $dscOk = Send-GfDiscord -Config $Config -Title $dTitle -Message $Message -Priority $Priority -Tags $Tags -Category $Category -Color $DiscordColor -Prefix $DiscordPrefix
+    }
+    return [pscustomobject]@{
+        ntfy        = $ntfyOk
+        discord     = $dscOk
+        anySent     = ($ntfyOk -or $dscOk)
+        # "configured but every configured transport failed" - the only state worth logging loudly.
+        allFailed   = (($ntfyTried -or $dscTried) -and -not ($ntfyOk -or $dscOk))
+        # Errors only for transports actually ATTEMPTED - the module-scope Last* vars persist
+        # across calls, so reporting them unconditionally would resurrect a stale message from
+        # an earlier send and log a failure for a transport this box does not even have.
+        ntfyError    = $(if ($ntfyTried) { $script:GfNtfyLastError } else { '' })
+        discordError = $(if ($dscTried) { $script:GfDiscordLastError } else { '' })
+    }
+}
+
+# ---- Live-card transport (create once, then edit in place) --------------------------------
+# Send-GfDiscord above is fire-and-forget: it posts and forgets the message. A STATUS CARD is
+# the opposite - one message that is rewritten forever, so the channel does not fill with a new
+# "4 players online" every few minutes. Two extra calls make that possible:
+#   New-GfDiscordMessage : POST ?wait=true, which makes Discord RETURN the created message
+#                          (without ?wait it answers 204 with no body and the id is lost forever)
+#   Set-GfDiscordMessage : PATCH .../messages/<id>, the in-place rewrite
+# ⚠ A webhook CANNOT pin (that needs a bot token with MANAGE_MESSAGES) - pin it by hand once.
+
+# Returns the new message id, or '' on failure. $Embed is a hashtable in Discord embed shape.
+function New-GfDiscordMessage {
+    param($Config, $Embed, [string]$Category = 'default')
+    $script:GfDiscordLastError = ''
+    $url = Get-GfDiscordWebhook -Config $Config -Category $Category
+    if ([string]::IsNullOrWhiteSpace($url)) { $script:GfDiscordLastError = 'no webhook configured'; return '' }
+    $payload = [ordered]@{ embeds = @($Embed); allowed_mentions = @{ parse = @() } }
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $payload -Compress -Depth 8))
+        # ?wait=true is what turns a 204-no-body into the created message object.
+        $sep = $(if ($url.Contains('?')) { '&' } else { '?' })
+        $res = Invoke-RestMethod -Uri ($url + $sep + 'wait=true') -Method Post -Body $bytes `
+                   -ContentType 'application/json; charset=utf-8' -TimeoutSec 15
+        if ($res -and $res.id) { return [string]$res.id }
+        $script:GfDiscordLastError = 'no message id in response'
+        return ''
+    }
+    catch { $script:GfDiscordLastError = $_.Exception.Message; return '' }
+}
+
+# Rewrites an existing message. Returns $true, or $false with $script:GfDiscordLastError set.
+# ⚠ A 404 here is EXPECTED and RECOVERABLE, not an error to alert on: it means the message was
+# deleted in Discord (or the webhook was rotated). Callers detect it via -MessageGone and create
+# a fresh card rather than going permanently silent.
+function Set-GfDiscordMessage {
+    param($Config, [string]$MessageId, $Embed, [string]$Category = 'default', [ref]$MessageGone)
+    $script:GfDiscordLastError = ''
+    if ($MessageGone) { $MessageGone.Value = $false }
+    $url = Get-GfDiscordWebhook -Config $Config -Category $Category
+    if ([string]::IsNullOrWhiteSpace($url) -or [string]::IsNullOrWhiteSpace($MessageId)) {
+        $script:GfDiscordLastError = 'no webhook or no message id'; return $false
+    }
+    $payload = [ordered]@{ embeds = @($Embed); allowed_mentions = @{ parse = @() } }
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $payload -Compress -Depth 8))
+        Invoke-RestMethod -Uri ($url + '/messages/' + $MessageId) -Method Patch -Body $bytes `
+            -ContentType 'application/json; charset=utf-8' -TimeoutSec 15 | Out-Null
+        return $true
+    }
+    catch {
+        $script:GfDiscordLastError = $_.Exception.Message
+        $code = $null
+        try { $code = [int]$_.Exception.Response.StatusCode } catch { }
+        if ($code -eq 404 -and $MessageGone) { $MessageGone.Value = $true }
         return $false
     }
 }

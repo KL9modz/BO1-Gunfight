@@ -41,6 +41,10 @@ param(
     [switch] $Check,                # report only, copy nothing
     [switch] $Zip,
     [switch] $IncludeGeoCache,      # PII; regenerates on its own. Opt in only for the warm cache.
+    # The hitch baseline is ~6MB extracted from a 221MB log, and it is a DERIVED DIAGNOSTIC, not
+    # state. Worth every byte for a migration (it is the acceptance test for the new box) and pure
+    # noise for the daily backup push, where it would be 93% of every commit forever.
+    [switch] $SkipHitchBaseline,
     # NOT common.ps1's Resolve-T5Root/Resolve-ModRoot. Those derive the tree from the SCRIPT'S OWN
     # location - correct for a script running inside the deployed mods folder, WRONG here: carry.ps1
     # is normally run from the repo clone (C:\gfdeploy\BO1-Gunfight), where they resolve to "C:\" and
@@ -92,6 +96,14 @@ $items = @(
      note='Trusted ssh key fingerprints/users for the security watcher. Review before reusing - it pins what counts as "known".' }
   @{ n='web.config'; src=(Join-Path $WebRoot 'web.config'); sub='iis'; cat='CONFIG'; req=$true
      note='Box-owned, deliberately excluded from deploy.ps1 -Web /MIR. Carries the HTTPS redirect, HSTS and GET/HEAD-only rules. CHECK the CSP allows script-src/connect-src or status.html cannot load its scripts.' }
+  @{ n='bots.txt'; src=(Join-Path $t5 'bots.txt'); sub='server'; cat='CONFIG'; req=$false
+     note='Bot display names + the orange ^<bot^7 clantag, one "name,clantag" per line. Native Plutonium, box-local, ABOVE the mod folder so no deploy ever ships it - which is exactly why it must be carried. Read at PROCESS START: a change needs a bootstrapper restart, not a map_restart. Without it the new box shows Plutonium internal random bot names.' }
+  @{ n='gamestats.local.json'; src=(Join-Path $t5 'logs\gamestats.local.json'); sub='data'; cat='DATA'; req=$false
+     note='Every accumulated GF_STAT/GF_MATCH bucket - the Combat leaderboard IS this file, and nothing else holds it (games_mp.log rotates and is not carried). It also stores the tail byte-offset + log identity, so restoring it prevents the aggregator re-reading and double-counting a log it already ingested. Losing it silently resets all combat history to zero.' }
+  @{ n='players.local.json'; src=(Join-Path $modRoot 'tools\players.local.json'); sub='tools'; cat='PII'; req=$false
+     note='Player GUID -> Discord user id links, used by GF-JoinNotify to name a known player in the join card. Keyed by GUID, hence PII and hence gitignored. Rebuildable only by asking every player for their Discord id again.' }
+  @{ n='discord_status.local.json'; src=(Join-Path $modRoot 'tools\notify\discord_status.local.json'); sub='notify'; cat='CONFIG'; req=$false
+     note='The message id of the live status card GF-DiscordStatus rewrites in place. Carry it ONLY if the new box posts to the SAME channel: without it the service posts a fresh card and the old one is orphaned (a webhook cannot delete a message it did not create in that run). Harmless to omit - you just re-pin the new card.' }
   @{ n='administrators_authorized_keys'; src=(Join-Path $SshRoot 'administrators_authorized_keys'); sub='ssh'; cat='CONFIG'; req=$true
      note='For ADMIN accounts Windows OpenSSH ignores ~/.ssh/authorized_keys and reads ONLY this file. Restore its ACLs on the new box (Administrators + SYSTEM only) or sshd refuses it.' }
   @{ n='sshd_config'; src=(Join-Path $SshRoot 'sshd_config'); sub='ssh'; cat='REF'; req=$false
@@ -167,7 +179,9 @@ if ($dayFiles.Count -eq 0) {
 
 # --- GF_HITCH baseline: extract, never copy the whole log -------------------------
 $gml = Join-Path $modRoot 'logs\games_mp.log'
-if (Test-Path $gml) {
+if ($SkipHitchBaseline) {
+    Report 'skipped' 'DATA' 'GF_HITCH baseline' '(-SkipHitchBaseline)'
+} elseif (Test-Path $gml) {
     $sz = (Get-Item $gml).Length/1MB
     Report $(if ($Check) { 'ok' } else { 'EXTRACT' }) 'DATA' 'GF_HITCH baseline' ("from games_mp.log, {0:N0} MB" -f $sz)
     if (-not $Check) {

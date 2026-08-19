@@ -169,6 +169,23 @@ if [ -n "$bad_dg" ]; then
   printf '%s\n' "$bad_dg" | sort -u >&2
 fi
 
+# 3b) Discord WEBHOOK URLs are CREDENTIALS, not links. Anyone holding one can post to
+#     that channel as the server, and unlike the invite rule above there is no canonical
+#     safe value - EVERY real webhook is a secret. They belong in the gitignored
+#     tools/notify/config.json; a literal on an added line is a leak, not a typo.
+#     Matches both hostnames Discord issues (discord.com and the legacy discordapp.com)
+#     plus an optional /v10-style version segment.
+#     ⚠ The report re-matches WITHOUT the token group, so the hook never echoes the secret
+#     it is complaining about - a leak in the error message is still a leak.
+wh_re='(discord|discordapp)\.com/api(/v[0-9]+)?/webhooks/[0-9]+/[A-Za-z0-9_-]+'
+if printf '%s\n' "$added" | grep -Eiq "$wh_re"; then
+  note "a Discord WEBHOOK URL is staged - that is a credential, not a link:"
+  printf '%s\n' "$added" | grep -oiE '(discord|discordapp)\.com/api(/v[0-9]+)?/webhooks/[0-9]+' \
+    | sed 's|$|/<TOKEN-REDACTED>|' | sort -u >&2
+  echo "  -> rotate it: Discord > Channel > Integrations > Webhooks > delete + recreate," >&2
+  echo "     then put the new URL in tools/notify/config.json (gitignored)." >&2
+fi
+
 # 4) Public IP literals. A pasted `status` reply once put a third party's real IP
 #    into docs/, and the RDP/SSH firewall runbook published the owner's home egress
 #    IP — the two worst leaks in this repo, and neither is a "secret" any password

@@ -50,6 +50,8 @@ function Get-FunctionText {
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-ConnectCount')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Format-Ordinal')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Format-ConnectCount')))
+. ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinTitleDiscord')))
+. ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinTitleNtfy')))
 
 Describe "Resolve-ServiceImagePath (security_watch)" {
     It "resolves a %SystemRoot%-relative path (the KslD shape)" {
@@ -237,5 +239,177 @@ Describe "Format-Ordinal / Format-ConnectCount (join-notify)" {
         Assert-Eq (Format-ConnectCount 7) '7th connect' "N takes an ordinal"
         Assert-Eq (Format-ConnectCount $null) '' "null = no bit"
         Assert-Eq (Format-ConnectCount 0) '' "0 = no bit"
+    }
+}
+
+Describe "watchdog check 1d (Claude RC) - the fail-safe structure, not the happy path" {
+    # This check can Stop/Start GF-ClaudeRC, which ends every live remote-control session on the
+    # box - including the one an operator may be watching it from. So the structural property
+    # worth pinning is not "does it detect a dead server" but "can it ever act on ABSENT EVIDENCE".
+    # Both guards below encode a decision that is invisible in the happy path and expensive to
+    # rediscover.
+    $wd = Join-Path $toolsRoot 'vps_services\watchdog.ps1'
+    $wdAst = [System.Management.Automation.Language.Parser]::ParseFile($wd, [ref]$null, [ref]$null)
+
+    It "the 'server gone' branch is gated behind the query-failed branch" {
+        $ifs = @($wdAst.FindAll({
+            param($n) $n -is [System.Management.Automation.Language.IfStatementAst]
+        }, $true) | Where-Object { $_.Extent.Text -match 'RC SERVER GONE' })
+        Assert-True ($ifs.Count -gt 0) "no if-statement mentions 'RC SERVER GONE' - check 1d renamed or removed?"
+
+        # The tightest enclosing if IS the whole elseif chain, so its FIRST clause must be the
+        # query-failed escape. If a later edit reorders these, the down branch becomes reachable
+        # on a failed/blind query and remediation kills live sessions for no reason.
+        $chain = $ifs | Sort-Object { $_.Extent.Text.Length } | Select-Object -First 1
+        $firstCond = $chain.Clauses[0].Item1.Extent.Text
+        Assert-True ($firstCond -match 'queryOk') `
+            "the first clause of the RC branch chain is [$firstCond] - it must be the query-failed escape, or a blind run can Stop/Start the RC task"
+
+        $conds = @($chain.Clauses | ForEach-Object { $_.Item1.Extent.Text })
+        Assert-True (($conds -join ' ') -match 'anyClaude') `
+            "no clause tests `$anyClaude - claude.exe running with unreadable command lines would be judged 'gone'"
+    }
+
+    It 'GF-ClaudeRC is not also in the plain $Tasks list' {
+        $paramBlock = $wdAst.ParamBlock
+        Assert-True ($null -ne $paramBlock) "watchdog.ps1 lost its param block"
+        $tasksParam = @($paramBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'Tasks' }) | Select-Object -First 1
+        Assert-True ($null -ne $tasksParam) "no `$Tasks parameter found"
+        # Check 1 (task State) and check 1d (process truth) would both fire on one outage. Two
+        # pushes for one event is how an alert channel gets muted.
+        Assert-False ($tasksParam.DefaultValue.Extent.Text -match 'ClaudeRC') `
+            "GF-ClaudeRC is in the `$Tasks default - it would double-alert alongside check 1d"
+    }
+}
+
+Describe "Get-JoinTitleDiscord (join-notify) - the Discord card format" {
+    # Format rules, and each one is a decision rather than a default:
+    #   * an empty-server join does NOT say "empty server" and does NOT carry a count - the alert
+    #     arriving IS that news, and "(1)" was noise
+    #   * once others are playing, the head count trails the MAP, reading as context instead of a
+    #     label stuck to the player's name
+    #   * the map is the public display name, resolved upstream by Get-GfMapName
+    It 'a join into an empty server carries neither count nor empty-server text' {
+        Assert-Eq (Get-JoinTitleDiscord 'fentfella' 'Havana' 1) 'fentfella joined  Havana' 'first join'
+    }
+    It 'a join with others already on puts the total AFTER the map name' {
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' 'Havana' 3) 'KL9 joined  Havana  (3)' 'later join'
+    }
+    It 'an unknown map degrades to name + count, never a dangling separator' {
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' '' 3) 'KL9 joined  (3)' 'no map, others on'
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' '' 1) 'KL9 joined'      'no map, alone'
+    }
+    It 'a count of 0 or a non-numeric count never renders a count' {
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' 'Zoo' 0) 'KL9 joined  Zoo' 'zero'
+    }
+}
+
+Describe "Get-GfPlayerLinks / Get-GfPlayerMention - the Discord link table" {
+    . (Join-Path $toolsRoot 'player_links.ps1')
+
+    function New-LinkFile($obj) {
+        $p = Join-Path $env:TEMP ("gf_links_" + [IO.Path]::GetRandomFileName() + ".json")
+        ($obj | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath $p -Encoding UTF8
+        return $p
+    }
+
+    It 'resolves a linked guid to a mention' {
+        $f = New-LinkFile @{ links = @{ '1234567' = @{ discordId = '987654321098765432'; note = 'someone' } } }
+        $links = Get-GfPlayerLinks $f
+        Assert-Eq (Get-GfPlayerMention $links '1234567') '<@987654321098765432>' 'linked guid'
+        Remove-Item $f -Force
+    }
+    It 'an unlinked guid, an empty id and a missing table all yield no mention' {
+        $f = New-LinkFile @{ links = @{ '1234567' = @{ discordId = ''; note = 'seeded, not filled in' } } }
+        $links = Get-GfPlayerLinks $f
+        # A seeded row is the NORMAL state of a pre-populated table - it must not become a mention
+        # of nobody, and must not throw.
+        Assert-Eq (Get-GfPlayerMention $links '1234567') '' 'empty discordId'
+        Assert-Eq (Get-GfPlayerMention $links '7654321') '' 'guid not in table'
+        Assert-Eq (Get-GfPlayerMention (Get-GfPlayerLinks (Join-Path $env:TEMP 'gf_no_such_links.json')) '1234567') '' 'missing file'
+        Remove-Item $f -Force
+    }
+    It 'sanitises the id to digits, so a bad value cannot smuggle in another mention' {
+        # The table is hand-edited; a stray paste like "everyone> <@&12345" would otherwise be
+        # interpolated straight into text Discord parses.
+        $f = New-LinkFile @{ links = @{ '1234567' = @{ discordId = 'everyone>  <@&11111>'; note = 'hostile' } } }
+        $m = Get-GfPlayerMention (Get-GfPlayerLinks $f) '1234567'
+        Assert-Eq $m '<@11111>' 'reduced to digits'
+        Assert-False ($m -match 'everyone') 'no everyone token survives'
+        Remove-Item $f -Force
+    }
+    It 'an unreadable table yields no links instead of throwing' {
+        $f = Join-Path $env:TEMP ("gf_links_bad_" + [IO.Path]::GetRandomFileName() + ".json")
+        '{ this is not json' | Set-Content -LiteralPath $f -Encoding UTF8
+        Assert-Eq (Get-GfPlayerLinks $f).Count 0 'bad json is empty, not fatal'
+        Remove-Item $f -Force
+    }
+    It 'picks up an EDIT without a restart (the mtime cache must not go stale)' {
+        $f = New-LinkFile @{ links = @{ '1234567' = @{ discordId = '111111111111111111'; note = 'before' } } }
+        Assert-Eq (Get-GfPlayerMention (Get-GfPlayerLinks $f) '1234567') '<@111111111111111111>' 'first read'
+        (@{ links = @{ '1234567' = @{ discordId = '222222222222222222'; note = 'after' } } } | ConvertTo-Json -Depth 5) |
+            Set-Content -LiteralPath $f -Encoding UTF8
+        (Get-Item $f).LastWriteTimeUtc = (Get-Item $f).LastWriteTimeUtc.AddSeconds(5)   # beat same-tick granularity
+        Assert-Eq (Get-GfPlayerMention (Get-GfPlayerLinks $f) '1234567') '<@222222222222222222>' 'edit picked up'
+        Remove-Item $f -Force
+    }
+}
+
+Describe "Get-JoinTitleNtfy (join-notify) - the PHONE format, deliberately not the Discord one" {
+    # The phone keeps the long-form wording on purpose: an ntfy push is read alone, with no
+    # surrounding channel to supply context, so it states the count and the empty-server case
+    # outright. This is a REGRESSION pin - the two formats diverged by request, and the natural
+    # instinct on next reading will be to "deduplicate" them back together.
+    It 'a first join keeps the empty-server wording and the count' {
+        Assert-Eq (Get-JoinTitleNtfy 'fentfella' 'Discovery' 1 $true) 'fentfella joined an empty server  (1)  Discovery' 'first join'
+    }
+    It 'a later join keeps the count BEFORE the map' {
+        Assert-Eq (Get-JoinTitleNtfy 'KL9' 'Discovery' 4 $false) 'KL9 joined  (4)  Discovery' 'later join'
+    }
+    It 'an unknown map just drops the suffix' {
+        Assert-Eq (Get-JoinTitleNtfy 'KL9' '' 4 $false) 'KL9 joined  (4)' 'no map'
+    }
+    It 'the phone and Discord titles genuinely differ (collapsing them is the regression)' {
+        Assert-False ((Get-JoinTitleNtfy 'KL9' 'Discovery' 4 $false) -eq (Get-JoinTitleDiscord 'KL9' 'Discovery' 4)) 'later join differs'
+        Assert-False ((Get-JoinTitleNtfy 'KL9' 'Discovery' 1 $true) -eq (Get-JoinTitleDiscord 'KL9' 'Discovery' 1)) 'first join differs'
+    }
+}
+
+Describe "join-notify alert routing - the joins channel is for JOINS" {
+    # The joins channel is watched to see who is playing. This service also emits notifier-online,
+    # heartbeat and poll-failure alerts, which are it talking about ITSELF; those belong with the
+    # ops traffic. Send-Ntfy used to hardcode Category 'joins' for all of them, so a service
+    # restart posted "notifier online" into the player channel every time.
+    #
+    # Structural, not textual: assert the DEFAULT is the quiet channel and that only the two join
+    # sites opt in. A new alert added later then has to ask for the player channel rather than
+    # inherit it.
+    $jn = Join-Path $toolsRoot 'notify\join-notify.ps1'
+    $jnAst = [System.Management.Automation.Language.Parser]::ParseFile($jn, [ref]$null, [ref]$null)
+
+    It 'Send-Ntfy defaults to the default channel, not to joins' {
+        $fn = $jnAst.FindAll({
+            param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Send-Ntfy'
+        }, $true) | Select-Object -First 1
+        Assert-True ($null -ne $fn) 'Send-Ntfy not found - renamed?'
+        $catParam = @($fn.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'category' }) | Select-Object -First 1
+        Assert-True ($null -ne $catParam) 'Send-Ntfy has no $category parameter - routing collapsed back to one channel?'
+        Assert-Eq $catParam.DefaultValue.Extent.Text "'default'" 'the default channel must be the quiet one'
+    }
+
+    It 'only the two join call sites ask for the joins channel' {
+        $calls = @($jnAst.FindAll({
+            param($n) $n -is [System.Management.Automation.Language.CommandAst] -and
+                      $n.CommandElements.Count -gt 0 -and
+                      ([string]$n.CommandElements[0].Extent.Text) -eq 'Send-Ntfy'
+        }, $true))
+        Assert-True ($calls.Count -ge 6) "sanity: expected several Send-Ntfy calls, found $($calls.Count)"
+
+        $joinsCalls = @($calls | Where-Object { $_.Extent.Text -match "-category\s+'joins'" })
+        Assert-Eq $joinsCalls.Count 2 "exactly the first-join and later-join sites may target the joins channel"
+        foreach ($c in $joinsCalls) {
+            Assert-True ($c.Extent.Text -match 'Get-JoinTitleNtfy') `
+                'a non-join alert is targeting the joins channel'
+        }
     }
 }

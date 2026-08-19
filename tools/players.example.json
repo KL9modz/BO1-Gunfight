@@ -1,0 +1,7 @@
+{
+  "_comment": "Template for tools/players.local.json - copy it, then fill in real values ON THE BOX. Maps a player's game GUID to their Discord user id, so a join alert can name them in Discord. The real file is gitignored because a player GUID must never enter git; every value below is invented. Get a Discord id with Settings > Advanced > Developer Mode, then right-click a user > Copy User ID. Get a player GUID from the admin page, or from a CONNECT line in storage/t5/logs/players_YYYY-MM-DD.log. An entry whose discordId is empty is ignored, so it is fine to pre-seed a name and fill the id in later.",
+  "links": {
+    "1100001": { "discordId": "123456789012345678", "note": "example player one" },
+    "2200002": { "discordId": "", "note": "example: known player, Discord id not filled in yet" }
+  }
+}

@@ -50,6 +50,16 @@ Everything below is box-local. Group by group, with how it moves.
 > per-item restore notes and the not-a-file checklist. ⚠ The bundle holds live secrets and player
 > PII — scp only, delete from both boxes once verified. The table stays authoritative for WHAT
 > moves and WHY; the script is the executable form.
+>
+> **Since 2026-08-18 this list is also published daily**, so a dead box does not mean a lost carry
+> list: `GF-Backup` runs `backup_box_state.ps1`, which calls this same script
+> (`-SkipHitchBaseline`) and mirrors its output into the **private** repo
+> `KL9modz/BO1-Server-Backup` under `state/`. ⚠ **That makes `carry.ps1` the single collection
+> list for both paths — add a new box-local file HERE and both the migration bundle and the daily
+> backup pick it up.** A migration can therefore start from the newest commit of that repo instead
+> of from a box that may no longer boot; the hitch baseline is the one thing it omits, so extract
+> that from the old box while it lives (`carry.ps1` default) or accept losing the performance
+> comparison.
 
 ### 1. Game server & settings
 

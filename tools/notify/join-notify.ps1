@@ -31,6 +31,16 @@ $script:IgnoreFile = Join-Path $PSScriptRoot '..\ignore.local.json'
 # Get-GfMapName: shared map id -> display name, so an alert says "Nuketown", not "mp_nuked".
 . (Join-Path $PSScriptRoot '..\map_names.ps1')
 
+# Get-GfPlayerLinks / Get-GfPlayerMention: box-local guid -> Discord user id, so a join card can
+# name a known player as themselves in Discord. No table (or an unlinked player) = no mention,
+# which is the normal state and never an error.
+. (Join-Path $PSScriptRoot '..\player_links.ps1')
+$script:PlayerLinkFile = Join-Path $PSScriptRoot '..\players.local.json'
+
+# Joins own their colour: dark green regardless of priority, because a first join still rides at
+# 'high' to push through on a phone and would otherwise render in the priority stripe's orange.
+$script:JoinColor = 0x1F8B4C
+
 # Send-GfNtfy: the shared ntfy sender (JSON publish, unicode-safe titles).
 . (Join-Path $PSScriptRoot '..\ntfy.ps1')
 
@@ -120,11 +130,23 @@ function P-Key($p) {
 # this script's own (cfg, title, message, priority, tags) call shape and to LOG a failure; the
 # shared sender deliberately returns $false instead of throwing, so nothing here can be taken
 # down by a push.
-function Send-Ntfy($cfg, $title, $message, $priority, $tags) {
-  $ok = Send-GfNtfy -Config $cfg -Title ([string]$title) -Message ([string]$message) `
-                    -Priority ([string]$priority) -Tags ([string[]]@($tags))
-  if (-not $ok) { Write-Log "[ntfy] send failed: $($script:GfNtfyLastError)" }
-  return $ok
+function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, $discordPrefix = '', $discordTitle = '', $category = 'default') {
+  # Send-GfAlert fans out to every configured transport. $category picks the DISCORD channel and
+  # defaults to 'default' deliberately: the joins channel is for PLAYERS JOINING, and only the two
+  # join call sites pass 'joins'. This service also emits notifier-online, heartbeat and
+  # poll-failure alerts, which are the notifier talking about ITSELF - they belong with the rest
+  # of the ops traffic, not in the channel someone watches to see who is playing. It used to
+  # hardcode 'joins' here, so every one of them landed in the wrong place (and a service restart
+  # put a "notifier online" card in there each time).
+  # ⚠ Default to the QUIET channel, never to 'joins': a new call site added later then has to opt
+  # IN to the player-facing channel rather than leak into it by inheriting a wrong default.
+  $r = Send-GfAlert -Config $cfg -Title ([string]$title) -Message ([string]$message) `
+                    -Priority ([string]$priority) -Tags ([string[]]@($tags)) -Category ([string]$category) `
+                    -DiscordColor ([int]$discordColor) -DiscordPrefix ([string]$discordPrefix) `
+                    -DiscordTitle ([string]$discordTitle)
+  if ($r.ntfyError)    { Write-Log "[ntfy] send failed: $($r.ntfyError)" }
+  if ($r.discordError) { Write-Log "[discord] send failed: $($r.discordError)" }
+  return $r.anySent
 }
 
 # 👤 one player, 👥 more than one. ntfy renders an emoji-shortcode tag immediately BEFORE the
@@ -328,6 +350,32 @@ function Get-DetailBits($loc, $ping, $count) {
 # Never returns '' — an empty ntfy message renders as a bodyless alert. All three bits drop out
 # only when geoLookup is off (or the IP is LAN/loopback), the ping is still the placeholder, and
 # there are no day-files to count from.
+# THE TWO TRANSPORTS INTENTIONALLY DISAGREE ABOUT THE JOIN HEADLINE. Keep them apart; they are
+# not a duplicated string that wants deduplicating.
+#
+#   ntfy  -> a phone notification, read alone with no surrounding context. It keeps the long-form
+#            wording ("joined an empty server (1) Discovery") because everything it does not say
+#            is unavailable to the reader.
+#   Discord -> a card in a scrolling channel, sitting next to the ones before it. There the same
+#            words are clutter, so an empty-server join simply does not mention being empty (the
+#            alert IS that news) and the head count trails the map, reading as context rather than
+#            as a label stuck to the player's name.
+#
+# Both are functions so each format is testable without a live server.
+function Get-JoinTitleDiscord($name, $mapName, $count) {
+  $t = "$name joined"
+  if ($mapName)          { $t += "  $mapName" }
+  if ([int]$count -gt 1) { $t += "  ($count)" }
+  return $t
+}
+# The phone's format, unchanged since before the Discord rework - restored verbatim, including
+# the count that is always present and the map trailing everything.
+function Get-JoinTitleNtfy($name, $mapName, $count, $isFirst) {
+  $mapSuffix = ''
+  if ($mapName) { $mapSuffix = "  $mapName" }
+  if ($isFirst) { return "$name joined an empty server  ($count)$mapSuffix" }
+  return "$name joined  ($count)$mapSuffix"
+}
 function Get-JoinBody($loc, $ping, $count) {
   $bits = Get-DetailBits $loc $ping $count
   if ($bits.Count -gt 0) { return ($bits -join '  |  ') }
@@ -432,10 +480,8 @@ function Do-Tick($cfg) {
   # unlisted id falls through to the raw "mp_*" rather than vanishing.
   $mapName = ''
   if ($st.map) { $mapName = Get-GfMapName $st.map }
-  # Join titles carry the map alone; $ctx (map + gametype) still backs the heartbeat/empty
-  # alerts and the watcher's own status line.
-  $mapSuffix = ''
-  if ($mapName) { $mapSuffix = "  $mapName" }
+  # Join titles carry the map alone (Get-JoinTitle); $ctx (map + gametype) still backs the
+  # heartbeat/empty alerts and the watcher's own status line.
   $ctx = ''
   if ($mapName) { $ctx = $mapName; if ($st.gametype) { $ctx = "$ctx / $($st.gametype)" } }
   $ctxSuffix = ''
@@ -466,18 +512,29 @@ function Do-Tick($cfg) {
       $body = Get-JoinBody $loc $p.ping $cnt
       $logd = Get-LogDetail $geo.place $p.ping $cnt     # log gets the place without the flag
       $ptag = Count-Tag $cur.Count                      # 👤 / 👥 by TOTAL players online
+      $dTitle = Get-JoinTitleDiscord $p.name $mapName $cur.Count
+      # Discord-only: a mention is meaningless on ntfy and would render as literal <@123…> there.
+      # In an embed description it draws the chip WITHOUT notifying anyone (embeds never notify),
+      # which is what we want - the player who just joined does not need their phone buzzed.
+      $mention = Get-GfPlayerMention (Get-GfPlayerLinks $script:PlayerLinkFile) $p.guid
       if ($wasEmpty -and -not $firstDone) {
         $firstDone = $true
         Write-Log "FIRST $($p.name)  (server now active, $($cur.Count) online)$logd"
         if ($cfg.notifyFirstJoin) {
-          [void](Send-Ntfy $cfg "$($p.name) joined an empty server  ($($cur.Count))$mapSuffix" `
-            $body 'high' @($ptag))
+          # Named arguments from here on: eight positional slots is how a colour ends up in the
+          # mention field.
+          [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $true) `
+                           -message $body -priority 'high' -tags @($ptag) `
+                           -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle `
+                           -category 'joins')
           continue
         }
       }
       Write-Log "JOIN  $($p.name)  ($($cur.Count) online)$logd"
-      [void](Send-Ntfy $cfg "$($p.name) joined  ($($cur.Count))$mapSuffix" `
-        $body 'default' @($ptag))
+      [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $false) `
+                       -message $body -priority 'default' -tags @($ptag) `
+                       -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle `
+                       -category 'joins')
     }
   }
 
@@ -527,6 +584,13 @@ $cfg = [pscustomobject]@{
   quiet           = As-Bool (Get-CfgVal $fileCfg 'GF_QUIET_START' 'quietStart' $false) $false
   geoLookup       = As-Bool (Get-CfgVal $fileCfg 'GF_GEO_LOOKUP' 'geoLookup' $true) $true
   connectCount    = As-Bool (Get-CfgVal $fileCfg 'GF_CONNECT_COUNT' 'connectCount' $true) $true
+  # Carried through VERBATIM from the file config. Send-GfAlert reads $Config.discordWebhooks to
+  # pick a channel, so a rebuilt config object that DROPS this field silently degrades every alert
+  # to ntfy-only - and logs nothing, because an unresolved webhook is indistinguishable from a box
+  # that never configured Discord at all. That is exactly how joins reached the phone but not the
+  # channel. Deliberately not env-overridable: a webhook URL is a credential and config.json is
+  # the one place it lives.
+  discordWebhooks = $(if ($fileCfg) { $fileCfg.discordWebhooks } else { $null })
 }
 $pw = Get-CfgVal $fileCfg 'GF_RCON_PW' 'password' ''
 if (-not $pw) { $pw = Read-RconPw }
@@ -537,6 +601,11 @@ Write-Log 'GF Join Notifier starting'
 Write-Log "  server     $($cfg.host):$($cfg.port)"
 Write-Log "  rcon pw    $(if ($pwLen) { "($pwLen chars)" } else { 'MISSING' })"
 Write-Log "  ntfy       $($cfg.ntfyServer)/$(if ($cfg.ntfyTopic) { $cfg.ntfyTopic } else { '(NO TOPIC SET)' })"
+# The banner is the only place a MISSING transport is visible - a silent one cannot be debugged
+# from the log after the fact.
+Write-Log "  discord    $(if (Get-GfDiscordWebhook -Config $cfg -Category 'joins') { 'on (joins channel, falls back to default)' } else { 'off (no webhook configured)' })"
+$linkCount = (Get-GfPlayerLinks $script:PlayerLinkFile).Count
+Write-Log "  links      $linkCount player(s) linked to a Discord id$(if ($linkCount -eq 0) { ' (add ids in tools\players.local.json)' })"
 Write-Log "  poll       $($cfg.pollMs)ms   leaves=$($cfg.notifyLeaves)  firstJoin=$($cfg.notifyFirstJoin)  empty=$($cfg.notifyEmpty)"
 Write-Log "  issues     $(if ($cfg.notifyIssues) { "on (red alert after $($script:IssueFailStreak) failed polls, re-alert $($script:IssueReAlertMins)min)" } else { 'off' })"
 Write-Log "  heartbeat  $(if ($cfg.heartbeatMins -gt 0) { "$($cfg.heartbeatMins) min" } else { 'off' })"

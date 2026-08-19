@@ -1,8 +1,16 @@
 {
-  "_comment": "Copy to config.json and fill in ntfyTopic. rcon password auto-reads from dedicated.cfg if left blank. Only ntfyTopic is required.",
+  "_comment": "Copy to config.json and fill in ntfyTopic. rcon password auto-reads from dedicated.cfg if left blank. Configure ntfyTopic and/or discordWebhooks - at least one transport is required.",
   "ntfyTopic": "gf-join-CHANGE-ME-to-something-secret",
   "ntfyServer": "https://ntfy.sh",
   "ntfyToken": "",
+  "_discordPrivacy": "OWNER DECISION 2026-08-18, do not re-redact this: the joins channel may be PUBLIC and carries FULL detail (city, region, ping, lifetime connect count), which is MORE than the public website shows (activity.json is capped at name + 2-letter country). Deliberate for a small community server where players know each other. It is a per-server call: on a larger or anonymous server, route joins to a private channel instead, or add public-category redaction. No IPs or GUIDs appear in any alert either way.",
+  "_discord": "OPTIONAL second transport. One WEBHOOK URL per channel (Discord: Channel > Edit Channel > Integrations > Webhooks > New Webhook > Copy Webhook URL). Every alert fans out to ntfy AND Discord; either one alone works fine. Categories route to channels: joins = GF-JoinNotify, alerts = GF-Watchdog, security = GF-SecurityWatch. An unset category falls back to 'default'; leave 'default' blank too and that category is skipped. THE URL IS A CREDENTIAL - anyone holding it can post to that channel as you. This file is gitignored and the pre-commit hook blocks a webhook literal.",
+  "discordWebhooks": {
+    "default": "",
+    "joins": "",
+    "alerts": "",
+    "security": ""
+  },
   "host": "127.0.0.1",
   "port": 28960,
   "password": "",

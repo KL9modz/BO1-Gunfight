@@ -39,6 +39,17 @@ tools/notify/config.json
 # Holds player GUIDs — account identifiers, and this repo is public. Template is .example
 tools/ignore.local.json
 
+# Player GUID -> Discord user id, so a join alert can name someone in Discord. Same class as
+# ignore.local.json above and blocked for the same reason: it is KEYED by player GUID, which
+# the address/PII rule keeps out of every tracked file. The committed template is
+# tools/players.example.json and it carries invented values only.
+tools/players.local.json
+
+# Passphrase for the encrypted box-state backups written by backup_box_state.ps1. Box-local by
+# definition, and the one value that must ALSO live in a password manager: a passphrase that
+# exists only on the box whose archives it protects is not a backup.
+tools/backup.local.json
+
 # RCON panel — real rcon_password store (per-profile). Never commit; template is .example
 # GLOB, not the exact path: `secrets.local.json.bak` (a routine editor backup) used to slip past
 # all three layers at once — this ignore, the pre-commit `case`, and the packagers' drop-list —
@@ -158,3 +169,8 @@ mp_gunfight.iwd*
 tools/local/local.env.bat
 tools/local/local_test.cfg
 !tools/local/*.example
+
+# Discord live-status card - the remembered message id it keeps rewriting. Box-local and
+# per-channel: copying it to another box would make that box edit THIS box's card. Regenerated
+# on demand (a missing id just posts a fresh card, and the old one is then orphaned).
+tools/notify/discord_status.local.json
