@@ -52,6 +52,9 @@ function Get-FunctionText {
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Format-ConnectCount')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinTitleDiscord')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinTitleNtfy')))
+. ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-DetailBits')))
+. ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinBody')))
+. ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinBodyDiscord')))
 
 Describe "Resolve-ServiceImagePath (security_watch)" {
     It "resolves a %SystemRoot%-relative path (the KslD shape)" {
@@ -411,5 +414,31 @@ Describe "join-notify alert routing - the joins channel is for JOINS" {
             Assert-True ($c.Extent.Text -match 'Get-JoinTitleNtfy') `
                 'a non-join alert is targeting the joins channel'
         }
+    }
+}
+
+Describe "Get-JoinBodyDiscord - a linked player replaces the location, not joins it" {
+    $link = '**Play for free** -> [gunfight.us](https://gunfight.us/)'
+
+    It 'a LINKED player shows the mention and NO location' {
+        $b = Get-JoinBodyDiscord 'Papeete, French Polynesia' 42 '<@123456789012345678>' $link
+        Assert-True ($b -like '*<@123456789012345678>*') 'mention present'
+        Assert-True (-not ($b -like '*Papeete*')) 'location must be replaced, not appended'
+        # .Contains, NOT -like: the link text carries [ ] and -like reads those as a character class.
+        Assert-True ($b.Contains($link)) 'call to action still there'
+    }
+    It 'an UNLINKED player still shows the location' {
+        $b = Get-JoinBodyDiscord 'Papeete, French Polynesia' 42 '' $link
+        Assert-True ($b -like '*Papeete*') 'location present'
+        Assert-True (-not ($b -like '*<@*')) 'no mention'
+    }
+    It 'the connect ordinal stays off the Discord body either way' {
+        # Get-JoinBodyDiscord passes $null as the count on purpose - the ordinal is phone-only.
+        $b = Get-JoinBodyDiscord 'Papeete' 42 '' $link
+        Assert-True (-not ($b -like '*connect*')) 'no ordinal on Discord'
+    }
+    It 'the call to action survives even with nothing else to say' {
+        $b = Get-JoinBodyDiscord '' $null '' $link
+        Assert-True ($b.Contains($link)) 'link always present'
     }
 }

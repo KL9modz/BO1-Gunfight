@@ -392,6 +392,18 @@ function Get-JoinTitleNtfy($name, $mapName, $count, $isFirst) {
   if ($isFirst) { return "$name joined an empty server  ($count)$mapSuffix" }
   return "$name joined  ($count)$mapSuffix"
 }
+# The DISCORD body. A linked player is shown as their Discord identity INSTEAD of their location
+# (owner's choice, 2026-08-19): the mention says who someone is better than a city does, and
+# stacking both makes a four-line card out of a two-line event. An UNLINKED player still gets the
+# location, because it is the only thing we know about them.
+# ⚠ This only works because a mention in an embed DESCRIPTION renders the chip and notifies
+# NOBODY. If it ever moves to the message content it starts pinging a player every time they
+# join their own server, and then "instead of location" becomes a spam decision, not a layout one.
+function Get-JoinBodyDiscord($loc, $ping, $mention, $link) {
+  $lead = $(if ($mention) { $mention } else { Get-JoinBody $loc $ping $null })
+  if (-not $lead) { return $link }
+  return "$lead`n$link"
+}
 function Get-JoinBody($loc, $ping, $count) {
   $bits = Get-DetailBits $loc $ping $count
   if ($bits.Count -gt 0) { return ($bits -join '  |  ') }
@@ -530,7 +542,7 @@ function Do-Tick($cfg) {
       # read alongside its neighbours, so "first connect" is clutter. The PHONE keeps it - an
       # ntfy push is read alone, where 'is this someone new' is context it has no other way to
       # convey. Same per-transport split as the titles.
-      $dBody = (Get-JoinBody $loc $p.ping $null) + "`n" + $script:JoinLink
+      $dBody = Get-JoinBodyDiscord $loc $p.ping $mention $script:JoinLink
       $logd = Get-LogDetail $geo.place $p.ping $cnt     # log gets the place without the flag
       $ptag = Count-Tag $cur.Count                      # 👤 / 👥 by TOTAL players online
       $dTitle = Get-JoinTitleDiscord $p.name $mapName $cur.Count
@@ -546,7 +558,7 @@ function Do-Tick($cfg) {
           # mention field.
           [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $true) `
                            -message $body -priority 'high' -tags @($ptag) `
-                           -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle -discordMessage $dBody `
+                           -discordColor $script:JoinColor -discordTitle $dTitle -discordMessage $dBody `
                            -category 'joins')
           continue
         }
@@ -554,7 +566,7 @@ function Do-Tick($cfg) {
       Write-Log "JOIN  $($p.name)  ($($cur.Count) online)$logd"
       [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $false) `
                        -message $body -priority 'default' -tags @($ptag) `
-                       -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle -discordMessage $dBody `
+                       -discordColor $script:JoinColor -discordTitle $dTitle -discordMessage $dBody `
                        -category 'joins')
     }
   }
