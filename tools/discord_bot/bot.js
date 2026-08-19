@@ -68,7 +68,7 @@ const RCON_PORT  = cfg.rconPort  || 28960;
 // we ask to read message text only while a relay channel actually exists.
 // GUILDS(1) | GUILD_MESSAGES(1<<9) | MESSAGE_CONTENT(1<<15)
 const RELAY_ON = Boolean(cfg.relayChannelId);
-const INTENTS  = 1 | (RELAY_ON ? (1 << 9) | (1 << 15) : 0);
+
 
 
 // The rcon password is READ FROM dedicated.cfg, never stored here: one copy of a credential is one
@@ -93,6 +93,20 @@ function rconPassword() {
 }
 
 const log = (...a) => console.log(`[${new Date().toISOString()}]`, ...a);
+
+// ── feature modules ────────────────────────────────────────────────────────────────────────────
+// Each module decides from config whether it is enabled and declares the intents it needs; bot.js
+// unions the intents of the ENABLED ones only. That is what stops a switched-off feature costing a
+// privilege, and - for privileged intents - stops a missing portal toggle becoming a fatal 4014 for
+// every other feature.
+// ⚠ Declared AFTER `log`, not next to the other constants: `log` is a const arrow, so building the
+// modules above it hits the temporal dead zone and the bot dies on require.
+const FEATURES = [
+  require('./features/voice_log.js')({ cfg, log, post: (c, p) => postMessage(c, p) }),
+];
+const FEATURE_INTENTS = FEATURES.filter((f) => f.enabled).reduce((a, f) => a | f.intents, 0);
+log('features: ' + (FEATURES.map((f) => f.name + (f.enabled ? '' : ' (off)')).join(', ') || 'none'));
+const INTENTS = 1 | (RELAY_ON ? (1 << 9) | (1 << 15) : 0) | FEATURE_INTENTS;
 
 // ── the panel bridge ───────────────────────────────────────────────────────────────────────────
 function panelRcon(command, priority = true) {
@@ -234,7 +248,7 @@ async function registerCommands() {
   }));
   const res = await fetch(`${API}/applications/${cfg.applicationId}/guilds/${cfg.guildId}/commands`, {
     method: 'PUT',
-    headers: { Authorization: `Bot ${cfg.token}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: 'Bot ' + cfg.token, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
   // GUILD commands, not global: guild registration is instant, global takes up to an hour to
@@ -259,6 +273,18 @@ function allow(userId, max = 5, windowMs = 10000) {
 let ws = null, heartbeat = null, seq = null, sessionId = null, resumeUrl = null, acked = true, backoff = 1000;
 
 function send(op, d) { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ op, d })); }
+
+// Minimal REST post used by feature modules (the voice log, and whatever follows it). Kept here
+// so exactly one place holds the token and the base URL.
+async function postMessage(channelId, payload) {
+  const res = await fetch(API + '/channels/' + channelId + '/messages', {
+    method: 'POST',
+    headers: { Authorization: 'Bot ' + cfg.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + (await res.text()));
+  return res.json();
+}
 
 async function respond(interaction, content) {
   // Deferred first: Discord requires a reply within 3s and an rcon round trip through the paced
@@ -347,6 +373,13 @@ function connect(resume = false) {
         } else if (p.t === 'RESUMED') { backoff = 1000; log('gateway resumed'); }
         else if (p.t === 'INTERACTION_CREATE') { onInteraction(p.d).catch((e) => log('interaction error:', e.message)); }
         else if (p.t === 'MESSAGE_CREATE')     { onMessage(p.d).catch((e) => log('relay error:', e.message)); }
+        // Feature modules see EVERY dispatch and filter for what they care about, so this sits
+        // after the chain above rather than inside it. A throwing module must never kill the
+        // gateway loop, hence the per-module guard.
+        for (const f of FEATURES) {
+          if (!f.enabled) continue;
+          try { f.onEvent(p.t, p.d); } catch (e) { log(`${f.name} failed on ${p.t}: ${e.message}`); }
+        }
         break;
     }
   });
