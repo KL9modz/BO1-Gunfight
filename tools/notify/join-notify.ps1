@@ -374,10 +374,13 @@ function Get-JoinTitleDiscord($name, $mapName, $count) {
   # WITHOUT a BOM, and PowerShell 5.1 reads such a file as ANSI - a literal U+2794 would
   # reach Discord as mojibake, and it would look like a Discord problem rather than an
   # encoding one. Same reason the flag emoji are built at runtime, never typed here.
-  $t = "$name $([char]0x2794) Joined:"
+  $t = "$name $([char]0x2794) Joined"
   # SINGLE spaces here. The double-space separators are the ntfy format's, where they group
   # a run-on title on a phone; Discord preserves them literally and they read as a typo.
-  if ($mapName)          { $t += " $mapName" }
+  # The COLON belongs to the map, not to "Joined" - an unknown map would otherwise leave a
+  # dangling "Joined:" with nothing after it (the degenerate path: a map id outside the 26-map
+  # table still resolves to its raw mp_* name, so this only bites if the status read has no map).
+  if ($mapName)          { $t += ": $mapName" }
   if ([int]$count -gt 1) { $t += " ($count)" }
   return $t
 }

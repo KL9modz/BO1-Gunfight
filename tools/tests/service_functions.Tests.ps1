@@ -290,17 +290,17 @@ Describe "Get-JoinTitleDiscord (join-notify) - the Discord card format" {
     #     label stuck to the player's name
     #   * the map is the public display name, resolved upstream by Get-GfMapName
     It 'a join into an empty server carries neither count nor empty-server text' {
-        Assert-Eq (Get-JoinTitleDiscord 'fentfella' 'Havana' 1) 'fentfella joined Havana' 'first join'
+        Assert-Eq (Get-JoinTitleDiscord 'fentfella' 'Havana' 1) "fentfella $([char]0x2794) Joined: Havana" 'first join'
     }
     It 'a join with others already on puts the total AFTER the map name' {
-        Assert-Eq (Get-JoinTitleDiscord 'KL9' 'Havana' 3) 'KL9 joined Havana (3)' 'later join'
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' 'Havana' 3) "KL9 $([char]0x2794) Joined: Havana (3)" 'later join'
     }
     It 'an unknown map degrades to name + count, never a dangling separator' {
-        Assert-Eq (Get-JoinTitleDiscord 'KL9' '' 3) 'KL9 joined (3)' 'no map, others on'
-        Assert-Eq (Get-JoinTitleDiscord 'KL9' '' 1) 'KL9 joined'      'no map, alone'
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' '' 3) "KL9 $([char]0x2794) Joined (3)" 'no map, others on'
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' '' 1) "KL9 $([char]0x2794) Joined"      'no map, alone'
     }
     It 'a count of 0 or a non-numeric count never renders a count' {
-        Assert-Eq (Get-JoinTitleDiscord 'KL9' 'Zoo' 0) 'KL9 joined Zoo' 'zero'
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' 'Zoo' 0) "KL9 $([char]0x2794) Joined: Zoo" 'zero'
     }
 }
 
