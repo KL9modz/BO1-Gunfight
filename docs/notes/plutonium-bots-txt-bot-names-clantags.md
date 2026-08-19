@@ -23,7 +23,7 @@ Woods,^<BOT
   alone left the renderer orange for all text drawn after the tag. The engine's own internal bot
   names end in `^7` for exactly this reason (`status` shows `PBabar^7`). `^<BOT^7` is exactly
   7 chars — a colored 3-letter tag spends the whole budget (2 color + 3 text + 2 reset).
-- Deployed 2026-08-09: the owner's four chosen names, every one tagged `^<bot^7`, on the VPS +
+- Deployed 2026-08-09: the owner's four chosen names, every one tagged `^<BOT^7`, on the VPS +
   the laptop. With `gf_fill_n 2` the reconciler never exceeds 4 bots (humans replace bots), so
   4 names suffice; overflow behavior past the list length (Treyarch fallback vs duplicate picks)
   is **unverified**.

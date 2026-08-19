@@ -97,7 +97,7 @@ $items = @(
   @{ n='web.config'; src=(Join-Path $WebRoot 'web.config'); sub='iis'; cat='CONFIG'; req=$true
      note='Box-owned, deliberately excluded from deploy.ps1 -Web /MIR. Carries the HTTPS redirect, HSTS and GET/HEAD-only rules. CHECK the CSP allows script-src/connect-src or status.html cannot load its scripts.' }
   @{ n='bots.txt'; src=(Join-Path $t5 'bots.txt'); sub='server'; cat='CONFIG'; req=$false
-     note='Bot display names + the orange ^<bot^7 clantag, one "name,clantag" per line. Native Plutonium, box-local, ABOVE the mod folder so no deploy ever ships it - which is exactly why it must be carried. Read at PROCESS START: a change needs a bootstrapper restart, not a map_restart. Without it the new box shows Plutonium internal random bot names.' }
+     note='Bot display names + the orange ^<BOT^7 clantag, one "name,clantag" per line. Native Plutonium, box-local, ABOVE the mod folder so no deploy ever ships it - which is exactly why it must be carried. Read at PROCESS START: a change needs a bootstrapper restart, not a map_restart. Without it the new box shows Plutonium internal random bot names.' }
   @{ n='gamestats.local.json'; src=(Join-Path $t5 'logs\gamestats.local.json'); sub='data'; cat='DATA'; req=$false
      note='Every accumulated GF_STAT/GF_MATCH bucket - the Combat leaderboard IS this file, and nothing else holds it (games_mp.log rotates and is not carried). It also stores the tail byte-offset + log identity, so restoring it prevents the aggregator re-reading and double-counting a log it already ingested. Losing it silently resets all combat history to zero.' }
   @{ n='players.local.json'; src=(Join-Path $modRoot 'tools\players.local.json'); sub='tools'; cat='PII'; req=$false

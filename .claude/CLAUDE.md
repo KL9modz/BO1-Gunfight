@@ -1645,7 +1645,7 @@ tables → `docs/REFERENCE.md`.
 | `scr_pregame_timelimit` | 0 | Warmup time limit (min). ⚠ Keep **0** — stock registers it seed-if-empty at 5, and its time-out **rotates the map** instead of starting the match. Seeded to 0 by `gf.gsc` (strip-marked) + `dedicated.cfg.example`. |
 
 **Teams & bots** (dev-only reconciler)
-> Bot display names + the orange `^<bot^7` clantag come from **`storage/t5/bots.txt`** (native
+> Bot display names + the orange `^<BOT^7` clantag come from **`storage/t5/bots.txt`** (native
 > Plutonium, `name,clantag` per line, box-local — above the mod folder, never deployed; carried in
 > `docs/MIGRATION.md`). ⚠ **Read at process start** — mid-process bot reconnects keep the internal
 > random names; only a bootstrapper restart loads a change
