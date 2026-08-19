@@ -372,8 +372,10 @@ function Get-DetailBits($loc, $ping, $count) {
 # Both are functions so each format is testable without a live server.
 function Get-JoinTitleDiscord($name, $mapName, $count) {
   $t = "$name joined"
-  if ($mapName)          { $t += "  $mapName" }
-  if ([int]$count -gt 1) { $t += "  ($count)" }
+  # SINGLE spaces here. The double-space separators are the ntfy format's, where they group
+  # a run-on title on a phone; Discord preserves them literally and they read as a typo.
+  if ($mapName)          { $t += " $mapName" }
+  if ([int]$count -gt 1) { $t += " ($count)" }
   return $t
 }
 # The phone's format, unchanged since before the Discord rework - restored verbatim, including
