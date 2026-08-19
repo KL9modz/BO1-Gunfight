@@ -105,7 +105,13 @@ const log = (...a) => console.log(`[${new Date().toISOString()}]`, ...a);
 // log?") and adapt what it claims, instead of silently reporting a moderator action as a self-action.
 const api = (path) => fetch(API + path, { headers: { Authorization: 'Bot ' + cfg.token } });
 const FEATURES = [
-  require('./features/voice_log.js')({ cfg, log, api, post: (c, p) => postMessage(c, p) }),
+  require('./features/voice_log.js')({
+    cfg, log, api,
+    post: (c, p) => postMessage(c, p),
+    // Editing an already-posted line is how a feature can be BOTH instant and correct: post what is
+    // known now, rewrite it when the actor turns up. Edits do not re-notify, so the correction is quiet.
+    patch: (c, m, p) => editMessage(c, m, p),
+  }),
 ];
 const FEATURE_INTENTS = FEATURES.filter((f) => f.enabled).reduce((a, f) => a | f.intents, 0);
 log('features: ' + (FEATURES.map((f) => f.name + (f.enabled ? '' : ' (off)')).join(', ') || 'none'));
@@ -279,6 +285,16 @@ function send(op, d) { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ o
 
 // Minimal REST post used by feature modules (the voice log, and whatever follows it). Kept here
 // so exactly one place holds the token and the base URL.
+async function editMessage(channelId, messageId, payload) {
+  const res = await fetch(API + '/channels/' + channelId + '/messages/' + messageId, {
+    method: 'PATCH',
+    headers: { Authorization: 'Bot ' + cfg.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + (await res.text()));
+  return res.json();
+}
+
 async function postMessage(channelId, payload) {
   const res = await fetch(API + '/channels/' + channelId + '/messages', {
     method: 'POST',

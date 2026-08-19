@@ -3,70 +3,75 @@
  * Voice activity log - who joined, left, moved, and WHO DID IT when a moderator moved or
  * disconnected someone.
  *
- * Enabled by setting `voiceLogChannelId` in config.local.json. Unset = the feature is off and its
- * intent is not requested (see bot.js: never ask for an intent a disabled feature would use).
+ * Enabled by setting `voiceLogChannelId`. Unset = the feature is off and its intent is not
+ * requested (see bot.js: never ask for an intent a disabled feature would use).
+ *
+ * ── POSTING MODEL: INSTANT, THEN CORRECTED IN PLACE ────────────────────────────────────────────
+ * The first event of a burst posts IMMEDIATELY - no waiting. Later events in the same burst are
+ * appended to that same message, and when an audit entry reveals that a moderator caused one of
+ * those changes, the line is rewritten in place. So:
+ *
+ *     t+0.0s   👋 KL9 left General
+ *     t+0.9s   ⛔ KL9 was disconnected from General by @matzues      (same message, edited)
+ *
+ * The alternative designs were both worse. A coalescing delay (the first cut used 2.5s) makes every
+ * line late to buy attribution that usually arrives in under a second. Splitting instant lines and
+ * attributed lines across two channels splits the ONE case anyone cares about across two places, so
+ * you would read "KL9 left" in one and "disconnected by X" in the other and correlate by hand.
+ *
+ * ⚠ Edits do not re-notify. That is deliberate: the notification fires on the instant line, and the
+ * correction arrives quietly.
+ *
+ * Bursts also keep the request count sane: a call ending emits one event per participant within the
+ * same second, and Discord's REST budget is a few requests per second. One message plus a couple of
+ * edits beats eight posts.
  *
  * ── WHY THERE IS A CACHE ───────────────────────────────────────────────────────────────────────
- * VOICE_STATE_UPDATE reports the state a user is now IN. It never says where they came from, and
- * "left voice" and "moved channel" arrive as the same event shape. So the previous channel is
- * remembered locally and diffed:
- *
- *     prev  now   meaning
- *     ----  ----  --------------------------------
- *     -     X     joined X
- *     X     -     left X
- *     X     Y     moved X -> Y
- *     X     X     mute/deaf/stream toggle - ignored, or every mute press is a log line
- *
+ * VOICE_STATE_UPDATE reports the state a user is now IN, never where they came from, and "left" and
+ * "moved" arrive as the same event shape:
+ *     -/X joined X   X/- left X   X/Y moved X->Y   X/X mute or stream toggle (ignored)
  * Seeded from GUILD_CREATE's voice_states WITHOUT logging, so a restart does not announce everyone
- * already sitting in a channel as a fresh join.
+ * already in a channel as a fresh join.
  *
  * ── WHY THERE IS AN AUDIT CORRELATION ──────────────────────────────────────────────────────────
- * ⚠ A gateway event says WHAT changed, never WHO changed it. A user who left and a user a moderator
- * disconnected produce byte-identical VOICE_STATE_UPDATEs. The actor only exists in the audit log
- * (GUILD_AUDIT_LOG_ENTRY_CREATE, action 26 MEMBER_MOVE / 27 MEMBER_DISCONNECT), which needs the
- * VIEW AUDIT LOG permission and no intent.
+ * ⚠ A gateway event says WHAT changed, never WHO changed it. The actor exists only in the audit log
+ * (GUILD_AUDIT_LOG_ENTRY_CREATE, 26 MEMBER_MOVE / 27 MEMBER_DISCONNECT), which needs VIEW AUDIT LOG
+ * and no intent. Those entries are AGGREGATE - actor, a count, and for a move the destination - and
+ * may not name each user, because one drag can move eight people. So an entry credits up to `count`
+ * matching changes to that actor, consuming a slot per match, within ATTRIB_MS.
  *
- * Those entries are also AGGREGATE: they carry the actor, a `count`, and (for a move) the
- * destination `channel_id` - and may not name each affected user, because one drag can move eight
- * people. So attribution is by correlation inside a short window: an entry credits up to `count`
- * matching state changes to that actor, consuming one per match. Exact when `target_id` is present,
- * best-effort when it is not, and never a guess older than ATTRIB_MS.
- *
- * ⚠ WITHOUT the permission this cannot distinguish the two cases at all - so the module PROBES for
- * it at startup and changes its wording rather than lying. With access: "left" vs "was disconnected
- * by X". Without: a neutral "left", which is true either way. Silently reporting a moderator
- * disconnect as a self-action would be worse than saying less.
+ * ⚠ Without the permission the distinction is unknowable, so the module PROBES at startup and
+ * changes its wording rather than lying: with access an unattributed change is provably self-
+ * inflicted and says so; without it the line stays a neutral "left".
  */
 
-const FLUSH_MS   = 2500;   // coalescing window for the log message
+const APPEND_MS  = 900;    // debounce for appending more lines into the open message
+const BURST_MS   = 15000;  // after this much quiet, the next event starts a fresh message
 const ATTRIB_MS  = 8000;   // how long an audit entry may explain a state change
-const MAX_LINES  = 20;
+const MAX_LINES  = 15;     // per message, then start a new one
 const GUILD_VOICE_STATES = 1 << 7;
 const A_MEMBER_MOVE = 26, A_MEMBER_DISCONNECT = 27;
 
 module.exports = function voiceLog(ctx) {
-  const { cfg, log, post, api } = ctx;
+  const { cfg, log, post, patch, api } = ctx;
   const enabled = Boolean(cfg.voiceLogChannelId);
 
-  const where = new Map();        // userId  -> channelId they are in
+  const where = new Map();        // userId -> channelId
   const chanNames = new Map();    // channelId -> name
   let hints = [];                 // recent audit entries awaiting a match
-  let pending = [];               // state changes awaiting flush
-  let timer = null;
-  let canAttribute = false;       // set by the startup probe
+  let canAttribute = false;
+
+  // The open message: { id, events[], dirty, timer, at }
+  let burst = null;
 
   const nameOf = (d) => {
     const m = d.member || {}, u = m.user || {};
     return m.nick || u.global_name || u.username || `user ${d.user_id}`;
   };
   const chan = (id) => (id ? (chanNames.get(id) ? `**${chanNames.get(id)}**` : `<#${id}>`) : 'voice');
-  // <@id> renders as the member's name. It cannot ping: every post sets allowed_mentions parse:[].
+  // <@id> renders as a name and cannot ping: every write sets allowed_mentions parse:[].
   const actorTag = (id) => `<@${id}>`;
 
-  // ── capability probe ─────────────────────────────────────────────────────────────────────────
-  // One REST call at startup. 403 here is not an error to retry - it is a fact about what this log
-  // is able to say, and the wording depends on it.
   async function probeAuditAccess() {
     try {
       const r = await api(`/guilds/${cfg.guildId}/audit-logs?limit=1`);
@@ -74,9 +79,7 @@ module.exports = function voiceLog(ctx) {
       log(canAttribute
         ? 'voice log: audit access OK - moderator moves/disconnects will be attributed'
         : `voice log: no audit access (HTTP ${r.status}) - grant View Audit Log to name who moved or disconnected someone`);
-    } catch (e) {
-      log('voice log: audit probe failed:', e.message);
-    }
+    } catch (e) { log('voice log: audit probe failed:', e.message); }
   }
 
   function addHint(entry) {
@@ -89,57 +92,94 @@ module.exports = function voiceLog(ctx) {
       at: Date.now(),
     });
     hints = hints.filter((h) => Date.now() - h.at < ATTRIB_MS);
+    // A hint can arrive AFTER its line was already posted - that is the whole point of editing.
+    applyHints();
   }
 
-  // Find an audit entry that explains this change, and consume one of its slots.
-  function claim(ev) {
+  // Try to attribute any still-unattributed event in the open message.
+  function applyHints() {
+    if (!burst || !canAttribute) return;
+    let changed = false;
     const now = Date.now();
     hints = hints.filter((h) => now - h.at < ATTRIB_MS && h.remaining > 0);
-    const want = ev.kind === 'left' ? A_MEMBER_DISCONNECT : A_MEMBER_MOVE;
-    const h = hints.find((x) => x.type === want
-      && (!x.target || x.target === ev.user)                       // exact when Discord names the target
-      && (want === A_MEMBER_DISCONNECT || !x.channelId || x.channelId === ev.now));
-    if (!h) return null;
-    h.remaining -= 1;
-    return h.actor;
-  }
-
-  function queue(ev) {
-    pending.push(ev);
-    if (!timer) timer = setTimeout(flush, FLUSH_MS);
+    for (const ev of burst.events) {
+      if (ev.actor || ev.kind === 'joined') continue;
+      if (now - ev.at > ATTRIB_MS) continue;
+      const want = ev.kind === 'left' ? A_MEMBER_DISCONNECT : A_MEMBER_MOVE;
+      const h = hints.find((x) => x.type === want
+        && (!x.target || x.target === ev.user)
+        && (want === A_MEMBER_DISCONNECT || !x.channelId || x.channelId === ev.now));
+      if (!h) continue;
+      h.remaining -= 1;
+      ev.actor = h.actor;
+      changed = true;
+    }
+    if (changed) schedule();
   }
 
   function render(ev) {
-    const actor = canAttribute ? claim(ev) : null;
-    const self = canAttribute && !actor;     // only assertable when we can see the audit log
+    const self = canAttribute && !ev.actor;
     if (ev.kind === 'joined') return `🔊 **${ev.who}** joined ${chan(ev.now)}`;
     if (ev.kind === 'left') {
-      if (actor) return `⛔ **${ev.who}** was disconnected from ${chan(ev.prev)} by ${actorTag(actor)}`;
-      return `👋 **${ev.who}** left ${chan(ev.prev)}${self ? ' (themselves)' : ''}`;
+      return ev.actor
+        ? `⛔ **${ev.who}** was disconnected from ${chan(ev.prev)} by ${actorTag(ev.actor)}`
+        : `👋 **${ev.who}** left ${chan(ev.prev)}${self ? ' (themselves)' : ''}`;
     }
-    if (actor) return `↔️ **${ev.who}** was moved ${chan(ev.prev)} → ${chan(ev.now)} by ${actorTag(actor)}`;
-    return `➡️ **${ev.who}** moved ${chan(ev.prev)} → ${chan(ev.now)}${self ? ' (themselves)' : ''}`;
+    return ev.actor
+      ? `↔️ **${ev.who}** was moved ${chan(ev.prev)} → ${chan(ev.now)} by ${actorTag(ev.actor)}`
+      : `➡️ **${ev.who}** moved ${chan(ev.prev)} → ${chan(ev.now)}${self ? ' (themselves)' : ''}`;
   }
 
-  async function flush() {
-    timer = null;
-    const evs = pending.splice(0, pending.length);
-    if (!evs.length) return;
-    const lines = evs.map(render);
-    let body = lines.slice(0, MAX_LINES).join('\n');
-    if (lines.length > MAX_LINES) body += `\n…and ${lines.length - MAX_LINES} more`;
+  const bodyOf = (b) => b.events.map(render).join('\n');
+
+  function schedule() {
+    if (!burst || burst.timer) return;
+    burst.timer = setTimeout(() => { burst.timer = null; writeBurst(); }, APPEND_MS);
+  }
+
+  async function writeBurst() {
+    const b = burst;
+    if (!b || !b.id) return;
+    const body = bodyOf(b);
+    if (body === b.written) return;
+    b.written = body;
     try {
-      await post(cfg.voiceLogChannelId, { content: body, allowed_mentions: { parse: [] } });
+      await patch(cfg.voiceLogChannelId, b.id, { content: body, allowed_mentions: { parse: [] } });
+    } catch (e) { log('voice log edit failed:', e.message); }
+  }
+
+  async function emit(ev) {
+    const now = Date.now();
+    const stale = burst && (now - burst.at > BURST_MS || burst.events.length >= MAX_LINES);
+    if (stale) burst = null;
+
+    if (burst) {
+      burst.events.push(ev);
+      burst.at = now;
+      applyHints();
+      schedule();
+      return;
+    }
+
+    // First line of a burst: post it straight away, no debounce. This is the latency that matters.
+    burst = { id: null, events: [ev], at: now, timer: null, written: null };
+    const b = burst;
+    try {
+      const msg = await post(cfg.voiceLogChannelId, { content: render(ev), allowed_mentions: { parse: [] } });
+      b.written = render(ev);
+      b.id = msg.id;
+      // Events and hints can land while the POST is in flight; flush anything that accumulated.
+      if (bodyOf(b) !== b.written) schedule();
     } catch (e) {
-      // A log feature must never take the bot down over a failed post.
       log('voice log post failed:', e.message);
+      if (burst === b) burst = null;      // do not strand later lines against a message that never existed
     }
   }
 
   return {
     name: 'voice_log',
     enabled,
-    intents: enabled ? GUILD_VOICE_STATES : 0,   // not privileged: no portal toggle needed
+    intents: enabled ? GUILD_VOICE_STATES : 0,
 
     onEvent(t, d) {
       if (!enabled) return;
@@ -156,8 +196,6 @@ module.exports = function voiceLog(ctx) {
       if (t === 'CHANNEL_CREATE' || t === 'CHANNEL_UPDATE') { chanNames.set(d.id, d.name); return; }
       if (t === 'CHANNEL_DELETE') { chanNames.delete(d.id); return; }
 
-      // Audit entries can arrive slightly BEFORE or after the voice event, which is why hints are
-      // kept in a window instead of being matched on arrival.
       if (t === 'GUILD_AUDIT_LOG_ENTRY_CREATE') {
         if (d.guild_id && d.guild_id !== cfg.guildId) return;
         if (d.action_type === A_MEMBER_MOVE || d.action_type === A_MEMBER_DISCONNECT) addHint(d);
@@ -174,12 +212,12 @@ module.exports = function voiceLog(ctx) {
       if (isBot && !cfg.voiceLogBots) { if (now) where.set(user, now); else where.delete(user); return; }
 
       if (now) where.set(user, now); else where.delete(user);
-      if (prev === now) return;                       // mute/deaf/stream toggle
+      if (prev === now) return;
 
       const who = nameOf(d);
-      if (!prev && now) queue({ kind: 'joined', who, user, prev, now });
-      else if (prev && !now) queue({ kind: 'left', who, user, prev, now });
-      else queue({ kind: 'moved', who, user, prev, now });
+      const kind = !prev && now ? 'joined' : (prev && !now ? 'left' : 'moved');
+      emit({ kind, who, user, prev, now, at: Date.now(), actor: null })
+        .catch((e) => log('voice log emit failed:', e.message));
     },
   };
 };
