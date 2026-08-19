@@ -67,6 +67,16 @@ module.exports = function voiceLog(ctx) {
   let hints = [];                 // recent audit entries awaiting a match
   let canAttribute = false;
 
+  // ── quiet actors ─────────────────────────────────────────────────────────────────────────────
+  // Discord ids whose ACTIONS are never named. The event is still logged - "matzues left General"
+  // still appears - only the "by @who" half is withheld. Intended for the owner, whose routine
+  // moderation is noise rather than news, and reused by later features that log actions.
+  // ⚠ A quiet actor's hint is still CONSUMED. Skipping the claim would leave the slot free for the
+  // next unattributed line in the window and blame the wrong person for it.
+  // ⚠ And a suppressed line must NOT fall through to "(themselves)": we are hiding who did it, not
+  // asserting nobody did. Saying less is fine; saying something untrue is not.
+  const quiet = new Set((cfg.quietActorIds || []).map(String));
+
   // The open message: { id, events[], dirty, timer, at }
   let burst = null;
 
@@ -109,7 +119,7 @@ module.exports = function voiceLog(ctx) {
     const now = Date.now();
     hints = hints.filter((h) => now - h.at < ATTRIB_MS && h.remaining > 0);
     for (const ev of burst.events) {
-      if (ev.actor || ev.kind === 'joined') continue;
+      if (ev.actor || ev.byQuietActor || ev.kind === 'joined') continue;
       if (now - ev.at > ATTRIB_MS) continue;
       const want = ev.kind === 'left' ? A_MEMBER_DISCONNECT : A_MEMBER_MOVE;
       const h = hints.find((x) => x.type === want
@@ -117,14 +127,23 @@ module.exports = function voiceLog(ctx) {
         && (want === A_MEMBER_DISCONNECT || !x.channelId || x.channelId === ev.now));
       if (!h) continue;
       h.remaining -= 1;
-      ev.actor = h.actor;
+      if (quiet.has(String(h.actor))) {
+        // Claimed, so the slot cannot blame someone else - but rendered without the actor, and
+        // flagged so it does not claim the user did it to themselves either.
+        ev.actor = null;
+        ev.byQuietActor = true;
+      } else {
+        ev.actor = h.actor;
+      }
       changed = true;
     }
     if (changed) schedule();
   }
 
   function render(ev) {
-    const self = canAttribute && !ev.actor;
+    // "(themselves)" is only assertable when we can see the audit log AND nothing claimed this
+    // event. A line claimed by a quiet actor is neither attributed nor self-inflicted.
+    const self = canAttribute && !ev.actor && !ev.byQuietActor;
     if (ev.kind === 'joined') return `🔊 **${ev.who}** joined ${chan(ev.now)}`;
     if (ev.kind === 'left') {
       return ev.actor
