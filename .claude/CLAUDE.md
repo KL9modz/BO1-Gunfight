@@ -73,8 +73,10 @@ wins** takes the match.
   `gf_forceTeamQuiet` was folded in by the tier1 refactor); `gf_botQuietSetTeam`
   deliberately untouched (BotWarfare drives bot class/spawn — demonstrably fine). ⚠ Rule: **any quiet
   team write to a real team must leave `pers["class"]` valid** or its target blocks at the next re-begin.
-  `GF_TEAMWATCH`/`GF_RECLAIM` at 0 lines proved the player was never in spectator, killing the old
-  spectator-strand theory for these reports. ([[quiet-team-move-cleared-class-blocks-respawn]])
+  For *those* captures `GF_TEAMWATCH`/`GF_RECLAIM` sat at 0 lines, which is what killed the
+  spectator-strand theory for these reports. ⚠ That zero was **local to those captures, never global** —
+  the strand is real and measured; see the next-but-one bullet.
+  ([[quiet-team-move-cleared-class-blocks-respawn]])
 - **Bot mis-seater — reattributed: the "UNTRACED" writes are (mostly) unstamped STOCK menu/autoassign
   paths, not a C-side engine writer.** The every-re-begin `GF_TEAMTRACE: UNTRACED bot <name> spectator ->
   <team> - last stamp NONE …, at pre-spawn` noise is parked bots hitting the re-begin team menu
@@ -87,14 +89,23 @@ wins** takes the match.
   unknown path exists ([[untraced-writes-are-unstamped-stock-menu-paths]]). Either way the maySpawn
   fill-discipline gate (`GF_FILLGUARD`) re-parks any mis-seat the same round — the containment stands,
   and trace+fillguard line pairs per round are expected noise, not a fault.
-- **Humans stranded in spectator (`:365` team menu) — hypothesis only, never observed; net stays armed.**
-  `GF_TEAMWATCH` has fired **0 times ever**; the reports that seeded this theory are now explained by the
-  class-clear bug above. If it DOES exist: the discriminator is **`pers["needteam"]`** (a needteam
-  spectator is autoassigned via `:312`→`:327` = `gf_autoJoinBalance`, no menu; a spectator without it
-  hits `:365`), stock autobalance is off (`scr_teambalance 0`), every mod spectator-write is stamped,
+- **Humans stranded in spectator (`:365` team menu) — REAL AND MEASURED (7 occurrences), fully contained
+  by the reclaim; the WRITER is still unpinned.** ⚠ This bullet used to claim `GF_TEAMWATCH` "has fired
+  **0 times ever**" — **false, and it filed a live bug as a hypothesis.** Full-history count over the
+  live `games_mp.log` (2026-08-18): **243** firings — but **223 are `reason user`** (people choosing to
+  spectate), 7 `moved`, 6 `maxsize`, so a raw `grep -c GF_TEAMWATCH` is **not** a fault count. **Only
+  `reason UNTRACED` is**, and that is **7** — each matched **1:1** by a `GF_RECLAIM`, so the containment
+  has a perfect record. All 7 carry `lastWriter none` (**no** sanctioned token, ever), so this is a
+  genuinely stampless writer and **not** the [[untraced-writes-are-unstamped-stock-menu-paths]] family.
+  The discriminator behaves exactly as designed: **`pers["needteam"]`** (a needteam spectator is
+  autoassigned via `:312`→`:327` = `gf_autoJoinBalance`, no menu; a spectator without it hits `:365`)
+  splits them **3 menu-case (`needteam 0`, all `state spectator`) / 4 autoassigned (`needteam 1`, all
+  `state intermission`)** — two reproducible shapes to hunt separately, not one vague "engine did it".
+  Stock autobalance is off (`scr_teambalance 0`), every mod spectator-write is stamped,
   and the `_globallogic.gsc` `:587/:663/:692` spectator checks are read-only — so a real occurrence
-  would be a stampless engine write, and `gf_teamWatchHumans` now logs `needteam` + the last writer
-  stamp to prove it. **`_bot::gf_reclaimStrandedHumans`** (top of every boundary pass, after the watch)
+  is a stampless engine write, and `gf_teamWatchHumans` logs `needteam` + the last writer
+  stamp to prove it. ([[teamwatch-untraced-strands-are-real-and-contained]])
+  **`_bot::gf_reclaimStrandedHumans`** (top of every boundary pass, after the watch)
   re-seats any UNTRACED-stranded human onto the lighter side and prints `GF_RECLAIM`; gated by
   **`gf_team_reclaim`** (default 1, bridge `reclaim_<0|1>`); intentional spectates are excluded via the
   breadcrumbs (`gf_menuTeamChoice` → `user`; `gf_seqTeamMove`'s spectator branch → `moved`, covering the
