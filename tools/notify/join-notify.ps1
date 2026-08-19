@@ -42,11 +42,11 @@ $script:PlayerLinkFile = Join-Path $PSScriptRoot '..\players.local.json'
 # what a first join used to render in BY ACCIDENT - but it is set explicitly here, because a
 # normal join rides at 'default' priority and would otherwise be blurple.
 $script:JoinColor = 0xE67E22
-# The site link, as the last LINE OF THE BODY. Two facts decide the shape: a Discord FOOTER cannot
+# The call to action, as the last LINE OF THE BODY. Two facts decide the shape: a Discord FOOTER cannot
 # be a link (raw text, no markdown, no anchors), while an embed DESCRIPTION does render markdown,
 # so [label](url) is clickable there. The embed `url` (whole title blue and clickable) is
 # deliberately NOT used as well: two link affordances on a three-line card reads as clutter.
-$script:JoinLink = '[gunfight.us](https://gunfight.us)'
+$script:JoinLink = '**[Play for free](https://gunfight.us)**'
 
 # Send-GfNtfy: the shared ntfy sender (JSON publish, unicode-safe titles).
 . (Join-Path $PSScriptRoot '..\ntfy.ps1')
@@ -370,7 +370,11 @@ function Get-DetailBits($loc, $ping, $count) {
 #
 # Both are functions so each format is testable without a live server.
 function Get-JoinTitleDiscord($name, $mapName, $count) {
-  $t = "$name joined"
+  # ⚠ The arrow is built from its CODEPOINT, never pasted as a literal. This file is UTF-8
+  # WITHOUT a BOM, and PowerShell 5.1 reads such a file as ANSI - a literal U+2794 would
+  # reach Discord as mojibake, and it would look like a Discord problem rather than an
+  # encoding one. Same reason the flag emoji are built at runtime, never typed here.
+  $t = "$name $([char]0x2794) Joined:"
   # SINGLE spaces here. The double-space separators are the ntfy format's, where they group
   # a run-on title on a phone; Discord preserves them literally and they read as a typo.
   if ($mapName)          { $t += " $mapName" }
@@ -605,6 +609,7 @@ $cfg = [pscustomobject]@{
   # channel. Deliberately not env-overridable: a webhook URL is a credential and config.json is
   # the one place it lives.
   discordWebhooks = $(if ($fileCfg) { $fileCfg.discordWebhooks } else { $null })
+  discordFooter   = $(if ($fileCfg) { $fileCfg.discordFooter } else { $null })
 }
 $pw = Get-CfgVal $fileCfg 'GF_RCON_PW' 'password' ''
 if (-not $pw) { $pw = Read-RconPw }

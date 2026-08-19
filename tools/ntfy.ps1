@@ -44,6 +44,10 @@ function Get-GfNtfyConfig {
             ntfyToken       = [string]$j.ntfyToken
             serverName      = $(if ($j.serverName) { [string]$j.serverName } else { 'Gunfight' })
             discordWebhooks = $j.discordWebhooks
+            # ⚠ EVERY key Send-GfDiscord reads must be listed here. This object is a REBUILD, so
+            # anything omitted is silently absent at the send site with no error - exactly how
+            # discordWebhooks went missing from join-notify's copy and sent joins to ntfy only.
+            discordFooter   = $j.discordFooter
         }
         $hasNtfy = -not [string]::IsNullOrWhiteSpace($cfg.ntfyTopic)
         # ⚠ ANY channel counts, not just 'default'. Checking only the default would return $null

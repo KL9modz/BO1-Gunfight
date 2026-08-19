@@ -253,6 +253,7 @@ Describe "join-notify config build - every transport survives the rebuild" {
         Assert-True ($keys -contains 'discordWebhooks') `
             "the config object drops discordWebhooks - every alert from this service degrades to ntfy-only, silently. Keys: $($keys -join ', ')"
         Assert-True ($keys -contains 'ntfyTopic') "the config object drops ntfyTopic"
+        Assert-True ($keys -contains 'discordFooter') "the config object drops discordFooter - the footer silently falls back to serverName"
     }
 }
 
