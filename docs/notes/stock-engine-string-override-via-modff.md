@@ -11,6 +11,9 @@ metadata:
 
 **THE FILENAME PREFIX RULE (the trap).** A localized asset is named `<STR FILENAME>_<REFERENCE>`. Our `gf.str` declares `REFERENCE GAMETYPE_DESC` and the game reads `GF_GAMETYPE_DESC` — the `GF_` comes from the *filename*. So overriding the engine's `CGAME_CONNECTIONINTERUPTED` requires a **new `localizedstrings/cgame.str`** with `REFERENCE CONNECTIONINTERUPTED`, plus `localize,cgame` in `mod.csv`. Putting that reference in `gf.str` compiles to `GF_CONNECTIONINTERUPTED`, which **nothing reads** — it fails silently. Each string is its own asset, so a one-reference `cgame.str` shadows exactly that string, not the rest of the stock `CGAME_*` family.
 
+⚠ **NOT UNIVERSAL — IT DEPENDS ON LOAD ORDER, and this note used to overstate it.** A mod.ff asset wins only over a stock asset whose home zone the client loads **after** `mod`. From a client `console_mp.log`: `code_post_gfx_mp`(896) → **`mod`(946)** → `ui_mp`(965) → `common_mp`/`en_common_mp`(999). First registration wins. The two strings below work because they live in **`en_common_mp`**, which loads after. The counterexample is the load-screen tips: `MPTIP_*` lives in `en_code_post_gfx_mp`, which loads **before** `mod`, so an identical `mptip.str` override is silently **discarded**. **Check the home zone's position before assuming any override will land** — see [[load-screen-tips-connect-menu-fork]] for the full table and the asset-vs-reference test.
+
+
 **An EMPTY value renders as nothing** — the engine does NOT fall back to printing the raw key. (Tested explicitly, because a fallback would have put `CGAME_SB_PING` on screen — strictly worse than the thing we were hiding.)
 
 **Shipped in `localizedstrings/cgame.str`:**

@@ -1,6 +1,6 @@
 ---
 name: vps-deploy-repo-path-and-ssh-invocation
-description: "deploy.ps1 lives in C:\\gfdeploy\\BO1-Gunfight (NOT the mods folder), and running it over SSH must go through cmd.exe — PowerShell 5.1 wraps git's stderr into a terminating NativeCommandError and silently aborts the script mid-deploy"
+description: "deploy.ps1 lives in C:\\gfdeploy\\BO1-Gunfight (NOT the mods folder), and running it over SSH must go through cmd.exe — PowerShell 5.1 wraps git's stderr into a terminating NativeCommandError and silently aborts the script mid-deploy; and the clone can COMMIT but never PUSH, so a box-side commit hard-fails the next deploy until you fetch it down to the laptop and push from there"
 metadata: 
   node_type: memory
   type: reference
@@ -46,3 +46,44 @@ A good run logs `Updater appears WEDGED (plutonium.exe flat on CPU AND I/O for 4
 The game server process is named **`plutonium-bootstrapper-win32.exe`** — not `plutonium.exe`, not `BlackOpsMP.exe`. A `Get-Process -Name plutonium,BlackOpsMP` returns nothing and reads as "the server is DOWN" when it is perfectly healthy. Twice I called a live server dead on this. Check `Get-NetUDPEndpoint -LocalPort 28960` and the freshness of `C:\inetpub\wwwroot\live\status.json` instead.
 
 ⚠ And do **not** hit `/api/tick` yourself to check health — that makes you a THIRD rcon consumer competing with the panel's paced queue (~1 reply/0.7s) and it just times out, which also looks like a dead server. Read `status.json` (written by GF-StatusService) — zero extra rcon. See [[rcon-panel-queue-saturation]], [[read-the-server-not-the-file]].
+
+## 3. The deploy clone can COMMIT but can never PUSH — and a box-side commit blocks the next deploy
+
+Found 2026-08-17, mid-deploy. `deploy.ps1 -Mod` opens with `git pull --ff-only`, which died on:
+
+```
+hint: Diverging branches can't be fast-forwarded, you need to either: ...
+fatal: Not possible to fast-forward, aborting.
+git pull --ff-only failed (exit 128)
+```
+
+The cause was a **real commit made ON the box** (a watchdog fix authored there that morning, already deployed and verified live) that had never reached GitHub. So the clone is not the read-only mirror it looks like — work genuinely originates there, via the `gf-vps` Remote Control session.
+
+⚠ **And it cannot push it back.** Over SSH the push fails before it ever reaches the network:
+
+```
+fatal: Unable to persist credentials with the 'wincredman' credential store.
+bash: line 1: /dev/tty: No such device or address
+fatal: could not read Username for 'https://github.com'
+```
+
+Git Credential Manager's `wincredman` store wants an interactive desktop/TTY, and a non-interactive SSH session has neither. **Do not "fix" this by putting a PAT on the box** — that hands a permanent admin agent a push credential on top of everything else it already holds.
+
+**The recovery — pull the box's commits DOWN to the laptop and push from there**, which keeps the SHAs identical so both sides end up genuinely in sync (a cherry-pick would leave the box diverged again on the very next deploy):
+
+```
+# on the box: merge, don't rebase — the classifier blocks history rewrites,
+# and a merge is the honest record of two lines of work meeting anyway
+ssh gf-vps "cd C:\gfdeploy\BO1-Gunfight; git merge origin/main --no-edit"
+
+# on the laptop: fetch the box's own commits over ssh, fast-forward, push
+git fetch "gf-vps:C:/gfdeploy/BO1-Gunfight" main
+git merge --ff-only FETCH_HEAD
+git push origin main
+```
+
+`git fetch <ssh-alias>:<windows-path>` **works** against the box despite its PowerShell default shell — worth knowing, because it is the only channel that moves box-side history out intact.
+
+⚠ **Verify the box lands at `## main...origin/main` with no ahead/behind** before calling it done. "Ahead" alone still deploys fine (a fast-forward to an ancestor is a no-op, which is why the deploy could proceed before the sync was finished) — but the moment the laptop pushes anything new it becomes "ahead AND behind", and that is the state that hard-fails `--ff-only`.
+
+⚠ Two related traps this incident also confirmed: SSH lands you in **PowerShell 5.1**, where `&&` is a parse error (use `;`), and `deploy.ps1`'s self-update warning fires when a pull changes `tools/deploy.ps1` or `tools/release_common.ps1` — if the box already had them (as it does after a merge), no warning appears and the run is already on the new code.

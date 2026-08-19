@@ -55,6 +55,21 @@ set scr_pregame_timelimit "0"                       // Stock warmup time limit i
 set scr_team_maxsize "7"                            // Gunfight: max players per team (up to 7v7). Overflow past this is sent to spectator on spawn. sv_maxclients (launch bat) = 18 -> 14 play + 1 democlient + 3 spectator/headroom. Set 4 for a 4v4-capped server.
 // scr_gf_largemode_minplayers is RETIRED (no longer read). Small/large is hard-wired to the health-panel skull cap: <=4v4 small, any team of 5+ large. Force a mode with scr_gf_teamspawnmode "large" | "small".
 set scr_xpscale "1"                                 // Round end XP multiplicator (score * scr_xpscale = xp)
+// PLAYER PROFILE: which stat blob this server reads and writes. Plutonium normally gives every mod
+// its OWN player profile keyed to fs_game, so a modded server is a private level-1 ladder and rank
+// never carries in or out. modStats 0 points the server at the BO1 COREGAME profile instead, so a
+// player arrives at their real Black Ops rank and the XP they earn here goes back into it.
+// REAL engine dvar, verified by live rcon read -- is:"1" default:"1" Domain is 0 or 1 -- so this is
+// cfg-owned like the g_fix_* family below and a GSC seed-if-empty could never fire on it.
+// Three things to know before changing it:
+//  1. It is TWO-WAY. Gunfight registers ~5x stock XP (kill 500 vs 100), so ranks here climb ~5x
+//     faster than vanilla and that lands in the player's real profile.
+//  2. It covers STATS ONLY. Settings and binds live in config_mp.cfg, a different layer driven by
+//     fs_game, so those still namespace per mod and still look reset on a player's first join.
+//  3. The _gf_fun account editors (funlevel50 funprestige fununlockpro funcodpoints) stop being
+//     sandboxed and write real profiles. That is deliberate here -- it is how a player who wants
+//     their Gunfight progress carried over gets it restored -- but it has no undo.
+set modStats "0"                                    // 0 = share the real BO1 rank profile. 1 = private per-mod stats (Plutonium default).
 set scr_wagerbet "100"                              // How much it would cost to connect to a wager gamemode. 
 set sv_disableClientConsole "1"                     // 1 = block players opening the in-game console (shrinks client cheat/tweak surface on a public lobby)
 // sv_cheats MUST be 0 on a public dedicated server: 1 makes every cheat-protected command and dvar

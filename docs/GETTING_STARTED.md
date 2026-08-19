@@ -157,7 +157,8 @@ Black Ops Gunfight is a ranked server. Join through the in-game **Server Browser
 | **Game won't launch / bad install** | In the CB Servers Launcher, open **Black Ops -> SETUP** to re-point or re-download your copy, then click **VERIFY**. |
 | **Gunfight isn't in the server list** | Reset all filters, view the **Ranked** tab, and click **Refresh** to find `Gunfight [gunfight.us]`. |
 | **Error connecting to the server** | Make sure your Plutonium client is up to date, restart then rejoin. |
-| **Settings & Rank reset to defaults** after joining Gunfight | Normal on the very first join. Settings & Rank are saved **per mod**, not per game. Back out to the main menu (the mod stays loaded), apply the [recommended settings](#2-recommended-settings), and rejoin. One-time setup; they stick from then on. You'll rank up fast. |
+| **Settings reset to defaults** after joining Gunfight | Normal on the very first join. Your *settings* (FOV, binds, video) are saved **per mod**, not per game. Back out to the main menu (the mod stays loaded), apply the [recommended settings](#2-recommended-settings), and rejoin. One-time setup; they stick from then on. |
+| **Does my rank carry over?** | Yes. Gunfight uses your **real Black Ops rank**, the same one you have on any other ranked server, and the XP you earn here counts toward it. Only your settings are separate (row above). |
 
 ---
 

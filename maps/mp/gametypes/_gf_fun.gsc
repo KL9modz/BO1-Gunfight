@@ -982,9 +982,16 @@ gf_funTeamGod( team, enable )
 // --- Account editors -------------------------------------------------------------
 //
 // ⚠ THREE FACTS decide what is honest here:
-//  1. Plutonium stats are NAMESPACED PER MOD -- everything below writes
-//     players\mods\mp_gunfight\mpstats, this mod's own ladder
-//     ([[plutonium-stats-are-namespaced-per-mod]]). Nobody's real Black Ops rank is touched.
+//  1. ⚠ THESE NOW EDIT REAL BLACK OPS ACCOUNTS. This used to read "Plutonium stats are NAMESPACED
+//     PER MOD ... nobody's real Black Ops rank is touched" -- that was true only while the server
+//     ran the Plutonium default. Gunfight now ships `modStats 0` (dedicated.cfg), which points the
+//     server at the BO1 COREGAME profile, so everything below writes the player's REAL rank,
+//     prestige, CoD points and unlocks -- carried to every server they ever join
+//     ([[plutonium-stats-are-namespaced-per-mod]]).
+//     This is DELIBERATE and is the feature's remaining purpose: restoring a player who wants the
+//     rank they earned here folded into their real profile. It is rare-use by policy, which is what
+//     the cheat gate is for. Do NOT re-widen it into a casual toy, and do NOT "fix" this comment
+//     back to the sandboxed wording without first checking what modStats actually reads.
 //  2. These writes are PERSISTENT with NO UNDO, which is why they sit behind the cheat gate and
 //     use only paths proven elsewhere: the prestige write is EnCoRe's exact battle-tested sequence
 //     (setDStat plevel + setRank), the level-50 write is its exact statSet, and the pro-perk unlock

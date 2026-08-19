@@ -19,7 +19,6 @@ wins** takes the match.
 - Migrate to new host
 - Map/mode vote
 - Website screenshots
-- Add more fun mods from other mod menus
 - Create alt modes: Team Sharpshooter, Team Gun Game
 - **Retail-Steam BO1 port: CLOSED 2026-08-14 — the working server binary is unobtainable, and the
   one person who could ask already did and was refused.** Answered directly by **Classixz**
@@ -195,8 +194,18 @@ wins** takes the match.
   "FF/settings revert on restart"). Related, root-caused 2026-07-20: **the LAPTOP's dedicated server is
   launcher-started with NO `+exec dedicated.cfg`** — that file (and the panel's 💾 Save, which writes it)
   is decoration locally; only `seta`-archived dvars survive a local restart. The local bot tuning is
-  `seta`-contained; the real fix is a local start bat that execs the cfg like the VPS's
-  ([[local-launcher-no-exec-dedicated-cfg]]).
+  `seta`-contained; the real fix was a local start bat that execs the cfg like the VPS's
+  ([[local-launcher-no-exec-dedicated-cfg]]) — **DONE 2026-08-18: `tools/local/start_local_server.bat`**
+  passes `+exec`, so the local cfg is authoritative and the panel's 💾 Save means what it says there.
+  ⚠ It launches an **isolated** box (`tools/local/setup_test_box.ps1` builds a separate storage tree,
+  `LOCALAPPDATA`-pinned, mod folder junctioned to the repo) on **port 28965**, and BOTH of those are
+  load-bearing: 28960 is the only thing that collides with the game client on the same PC (they
+  otherwise coexist fine — no single-instance lock), and the separate `players/` keeps a test box's
+  5× XP + `_gf_fun` account editors off the **real** BO1 profile that `modStats 0` exposes. ⚠ A
+  dedicated server needs a **valid** server key or it never loads a map (`DW_AUTHORIZING` times out →
+  the TU WAD never fetches → `map_rotate` early-outs forever); use a **separate** key from the live
+  server, since the key's label is the browser name. Runbook: `docs/LOCAL_TESTING.md`
+  ([[local-test-box-port-collision-and-server-key]]).
 > Known design caveat, not a bug: **large/small spawn mode takes effect one round after the HUD readout**
 > (next-round snapshot vs live count — see *Team-size mode*).
 
@@ -342,6 +351,13 @@ external references we use are the official engine sources (see **Resources**).
   rejected — see *XP* below; it is harmless but it is **not** a local-only quirk.)
 - **Test panel/bridge/telemetry changes against a DEDICATED server, not a listen host** — a listen
   server masks RCON queue saturation and the "Unknown cmd" dvar-probe spam that only bite on the VPS.
+  **`tools/local/start_local_server.bat` is that dedicated server** (isolated tree, port 28965, and you
+  can play on the same PC while it runs) → `docs/LOCAL_TESTING.md`.
+- **Before ANY deploy, run `tools\local\preflight.ps1`** — one command for the three static verifiers,
+  both test suites, `mod.ff`/`.iwd` staleness, and whether the work is actually pushed (`deploy.ps1`
+  pulls from `origin`, and `mod.ff` reaches the box only via `origin/release`, so an unpushed commit or
+  an unpublished rebuild silently does not deploy). Exit 1 = do not deploy. It is the **static** half
+  only; the other half is a map load + the smoke checklist in `docs/DEV.md`.
 
 ### 🛑 MARKETING COPY IS THE OWNER'S — NEVER "CORRECT" IT AGAINST THE CODE
 **`site/wwwroot/*.html` and `README.md`'s feature list are ADVERTISING written by the owner, not
@@ -470,6 +486,7 @@ look worse, the safe direction for a probe that gates spending.
 |---|---|
 | `docs/REFERENCE.md` | Authoritative present-tense per-system prose, the full gameplay dvar/var tables, and a per-function reference for the gameplay files. |
 | `docs/DEV.md` | Repo layout, GSC include graph, `build_ff.ps1`, branch/release model + strip markers, deploy pipeline, dev tooling (RCON/bots/debug). |
+| `docs/LOCAL_TESTING.md` | The **local test box** (`tools/local/`): isolated storage tree + dedicated-server launcher that execs the cfg, and `preflight.ps1`, the one-command pre-deploy gate. Run it before every deploy. |
 | `docs/VPS_DEPLOY.md` | 11-phase VPS provisioning + deploy runbook (FastDL, git-pull deploy). |
 | `docs/MIGRATION.md` | Box-to-box migration runbook — the **delta** VPS_DEPLOY doesn't rebuild: what state is box-local and must be carried, what to rotate, cutover order + acceptance checklist. |
 | `docs/VPS_HARDENING.md` | Security runbook (RDP/WinRM/TLS/IIS `web.config`/DNS) with as-applied status. |
@@ -1163,7 +1180,10 @@ animates (`gf_slideLoadout`). Related: [[menu-rendered-loadout-overview]]. Full 
 ### Damage scoring, friendly fire, flinch, vision
 - **Score = total damage dealt** (`gf_onPlayerDamage`), capped per hit at the victim's current HP (no
   overkill inflation), pushed silently (bypasses the stock rank-popup so score doesn't flash each hit).
-- **Rank XP is ~5× stock and lives ONLY in `registerScoreInfo`** (`gf.gsc onStartGameType`): **kill 500**,
+- **Rank XP is ~5× stock and lives ONLY in `registerScoreInfo`** (`gf.gsc onStartGameType`) — and
+  ⚠ since we ship **`modStats 0`** it accrues to the player's **REAL Black Ops profile**, not a
+  private per-mod ladder, so changing any value here changes how fast people rank up *everywhere*
+  ([[plutonium-stats-are-namespaced-per-mod]]): **kill 500**,
   **headshot 150** (stacks on the kill → 650 on a headshot kill), **assist 200** (the flat tier
   `gf_onPlayerKilled` pays every damager; the `assist_25/50/75` tiers are registered but unreachable),
   **capture 500** (OT flag — wired, see below), and the win/loss/tie **match-bonus
@@ -1378,7 +1398,8 @@ team-switch `gf_seqTeamMove` — never count; captures ride the existing `pers["
 last-flushed mark). ⚠ The flush takes the round number **as an argument** — its two call sites sit on
 opposite sides of stock `endGame`'s `roundsplayed++` (`:927` increments, `:985` invokes
 `onRoundEndGame`), so the rescue site passes `roundsplayed - 1`. ⚠ **Deliberately NOT stock's `incPersStat`/`statAdd` chain** — that writes the
-per-mod Demonware blob the server can never read back ([[plutonium-stats-are-namespaced-per-mod]]), and
+Demonware profile blob the server can never read back ([[plutonium-stats-are-namespaced-per-mod]] —
+the player's **real** one now that we ship `modStats 0`, which only raises the stakes), and
 parts of it are dead under `overridePlayerScore`. Flush is **double-sited and zero-safe** (counters
 zeroed on flush; all-zero lines skipped): `gf_endRound` (pre-notify block, before endGame's
 `roundsplayed++` — the round-win predicate reads `pers["gf_spawnedRound"] == roundsplayed`) plus
@@ -1708,6 +1729,33 @@ exposes them under ADVANCED → ENGINE GAMEPLAY. The VPS's
 only via the panel (toggle live, then 💾 Save to persist) or a hand edit. ⚠ `g_print_entity_leaks 1` logs
 leaks as they happen — the way to actually verify the entity-leak fix rather than assume it.
 
+**`modStats 0` — Gunfight is a REAL ranked server: players bring their actual BO1 rank.** Plutonium
+normally keys the player stats profile to `fs_game`, so a modded server is a private level-1 ladder
+(`players\mods\mp_gunfight\mpstats`) and rank carries neither in nor out. **`modStats` is the
+server-side opt-out** — another cfg-owned Plutonium engine dvar, same class as the `g_fix_*` family
+above (no GSC writes it, and a seed-if-empty could never fire: it is engine-registered, never empty).
+`0` = read/write the **BO1 coregame profile**, shared with vanilla and every other unmodded ranked
+server; `1` = the per-mod ladder (Plutonium's default). ⚠ **This file used to state that no
+server-side opt-out existed — that was wrong** and it closed the question for months; the corrected
+evidence, incl. the live typed read (`default:"1" Domain is 0 or 1`, versus the inert
+`g_fix_viewkick_dupe`'s `Domain is any text`) lives in
+[[plutonium-stats-are-namespaced-per-mod]]. Four consequences, all deliberate:
+- **It is TWO-WAY.** The ~5× `registerScoreInfo` XP above now inflates players' **real** ranks ~5×.
+- **It covers STATS ONLY.** `config_mp.cfg` (settings, binds, FOV) is a *different* layer driven by
+  `fs_game`, which we cannot drop without losing `mod.ff` — so a player's first join still looks
+  like their settings reset, and only a player-side copy/junction fixes that half. Do not promise
+  both.
+- **The `_gf_fun` account editors now edit real accounts** (`funlevel50_`, `funprestige_`,
+  `funcodpoints_`, `fununlockpro`), permanently, no undo. **Intended** — that is the rank-restoration
+  path for a player who wants their Gunfight progress folded into their real profile. Rare-use by
+  policy, behind the panel's Cheat Verbs gate. ⚠ Do not re-widen them, and do not "restore" the old
+  sandboxed wording in `_gf_fun.gsc`.
+- **Not retroactive** — rank already earned in the per-mod file stays stranded there.
+Panel: ADVANCED → ENGINE GAMEPLAY → *Player Stats Profile*, badged `RESTART` (whether the engine
+latches it is unverified, and clients pick their stat set at connect, so cfg + restart is the only
+shape trusted). ⚠ Its neighbour **`use_localStats` is an unrelated axis** (local filesystem vs
+Demonware storage) — leave it at 0.
+
 ⚠ **Keep every `dedicated.cfg` comment semicolon-free** — the cfg parser splits on `;` *inside* a `//`
 comment and executes each fragment ([[unknown-command-cd-and-cfg-semicolon-parse]]).
 
@@ -1746,6 +1794,43 @@ inside an ff with **`tools/inflate_fastfile_zlib.ps1`** (⚠ it already exists �
 inflater) rather than inferring it. ⚠ `build_ff.ps1` is not byte-deterministic, so a hash identifies
 **one artifact**, never that two builds match ([[modff-drift-vs-gsc-deploy]] — compare SIZE; stale =
 smaller). ([[fastdl-download-clobbers-local-modff]])
+
+### 🛑 The mod.ff override rule: LOAD ORDER decides, not the technique
+**A mod.ff asset beats a stock asset only when the client loads that asset's home zone AFTER
+`mod`.** First registration wins; the later duplicate is discarded. From a client `console_mp.log`,
+one connect sequence: `code_pre_gfx_mp` → **`code_post_gfx_mp`(896)** → `patch_mp` → `plutonium_mp` →
+**`mod`(946)** → `patch_ui_mp` → **`ui_mp`(965)** → **`common_mp`/`en_common_mp`(999)** → map zones.
+
+| Home zone | Overridable by mod.ff? | Proven by |
+|---|---|---|
+| `code_pre_gfx_mp`, `code_post_gfx_mp`, `patch_mp`, `plutonium_mp` | **NO** (they register first) | `mp/didyouknow.csv`, `MPTIP_*` |
+| `patch_ui_mp`, `ui_mp`, `common_mp`, `en_common_mp`, map zones | **yes** | `ui_mp/main.menu`, `CGAME_SB_SCORE`, `CGAME_CONNECTIONINTERUPTED` |
+
+⚠ **This is why the `cgame.str` overrides below work — not because localizedstrings are special.** They
+live in `en_common_mp`. An identical `mptip.str` targeting the load-screen tips is silently discarded
+because `MPTIP_*` lives in `en_code_post_gfx_mp`. Same technique, same file shape, opposite outcome.
+⚠ **A name appearing in a pre-`mod` zone is NOT proof the asset lives there.** `mp/gametypesTable.csv`
+appears in `patch_mp`/`ui_mp` purely as menu `tableLookup` *text*. The real stringtable carries its cell
+data immediately adjacent in the zone; a bare name with unrelated neighbours is a reference.
+Read the zone before assuming an override will land ([[load-screen-tips-connect-menu-fork]]).
+
+### Load-screen tips (`ui_mp/connect.menu` fork)
+The tip under the loadbar on the connecting/map-load screen is the **client** dvar `didyouknow`,
+rendered by an itemDef in `ui_mp/connect.menu`. Stock fills it with
+`selectStringTableEntryInDvar mp/didyouknow.csv 0 didyouknow` (86 `@MPTIP_*` rows). **We render our own
+`GF_TIP_*` strings instead**, via a fork of `connect.menu` (`menufile,ui_mp/connect.menu`) whose only
+edit is that one itemDef: `exp text ( "@GF_TIP_" + string( GF_TIP_INDEX ) )`, with `GF_TIP_INDEX` =
+`( int( milliseconds() / GF_TIP_PERIOD ) % GF_TIP_COUNT )`. `milliseconds()` is the CLIENT's UI clock, so the tip
+**rotates every 4s (`GF_TIP_PERIOD`) while the load screen is up** (stock rolls once per load) and the server pushes nothing.
+⚠ **The two cheaper routes are PROVEN DEAD — do not retry either.** Overriding the pool or the `MPTIP_*`
+text loses to load order (above). Pushing the dvar with `setClientDvar` loses because **the engine re-rolls
+it at map load**: the command is a literal in `BlackOpsMP.exe` (VA `0xA1EEE0`) PUSHed from 4 sites, all in
+map-load/connect code. Seen from outside: stock tips visibly differ from one load screen to the next, and
+the dedicated server never even has the dvar (0 hits in a 9.8MB VPS `console_mp.log`).
+⚠ **Tip refs are POSITIONAL** — built as `"@GF_TIP_" + index`, so `localizedstrings/gf.str` must hold a
+**gapless 0-based run** and `GF_TIP_COUNT` in the menu must equal the entry count. A gap renders blank,
+not an error. ⚠ Not to be confused with `maps/mp/_tutorial.gsc`'s `MPTIP_TRAINING_*` Combat-Training HUD
+tips. ([[load-screen-tips-connect-menu-fork]])
 
 ### Overriding stock engine strings (`localizedstrings/cgame.str`)
 A localizedstring baked into **our** `mod.ff` **overrides the game's own shipped-zone copy** — so any

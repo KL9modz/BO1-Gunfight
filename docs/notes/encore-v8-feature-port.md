@@ -46,8 +46,11 @@ per-player kill/bring/goto, `funxp_`, and the `gf_funSetDvar` snapshot machinery
 - **"Spawn Hackenkreuz"** — builds a swastika. Nothing technical about that call.
 - **Magician** — the menu entry references a function that does not exist anywhere in the pack.
 - **Prestige note:** the first pass refused prestige-set as risky; the owner overrode, and it ships
-  as EnCoRe's exact battle-tested sequence. All account writes land on THIS MOD's own stats
-  namespace ([[plutonium-stats-are-namespaced-per-mod]]) — the blast radius is our own ladder.
+  as EnCoRe's exact battle-tested sequence. ⚠ **The "blast radius is our own ladder" reasoning that
+  justified it EXPIRED on 2026-08-17**: the server now ships `modStats 0`, so every account write
+  here lands on the player's **real** Black Ops profile
+  ([[plutonium-stats-are-namespaced-per-mod]]). Still shipped, still gated, now rare-use by policy
+  and repurposed as the rank-restoration tool.
 
 ### What was verified statically, and what is still open
 
@@ -197,8 +200,9 @@ Instant level 50 · Prestige 1-16 (+999) · Unlock All · Unlock Pro Perks · Co
 (8 presets) · Class names · Clantag · Player name.
 
 ⚠ **Most of this cannot work the way the menu implies, and the rows must say so rather than lie:**
-- Plutonium stats are **namespaced per mod** — `players\mods\mp_gunfight\mpstats` is its own ladder
-  ([[plutonium-stats-are-namespaced-per-mod]]), so edits touch only our own profile.
+- Plutonium stats are **namespaced per mod** by default — but ⚠ **we opted out**: the server ships
+  `modStats 0`, so account edits touch the player's **real BO1 profile**, not a private ladder
+  ([[plutonium-stats-are-namespaced-per-mod]]). Any row implying otherwise is now a lie.
 - **`scr_xpscale` is READ-ONLY** on Plutonium T5 from both rcon and cfg
   ([[xp-scrxpscale-readonly-and-dead-score-path]]). The XP-lobby presets cannot be implemented as
   EnCoRe implements them. The only working lever is assigning `level.xpScale` after `_rank::init`.

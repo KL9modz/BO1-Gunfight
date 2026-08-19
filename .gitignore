@@ -160,6 +160,16 @@ mp_gunfight.iwd*
 # above are path-anchored to the repo ROOT, so a shelved copy of images/ or materials/ is
 # unaffected by them.
 
+# Local test box — machine-local launcher settings for tools/local/start_local_server.bat.
+# This is where the Plutonium SERVER KEY goes if a dev box is ever run listed, so the ignore is
+# a GLOB and the guard is the same one the ops crib sheet gets: the key has leaked once already,
+# by being pasted where it did not belong, and it is the one secret git history never held.
+# A working copy of the cfg override layer is ignored here too, for the case where someone puts
+# one next to the template instead of in storage/t5 where the engine execs it.
+tools/local/local.env.bat
+tools/local/local_test.cfg
+!tools/local/*.example
+
 # Discord live-status card - the remembered message id it keeps rewriting. Box-local and
 # per-channel: copying it to another box would make that box edit THIS box's card. Regenerated
 # on demand (a missing id just posts a fresh card, and the old one is then orphaned).
