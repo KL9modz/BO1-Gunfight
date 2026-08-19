@@ -208,31 +208,35 @@ if (Test-Path -LiteralPath $iwdNew) {
 #   path, so a loose images\*.iwi is live on the next level load with nothing packaged
 #   ([[mod-folder-is-first-in-client-fs-search-path]]). Packaging is too late to catch it.
 #
-# Thresholds are anchored to what was MEASURED, not chosen: 1024x1024 uncompressed (4 MB)
-# is proven to load, 2048x2048 (16 MB) is proven fatal. Anything uncompressed above the
-# proven-good size is unproven and the one size tested above it killed the client, so it
-# fails; smaller ones only warn, because they demonstrably work and are merely wasteful.
+# Thresholds are anchored to what was MEASURED, not chosen: 1024x1024 uncompressed is
+# proven to load (a dozen are live in the playtest branch right now), 2048x2048 is proven
+# fatal. Anything uncompressed ABOVE the proven-good size is unproven and the one size
+# tested above it killed the client, so it fails; smaller ones only warn, because they
+# demonstrably work and are merely wasteful.
+# > Compared by PIXELS, not bytes. 1024x1024 uncompressed is 4,194,352 B - a hair OVER
+#   4 MB - so a "$mb -gt 4" test fails the very files we proved good. Dimensions are also
+#   what was actually measured, so the check says what the evidence says.
 # Nothing we author trips either: make_camo_iwi.ps1 emits DXT, and every image main ships
 # today is DXT1/DXT5 at 0.5 MB or under.
 $iwiCommon = Join-Path $RepoRoot "tools\iwi_common.ps1"
 if ($iwis.Count -and (Test-Path -LiteralPath $iwiCommon)) {
     . $iwiCommon
     $UNCOMPRESSED_32 = 0x01
-    $PROVEN_GOOD_MB  = 4
+    $PROVEN_GOOD_PX  = 1024 * 1024
     $bad = @(); $waste = @()
     foreach ($f in $iwis) {
         $h = Read-IwiHeader -Path $f.FullName
         if (-not $h.ok -or [int]$h.format -ne $UNCOMPRESSED_32) { continue }
-        $mb = $f.Length / 1MB
-        $row = "{0} ({1:N0} MB, {2}x{3}, uncompressed 32-bit)" -f $f.Name, $mb, $h.width, $h.height
-        if ($mb -gt $PROVEN_GOOD_MB) { $bad += $row } else { $waste += $row }
+        $px  = [int]$h.width * [int]$h.height
+        $row = "{0} ({1:N0} MB, {2}x{3}, uncompressed 32-bit)" -f $f.Name, ($f.Length / 1MB), $h.width, $h.height
+        if ($px -gt $PROVEN_GOOD_PX) { $bad += $row } else { $waste += $row }
     }
     if ($bad.Count) {
-        Fail "$($bad.Count) uncompressed .iwi over $PROVEN_GOOD_MB MB - these HANG THE CLIENT at mod load. Recompress to DXT5 (4x smaller) or drop them:"
+        Fail "$($bad.Count) uncompressed .iwi larger than 1024x1024 - these HANG THE CLIENT at mod load. Recompress to DXT5 (4x smaller) or drop them:"
         $bad | Select-Object -First 8 | ForEach-Object { Write-Host "         $_" -ForegroundColor DarkRed }
     }
     if ($waste.Count) {
-        Warn "$($waste.Count) uncompressed .iwi at or under $PROVEN_GOOD_MB MB - they load, but cost 4x the VRAM of DXT. Recompress before promoting to main."
+        Warn "$($waste.Count) uncompressed .iwi at 1024x1024 or smaller - they load, but cost 4x the VRAM of DXT. Recompress before promoting to main."
     }
     if (-not $bad.Count -and -not $waste.Count) { Ok "image formats ($($iwis.Count) .iwi, all DXT)" }
 }
