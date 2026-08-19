@@ -194,6 +194,48 @@ if (Test-Path -LiteralPath $iwdNew) {
     Fail "mp_gunfight.iwd.new exists - the last .iwd build did NOT land (the game held the file open). Close the game and swap it in."
 }
 
+# IMAGE FORMAT. An uncompressed 32-bit .iwi (format 0x01) is 4x the bytes of the same
+# texture as DXT, and past a certain size the CLIENT REFUSES TO LOAD THE MOD AT ALL:
+# it relaunches, gets as far as the menu zones, then hard-hangs with
+#   Com_ERROR: Needed to allocate at least 16.0 MB to load images
+# and a truncated log. Bisected live 2026-08-18 on the weapon-skin import: 185 images /
+# 255 MB loaded fine, and putting back ONE 2048x2048 uncompressed file (16 MB) hung it
+# again. So it is a PER-IMAGE ceiling, not aggregate pressure -- trimming the total does
+# not help, and the symptom points nowhere near the cause.
+#
+# > This check does NOT belong in make_iwd.ps1, and that is the whole point: the failure
+#   needs no .iwd. The mod FOLDER sits above every stock iw_*.iwd in the client's search
+#   path, so a loose images\*.iwi is live on the next level load with nothing packaged
+#   ([[mod-folder-is-first-in-client-fs-search-path]]). Packaging is too late to catch it.
+#
+# Thresholds are anchored to what was MEASURED, not chosen: 1024x1024 uncompressed (4 MB)
+# is proven to load, 2048x2048 (16 MB) is proven fatal. Anything uncompressed above the
+# proven-good size is unproven and the one size tested above it killed the client, so it
+# fails; smaller ones only warn, because they demonstrably work and are merely wasteful.
+# Nothing we author trips either: make_camo_iwi.ps1 emits DXT, and every image main ships
+# today is DXT1/DXT5 at 0.5 MB or under.
+$iwiCommon = Join-Path $RepoRoot "tools\iwi_common.ps1"
+if ($iwis.Count -and (Test-Path -LiteralPath $iwiCommon)) {
+    . $iwiCommon
+    $UNCOMPRESSED_32 = 0x01
+    $PROVEN_GOOD_MB  = 4
+    $bad = @(); $waste = @()
+    foreach ($f in $iwis) {
+        $h = Read-IwiHeader -Path $f.FullName
+        if (-not $h.ok -or [int]$h.format -ne $UNCOMPRESSED_32) { continue }
+        $mb = $f.Length / 1MB
+        $row = "{0} ({1:N0} MB, {2}x{3}, uncompressed 32-bit)" -f $f.Name, $mb, $h.width, $h.height
+        if ($mb -gt $PROVEN_GOOD_MB) { $bad += $row } else { $waste += $row }
+    }
+    if ($bad.Count) {
+        Fail "$($bad.Count) uncompressed .iwi over $PROVEN_GOOD_MB MB - these HANG THE CLIENT at mod load. Recompress to DXT5 (4x smaller) or drop them:"
+        $bad | Select-Object -First 8 | ForEach-Object { Write-Host "         $_" -ForegroundColor DarkRed }
+    }
+    if ($waste.Count) {
+        Warn "$($waste.Count) uncompressed .iwi at or under $PROVEN_GOOD_MB MB - they load, but cost 4x the VRAM of DXT. Recompress before promoting to main."
+    }
+    if (-not $bad.Count -and -not $waste.Count) { Ok "image formats ($($iwis.Count) .iwi, all DXT)" }
+}
 # --- 4. deploy readiness ----------------------------------------------------
 Write-Head "Deploy readiness (git)"
 Push-Location $RepoRoot
