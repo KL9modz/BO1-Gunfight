@@ -1,0 +1,17 @@
+{
+  "_comment": "Template for tools/discord_bot/config.local.json - copy it and fill in real values ON THE BOX. The real file is gitignored because the token is a credential equal to the bot itself: anyone holding it can run every slash command below, including map changes and match restarts. Get the ids by enabling Discord Settings > Advanced > Developer Mode, then right-clicking a server / channel / role and choosing Copy ID. There is deliberately NO rcon password here - the bot reads it from dedicated.cfg so there is one copy to rotate.",
+  "token": "PASTE-THE-BOT-TOKEN",
+  "applicationId": "000000000000000000",
+  "guildId": "000000000000000000",
+  "adminRoleId": "000000000000000000",
+  "relayChannelId": "000000000000000000",
+  "relayRoleId": "",
+  "panelPort": 3000,
+  "rconHost": "127.0.0.1",
+  "rconPort": 28960,
+  "_notes": {
+    "adminRoleId": "Required. Gates every command that changes the server (say, map, restart, pause, resume). Read-only commands (status, players) are open to the guild.",
+    "relayChannelId": "The ONE channel whose messages are relayed into the game. Leave empty to disable the relay entirely. Every other channel is ignored.",
+    "relayRoleId": "Optional. Empty means anyone who can post in the relay channel can talk to players in game - fine for a private channel, wrong for a public one. Set it to require a role."
+  }
+}

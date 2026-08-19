@@ -50,6 +50,10 @@ tools/players.local.json
 # exists only on the box whose archives it protects is not a backup.
 tools/backup.local.json
 
+# Discord bot token. Equal in power to the bot itself: whoever holds it can run every slash
+# command it defines, which includes map changes and match restarts on the live server.
+tools/discord_bot/config.local.json
+
 # RCON panel — real rcon_password store (per-profile). Never commit; template is .example
 # GLOB, not the exact path: `secrets.local.json.bak` (a routine editor backup) used to slip past
 # all three layers at once — this ignore, the pre-commit `case`, and the packagers' drop-list —
