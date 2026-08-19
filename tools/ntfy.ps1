@@ -173,7 +173,7 @@ function Get-GfDiscordWebhook {
 function Send-GfDiscord {
     param($Config, [string]$Title, [string]$Message, [string]$Priority = 'default',
           [string[]]$Tags = @(), [string]$Category = 'default', [int]$Color = 0,
-          [string]$Prefix = '')
+          [string]$Prefix = '', $Fields = @())
 
     $script:GfDiscordLastError = ''
     # ⚠ DO NOT ADD A PARAMETER NAMED $Url TO THIS FUNCTION. PowerShell variables are
@@ -202,7 +202,15 @@ function Send-GfDiscord {
 
     $embed = [ordered]@{
         title       = (($badge + $Title).Trim())
-        description = $(if ($Prefix) { ([string]$Prefix + "`n" + [string]$Message).Trim() } else { [string]$Message })
+        # ⚠ FIELDS vs DESCRIPTION IS A NOTIFICATION DECISION, not a styling one. Proven on a real
+        # device 2026-08-19: a push shows `content` if present, otherwise it flattens the embed
+        # TITLE + DESCRIPTION - so anything in the description lands on the lock screen, raw
+        # markdown and all. Text moved into FIELDS renders identically in Discord and stays OUT
+        # of the push. Hence: one-line summary in the title, detail in fields.
+        description = $(if ($Fields -and $Fields.Count) { $null }
+                        elseif ($Prefix) { ([string]$Prefix + "`n" + [string]$Message).Trim() }
+                        else { [string]$Message })
+        fields      = $(if ($Fields -and $Fields.Count) { @($Fields) } else { $null })
         color       = $stripe
         # ⚠ FOOTER TEXT IS RAW - Discord renders no markdown and no links in it, so a footer can
         # never be a hyperlink. It can only SAY 'gunfight.us'; the clickable half is the embed url
@@ -246,7 +254,7 @@ function Send-GfAlert {
     param($Config, [string]$Title, [string]$Message, [string]$Priority = 'default',
           [string[]]$Tags = @(), [string]$Category = 'default', [int]$DiscordColor = 0,
           [string]$DiscordPrefix = '', [string]$DiscordTitle = '',
-          [string]$DiscordMessage = '')
+          [string]$DiscordMessage = '', $DiscordFields = @())
 
     $ntfyOk = $false; $ntfyTried = $false
     if ($null -ne $Config -and $Config.ntfyTopic) {
@@ -259,7 +267,7 @@ function Send-GfAlert {
         $dTitle = $(if ($DiscordTitle) { $DiscordTitle } else { $Title })
         # Same idea for the body: the phone and the channel do not want the same sentence.
         $dMsg   = $(if ($DiscordMessage) { $DiscordMessage } else { $Message })
-        $dscOk = Send-GfDiscord -Config $Config -Title $dTitle -Message $dMsg -Priority $Priority -Tags $Tags -Category $Category -Color $DiscordColor -Prefix $DiscordPrefix
+        $dscOk = Send-GfDiscord -Config $Config -Title $dTitle -Message $dMsg -Priority $Priority -Tags $Tags -Category $Category -Color $DiscordColor -Prefix $DiscordPrefix -Fields $DiscordFields
     }
     return [pscustomobject]@{
         ntfy        = $ntfyOk

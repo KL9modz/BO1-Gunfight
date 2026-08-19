@@ -137,7 +137,7 @@ function P-Key($p) {
 # this script's own (cfg, title, message, priority, tags) call shape and to LOG a failure; the
 # shared sender deliberately returns $false instead of throwing, so nothing here can be taken
 # down by a push.
-function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, $discordPrefix = '', $discordTitle = '', $category = 'default', $discordMessage = '', $discordUrl = '') {
+function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, $discordPrefix = '', $discordTitle = '', $category = 'default', $discordMessage = '', $discordFields = @()) {
   # Send-GfAlert fans out to every configured transport. $category picks the DISCORD channel and
   # defaults to 'default' deliberately: the joins channel is for PLAYERS JOINING, and only the two
   # join call sites pass 'joins'. This service also emits notifier-online, heartbeat and
@@ -150,7 +150,8 @@ function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, 
   $r = Send-GfAlert -Config $cfg -Title ([string]$title) -Message ([string]$message) `
                     -Priority ([string]$priority) -Tags ([string[]]@($tags)) -Category ([string]$category) `
                     -DiscordColor ([int]$discordColor) -DiscordPrefix ([string]$discordPrefix) `
-                    -DiscordTitle ([string]$discordTitle) -DiscordMessage ([string]$discordMessage) -DiscordUrl ([string]$discordUrl)
+                    -DiscordTitle ([string]$discordTitle) -DiscordMessage ([string]$discordMessage) `
+                    -DiscordFields $discordFields
   if ($r.ntfyError)    { Write-Log "[ntfy] send failed: $($r.ntfyError)" }
   if ($r.discordError) { Write-Log "[discord] send failed: $($r.discordError)" }
   return $r.anySent
@@ -399,10 +400,12 @@ function Get-JoinTitleNtfy($name, $mapName, $count, $isFirst) {
 # ⚠ This only works because a mention in an embed DESCRIPTION renders the chip and notifies
 # NOBODY. If it ever moves to the message content it starts pinging a player every time they
 # join their own server, and then "instead of location" becomes a spam decision, not a layout one.
-function Get-JoinBodyDiscord($loc, $ping, $mention, $link) {
-  $lead = $(if ($mention) { $mention } else { Get-JoinBody $loc $ping $null })
-  if (-not $lead) { return $link }
-  return "$lead`n$link"
+function Get-JoinFieldsDiscord($loc, $ping, $mention, $link) {
+  $fields = @()
+  if ($mention)   { $fields += @{ name = 'Discord';  value = $mention } }
+  elseif ($loc)   { $fields += @{ name = 'Location'; value = $loc } }
+  if ($link)      { $fields += @{ name = 'Play';     value = $link } }
+  return ,$fields          # comma operator: a 1-element array must not unroll to a bare hashtable
 }
 function Get-JoinBody($loc, $ping, $count) {
   $bits = Get-DetailBits $loc $ping $count
@@ -542,7 +545,7 @@ function Do-Tick($cfg) {
       # read alongside its neighbours, so "first connect" is clutter. The PHONE keeps it - an
       # ntfy push is read alone, where 'is this someone new' is context it has no other way to
       # convey. Same per-transport split as the titles.
-      $dBody = Get-JoinBodyDiscord $loc $p.ping $mention $script:JoinLink
+      $dFields = Get-JoinFieldsDiscord $loc $p.ping $mention $script:JoinLink
       $logd = Get-LogDetail $geo.place $p.ping $cnt     # log gets the place without the flag
       $ptag = Count-Tag $cur.Count                      # 👤 / 👥 by TOTAL players online
       $dTitle = Get-JoinTitleDiscord $p.name $mapName $cur.Count
@@ -558,7 +561,7 @@ function Do-Tick($cfg) {
           # mention field.
           [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $true) `
                            -message $body -priority 'high' -tags @($ptag) `
-                           -discordColor $script:JoinColor -discordTitle $dTitle -discordMessage $dBody `
+                           -discordColor $script:JoinColor -discordTitle $dTitle -discordFields $dFields `
                            -category 'joins')
           continue
         }
@@ -566,7 +569,7 @@ function Do-Tick($cfg) {
       Write-Log "JOIN  $($p.name)  ($($cur.Count) online)$logd"
       [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $false) `
                        -message $body -priority 'default' -tags @($ptag) `
-                       -discordColor $script:JoinColor -discordTitle $dTitle -discordMessage $dBody `
+                       -discordColor $script:JoinColor -discordTitle $dTitle -discordFields $dFields `
                        -category 'joins')
     }
   }

@@ -54,7 +54,7 @@ function Get-FunctionText {
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinTitleNtfy')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-DetailBits')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinBody')))
-. ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinBodyDiscord')))
+. ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinFieldsDiscord')))
 
 Describe "Resolve-ServiceImagePath (security_watch)" {
     It "resolves a %SystemRoot%-relative path (the KslD shape)" {
@@ -417,28 +417,36 @@ Describe "join-notify alert routing - the joins channel is for JOINS" {
     }
 }
 
-Describe "Get-JoinBodyDiscord - a linked player replaces the location, not joins it" {
+Describe "Get-JoinFieldsDiscord - detail lives in FIELDS, which stay out of the push" {
+    # Proven on a real device 2026-08-19: a Discord push shows `content` if present, otherwise it
+    # flattens the embed TITLE + DESCRIPTION - raw markdown and all. Text in FIELDS renders the same
+    # in the channel but never reaches the lock screen. So the card is title + fields, and these
+    # tests pin that structure rather than a string.
     $link = '**Play for free** -> [gunfight.us](https://gunfight.us/)'
+    $val  = { param($f, $n) ($f | Where-Object { $_.name -eq $n } | Select-Object -First 1).value }
 
     It 'a LINKED player shows the mention and NO location' {
-        $b = Get-JoinBodyDiscord 'Papeete, French Polynesia' 42 '<@123456789012345678>' $link
-        Assert-True ($b -like '*<@123456789012345678>*') 'mention present'
-        Assert-True (-not ($b -like '*Papeete*')) 'location must be replaced, not appended'
-        # .Contains, NOT -like: the link text carries [ ] and -like reads those as a character class.
-        Assert-True ($b.Contains($link)) 'call to action still there'
+        $f = Get-JoinFieldsDiscord 'Papeete, French Polynesia' 42 '<@123456789012345678>' $link
+        Assert-Eq (& $val $f 'Discord') '<@123456789012345678>' 'mention field'
+        Assert-True ($null -eq (& $val $f 'Location')) 'location must be REPLACED, not added alongside'
     }
     It 'an UNLINKED player still shows the location' {
-        $b = Get-JoinBodyDiscord 'Papeete, French Polynesia' 42 '' $link
-        Assert-True ($b -like '*Papeete*') 'location present'
-        Assert-True (-not ($b -like '*<@*')) 'no mention'
+        $f = Get-JoinFieldsDiscord 'Papeete, French Polynesia' 42 '' $link
+        Assert-Eq (& $val $f 'Location') 'Papeete, French Polynesia' 'location field'
+        Assert-True ($null -eq (& $val $f 'Discord')) 'no mention field'
     }
-    It 'the connect ordinal stays off the Discord body either way' {
-        # Get-JoinBodyDiscord passes $null as the count on purpose - the ordinal is phone-only.
-        $b = Get-JoinBodyDiscord 'Papeete' 42 '' $link
-        Assert-True (-not ($b -like '*connect*')) 'no ordinal on Discord'
+    It 'the call to action is always a field of its own' {
+        Assert-Eq (& $val (Get-JoinFieldsDiscord 'Papeete' 42 '' $link) 'Play') $link 'play field'
+        Assert-Eq (& $val (Get-JoinFieldsDiscord '' $null '' $link) 'Play') $link 'play field with nothing else'
     }
-    It 'the call to action survives even with nothing else to say' {
-        $b = Get-JoinBodyDiscord '' $null '' $link
-        Assert-True ($b.Contains($link)) 'link always present'
+    It 'no field carries the connect ordinal - that stays phone-only' {
+        $f = Get-JoinFieldsDiscord 'Papeete' 42 '' $link
+        Assert-True (-not (($f | ForEach-Object { $_.value }) -join ' ' -like '*connect*')) 'no ordinal on Discord'
+    }
+    It 'a single field does not unroll into a bare hashtable' {
+        # PowerShell unrolls one-element arrays on return; the comma operator in the function is what
+        # keeps this an array, and ConvertTo-Json would otherwise emit an object where Discord wants a list.
+        $f = Get-JoinFieldsDiscord '' $null '' $link
+        Assert-True ($f -is [array]) 'fields must stay an array'
     }
 }
