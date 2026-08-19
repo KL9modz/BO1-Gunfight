@@ -39,7 +39,15 @@ $script:PlayerLinkFile = Join-Path $PSScriptRoot '..\players.local.json'
 
 # Joins own their colour: dark green regardless of priority, because a first join still rides at
 # 'high' to push through on a phone and would otherwise render in the priority stripe's orange.
-$script:JoinColor = 0x1F8B4C
+# ORANGE for ALL join activity (owner's choice, 2026-08-18): a join reads the same whether it is
+# the first into an empty server or the fifth. It matches the 'high' priority stripe, which is
+# what a first join used to render in BY ACCIDENT - but it is set explicitly here, because a
+# normal join rides at 'default' priority and would otherwise be blurple.
+$script:JoinColor = 0xE67E22
+# The site link. Discord CANNOT hyperlink a footer (raw text, no markdown), so the clickable
+# half is the embed url: it makes the card TITLE open gunfight.us. The footer says the address
+# and the title is what you press.
+$script:JoinUrl = 'https://gunfight.us'
 
 # Send-GfNtfy: the shared ntfy sender (JSON publish, unicode-safe titles).
 . (Join-Path $PSScriptRoot '..\ntfy.ps1')
@@ -130,7 +138,7 @@ function P-Key($p) {
 # this script's own (cfg, title, message, priority, tags) call shape and to LOG a failure; the
 # shared sender deliberately returns $false instead of throwing, so nothing here can be taken
 # down by a push.
-function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, $discordPrefix = '', $discordTitle = '', $category = 'default') {
+function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, $discordPrefix = '', $discordTitle = '', $category = 'default', $discordMessage = '', $discordUrl = '') {
   # Send-GfAlert fans out to every configured transport. $category picks the DISCORD channel and
   # defaults to 'default' deliberately: the joins channel is for PLAYERS JOINING, and only the two
   # join call sites pass 'joins'. This service also emits notifier-online, heartbeat and
@@ -143,7 +151,7 @@ function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, 
   $r = Send-GfAlert -Config $cfg -Title ([string]$title) -Message ([string]$message) `
                     -Priority ([string]$priority) -Tags ([string[]]@($tags)) -Category ([string]$category) `
                     -DiscordColor ([int]$discordColor) -DiscordPrefix ([string]$discordPrefix) `
-                    -DiscordTitle ([string]$discordTitle)
+                    -DiscordTitle ([string]$discordTitle) -DiscordMessage ([string]$discordMessage) -DiscordUrl ([string]$discordUrl)
   if ($r.ntfyError)    { Write-Log "[ntfy] send failed: $($r.ntfyError)" }
   if ($r.discordError) { Write-Log "[discord] send failed: $($r.discordError)" }
   return $r.anySent
@@ -510,6 +518,11 @@ function Do-Tick($cfg) {
       $cnt  = $null
       if ($cfg.connectCount) { $cnt = Get-ConnectCount $p.guid }   # day-file scan; $null = no record
       $body = Get-JoinBody $loc $p.ping $cnt
+      # Discord drops the connect ordinal (owner's choice, 2026-08-18): in a channel the card is
+      # read alongside its neighbours, so "first connect" is clutter. The PHONE keeps it - an
+      # ntfy push is read alone, where 'is this someone new' is context it has no other way to
+      # convey. Same per-transport split as the titles.
+      $dBody = Get-JoinBody $loc $p.ping $null
       $logd = Get-LogDetail $geo.place $p.ping $cnt     # log gets the place without the flag
       $ptag = Count-Tag $cur.Count                      # 👤 / 👥 by TOTAL players online
       $dTitle = Get-JoinTitleDiscord $p.name $mapName $cur.Count
@@ -525,7 +538,7 @@ function Do-Tick($cfg) {
           # mention field.
           [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $true) `
                            -message $body -priority 'high' -tags @($ptag) `
-                           -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle `
+                           -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle -discordMessage $dBody -discordUrl $script:JoinUrl `
                            -category 'joins')
           continue
         }
@@ -533,7 +546,7 @@ function Do-Tick($cfg) {
       Write-Log "JOIN  $($p.name)  ($($cur.Count) online)$logd"
       [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $false) `
                        -message $body -priority 'default' -tags @($ptag) `
-                       -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle `
+                       -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle -discordMessage $dBody -discordUrl $script:JoinUrl `
                        -category 'joins')
     }
   }

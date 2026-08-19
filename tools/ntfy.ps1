@@ -169,7 +169,7 @@ function Get-GfDiscordWebhook {
 function Send-GfDiscord {
     param($Config, [string]$Title, [string]$Message, [string]$Priority = 'default',
           [string[]]$Tags = @(), [string]$Category = 'default', [int]$Color = 0,
-          [string]$Prefix = '')
+          [string]$Prefix = '', [string]$Url = '')
 
     $script:GfDiscordLastError = ''
     $url = Get-GfDiscordWebhook -Config $Config -Category $Category
@@ -177,19 +177,29 @@ function Send-GfDiscord {
 
     $badge = ''
     foreach ($t in @($Tags)) { if ($script:GfDiscordEmoji.ContainsKey($t)) { $badge += $script:GfDiscordEmoji[$t] + ' ' } }
-    $color = 0x5865F2
-    if ($script:GfDiscordColor.ContainsKey($Priority)) { $color = $script:GfDiscordColor[$Priority] }
+    # ⚠ NAMED $stripe, NOT $color. PowerShell variables are CASE-INSENSITIVE, so a local $color
+    # IS the $Color parameter: the assignment below silently destroyed the caller's override,
+    # and the "explicit wins" line then assigned the priority colour to itself. Every join card
+    # rendered in its priority stripe while the code read as though it did not. Do not rename
+    # this back - a parameter is only as safe as the locals around it are distinct.
+    $stripe = 0x5865F2
+    if ($script:GfDiscordColor.ContainsKey($Priority)) { $stripe = $script:GfDiscordColor[$Priority] }
     # A recovery reads green whatever its priority - it is the one case where the TAG carries the
     # severity and the priority does not (recoveries are sent at 'default' so they do not buzz).
-    if (@($Tags) -contains 'white_check_mark') { $color = 0x57F287 }
+    if (@($Tags) -contains 'white_check_mark') { $stripe = 0x57F287 }
     # Explicit LAST: a caller that names a colour has said the most about its own alert.
-    if ($Color -gt 0) { $color = $Color }
+    if ($Color -gt 0) { $stripe = $Color }
 
     $embed = [ordered]@{
         title       = (($badge + $Title).Trim())
+        url         = $(if ($Url) { [string]$Url } else { $null })
         description = $(if ($Prefix) { ([string]$Prefix + "`n" + [string]$Message).Trim() } else { [string]$Message })
-        color       = $color
-        footer      = @{ text = $(if ($Config.serverName) { [string]$Config.serverName } else { 'Gunfight' }) }
+        color       = $stripe
+        # ⚠ FOOTER TEXT IS RAW - Discord renders no markdown and no links in it, so a footer can
+        # never be a hyperlink. It can only SAY 'gunfight.us'; the clickable half is the embed url
+        # below, which turns the title into the link. discordFooter overrides serverName so the
+        # footer can be branding without renaming the server everywhere else.
+        footer      = @{ text = $(if ($Config.discordFooter) { [string]$Config.discordFooter } elseif ($Config.serverName) { [string]$Config.serverName } else { 'Gunfight' }) }
         timestamp   = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
     }
     $payload = [ordered]@{
@@ -226,7 +236,8 @@ function Send-GfDiscord {
 function Send-GfAlert {
     param($Config, [string]$Title, [string]$Message, [string]$Priority = 'default',
           [string[]]$Tags = @(), [string]$Category = 'default', [int]$DiscordColor = 0,
-          [string]$DiscordPrefix = '', [string]$DiscordTitle = '')
+          [string]$DiscordPrefix = '', [string]$DiscordTitle = '',
+          [string]$DiscordMessage = '', [string]$DiscordUrl = '')
 
     $ntfyOk = $false; $ntfyTried = $false
     if ($null -ne $Config -and $Config.ntfyTopic) {
@@ -237,7 +248,9 @@ function Send-GfAlert {
     if (-not [string]::IsNullOrWhiteSpace((Get-GfDiscordWebhook -Config $Config -Category $Category))) {
         $dscTried = $true
         $dTitle = $(if ($DiscordTitle) { $DiscordTitle } else { $Title })
-        $dscOk = Send-GfDiscord -Config $Config -Title $dTitle -Message $Message -Priority $Priority -Tags $Tags -Category $Category -Color $DiscordColor -Prefix $DiscordPrefix
+        # Same idea for the body: the phone and the channel do not want the same sentence.
+        $dMsg   = $(if ($DiscordMessage) { $DiscordMessage } else { $Message })
+        $dscOk = Send-GfDiscord -Config $Config -Title $dTitle -Message $dMsg -Priority $Priority -Tags $Tags -Category $Category -Color $DiscordColor -Prefix $DiscordPrefix -Url $DiscordUrl
     }
     return [pscustomobject]@{
         ntfy        = $ntfyOk

@@ -255,3 +255,46 @@ Describe "join-notify config build - every transport survives the rebuild" {
         Assert-True ($keys -contains 'ntfyTopic') "the config object drops ntfyTopic"
     }
 }
+
+Describe "Send-GfDiscord - the embed colour actually SENT (payload, not intent)" {
+    # THE INCIDENT: -DiscordColor was plumbed correctly end to end and still did nothing, because
+    # Send-GfDiscord used a local $color alongside its $Color parameter - and PowerShell variables
+    # are CASE-INSENSITIVE, so those are one variable. The first assignment destroyed the caller's
+    # value and "explicit wins" then assigned the priority colour to itself. Every join card
+    # rendered in its priority stripe while every layer of code read as though it did not.
+    #
+    # No amount of testing the CALL would have caught that - only the PAYLOAD. So this shadows the
+    # HTTP call and inspects the JSON that would have gone to Discord.
+    $sent = $null
+    function Invoke-RestMethod { param($Uri, $Method, $Body, $ContentType, $TimeoutSec)
+        $script:sentBody = [System.Text.Encoding]::UTF8.GetString($Body); return $null }
+    $cfg = [pscustomobject]@{ serverName = 'Gunfight'; ntfyTopic = ''
+                              discordWebhooks = [pscustomobject]@{ default = 'https://d/def' } }
+    function Get-SentEmbed {
+        param($Priority = 'default', $Tags = @(), $Color = 0)
+        $script:sentBody = $null
+        $null = Send-GfDiscord -Config $cfg -Title 't' -Message 'm' -Priority $Priority -Tags $Tags -Color $Color
+        if (-not $script:sentBody) { throw 'nothing was sent - the shadowed Invoke-RestMethod never fired' }
+        return ($script:sentBody | ConvertFrom-Json).embeds[0]
+    }
+
+    It 'an explicit -Color beats the priority stripe (the regression)' {
+        Assert-Eq (Get-SentEmbed -Priority 'high'    -Color 0xE67E22).color 0xE67E22 'high + override'
+        Assert-Eq (Get-SentEmbed -Priority 'default' -Color 0xE67E22).color 0xE67E22 'default + override'
+        Assert-Eq (Get-SentEmbed -Priority 'urgent'  -Color 0x1F8B4C).color 0x1F8B4C 'urgent + override'
+    }
+    It 'without an override the priority stripe still decides' {
+        Assert-Eq (Get-SentEmbed -Priority 'urgent').color  0xED4245 'urgent stays red'
+        Assert-Eq (Get-SentEmbed -Priority 'default').color 0x5865F2 'default stays blurple'
+        Assert-Eq (Get-SentEmbed -Priority 'low').color     0x95A5A6 'low stays grey'
+    }
+    It 'a recovery reads green on its tag, and an override still beats even that' {
+        Assert-Eq (Get-SentEmbed -Priority 'default' -Tags @('white_check_mark')).color 0x57F287 'recovery green'
+        Assert-Eq (Get-SentEmbed -Priority 'default' -Tags @('white_check_mark') -Color 0xE67E22).color 0xE67E22 'override wins'
+    }
+    It 'the badge and title are what actually ship' {
+        $e = Get-SentEmbed -Tags @('bust_in_silhouette')
+        Assert-True ($e.title -like "*t") 'title present'
+        Assert-True ($e.title.Length -gt 1) 'badge prefixed'
+    }
+}
