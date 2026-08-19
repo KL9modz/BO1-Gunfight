@@ -101,8 +101,11 @@ const log = (...a) => console.log(`[${new Date().toISOString()}]`, ...a);
 // every other feature.
 // ⚠ Declared AFTER `log`, not next to the other constants: `log` is a const arrow, so building the
 // modules above it hits the temporal dead zone and the bot dies on require.
+// `api` is a raw authenticated GET, so a module can probe a capability (e.g. "can I read the audit
+// log?") and adapt what it claims, instead of silently reporting a moderator action as a self-action.
+const api = (path) => fetch(API + path, { headers: { Authorization: 'Bot ' + cfg.token } });
 const FEATURES = [
-  require('./features/voice_log.js')({ cfg, log, post: (c, p) => postMessage(c, p) }),
+  require('./features/voice_log.js')({ cfg, log, api, post: (c, p) => postMessage(c, p) }),
 ];
 const FEATURE_INTENTS = FEATURES.filter((f) => f.enabled).reduce((a, f) => a | f.intents, 0);
 log('features: ' + (FEATURES.map((f) => f.name + (f.enabled ? '' : ' (off)')).join(', ') || 'none'));
