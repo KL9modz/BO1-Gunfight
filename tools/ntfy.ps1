@@ -169,9 +169,15 @@ function Get-GfDiscordWebhook {
 function Send-GfDiscord {
     param($Config, [string]$Title, [string]$Message, [string]$Priority = 'default',
           [string[]]$Tags = @(), [string]$Category = 'default', [int]$Color = 0,
-          [string]$Prefix = '', [string]$Url = '')
+          [string]$Prefix = '')
 
     $script:GfDiscordLastError = ''
+    # ⚠ DO NOT ADD A PARAMETER NAMED $Url TO THIS FUNCTION. PowerShell variables are
+    # case-insensitive, so a $Url parameter and this $url local are ONE variable - a title-link
+    # parameter added here on 2026-08-18 silently became the WEBHOOK URL and shipped it as the
+    # embed's clickable title, i.e. a credential rendered as a link in the channel. Caught by
+    # inspecting the payload, not the call. Same trap as the $color/$Color collision above; if a
+    # title link is ever wanted, name the parameter something that cannot collide.
     $url = Get-GfDiscordWebhook -Config $Config -Category $Category
     if ([string]::IsNullOrWhiteSpace($url)) { $script:GfDiscordLastError = 'no webhook configured'; return $false }
 
@@ -192,7 +198,6 @@ function Send-GfDiscord {
 
     $embed = [ordered]@{
         title       = (($badge + $Title).Trim())
-        url         = $(if ($Url) { [string]$Url } else { $null })
         description = $(if ($Prefix) { ([string]$Prefix + "`n" + [string]$Message).Trim() } else { [string]$Message })
         color       = $stripe
         # ⚠ FOOTER TEXT IS RAW - Discord renders no markdown and no links in it, so a footer can
@@ -237,7 +242,7 @@ function Send-GfAlert {
     param($Config, [string]$Title, [string]$Message, [string]$Priority = 'default',
           [string[]]$Tags = @(), [string]$Category = 'default', [int]$DiscordColor = 0,
           [string]$DiscordPrefix = '', [string]$DiscordTitle = '',
-          [string]$DiscordMessage = '', [string]$DiscordUrl = '')
+          [string]$DiscordMessage = '')
 
     $ntfyOk = $false; $ntfyTried = $false
     if ($null -ne $Config -and $Config.ntfyTopic) {
@@ -250,7 +255,7 @@ function Send-GfAlert {
         $dTitle = $(if ($DiscordTitle) { $DiscordTitle } else { $Title })
         # Same idea for the body: the phone and the channel do not want the same sentence.
         $dMsg   = $(if ($DiscordMessage) { $DiscordMessage } else { $Message })
-        $dscOk = Send-GfDiscord -Config $Config -Title $dTitle -Message $dMsg -Priority $Priority -Tags $Tags -Category $Category -Color $DiscordColor -Prefix $DiscordPrefix -Url $DiscordUrl
+        $dscOk = Send-GfDiscord -Config $Config -Title $dTitle -Message $dMsg -Priority $Priority -Tags $Tags -Category $Category -Color $DiscordColor -Prefix $DiscordPrefix
     }
     return [pscustomobject]@{
         ntfy        = $ntfyOk
@@ -279,6 +284,12 @@ function Send-GfAlert {
 function New-GfDiscordMessage {
     param($Config, $Embed, [string]$Category = 'default')
     $script:GfDiscordLastError = ''
+    # ⚠ DO NOT ADD A PARAMETER NAMED $Url TO THIS FUNCTION. PowerShell variables are
+    # case-insensitive, so a $Url parameter and this $url local are ONE variable - a title-link
+    # parameter added here on 2026-08-18 silently became the WEBHOOK URL and shipped it as the
+    # embed's clickable title, i.e. a credential rendered as a link in the channel. Caught by
+    # inspecting the payload, not the call. Same trap as the $color/$Color collision above; if a
+    # title link is ever wanted, name the parameter something that cannot collide.
     $url = Get-GfDiscordWebhook -Config $Config -Category $Category
     if ([string]::IsNullOrWhiteSpace($url)) { $script:GfDiscordLastError = 'no webhook configured'; return '' }
     $payload = [ordered]@{ embeds = @($Embed); allowed_mentions = @{ parse = @() } }
@@ -303,6 +314,12 @@ function Set-GfDiscordMessage {
     param($Config, [string]$MessageId, $Embed, [string]$Category = 'default', [ref]$MessageGone)
     $script:GfDiscordLastError = ''
     if ($MessageGone) { $MessageGone.Value = $false }
+    # ⚠ DO NOT ADD A PARAMETER NAMED $Url TO THIS FUNCTION. PowerShell variables are
+    # case-insensitive, so a $Url parameter and this $url local are ONE variable - a title-link
+    # parameter added here on 2026-08-18 silently became the WEBHOOK URL and shipped it as the
+    # embed's clickable title, i.e. a credential rendered as a link in the channel. Caught by
+    # inspecting the payload, not the call. Same trap as the $color/$Color collision above; if a
+    # title link is ever wanted, name the parameter something that cannot collide.
     $url = Get-GfDiscordWebhook -Config $Config -Category $Category
     if ([string]::IsNullOrWhiteSpace($url) -or [string]::IsNullOrWhiteSpace($MessageId)) {
         $script:GfDiscordLastError = 'no webhook or no message id'; return $false

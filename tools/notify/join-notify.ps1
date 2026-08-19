@@ -37,17 +37,16 @@ $script:IgnoreFile = Join-Path $PSScriptRoot '..\ignore.local.json'
 . (Join-Path $PSScriptRoot '..\player_links.ps1')
 $script:PlayerLinkFile = Join-Path $PSScriptRoot '..\players.local.json'
 
-# Joins own their colour: dark green regardless of priority, because a first join still rides at
-# 'high' to push through on a phone and would otherwise render in the priority stripe's orange.
 # ORANGE for ALL join activity (owner's choice, 2026-08-18): a join reads the same whether it is
 # the first into an empty server or the fifth. It matches the 'high' priority stripe, which is
 # what a first join used to render in BY ACCIDENT - but it is set explicitly here, because a
 # normal join rides at 'default' priority and would otherwise be blurple.
 $script:JoinColor = 0xE67E22
-# The site link. Discord CANNOT hyperlink a footer (raw text, no markdown), so the clickable
-# half is the embed url: it makes the card TITLE open gunfight.us. The footer says the address
-# and the title is what you press.
-$script:JoinUrl = 'https://gunfight.us'
+# The site link, as the last LINE OF THE BODY. Two facts decide the shape: a Discord FOOTER cannot
+# be a link (raw text, no markdown, no anchors), while an embed DESCRIPTION does render markdown,
+# so [label](url) is clickable there. The embed `url` (whole title blue and clickable) is
+# deliberately NOT used as well: two link affordances on a three-line card reads as clutter.
+$script:JoinLink = '[gunfight.us](https://gunfight.us)'
 
 # Send-GfNtfy: the shared ntfy sender (JSON publish, unicode-safe titles).
 . (Join-Path $PSScriptRoot '..\ntfy.ps1')
@@ -524,7 +523,7 @@ function Do-Tick($cfg) {
       # read alongside its neighbours, so "first connect" is clutter. The PHONE keeps it - an
       # ntfy push is read alone, where 'is this someone new' is context it has no other way to
       # convey. Same per-transport split as the titles.
-      $dBody = Get-JoinBody $loc $p.ping $null
+      $dBody = (Get-JoinBody $loc $p.ping $null) + "`n" + $script:JoinLink
       $logd = Get-LogDetail $geo.place $p.ping $cnt     # log gets the place without the flag
       $ptag = Count-Tag $cur.Count                      # 👤 / 👥 by TOTAL players online
       $dTitle = Get-JoinTitleDiscord $p.name $mapName $cur.Count
@@ -540,7 +539,7 @@ function Do-Tick($cfg) {
           # mention field.
           [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $true) `
                            -message $body -priority 'high' -tags @($ptag) `
-                           -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle -discordMessage $dBody -discordUrl $script:JoinUrl `
+                           -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle -discordMessage $dBody `
                            -category 'joins')
           continue
         }
@@ -548,7 +547,7 @@ function Do-Tick($cfg) {
       Write-Log "JOIN  $($p.name)  ($($cur.Count) online)$logd"
       [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $false) `
                        -message $body -priority 'default' -tags @($ptag) `
-                       -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle -discordMessage $dBody -discordUrl $script:JoinUrl `
+                       -discordColor $script:JoinColor -discordPrefix $mention -discordTitle $dTitle -discordMessage $dBody `
                        -category 'joins')
     }
   }

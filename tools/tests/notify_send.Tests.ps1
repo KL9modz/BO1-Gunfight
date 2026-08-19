@@ -298,3 +298,37 @@ Describe "Send-GfDiscord - the embed colour actually SENT (payload, not intent)"
         Assert-True ($e.title.Length -gt 1) 'badge prefixed'
     }
 }
+
+Describe "Send-GfDiscord - the webhook URL must never appear in the payload" {
+    # THE NEAR MISS: a -Url parameter was added to carry a title link, and PowerShell's
+    # case-insensitive variables made it the same variable as the function's $url local - which
+    # holds the WEBHOOK. The embed therefore shipped url = <the webhook>, rendering a credential as
+    # the card's clickable title in the channel. Nothing was sent to a real channel (no joins
+    # occurred in the window), and the parameter is gone rather than renamed.
+    #
+    # This guard is about the CLASS, not that parameter: the webhook is in scope throughout this
+    # function, so any future field that interpolates a variable can leak it the same way. Assert
+    # on the bytes that would go out.
+    $sent = $null
+    function Invoke-RestMethod { param($Uri, $Method, $Body, $ContentType, $TimeoutSec)
+        $script:sentBody = [System.Text.Encoding]::UTF8.GetString($Body); return $null }
+    $secret = 'https://discord.example/api/webhooks/12345/SUPER-SECRET-TOKEN'
+    $cfg = [pscustomobject]@{ serverName = 'Gunfight'; discordFooter = 'gunfight.us'
+                              discordWebhooks = [pscustomobject]@{ default = $secret } }
+
+    It 'no field of the embed carries the webhook' {
+        $script:sentBody = $null
+        $null = Send-GfDiscord -Config $cfg -Title 'someone joined Villa' -Message 'body line' `
+                -Priority 'high' -Tags @('bust_in_silhouette') -Color 0xE67E22 -Prefix '<@1>'
+        Assert-True ($null -ne $script:sentBody) 'nothing was sent'
+        Assert-True (-not ($script:sentBody -like '*SUPER-SECRET-TOKEN*')) `
+            'the webhook URL appears in the JSON body that would go to Discord'
+    }
+    It 'the live-card senders do not leak it either' {
+        $script:sentBody = $null
+        $null = New-GfDiscordMessage -Config $cfg -Embed @{ title = 't'; description = 'd' }
+        if ($script:sentBody) {
+            Assert-True (-not ($script:sentBody -like '*SUPER-SECRET-TOKEN*')) 'status card body carries the webhook'
+        }
+    }
+}
