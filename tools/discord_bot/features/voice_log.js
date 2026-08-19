@@ -45,8 +45,14 @@
  * inflicted and says so; without it the line stays a neutral "left".
  */
 
-const APPEND_MS  = 900;    // debounce for appending more lines into the open message
-const BURST_MS   = 15000;  // after this much quiet, the next event starts a fresh message
+// ⚠ These two decide whether a line is INSTANT or merely fast, so they are not arbitrary.
+// BURST_GAP_MS is measured from the PREVIOUS EVENT, not from the start of the message: an event a
+// few seconds after the last one is a separate happening and must get its own message, posted
+// immediately, which also means it NOTIFIES. Appending is only for events landing on top of each
+// other - a call emptying, a mass move - where eight posts would hit the rate limit and eight
+// notifications would be worse than one.
+const APPEND_MS    = 400;    // debounce for appending within a burst
+const BURST_GAP_MS = 1500;   // quiet longer than this and the next event starts a fresh message
 const ATTRIB_MS  = 8000;   // how long an audit entry may explain a state change
 const MAX_LINES  = 15;     // per message, then start a new one
 const GUILD_VOICE_STATES = 1 << 7;
@@ -150,7 +156,8 @@ module.exports = function voiceLog(ctx) {
 
   async function emit(ev) {
     const now = Date.now();
-    const stale = burst && (now - burst.at > BURST_MS || burst.events.length >= MAX_LINES);
+    // burst.at is the time of the LAST event in it, so this is a gap test, not an age test.
+    const stale = burst && (now - burst.at > BURST_GAP_MS || burst.events.length >= MAX_LINES);
     if (stale) burst = null;
 
     if (burst) {
