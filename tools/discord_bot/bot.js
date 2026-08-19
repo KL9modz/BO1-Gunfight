@@ -112,6 +112,13 @@ const FEATURES = [
     // known now, rewrite it when the actor turns up. Edits do not re-notify, so the correction is quiet.
     patch: (c, m, p) => editMessage(c, m, p),
   }),
+  require('./features/presence.js')({
+    cfg, log,
+    // ⚠ A NARROW capability, deliberately not the raw gateway `send`. A module holding send()
+    // could fire op 2 or op 6 and tear the session down for every other feature; this one can
+    // only ever set our own presence.
+    setPresence: (payload) => send(3, payload),
+  }),
 ];
 const FEATURE_INTENTS = FEATURES.filter((f) => f.enabled).reduce((a, f) => a | f.intents, 0);
 log('features: ' + (FEATURES.map((f) => f.name + (f.enabled ? '' : ' (off)')).join(', ') || 'none'));

@@ -9,6 +9,7 @@
   "voiceLogChannelId": "",
   "quietActorIds": [],
   "voiceLogBots": false,
+  "presence": true,
   "panelPort": 3000,
   "rconHost": "127.0.0.1",
   "rconPort": 28960,
@@ -18,6 +19,8 @@
     "relayRoleId": "Optional. Empty means anyone who can post in the relay channel can talk to players in game - fine for a private channel, wrong for a public one. Set it to require a role.",
     "voiceLogChannelId": "The channel that receives voice activity cards (joined / left / moved, and who did it when a moderator moved or disconnected someone). EMPTY = the feature is off AND its gateway intent is not requested, which is the point: never ask Discord for an intent a disabled feature would use. Attributing a move or disconnect to an actor additionally needs the View Audit Log permission - without it the cards still post, they just never carry a By line, and the bot says which mode it is in in its service log at startup.",
     "quietActorIds": "Discord user ids whose ACTIONS are never named. The event is still logged in full, only the By line is withheld - intended for the owner, whose routine moderation is noise rather than news. It is not a mute: to keep someone's own joins and leaves out of the channel you would need a different filter.",
-    "voiceLogBots": "false (default) ignores bots moving in and out of voice, which is almost always what you want since music and recording bots churn. true logs them like anyone else."
+    "voiceLogBots": "false (default) ignores bots moving in and out of voice, which is almost always what you want since music and recording bots churn. true logs them like anyone else.",
+    "presence": "true (default) puts a live line under the bot in the member list: 'Watching 3 players on Nuketown', or 'an empty server' / 'the server (offline)' / 'the server (status unknown)' with the dot going idle or red to match. Set false to turn it off. It needs NO intent, NO permission and NO portal setting, which is why it defaults on. It counts HUMANS only, because bot fill would otherwise make it read busy around the clock. Note this is bot presence (gateway op 3), NOT Rich Presence: the Developer Portal's Rich Presence Art Assets are published by a game client over local IPC, which BO1/Plutonium does not do, so no server-side feature can reach them.",
+    "statusJson": "Optional override for the status projection presence reads (default C:\\inetpub\\wwwroot\\live\\status.json, written every ~5s by GF-StatusService). Presence deliberately reads this FILE rather than polling rcon: the panel is the box's single rcon pacer and a permanent 20s poller for a cosmetic feature is exactly what the project rule forbids."
   }
 }

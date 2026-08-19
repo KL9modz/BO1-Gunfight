@@ -173,3 +173,76 @@ test('the voice log never posts `content` - that would push verbatim', () => {
   const src = fs.readFileSync(path.join(botDir, 'features', 'voice_log.js'), 'utf8');
   assert.ok(!/\bcontent:/.test(src), 'a content: payload came back into the voice log');
 });
+
+// ── bot presence ───────────────────────────────────────────────────────────────────────────────
+// The member-list line. Gateway op 3, so no intent and no permission - but it is a CLAIM about the
+// live server made to everyone who looks at the sidebar, and these pin the two ways a claim can be
+// wrong: counting bots as players, and reading a dead writer's last file as the current roster.
+const { buildPresence } = require(path.join(botDir, 'features', 'presence.js'));
+const NOW = Date.parse('2026-08-19T20:00:00Z');
+const snap = (over) => Object.assign(
+  { updated: new Date(NOW - 3000).toISOString(), online: true, mapName: 'Nuketown',
+    humans: 3, bots: 4 }, over);
+const line = (p) => p.activities[0].name;
+
+test('presence renders the live human count and the map', () => {
+  const p = buildPresence(snap({}), NOW);
+  assert.strictEqual(line(p), '3 players on Nuketown');
+  assert.strictEqual(p.status, 'online');
+  assert.strictEqual(p.activities[0].type, 3, 'type 3 = Watching, so the text completes that verb');
+});
+
+test('presence reads singular for one player', () => {
+  assert.strictEqual(line(buildPresence(snap({ humans: 1 }), NOW)), '1 player on Nuketown');
+});
+
+test('BOTS ARE NOT PLAYERS - a bot-padded server reads empty', () => {
+  // Bot fill is on by default, so counting bots would make the line permanently say "busy" and
+  // mean nothing. Same rule the match stats and the join alerts follow.
+  const p = buildPresence(snap({ humans: 0, bots: 6 }), NOW);
+  assert.strictEqual(line(p), 'an empty server');
+  assert.strictEqual(p.status, 'idle');
+});
+
+test('an offline server is never dressed up as a quiet one', () => {
+  const p = buildPresence(snap({ online: false }), NOW);
+  assert.ok(/offline/.test(line(p)), line(p));
+  assert.strictEqual(p.status, 'dnd');
+});
+
+test('a STALE snapshot reports unknown, never the frozen roster', () => {
+  // THE case this guards: status_service dies and its last file sits on disk claiming players are
+  // on. Presence would then advertise a server that may be empty or down, indefinitely.
+  const p = buildPresence(snap({ updated: new Date(NOW - 10 * 60000).toISOString() }), NOW);
+  assert.ok(/unknown/.test(line(p)), line(p));
+  assert.ok(!/Nuketown|3 players/.test(line(p)), 'a stale roster leaked into the line');
+  assert.strictEqual(p.status, 'idle');
+});
+
+test('an unreadable timestamp counts as stale, not as fresh', () => {
+  const p = buildPresence(snap({ updated: 'not a date' }), NOW);
+  assert.ok(/unknown/.test(line(p)), line(p));
+});
+
+test('a missing or unparseable status file degrades, it does not throw', () => {
+  for (const bad of [null, undefined, 'nonsense', 42]) {
+    const p = buildPresence(bad, NOW);
+    assert.ok(/unknown/.test(line(p)), `${JSON.stringify(bad)} produced ${line(p)}`);
+  }
+});
+
+test('presence stays inside Discord\'s 128-char activity name cap', () => {
+  const p = buildPresence(snap({ mapName: 'M'.repeat(400) }), NOW);
+  assert.ok(line(p).length <= 128, `activity name ${line(p).length} > 128`);
+});
+
+test('presence never polls rcon - it reads the status projection', () => {
+  // The project rule is that the panel is the box's ONE rcon pacer. A 20s presence refresh over
+  // HTTP would be a second poller, permanently, for a cosmetic feature. The guard is therefore on
+  // the MECHANISM - any outbound call at all - not on a path string that also appears in prose.
+  const src = fs.readFileSync(path.join(botDir, 'features', 'presence.js'), 'utf8');
+  assert.ok(!src.includes('panelRcon'), 'presence reached for rcon');
+  assert.ok(!src.includes('http.request'), 'presence opened an HTTP request');
+  assert.ok(!src.includes('fetch('), 'presence opened an HTTP request');
+  assert.ok(src.includes('status.json'), 'presence should read the status projection');
+});
