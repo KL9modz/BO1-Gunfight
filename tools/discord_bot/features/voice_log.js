@@ -26,12 +26,13 @@
  * same second, and Discord's REST budget is a few requests per second. One message plus a couple of
  * edits beats eight posts.
  *
- * ── WHY THERE IS A CACHE ───────────────────────────────────────────────────────────────────────
- * VOICE_STATE_UPDATE reports the state a user is now IN, never where they came from, and "left" and
- * "moved" arrive as the same event shape:
+ * ── WHERE THE VOICE STATE COMES FROM ───────────────────────────────────────────────────────────
+ * ⚠ lib/cache.js, maintained by the CORE, not by this module. VOICE_STATE_UPDATE reports the state
+ * a user is now IN and never where they came from, so the previous channel exists only in that map:
  *     -/X joined X   X/- left X   X/Y moved X->Y   X/X mute or stream toggle (ignored)
- * Seeded from GUILD_CREATE's voice_states WITHOUT logging, so a restart does not announce everyone
- * already in a channel as a fresh join.
+ * The cache memoises each event's {prev, now} on the event object, so the core can own the map
+ * without stealing the transition from us. It is seeded from GUILD_CREATE WITHOUT logging, so a
+ * restart does not announce everyone already in a channel as a fresh join.
  *
  * ── WHY THERE IS AN AUDIT CORRELATION ──────────────────────────────────────────────────────────
  * ⚠ A gateway event says WHAT changed, never WHO changed it. The actor exists only in the audit log
@@ -45,6 +46,8 @@
  * a plain "Left"/"Moved" already reads as the self case, and only gains an actor when one is
  * proven. A missing permission therefore costs detail, never accuracy.
  */
+
+const { COLOR, DETAILS, TITLE_MAX, FIELD_MAX, clamp, detailLines, userTag, chanChip } = require('../lib/brand.js');
 
 // ⚠ These two decide whether a line is INSTANT or merely fast, so they are not arbitrary.
 // BURST_GAP_MS is measured from the PREVIOUS EVENT, not from the start of the message: an event a
@@ -61,26 +64,6 @@ const MAX_CARDS  = 10;     // per message, then start a new one
 const GUILD_VOICE_STATES = 1 << 7;
 const A_MEMBER_MOVE = 26, A_MEMBER_DISCONNECT = 27;
 
-// Sapphire's own label. Field NAMES render markdown, so the underscores underline it (the bold is
-// the field-name default). ONE field holds the whole detail block, which is what makes the card
-// read as a labelled list instead of a wall of text.
-const DETAILS = '__Details__';
-// Discord's hard caps. A card that exceeds either is rejected outright, so a hostile display name
-// gets clamped rather than trusted.
-const TITLE_MAX = 256, FIELD_MAX = 1024;
-// The stripe carries the severity the title cannot: a self-leave and a moderator disconnect are
-// nearly the same sentence, and the colour is what separates them at a glance.
-const C_JOIN = 0x57F287, C_LEFT = 0x99AAB5, C_KICK = 0xED4245, C_MOVE = 0x5865F2, C_MOVED_BY = 0xFEE75C;
-
-const clamp = (t, n) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
-// <@id> / <#id> render as chips and cannot ping: every write also sets allowed_mentions parse:[].
-const userTag = (id) => `<@${id}>`;
-const chanChip = (id) => (id ? `<#${id}>` : 'voice');
-// ⚠ AN EMBED TITLE IS PLAIN TEXT - it renders no mention and no channel chip, it would print a raw
-// <#123>. So the title takes the channel NAME and only the field gets chips. That split is the
-// whole reason this module keeps a channel-name cache.
-const chanName = (names, id) => (id ? (names.get(id) || 'voice') : 'voice');
-
 // ── THE CARD ───────────────────────────────────────────────────────────────────────────────────
 // Module-level and PURE (all state arrives as arguments) so the rendering can be tested without a
 // gateway, a token or a live guild - see tools/tests/discord_bot.test.js.
@@ -89,40 +72,44 @@ const chanName = (names, id) => (id ? (names.get(id) || 'voice') : 'voice');
 // only falls back to flattening the embed TITLE + DESCRIPTION when it is absent. The old plain-text
 // lines therefore pushed their own markup ("🔊 **KL9** joined **Gunfight**") to the lock screen. A
 // card with a title, NO description, and its detail in FIELDS pushes exactly the title - a field
-// never reaches the push. Same finding the join card is built on (tools/ntfy.ps1 Send-GfDiscord).
-function buildCard(ev, names) {
+// never reaches the push. The house rule now lives in lib/brand.js.
+//
+// `nameOf` is a function rather than a map so the caller can hand over the core cache's resolver
+// (which carries its own fallback) and a test can hand over a two-line stub.
+function buildCard(ev, nameOf) {
+  const chan = (id) => (id ? nameOf(id) : 'voice');
   const title = (() => {
-    if (ev.kind === 'joined') return `🔊 ${ev.who} ➔ Joined: ${chanName(names, ev.now)}`;
+    if (ev.kind === 'joined') return `🔊 ${ev.who} ➔ Joined: ${chan(ev.now)}`;
     if (ev.kind === 'left') {
       return ev.actor
-        ? `⛔ ${ev.who} ➔ Disconnected: ${chanName(names, ev.prev)}`
-        : `👋 ${ev.who} ➔ Left: ${chanName(names, ev.prev)}`;
+        ? `⛔ ${ev.who} ➔ Disconnected: ${chan(ev.prev)}`
+        : `👋 ${ev.who} ➔ Left: ${chan(ev.prev)}`;
     }
-    return `${ev.actor ? '↔️' : '➡️'} ${ev.who} ➔ Moved: ${chanName(names, ev.prev)} → ${chanName(names, ev.now)}`;
+    return `${ev.actor ? '↔️' : '➡️'} ${ev.who} ➔ Moved: ${chan(ev.prev)} → ${chan(ev.now)}`;
   })();
 
   const count = (typeof ev.count === 'number' ? ` (${ev.count})` : '');
-  const lines = [`**User:** ${userTag(ev.user)}${ev.username ? ` (${ev.username})` : ''}`];
+  const pairs = [['User', `${userTag(ev.user)}${ev.username ? ` (${ev.username})` : ''}`]];
   if (ev.kind === 'moved') {
-    lines.push(`**From:** ${chanChip(ev.prev)}`);
-    lines.push(`**To:** ${chanChip(ev.now)}${count}`);
+    pairs.push(['From', chanChip(ev.prev)]);
+    pairs.push(['To', `${chanChip(ev.now)}${count}`]);
   } else {
-    lines.push(`**Channel:** ${chanChip(ev.kind === 'left' ? ev.prev : ev.now)}${count}`);
+    pairs.push(['Channel', `${chanChip(ev.kind === 'left' ? ev.prev : ev.now)}${count}`]);
   }
   // ⚠ Only ever added when an actor is PROVEN. Its absence covers the self case AND the quiet-actor
   // case deliberately: withholding who did it must never become a claim that nobody did.
-  if (ev.actor) lines.push(`**By:** ${userTag(ev.actor)}`);
+  if (ev.actor) pairs.push(['By', userTag(ev.actor)]);
 
   const card = {
     title: clamp(title, TITLE_MAX),
-    color: ev.kind === 'joined' ? C_JOIN
-         : ev.kind === 'left'   ? (ev.actor ? C_KICK : C_LEFT)
-         :                        (ev.actor ? C_MOVED_BY : C_MOVE),
-    fields: [{ name: DETAILS, value: clamp(lines.join('\n'), FIELD_MAX) }],
+    color: ev.kind === 'joined' ? COLOR.OK
+         : ev.kind === 'left'   ? (ev.actor ? COLOR.DANGER : COLOR.MUTED)
+         :                        (ev.actor ? COLOR.WARN : COLOR.INFO),
+    fields: [{ name: DETAILS, value: clamp(detailLines(pairs), FIELD_MAX) }],
     timestamp: new Date(ev.at).toISOString(),
   };
-  // The avatar is what makes this read as Sapphire's card rather than a bare embed. Absent on a
-  // default-avatar account, so it is optional and never assumed.
+  // The avatar is what makes this read as a real activity card rather than a bare embed. Absent on
+  // a default-avatar account, so it is optional and never assumed.
   if (ev.avatar) card.thumbnail = { url: ev.avatar };
   return card;
 }
@@ -133,11 +120,9 @@ module.exports = voiceLog;
 module.exports.buildCard = buildCard;
 
 function voiceLog(ctx) {
-  const { cfg, log, post, patch, api } = ctx;
+  const { cfg, log, rest, cache } = ctx;
   const enabled = Boolean(cfg.voiceLogChannelId);
 
-  const where = new Map();        // userId -> channelId
-  const chanNames = new Map();    // channelId -> name
   let hints = [];                 // recent audit entries awaiting a match
   let canAttribute = false;
 
@@ -151,25 +136,18 @@ function voiceLog(ctx) {
   // asserting nobody did. Saying less is fine; saying something untrue is not.
   const quiet = new Set((cfg.quietActorIds || []).map(String));
 
-  // The open message: { id, events[], dirty, timer, at }
+  // The open message: { id, events[], timer, at, written }
   let burst = null;
 
-  const nameOf = (d) => {
-    const m = d.member || {}, u = m.user || {};
-    return m.nick || u.global_name || u.username || `user ${d.user_id}`;
-  };
-  const cardOf = (ev) => buildCard(ev, chanNames);
-  // Who is in a voice channel RIGHT NOW, off the same cache the join/leave logic runs on.
-  const inChannel = (id) => { let n = 0; for (const c of where.values()) if (c === id) n++; return n; };
+  const nameOf = (id) => cache.channels.name(id);
+  const cardOf = (ev) => buildCard(ev, nameOf);
 
   async function probeAuditAccess() {
-    try {
-      const r = await api(`/guilds/${cfg.guildId}/audit-logs?limit=1`);
-      canAttribute = r.ok;
-      log(canAttribute
-        ? 'voice log: audit access OK - moderator moves/disconnects will be attributed'
-        : `voice log: no audit access (HTTP ${r.status}) - grant View Audit Log to name who moved or disconnected someone`);
-    } catch (e) { log('voice log: audit probe failed:', e.message); }
+    const r = await rest.probe(`/guilds/${cfg.guildId}/audit-logs?limit=1`);
+    canAttribute = r.ok;
+    log(canAttribute
+      ? 'voice log: audit access OK - moderator moves/disconnects will be attributed'
+      : `voice log: no audit access (HTTP ${r.status}) - grant View Audit Log to name who moved or disconnected someone`);
   }
 
   function addHint(entry) {
@@ -236,7 +214,7 @@ function voiceLog(ctx) {
     if (sig === b.written) return;
     b.written = sig;
     try {
-      await patch(cfg.voiceLogChannelId, b.id, { embeds, allowed_mentions: { parse: [] } });
+      await rest.editMessage(cfg.voiceLogChannelId, b.id, { embeds });
     } catch (e) { log('voice log edit failed:', e.message); }
   }
 
@@ -259,7 +237,7 @@ function voiceLog(ctx) {
     const b = burst;
     try {
       const first = cardsOf(b);
-      const msg = await post(cfg.voiceLogChannelId, { embeds: first, allowed_mentions: { parse: [] } });
+      const msg = await rest.postMessage(cfg.voiceLogChannelId, { embeds: first });
       b.written = JSON.stringify(first);
       b.id = msg.id;
       // Events and hints can land while the POST is in flight; flush anything that accumulated.
@@ -270,54 +248,52 @@ function voiceLog(ctx) {
     }
   }
 
+  const nameFrom = (d) => {
+    const m = d.member || {}, u = m.user || {};
+    return m.nick || u.global_name || u.username || `user ${d.user_id}`;
+  };
+
   return {
     name: 'voice_log',
     enabled,
     intents: enabled ? GUILD_VOICE_STATES : 0,
+    permissions: ['View Audit Log'],
+    commands: {},
 
-    onEvent(t, d) {
-      if (!enabled) return;
-
-      if (t === 'GUILD_CREATE') {
+    on: {
+      GUILD_CREATE: (d) => {
         if (d.id !== cfg.guildId) return;
-        for (const c of (d.channels || [])) chanNames.set(c.id, c.name);
-        let seeded = 0;
-        for (const vs of (d.voice_states || [])) if (vs.channel_id) { where.set(vs.user_id, vs.channel_id); seeded++; }
-        log(`voice log ready: ${chanNames.size} channels known, ${seeded} user(s) already in voice`);
-        probeAuditAccess();
-        return;
-      }
-      if (t === 'CHANNEL_CREATE' || t === 'CHANNEL_UPDATE') { chanNames.set(d.id, d.name); return; }
-      if (t === 'CHANNEL_DELETE') { chanNames.delete(d.id); return; }
+        log(`voice log ready: ${cache.channels.known()} channels known, ${cache.voice.size()} user(s) already in voice`);
+        probeAuditAccess().catch((e) => log('voice log: audit probe failed:', e.message));
+      },
 
-      if (t === 'GUILD_AUDIT_LOG_ENTRY_CREATE') {
+      GUILD_AUDIT_LOG_ENTRY_CREATE: (d) => {
         if (d.guild_id && d.guild_id !== cfg.guildId) return;
         if (d.action_type === A_MEMBER_MOVE || d.action_type === A_MEMBER_DISCONNECT) addHint(d);
-        return;
-      }
+      },
 
-      if (t !== 'VOICE_STATE_UPDATE' || d.guild_id !== cfg.guildId) return;
+      VOICE_STATE_UPDATE: (d) => {
+        if (d.guild_id !== cfg.guildId) return;
 
-      const user = d.user_id;
-      const now = d.channel_id || null;
-      const prev = where.get(user) || null;
+        const user = d.user_id;
+        // ⚠ Memoised by the cache, so reading it here returns the SAME transition the core read,
+        // whichever ran first.
+        const { prev, now, changed } = cache.voice.transition(d);
+        if (!changed) return;                       // a mute or stream toggle, not a move
 
-      const isBot = Boolean(d.member && d.member.user && d.member.user.bot);
-      if (isBot && !cfg.voiceLogBots) { if (now) where.set(user, now); else where.delete(user); return; }
+        const isBot = Boolean(d.member && d.member.user && d.member.user.bot);
+        if (isBot && !cfg.voiceLogBots) return;
 
-      if (now) where.set(user, now); else where.delete(user);
-      if (prev === now) return;
-
-      const who = nameOf(d);
-      const kind = !prev && now ? 'joined' : (prev && !now ? 'left' : 'moved');
-      const u = (d.member && d.member.user) || {};
-      // ⚠ The channel count is snapshotted HERE, not at render time. A card describes a moment, and
-      // every edit in the burst re-renders it - by which point the channel has moved on. `where` is
-      // already updated above, so a join counts the joiner and a leave does not.
-      const count = inChannel(kind === 'left' ? prev : now);
-      const avatar = u.avatar ? `https://cdn.discordapp.com/avatars/${user}/${u.avatar}.png?size=128` : null;
-      emit({ kind, who, username: u.username || '', avatar, count, user, prev, now, at: Date.now(), actor: null })
-        .catch((e) => log('voice log emit failed:', e.message));
+        const kind = !prev && now ? 'joined' : (prev && !now ? 'left' : 'moved');
+        const u = (d.member && d.member.user) || {};
+        // ⚠ The channel count is snapshotted HERE, not at render time. A card describes a moment,
+        // and every edit in the burst re-renders it - by which point the channel has moved on.
+        const count = cache.voice.count(kind === 'left' ? prev : now);
+        const avatar = u.avatar ? `https://cdn.discordapp.com/avatars/${user}/${u.avatar}.png?size=128` : null;
+        emit({ kind, who: nameFrom(d), username: u.username || '', avatar, count,
+               user, prev, now, at: Date.now(), actor: null })
+          .catch((e) => log('voice log emit failed:', e.message));
+      },
     },
   };
 }

@@ -22,7 +22,11 @@ if (!fs.existsSync(local)) {
   madeTemp = true;
 }
 process.argv.push('--register');            // stops main() from opening a gateway on require
-const { sanitiseForGame, COMMANDS, MAPS } = require(path.join(botDir, 'bot.js'));
+// bot.js now owns the gateway and the router; the whitelist it serves is MERGED from the enabled
+// feature modules, so importing COMMANDS from here is what proves the merge itself is sane.
+const { COMMANDS, FEATURES, ENABLED, INTENTS } = require(path.join(botDir, 'bot.js'));
+const { sanitiseForGame } = require(path.join(botDir, 'lib', 'panel.js'));
+const { MAPS } = require(path.join(botDir, 'lib', 'maps.js'));
 if (madeTemp) fs.unlinkSync(local);
 
 test('sanitiser removes the rcon injection characters', () => {
@@ -95,6 +99,8 @@ test('the map choice list stays inside Discord\'s 25-choice cap', () => {
 // a FIELD pushes exactly the title. These pin that, and the wording rules the module promises.
 const { buildCard } = require(path.join(botDir, 'features', 'voice_log.js'));
 const NAMES = new Map([['456', 'Gunfight'], ['789', 'General']]);
+// buildCard takes a resolver function so the module can hand it the core cache's lookup.
+const NAMEOF = (id) => NAMES.get(id) || 'voice';
 const AT = Date.parse('2026-08-19T13:05:00Z');
 const evt = (over) => Object.assign(
   { kind: 'joined', who: 'jjsetfree', username: 'jjsetfreeof', user: '123',
@@ -102,7 +108,7 @@ const evt = (over) => Object.assign(
 const details = (c) => c.fields.find((f) => f.name === '__Details__').value;
 
 test('a card carries NO description - that is what keeps detail out of the push', () => {
-  const c = buildCard(evt({}), NAMES);
+  const c = buildCard(evt({}), NAMEOF);
   assert.ok(!('description' in c), 'a description would be flattened into the mobile push');
   assert.strictEqual(c.fields.length, 1, 'the detail block is ONE field');
   assert.strictEqual(c.fields[0].name, '__Details__');
@@ -110,26 +116,26 @@ test('a card carries NO description - that is what keeps detail out of the push'
 
 test('the title names the channel in PLAIN TEXT, the field uses a chip', () => {
   // An embed title renders no <#id>, it would print the raw token. The field does render it.
-  const c = buildCard(evt({}), NAMES);
+  const c = buildCard(evt({}), NAMEOF);
   assert.ok(c.title.includes('Gunfight'), 'title should carry the channel NAME');
   assert.ok(!/<#\d+>/.test(c.title), 'a raw channel token leaked into the title');
   assert.ok(details(c).includes('<#456>'), 'the field should carry the chip');
 });
 
 test('a join reads like Sapphire: user mention, username, channel and count', () => {
-  const c = buildCard(evt({}), NAMES);
+  const c = buildCard(evt({}), NAMEOF);
   assert.strictEqual(c.title, '🔊 jjsetfree ➔ Joined: Gunfight');
   assert.strictEqual(details(c), '**User:** <@123> (jjsetfreeof)\n**Channel:** <#456> (1)');
 });
 
 test('an unknown channel degrades to "voice" rather than an id', () => {
-  const c = buildCard(evt({ now: '999' }), NAMES);
+  const c = buildCard(evt({ now: '999' }), NAMEOF);
   assert.ok(c.title.endsWith('voice'), `unknown channel rendered as ${c.title}`);
 });
 
 test('a self-leave and a moderator disconnect differ in wording AND colour', () => {
-  const self = buildCard(evt({ kind: 'left', prev: '789', now: null, count: 0 }), NAMES);
-  const kick = buildCard(evt({ kind: 'left', prev: '789', now: null, count: 0, actor: '777' }), NAMES);
+  const self = buildCard(evt({ kind: 'left', prev: '789', now: null, count: 0 }), NAMEOF);
+  const kick = buildCard(evt({ kind: 'left', prev: '789', now: null, count: 0, actor: '777' }), NAMEOF);
   assert.ok(self.title.includes('Left:'), self.title);
   assert.ok(kick.title.includes('Disconnected:'), kick.title);
   assert.notStrictEqual(self.color, kick.color, 'the stripe is what separates them at a glance');
@@ -140,13 +146,13 @@ test('a self-leave and a moderator disconnect differ in wording AND colour', () 
 test('a QUIET actor removes the By line without claiming the user did it', () => {
   // applyHints() consumes the hint but sets actor=null + byQuietActor. The card must then read
   // exactly like the self case: withholding who did it is not a claim that nobody did.
-  const q = buildCard(evt({ kind: 'left', prev: '789', now: null, count: 0, actor: null, byQuietActor: true }), NAMES);
+  const q = buildCard(evt({ kind: 'left', prev: '789', now: null, count: 0, actor: null, byQuietActor: true }), NAMEOF);
   assert.ok(!details(q).includes('**By:**'), 'a quiet actor must not be named');
   assert.ok(!/themselves/i.test(details(q) + q.title), 'and must not assert the self case either');
 });
 
 test('a move carries From and To, and the count belongs to the destination', () => {
-  const c = buildCard(evt({ kind: 'moved', prev: '789', now: '456', count: 3 }), NAMES);
+  const c = buildCard(evt({ kind: 'moved', prev: '789', now: '456', count: 3 }), NAMEOF);
   assert.strictEqual(c.title, '➡️ jjsetfree ➔ Moved: General → Gunfight');
   assert.ok(details(c).includes('**From:** <#789>'), details(c));
   assert.ok(details(c).includes('**To:** <#456> (3)'), details(c));
@@ -154,7 +160,7 @@ test('a move carries From and To, and the count belongs to the destination', () 
 
 test('a hostile display name cannot exceed Discord\'s title or field caps', () => {
   // Over either cap Discord rejects the whole message, so the card would simply never appear.
-  const c = buildCard(evt({ who: 'x'.repeat(4000), username: 'y'.repeat(4000) }), NAMES);
+  const c = buildCard(evt({ who: 'x'.repeat(4000), username: 'y'.repeat(4000) }), NAMEOF);
   assert.ok(c.title.length <= 256, `title ${c.title.length} > 256`);
   assert.ok(details(c).length <= 1024, `field ${details(c).length} > 1024`);
 });
@@ -245,4 +251,114 @@ test('presence never polls rcon - it reads the status projection', () => {
   assert.ok(!src.includes('http.request'), 'presence opened an HTTP request');
   assert.ok(!src.includes('fetch('), 'presence opened an HTTP request');
   assert.ok(src.includes('status.json'), 'presence should read the status projection');
+});
+
+// ── the module contract ────────────────────────────────────────────────────────────────────────
+// bot.js is now a router over feature modules. The contract is what keeps a new feature from
+// quietly costing a privilege or shadowing someone else's command, so it is worth pinning.
+const cache = require(path.join(botDir, 'lib', 'cache.js'));
+const brand = require(path.join(botDir, 'lib', 'brand.js'));
+
+test('every feature declares the full contract', () => {
+  for (const f of FEATURES) {
+    assert.ok(typeof f.name === 'string' && f.name, 'a feature has no name');
+    assert.strictEqual(typeof f.enabled, 'boolean', `${f.name}.enabled must be a boolean`);
+    assert.strictEqual(typeof f.intents, 'number', `${f.name}.intents must be a number`);
+    assert.ok(Array.isArray(f.permissions), `${f.name}.permissions must be an array`);
+    assert.strictEqual(typeof f.commands, 'object', `${f.name}.commands must be an object`);
+    assert.strictEqual(typeof f.on, 'object', `${f.name}.on must be an object`);
+  }
+});
+
+test('no two features claim the same command name', () => {
+  // bot.js refuses to start on a collision; this catches it at test time instead of at 3am.
+  const seen = new Set();
+  for (const f of FEATURES) {
+    for (const name of Object.keys(f.commands || {})) {
+      assert.ok(!seen.has(name), `/${name} is declared by more than one feature`);
+      seen.add(name);
+    }
+  }
+});
+
+test('a DISABLED feature contributes neither intents nor commands', () => {
+  // THE property that keeps a switched-off feature from costing a privileged intent - which would
+  // close the gateway with 4014 and take every other feature down with it.
+  for (const f of FEATURES) {
+    if (f.enabled) continue;
+    assert.ok(!ENABLED.includes(f), `${f.name} is disabled but still in ENABLED`);
+    for (const name of Object.keys(f.commands || {})) {
+      assert.ok(!(name in COMMANDS), `disabled ${f.name} still registered /${name}`);
+    }
+  }
+});
+
+test('the intent union always carries GUILDS and nothing unrequested', () => {
+  assert.ok(INTENTS & 1, 'GUILDS is what seeds the channel and voice caches');
+  let expected = 1;
+  for (const f of ENABLED) expected |= f.intents;
+  assert.strictEqual(INTENTS, expected, 'INTENTS is not the union of the enabled features');
+});
+
+test('MESSAGE_CONTENT is only ever requested when a relay channel exists', () => {
+  // Privileged. Asking for it on an install where nobody has flipped the portal toggle is a fatal
+  // 4014, so it must track the config rather than being hardcoded.
+  const relay = FEATURES.find((f) => f.name === 'relay');
+  const wantsContent = Boolean(relay.intents & (1 << 15));
+  assert.strictEqual(wantsContent, relay.enabled, 'relay asks for MESSAGE_CONTENT while disabled');
+});
+
+// ── lib/cache.js ───────────────────────────────────────────────────────────────────────────────
+test('a voice transition is memoised, so core and feature read the SAME prev', () => {
+  // THE ordering trap: the core updates the map before features run. If transition() were not
+  // memoised on the event object, the feature would read the NEW channel as prev and "moved from X"
+  // would be unrecoverable.
+  const ev = { user_id: 'u1', channel_id: 'c2', guild_id: 'g' };
+  cache.observe('VOICE_STATE_UPDATE', { user_id: 'u1', channel_id: 'c1', guild_id: 'g' });
+  const core = cache.voice.transition(ev);        // as the core sees it
+  const feature = cache.voice.transition(ev);     // as the feature sees it, afterwards
+  assert.strictEqual(core.prev, 'c1');
+  assert.deepStrictEqual(core, feature, 'the second read disagreed with the first');
+});
+
+test('membersOf and count see everyone in a channel', () => {
+  for (const u of ['a', 'b', 'c']) cache.observe('VOICE_STATE_UPDATE', { user_id: u, channel_id: 'room' });
+  assert.strictEqual(cache.voice.count('room'), 3);
+  assert.deepStrictEqual(cache.voice.membersOf('room').sort(), ['a', 'b', 'c']);
+  cache.observe('VOICE_STATE_UPDATE', { user_id: 'b', channel_id: null });   // b leaves
+  assert.strictEqual(cache.voice.count('room'), 2);
+});
+
+test('the message cache is BOUNDED - an unbounded one is a slow leak', () => {
+  for (let i = 0; i < cache.MESSAGE_CAP + 50; i++) {
+    cache.observe('MESSAGE_CREATE', { id: 'm' + i, channel_id: 'c', author: { id: 'u' }, content: 'x' });
+  }
+  assert.ok(cache.message.size() <= cache.MESSAGE_CAP, `cache grew to ${cache.message.size()}`);
+  assert.ok(cache.message.get('m0') === null, 'the oldest entry should have been evicted');
+});
+
+// ── lib/brand.js ───────────────────────────────────────────────────────────────────────────────
+test('brand.card puts detail in a FIELD and never in the description', () => {
+  // The house rule, centralised: a description is flattened into the mobile push, a field is not.
+  const c = brand.card({ title: 'T', details: [['User', '<@1>'], ['Channel', '<#2>']] });
+  assert.ok(!('description' in c), 'card added a description');
+  assert.strictEqual(c.fields.length, 1);
+  assert.strictEqual(c.fields[0].name, brand.DETAILS);
+  assert.strictEqual(c.fields[0].value, '**User:** <@1>\n**Channel:** <#2>');
+});
+
+test('brand.card drops empty detail rows rather than printing blanks', () => {
+  const c = brand.card({ title: 'T', details: [['User', '<@1>'], ['Reason', ''], ['By', null]] });
+  assert.strictEqual(c.fields[0].value, '**User:** <@1>');
+});
+
+test('brand.card clamps a hostile title and field to Discord\'s caps', () => {
+  const c = brand.card({ title: 'x'.repeat(900), details: [['A', 'y'.repeat(4000)]] });
+  assert.ok(c.title.length <= brand.TITLE_MAX, `title ${c.title.length}`);
+  assert.ok(c.fields[0].value.length <= brand.FIELD_MAX, `field ${c.fields[0].value.length}`);
+});
+
+test('the footer is opt-in - a burst of cards must not each carry branding', () => {
+  assert.ok(!('footer' in brand.card({ title: 'T' })), 'footer should be off by default');
+  assert.strictEqual(brand.card({ title: 'T', footer: true }).footer.text, brand.FOOTER);
 });

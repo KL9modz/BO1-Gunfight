@@ -121,17 +121,19 @@ function presence(ctx) {
     name: 'presence',
     enabled,
     intents: 0,               // presence is something we SEND; receiving anything is not required
+    permissions: [],
+    commands: {},
 
-    onEvent(t) {
-      if (!enabled) return;
+    on: {
       // ⚠ READY, not RESUMED. A fresh IDENTIFY clears whatever presence the old session had, so
       // the memo has to be dropped or the change check would suppress the re-push and the bot
       // would sit blank until the next time the count happened to move. A RESUME keeps presence,
       // and correctly does nothing here.
-      if (t !== 'READY') return;
-      lastSent = null;
-      tick();
-      if (!timer) timer = setInterval(tick, REFRESH_MS);   // guarded: reconnects must not stack timers
+      READY: () => {
+        lastSent = null;
+        tick();
+        if (!timer) timer = setInterval(tick, REFRESH_MS);   // guarded: reconnects must not stack timers
+      },
     },
   };
 }
