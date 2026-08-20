@@ -11,42 +11,66 @@ against Discord's current docs, because three of them have changed or are common
 
 ## Today
 
-`tools/discord_bot/bot.js`, run as **GF-DiscordBot** through `run_service.ps1`, watched by
-`watchdog.ps1`. Zero npm dependencies: Node 24's native `WebSocket` + `fetch` cover the gateway.
+`tools/discord_bot/`, run as **GF-DiscordBot** through `run_service.ps1`, watched by `watchdog.ps1`.
+Zero npm dependencies: Node 24's native `WebSocket` + `fetch` cover the gateway.
 
 | | |
 |---|---|
-| Commands | `/status` `/players` (open) · `/say` `/map` `/restart` `/pause` `/resume` (Admin role) |
-| Relay | one configured channel → in-game broadcast (off until a channel is set) |
-| Game access | **only** the panel's `/api/rcon` on loopback — the panel is the single rcon pacer |
-| Intents | `GUILDS`, plus `GUILD_MESSAGES` + `MESSAGE_CONTENT` **only when a relay channel is set** |
+| Commands | `/status` `/players` (open) · `/say` `/map` `/restart` `/pause` `/resume` `/moveall` (Admin role) |
+| Relay | one configured channel to in-game broadcast (off until a channel is set) |
+| Voice log | joined / left / moved cards, with **who did it** from the audit log (off until a channel is set) |
+| Presence | member-list line, "Watching 3 players on Nuketown", off `status.json` |
+| Game access | **only** the panel's `/api/rcon` on loopback, the panel is the single rcon pacer |
+| Intents | `GUILDS` + `GUILD_VOICE_STATES`, plus `GUILD_MESSAGES` + `MESSAGE_CONTENT` **only when a relay channel is set** |
 
 ⚠ **The four gates** (verb whitelist, role gate, guild/channel allowlist, sanitiser) are the security
-model, not decoration — see the header of `bot.js`. Every feature below must pass through them too.
+model, not decoration. The first three now live in the ROUTER so a feature module cannot forget one;
+the sanitiser lives in `lib/panel.js` beside the rcon call it guards.
 
 ---
 
-## The architecture change that comes first
+## The architecture — DONE 2026-08-19
 
-`bot.js` is one file with a `COMMANDS` table and two event handlers. That is right for two features
-and wrong for ten. Before adding anything, split it:
+`bot.js` was one file with a `COMMANDS` table and two event handlers, which was right for two
+features and wrong for ten. It is now a gateway client and an event router with no features in it:
 
 ```
 tools/discord_bot/
-  bot.js            gateway (identify/heartbeat/resume/reconnect) + event router. No features.
-  lib/rest.js       REST calls + the rate-limit queue (see below)
-  lib/cache.js      bounded message + voice-state caches
-  features/ops.js         the slash commands that exist today
+  bot.js                  gateway (identify/heartbeat/resume/reconnect) + router + the security gates
+  lib/config.js           load, BOM-tolerant parse, fatal-on-missing
+  lib/rest.js             every REST call, through ONE queue that honours 429 / retry_after
+  lib/cache.js            shared voice state + channel names + a BOUNDED message cache
+  lib/brand.js            the house style: palette, card format, chips, caps
+  lib/maps.js             BO1 map table (shared: /map today, the tournament picker next)
+  lib/panel.js            the game bridge + the injection sanitiser
+  features/ops.js         the slash commands
   features/relay.js       Discord -> game
-  features/audit.js       activity logging
-  features/moderation.js  spam handling + AutoMod glue
-  config.local.json  (gitignored)
+  features/voice_tools.js /moveall
+  features/voice_log.js   voice activity cards
+  features/presence.js    member-list line
+  config.local.json       (gitignored)
 ```
 
-Each feature module exports `{ name, intents, permissions, commands, on: { EVENT: handler } }`, and
-`bot.js` unions the intents of the **enabled** modules. That preserves the property already earned
-the hard way: **never request an intent a feature does not need**, because identifying with a
-privileged intent that is not enabled in the portal closes the gateway with **4014**, which is fatal.
+A feature is a factory taking `ctx` and returning
+`{ name, enabled, intents, permissions, commands, on: { EVENT: handler } }`. `bot.js` unions the
+intents and merges the command tables of the **enabled** modules only, which preserves the property
+earned the hard way: **never request an intent a feature does not need**, because identifying with a
+privileged intent that is not enabled in the portal closes the gateway with **4014**, which is fatal
+for every other feature too. A duplicate command name refuses to start rather than silently letting
+one module shadow another.
+
+Three things worth knowing about the split:
+
+- **`lib/cache.js` is CORE, not a feature.** The voice map used to live inside the voice log, so
+  `/moveall` would have moved nobody on a bot with the log switched off. State two features read has
+  to be owned by the core, or it acquires a hidden dependency on what happens to be enabled.
+- ⚠ **The transition is memoised on the event object.** `VOICE_STATE_UPDATE` never says where a user
+  came from, so the previous channel exists only in the map and only until the map updates. The core
+  updates first; `transition(d)` returns the same `{prev, now}` to whoever asks, in any order.
+- **`lib/rest.js` honours rate limits.** Before it, each caller ran a bare `fetch` and a 429 simply
+  threw, losing the write. It now waits `retry_after`, tracks the separate GLOBAL pause, retries 5xx,
+  and throws immediately on a 4xx that is our own bug. `allowed_mentions parse:[]` is applied
+  centrally so a feature cannot forget it and start pinging people.
 
 ---
 
@@ -173,23 +197,61 @@ server on it; (c) build it here only if (a) and (b) are unacceptable, accepting 
 
 ---
 
-## Suggested order
+## Scope, decided 2026-08-19
 
-1. **Refactor to modules** — small, unblocks everything, no new permissions.
-2. **Activity logging, metadata first**: voice join/leave, member join/leave, channel/role changes,
-   plus `GUILD_AUDIT_LOG_ENTRY_CREATE` for the actor. Adds `GUILD_VOICE_STATES` + `GUILD_MEMBERS`
-   (privileged — enable in the portal) and **View Audit Log**. Batched, private log channel.
-3. **AutoMod glue**: create the SPAM / MENTION_SPAM / KEYWORD_PRESET rules, subscribe to
-   `AUTO_MODERATION_ACTION_EXECUTION`, log every hit. Adds **Manage Server**.
-4. **Message delete/edit logging** with the bounded cache — deliberately after (2) and (3), because it
-   is the one that carries the privacy decision and needs `MESSAGE_CONTENT`.
-5. **Custom spam heuristics + escalation** (timeout, never ban). Adds **Moderate Members**, and
-   **Manage Messages** if the bot deletes offending messages itself.
-6. **Music** — separately hosted, or not at all.
+The owner's feature list, and the two structural calls made while scoping it.
 
-⚠ Add permissions and intents **one step at a time**, matching the step that needs them. The current
-invite is deliberately minimal (View Channels, Send Messages, Embed Links, Read Message History, Use
-Slash Commands); an Administrator tick would make every later audit meaningless.
+**ONE bot, not two, and not Red-DiscordBot.** Red was considered seriously and rejected on the
+evidence of the actual list: Red's value is the commodity engagement pack (levels, welcome cards,
+giveaways, reaction roles) and **none of that is on it**. What is on it is either already built,
+BOB-only by nature (rcon), or bespoke in any stack (tournaments). Against ~one cheap win it would
+have added a Python runtime, a second bot user, and third-party code on the game box. Two items are
+actively better owned: **branding**, because Red's command UX carries Red's look, and **tournaments**,
+which is the same amount of code in either language. The zero-dep gateway/REST/router machinery is
+written and tested; the marginal cost per feature from here is low.
+
+**Music: skipped.** Not "later" - decided. The research below stands, and the conclusion the owner
+took is that a jukebox is not worth CPU and UDP on the box running the game server. If it is ever
+wanted, add a hosted third-party bot to the guild.
+
+⚠ Two honest limits of staying zero-dep, so nobody is surprised at step 7: bracket **images** and
+content-aware media scanning are out of scope. Brackets render as embeds (which read well up to 16
+players), the wheel spin is an edit-animation with a branded reveal rather than a GIF, and media
+moderation means rules on type/size/extension/channel, not "is this image NSFW" - that last one is
+an external API call if it is ever wanted.
+
+## Build order
+
+1. **Module refactor + `lib/brand.js`** — DONE 2026-08-19. Everything below inherits the shape and
+   the house style, so features written months apart still match.
+2. **Bulk move** — DONE. `/moveall from to`, the first feature built on the new shape and the proof
+   it works. Needs **Move Members**. Its own moves are suppressed in the voice log, because the
+   command already summarises them and one card per member is duplicate reporting.
+3. **Logging family** — member join/leave, name and nick changes, message delete/edit against the
+   bounded cache, channel/role changes with the actor from `GUILD_AUDIT_LOG_ENTRY_CREATE`. Adds the
+   privileged **GUILD_MEMBERS** intent (portal toggle) and **View Audit Log**.
+   ⚠ Carries the privacy decision in §1 below: logging deleted message CONTENT means holding content
+   in memory and reposting it. That is the owner's call, and it is the reason this step is not first.
+4. **Link and media moderation** — native AutoMod rules for the cheap wins (invite links, keyword
+   presets, mention spam), custom checks for domains and attachment types. Escalation is delete then
+   timeout, **never** auto-ban. Adds **Manage Server**, **Manage Messages**, **Moderate Members**.
+5. **Security** — join-rate raid alarm, account-age flag on the join card, and alerts on the audit
+   events that actually matter (role and permission changes, webhook creation, mass delete).
+6. **Stats and leaderboards** — `/stats`, `/leaderboard`, rank cards from the existing `GF_STAT`
+   pipeline joined to the GUID link table. No new permissions; it reads files the box already writes.
+7. **Tournaments** — the big bespoke one, worth its own design pass: register button to roster,
+   seeded single-elimination bracket as embeds, wheel-spin map picker (on `lib/maps.js`), team
+   randomiser honouring the registered roster. Buttons and modals, state in a gitignored file.
+
+Then the AI pair the owner scoped: a **Q&A helper** answering from the project's own docs, and
+**agentic admin** (natural language mapped ONLY to the existing whitelisted verbs, never free rcon).
+Both need an Anthropic API key in the bot's own config. ⚠ The box's Claude Max login cannot back a
+bot, and `ANTHROPIC_API_KEY` must never be set globally on this box - it would silently take
+precedence over the subscription for `GF-ClaudeRC` too.
+
+⚠ Add permissions and intents **one step at a time**, matching the step that needs them. The invite
+stays minimal (View Channels, Send Messages, Embed Links, Read Message History, Use Slash Commands,
+plus Move Members from step 2); an Administrator tick would make every later audit meaningless.
 
 ## Sources
 

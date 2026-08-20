@@ -80,6 +80,7 @@ const ctx = {
 const FEATURES = [
   require('./features/ops.js')(ctx),
   require('./features/relay.js')(ctx),
+  require('./features/voice_tools.js')(ctx),
   require('./features/voice_log.js')(ctx),
   require('./features/presence.js')(ctx),
 ];

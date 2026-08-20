@@ -25,6 +25,8 @@
 const where = new Map();       // userId    -> channelId  (voice presence)
 const names = new Map();       // channelId -> name
 const seen = new WeakMap();    // VOICE_STATE_UPDATE event -> { prev, now }
+// userId -> epoch ms until which OUR OWN moves should not be logged again. See suppress().
+const quiet = new Map();
 
 // Messages, for delete/edit logging. Bounded: an unbounded message cache on a long-running process
 // is a memory leak with extra steps. Insertion order + shift() is O(1) enough at this size, and the
@@ -73,6 +75,30 @@ function remember(m) {
 
 const voice = {
   transition,
+
+  /*
+   * Mark a user's next voice change as ours.
+   *
+   * ⚠ WHY THIS IS NOT LOG SUPPRESSION IN GENERAL: when an admin runs /moveall, the bot issues one
+   * REST call per member, Discord emits one VOICE_STATE_UPDATE per member, and the voice log would
+   * faithfully report all of them - as separate messages, because the rest queue paces the moves
+   * further apart than the log's burst window. That is DUPLICATE REPORTING of an action the
+   * command already summarised in its own card, not an audit trail.
+   *
+   * Time-based rather than consume-on-read: one move can produce more than one event, and a
+   * counter that guesses wrong strands the suppression forever. The cost of the window is that a
+   * user who genuinely moves again within it loses one log line - cheap, and it self-heals.
+   */
+  suppress: (userIds, ms = 10000) => {
+    const until = Date.now() + ms;
+    for (const u of [].concat(userIds)) quiet.set(String(u), until);
+  },
+  suppressed: (userId) => {
+    const until = quiet.get(String(userId));
+    if (!until) return false;
+    if (Date.now() > until) { quiet.delete(String(userId)); return false; }
+    return true;
+  },
 
   channelOf: (userId) => where.get(userId) || null,
   // A COPY: a caller iterating this while moving people would otherwise mutate what it is walking.

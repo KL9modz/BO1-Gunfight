@@ -284,6 +284,10 @@ function voiceLog(ctx) {
         const isBot = Boolean(d.member && d.member.user && d.member.user.bot);
         if (isBot && !cfg.voiceLogBots) return;
 
+        // ⚠ An action the BOT itself just performed on request (/moveall) is already summarised by
+        // that command's own card. Logging it again, once per member, is duplicate reporting.
+        if (cache.voice.suppressed(user)) return;
+
         const kind = !prev && now ? 'joined' : (prev && !now ? 'left' : 'moved');
         const u = (d.member && d.member.user) || {};
         // ⚠ The channel count is snapshotted HERE, not at render time. A card describes a moment,

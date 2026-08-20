@@ -329,6 +329,16 @@ test('membersOf and count see everyone in a channel', () => {
   assert.strictEqual(cache.voice.count('room'), 2);
 });
 
+test('suppression hides our own moves and then expires', () => {
+  cache.voice.suppress(['z1'], 50);
+  assert.ok(cache.voice.suppressed('z1'), 'should be suppressed inside the window');
+  assert.ok(!cache.voice.suppressed('z2'), 'an unrelated user must not be suppressed');
+  return new Promise((r) => setTimeout(() => {
+    assert.ok(!cache.voice.suppressed('z1'), 'the window must expire on its own');
+    r();
+  }, 70));
+});
+
 test('the message cache is BOUNDED - an unbounded one is a slow leak', () => {
   for (let i = 0; i < cache.MESSAGE_CAP + 50; i++) {
     cache.observe('MESSAGE_CREATE', { id: 'm' + i, channel_id: 'c', author: { id: 'u' }, content: 'x' });
