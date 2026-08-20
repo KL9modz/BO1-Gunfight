@@ -47,12 +47,30 @@ const REFRESH_MS = 20000;
 const DEFAULT_STATUS_JSON = 'C:\\inetpub\\wwwroot\\live\\status.json';
 
 const clamp = (t, n) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
-const shape = (name, status) => ({
-  since: null,
-  afk: false,
-  status,                                     // online | idle | dnd - the dot beside the bot
-  activities: [{ name: clamp(name, NAME_MAX), type: WATCHING }],
-});
+/*
+ * ⚠ MAP ART ON THE BOT'S PROFILE IS UNPROVEN, AND OFF BY DEFAULT.
+ *
+ * The activity object has an `assets` field (large_image / large_text). For a GAME's rich presence
+ * it renders the big picture on a profile. Whether Discord honours it for a BOT's own presence is
+ * not something the gateway docs state, and it cannot be tested from here: uploading an asset needs
+ * the Developer Portal, because the API answers a bot token with
+ * "Bots cannot use this endpoint" (403, code 20001).
+ *
+ * ⚠ The key is an ASSET NAME uploaded to OUR application (Portal -> Rich Presence -> Art Assets),
+ * NOT a URL. This is the one place a gunfight.us image does NOT work - unlike an embed thumbnail,
+ * which takes any public https URL. Two different mechanisms, easy to conflate.
+ *
+ * The key used is the ENGINE map id straight out of status.json (mp_nuked), so an uploaded asset
+ * named mp_nuked just starts working with no second lookup table to drift.
+ */
+const shape = (name, status, art) => {
+  const activity = { name: clamp(name, NAME_MAX), type: WATCHING };
+  if (art && art.key) {
+    activity.application_id = art.appId;
+    activity.assets = { large_image: art.key, large_text: clamp(art.text || art.key, NAME_MAX) };
+  }
+  return { since: null, afk: false, status, activities: [activity] };
+};
 
 // Module-level and PURE so the wording and the never-lie rules can be tested without a gateway or
 // a live server - see tools/tests/discord_bot.test.js.
@@ -61,7 +79,7 @@ const shape = (name, status) => ({
 // file it wrote stays on disk saying "4 players on Zoo" forever, and presence would advertise a
 // server that may be empty or down. Unknown is the honest answer, and the dot going yellow is the
 // only warning anyone gets. Same rule the status embed follows (New-StatusEmbed, PS suite).
-function buildPresence(snap, nowMs) {
+function buildPresence(snap, nowMs, art) {
   if (!snap || typeof snap !== 'object') return shape('the server (status unknown)', 'idle');
 
   const stamped = Date.parse(snap.updated);
@@ -76,7 +94,10 @@ function buildPresence(snap, nowMs) {
   if (humans === 0) return shape('an empty server', 'idle');
 
   const map = snap.mapName || snap.map || 'Gunfight';
-  return shape(`${humans} player${humans === 1 ? '' : 's'} on ${map}`, 'online');
+  // ⚠ Art only on the ONLINE path. An empty or offline server has no map worth picturing, and a
+  // stale snapshot must not put a confident map image on the profile.
+  const withArt = art && snap.map ? Object.assign({}, art, { key: snap.map, text: map }) : null;
+  return shape(`${humans} player${humans === 1 ? '' : 's'} on ${map}`, 'online', withArt);
 }
 
 module.exports = presence;
@@ -88,6 +109,8 @@ function presence(ctx) {
   // would only be a step to discover. `"presence": false` turns it off.
   const enabled = cfg.presence !== false;
   const statusPath = cfg.statusJson || DEFAULT_STATUS_JSON;
+  // Off until someone uploads art in the Portal and confirms a bot profile actually renders it.
+  const art = cfg.presenceMapArt ? { appId: cfg.applicationId } : null;
 
   let timer = null;
   let lastSent = null;      // full payload signature: suppresses a resend of an identical line
@@ -104,7 +127,7 @@ function presence(ctx) {
   }
 
   function tick() {
-    const p = buildPresence(read(), Date.now());
+    const p = buildPresence(read(), Date.now(), art);
     const sig = JSON.stringify(p);
     if (sig === lastSent) return;
     lastSent = sig;

@@ -754,3 +754,33 @@ test('security is OFF without a channel and asks for no privileged intent', () =
   assert.ok(on.intents & intents.BITS.GUILD_MEMBERS, 'raid alarm needs member events');
   assert.ok(on.intents & intents.BITS.GUILD_MODERATION, 'audit stream needs GUILD_MODERATION');
 });
+
+// ── presence map art (unproven, gated off) ─────────────────────────────────────────────────────
+test('map art is absent unless explicitly switched on', () => {
+  const snap = { updated: new Date().toISOString(), online: true, map: 'mp_nuked', mapName: 'Nuketown', humans: 3 };
+  assert.ok(!buildPresence(snap, Date.now(), null).activities[0].assets, 'art must be opt-in');
+});
+
+test('map art keys off the ENGINE map id, so an uploaded asset just works', () => {
+  // The Portal asset is named mp_nuked; status.json already carries mp_nuked. No second table.
+  const snap = { updated: new Date().toISOString(), online: true, map: 'mp_nuked', mapName: 'Nuketown', humans: 3 };
+  const a = buildPresence(snap, Date.now(), { appId: 'APP' }).activities[0];
+  assert.strictEqual(a.assets.large_image, 'mp_nuked');
+  assert.strictEqual(a.assets.large_text, 'Nuketown');
+  assert.strictEqual(a.application_id, 'APP', 'assets resolve against an application id');
+});
+
+test('an empty, offline or stale server carries NO map picture', () => {
+  // A confident map image on a profile the data cannot support is the same lie as a frozen roster.
+  const art = { appId: 'APP' };
+  const now = Date.now();
+  const cases = [
+    { updated: new Date().toISOString(), online: true, humans: 0, map: 'mp_nuked' },
+    { updated: new Date().toISOString(), online: false, humans: 3, map: 'mp_nuked' },
+    { updated: new Date(now - 10 * 60000).toISOString(), online: true, humans: 3, map: 'mp_nuked' },
+  ];
+  for (const snap of cases) {
+    assert.ok(!buildPresence(snap, now, art).activities[0].assets,
+      `art leaked onto ${JSON.stringify(snap).slice(0, 60)}`);
+  }
+});

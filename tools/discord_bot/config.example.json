@@ -35,6 +35,7 @@
   "securityRaidJoins": 5,
   "securityRaidWindowSeconds": 60,
   "securityRaidCooldownMinutes": 10,
+  "presenceMapArt": false,
   "_notes": {
     "adminRoleId": "Required. Gates every command that changes the server (say, map, restart, pause, resume). Read-only commands (status, players) are open to the guild.",
     "relayChannelId": "The ONE channel whose messages are relayed into the game. Leave empty to disable the relay entirely. Every other channel is ignored.",
@@ -63,6 +64,7 @@
     "securityChannelId": "Channel for the raid alarm and alerts on dangerous guild changes (role permissions granted, a BOT added, a webhook created, server settings edited). Falls back to modChannelId. EMPTY = off. ⚠ Needs the privileged SERVER MEMBERS intent for the raid alarm, and View Audit Log for the rest. ⚠ It ALERTS and never acts: every automated response to a raid has a failure mode worse than the raid itself, so the bot's job is noticing within seconds and the decision stays with a human.",
     "securityAlertRoleId": "Role pinged for CRITICAL alerts only (default: nobody). ⚠ The ONLY place in this bot that can ping - every other card sets allowed_mentions parse:[] so a mention chip notifies nobody. 'Someone just granted a role Administrator' is worth a phone buzzing at 3am; nothing else here is.",
     "securityRaidJoins": "Joins inside securityRaidWindowSeconds before the raid alarm fires (default 5 in 60s).",
-    "securityRaidCooldownMinutes": "Minimum gap between raid alarms (default 10), so a wave produces one alert rather than one per joiner."
+    "securityRaidCooldownMinutes": "Minimum gap between raid alarms (default 10), so a wave produces one alert rather than one per joiner.",
+    "presenceMapArt": "false (default) = the bot's profile shows text only. true adds the current map as the activity's large image. ⚠ UNPROVEN: the gateway docs do not state whether Discord renders activity ASSETS for a BOT's own presence, and it cannot be tested from code - uploading an asset needs the Developer Portal, because the API answers a bot token with 'Bots cannot use this endpoint' (403 / 20001). ⚠ The key is an ASSET NAME uploaded under Rich Presence > Art Assets, NOT a URL - this is the one place a gunfight.us image does NOT work, unlike an embed thumbnail which takes any public https URL. Name each asset after the ENGINE map id (mp_nuked), which is what status.json already carries."
   }
 }
