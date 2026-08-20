@@ -404,7 +404,12 @@ function Get-JoinFieldsDiscord($loc, $ping, $mention, $link) {
   $fields = @()
   if ($mention)   { $fields += @{ name = 'Discord';  value = $mention } }
   elseif ($loc)   { $fields += @{ name = 'Location'; value = $loc } }
-  if ($link)      { $fields += @{ name = 'Play';     value = $link } }
+  # ⚠ The call to action is UNLABELLED, and that is the fix for a real bug rather than a style
+  # choice: $JoinLink already opens with its own bold lead-in, so a 'Play' heading above it printed
+  # the word twice. A Discord field name cannot be empty, so this is a zero-width space - it
+  # renders as no heading at all and the CTA reads as its own line.
+  # ⚠ Fix the LABEL here, never $JoinLink: that string is the owner's marketing copy.
+  if ($link)      { $fields += @{ name = [string][char]0x200B; value = $link } }
   return ,$fields          # comma operator: a 1-element array must not unroll to a bare hashtable
 }
 function Get-JoinBody($loc, $ping, $count) {

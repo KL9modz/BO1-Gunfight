@@ -436,8 +436,20 @@ Describe "Get-JoinFieldsDiscord - detail lives in FIELDS, which stay out of the 
         Assert-True ($null -eq (& $val $f 'Discord')) 'no mention field'
     }
     It 'the call to action is always a field of its own' {
-        Assert-Eq (& $val (Get-JoinFieldsDiscord 'Papeete' 42 '' $link) 'Play') $link 'play field'
-        Assert-Eq (& $val (Get-JoinFieldsDiscord '' $null '' $link) 'Play') $link 'play field with nothing else'
+        # Looked up by VALUE, not by label: the label is deliberately a zero-width space, and a test
+        # that hardcoded it would just re-encode the thing being fixed.
+        $hasLink = { param($f) [bool]($f | Where-Object { $_.value -eq $link }) }
+        Assert-True (& $hasLink (Get-JoinFieldsDiscord 'Papeete' 42 '' $link)) 'play field'
+        Assert-True (& $hasLink (Get-JoinFieldsDiscord '' $null '' $link)) 'play field with nothing else'
+    }
+    It 'no field label is repeated inside its own value' {
+        # THE bug this class produces: a 'Play' label above copy that already reads "Play for free"
+        # printed the word twice. Generic on purpose - it catches the next one too.
+        foreach ($f in (Get-JoinFieldsDiscord 'Papeete, French Polynesia' 42 '' $link)) {
+            $label = ($f.name -replace '[^w]', '')
+            if (-not $label) { continue }
+            Assert-True (-not ($f.value -match "$label")) "field '$label' repeats its label in its value"
+        }
     }
     It 'no field carries the connect ordinal - that stays phone-only' {
         $f = Get-JoinFieldsDiscord 'Papeete' 42 '' $link
