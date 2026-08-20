@@ -157,8 +157,12 @@ const SAY = {
              // NAMES are the point - a count says the server is busy, names say WHO, and that is
              // what makes someone click. Falls back to the count when no roster is available,
              // because a snapshot without a players array must not print "with: ".
-             busy: (n, m, names) => {
-               const head = `Gunfight on ${m}`;
+             busy: (n, m, names, snap) => {
+               // ⚠ The SCORE only when the snapshot carries a real one. "(0-0)" on a match that has
+               // not started yet reads as broken rather than informative, so a 0-0 is left off.
+               const sc = (snap && snap.score) || {};
+               const a = Number(sc.allies) || 0, x = Number(sc.axis) || 0;
+               const head = (a || x) ? `Gunfight on ${m} (${a}-${x})` : `Gunfight on ${m}`;
                const list = nameList(names, NAME_MAX - head.length - 8);
                return list ? `${head} with: ${list}` : `${head} - ${n} playing`;
              } },
@@ -169,20 +173,29 @@ const SAY_FOR = (style) => (style === 'custom' ? SAY.plain
                           : (style === 'playing' || style === 'competing') ? SAY.branded
                           : SAY.verb);
 
+/*
+ * ⚠ THE ACTIVITY TYPE FOLLOWS THE STATE, not a single setting. Owner's rule 2026-08-20:
+ *     nobody on -> "Watching gunfight.us"
+ *     humans on -> "Playing Gunfight on Nuketown (3-2) with: KL9, ..."
+ * "Watching" suits an idle observer; "Playing" only becomes true when a match is actually running.
+ * An explicit presenceStyle still forces ONE type for every state, for anyone who wants that.
+ */
 function buildPresence(snap, nowMs, art, style, buttons, opts) {
+  const busyStyle  = style || 'playing';
+  const quietStyle = style || 'watching';
   const o = opts || {};
   // ⚠ Pinning the activity to branding MOVES the live line into the custom status, where it stands
   // alone and the brand is already one line above it. So it takes the PLAIN phrasing - otherwise
   // "Playing gunfight.us" sits over "Gunfight - 3 on Nuketown" and says Gunfight twice, which is
   // the "Play appeared twice" bug for the third time in one day.
-  const say = SAY_FOR(style);
-  if (!snap || typeof snap !== 'object') return withOverrides(shape(say.unknown, 'idle', null, style, buttons), o, say.unknown, true);
+  const say = SAY_FOR(quietStyle);
+  if (!snap || typeof snap !== 'object') return withOverrides(shape(say.unknown, 'idle', null, quietStyle, buttons), o, say.unknown, true);
 
   const stamped = Date.parse(snap.updated);
   if (!Number.isFinite(stamped) || nowMs - stamped > STALE_MS) {
-    return withOverrides(shape(say.unknown, 'idle', null, style, buttons), o, say.unknown, true);
+    return withOverrides(shape(say.unknown, 'idle', null, quietStyle, buttons), o, say.unknown, true);
   }
-  if (!snap.online) return withOverrides(shape(say.offline, 'dnd', null, style, buttons), o, say.offline, true);
+  if (!snap.online) return withOverrides(shape(say.offline, 'dnd', null, quietStyle, buttons), o, say.offline, true);
 
   const humans = Number(snap.humans) || 0;
   // ⚠ AN EMPTY SERVER IS NOT ADVERTISED AS EMPTY. This line sits on a public profile, so "an empty
@@ -193,16 +206,16 @@ function buildPresence(snap, nowMs, art, style, buttons, opts) {
   // longer means "someone is playing" - but red still means offline and idle still means the data
   // cannot be vouched for, so both states that indicate a PROBLEM are untouched.
   // The map is dropped here on purpose: which map an empty server sits on helps nobody.
-  if (humans === 0) { const live = say.empty(snap); return withOverrides(shape(live, 'online', null, style, buttons), o, live, true); }
+  if (humans === 0) { const live = say.empty(snap); return withOverrides(shape(live, 'online', null, quietStyle, buttons), o, live, true); }
 
   const map = snap.mapName || snap.map || 'Gunfight';
   // ⚠ Art only on the ONLINE path. An empty or offline server has no map worth picturing, and a
   // stale snapshot must not put a confident map image on the profile.
   const withArt = art && snap.map ? Object.assign({}, art, { key: snap.map, text: map }) : null;
-  const live = say.busy(humans, map, snap.players);
+  const live = SAY_FOR(busyStyle).busy(humans, map, snap.players, snap);
   // ⚠ NOT pinned while humans are on. presenceText is what the profile says when there is nothing
   // to report; the moment there IS something, reporting beats advertising.
-  return withOverrides(shape(live, 'online', withArt, style, buttons), o, live, false);
+  return withOverrides(shape(live, 'online', withArt, busyStyle, buttons), o, live, false);
 }
 
 /*

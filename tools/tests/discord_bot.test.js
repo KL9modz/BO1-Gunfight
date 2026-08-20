@@ -191,15 +191,26 @@ const snap = (over) => Object.assign(
     humans: 3, bots: 4 }, over);
 const line = (p) => p.activities[0].name;
 
-test('presence renders the live human count and the map', () => {
-  const p = buildPresence(snap({}), NOW);
-  assert.strictEqual(line(p), '3 players on Nuketown');
-  assert.strictEqual(p.status, 'online');
-  assert.strictEqual(p.activities[0].type, 3, 'type 3 = Watching, so the text completes that verb');
+test('THE TYPE FOLLOWS THE STATE: Playing when busy, Watching when not', () => {
+  // Owner's rule 2026-08-20. "Watching" suits an idle observer; "Playing" only becomes true once a
+  // match is actually running, so a single fixed type was wrong for one of the two states.
+  const busy = buildPresence(snap({ humans: 3 }), NOW);
+  assert.strictEqual(busy.activities[0].type, 0, 'humans on -> Playing');
+  assert.ok(/Gunfight on Nuketown/.test(line(busy)), line(busy));
+
+  const quiet = buildPresence(snap({ humans: 0 }), NOW);
+  assert.strictEqual(quiet.activities[0].type, 3, 'nobody on -> Watching');
 });
 
-test('presence reads singular for one player', () => {
-  assert.strictEqual(line(buildPresence(snap({ humans: 1 }), NOW)), '1 player on Nuketown');
+test('an explicit presenceStyle still forces ONE type for every state', () => {
+  for (const humans of [0, 3]) {
+    assert.strictEqual(buildPresence(snap({ humans }), NOW, null, 'watching').activities[0].type, 3);
+  }
+});
+
+test('a lone player still reads as a match, not a bare count', () => {
+  // With no roster in the snapshot the line falls back to a count rather than a dangling "with:".
+  assert.strictEqual(line(buildPresence(snap({ humans: 1 }), NOW)), 'Gunfight on Nuketown - 1 playing');
 });
 
 test('BOTS ARE NOT PLAYERS - a bot-padded server never claims a player count', () => {
@@ -832,13 +843,13 @@ test('an empty, offline or stale server carries NO map picture', () => {
 });
 
 // ── activity line style ────────────────────────────────────────────────────────────────────────
-test('the shipped default is Watching, type 3', () => {
-  // Chosen 2026-08-20. The type is selectable, but this is what goes out of the box.
-  const p = require(path.join(botDir, 'features', 'presence.js'));
-  const snap = { updated: new Date().toISOString(), online: true, map: 'mp_nuked', mapName: 'Nuketown', humans: 3 };
-  const a = p.buildPresence(snap, Date.now(), null, undefined).activities[0];
-  assert.strictEqual(a.type, 3);
-  assert.strictEqual(a.name, '3 players on Nuketown');
+test('the shipped default needs no presenceStyle at all', () => {
+  // Owner's rule 2026-08-20: the STATE picks the type, so the config key is an override rather than
+  // a requirement - and an unset one must not collapse back to a single fixed verb.
+  const pm = require(path.join(botDir, 'features', 'presence.js'));
+  const base = { updated: new Date().toISOString(), online: true, map: 'mp_nuked', mapName: 'Nuketown' };
+  assert.strictEqual(pm.buildPresence(Object.assign({ humans: 3 }, base), Date.now(), null, undefined).activities[0].type, 0, 'busy -> Playing');
+  assert.strictEqual(pm.buildPresence(Object.assign({ humans: 0 }, base), Date.now(), null, undefined).activities[0].type, 3, 'quiet -> Watching');
 });
 
 test('type 4 puts the text in STATE, and still carries a name', () => {
