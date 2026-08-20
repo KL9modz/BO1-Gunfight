@@ -21,6 +21,8 @@ Zero npm dependencies: Node 24's native `WebSocket` + `fetch` cover the gateway.
 | Voice log | joined / left / moved cards, with **who did it** from the audit log (off until a channel is set) |
 | Message log | delete / edit / bulk-purge cards **with the content and the media** (off until a channel is set) |
 | Member log | join / leave / rename cards, with an account-age flag (off until a channel is set) |
+| Moderation | link + attachment filtering, strikes, escalation to timeout (off until a channel is set) |
+| AutoMod | logs Discord's own AutoMod hits, `/automod` reports rules and gaps (off until a channel is set) |
 | Presence | member-list line, "Watching 3 players on Nuketown", off `status.json` |
 | Game access | **only** the panel's `/api/rcon` on loopback, the panel is the single rcon pacer |
 | Intents | `GUILDS` + `GUILD_VOICE_STATES`, plus `GUILD_MESSAGES` + `MESSAGE_CONTENT` **only when a relay channel is set** |
@@ -157,8 +159,12 @@ Members**.
 This mirrors the mod's own native-first rule: *does a stock system already express this?* For spam,
 it does. The bot's job is then the part AutoMod cannot do:
 
-- **subscribe to `AUTO_MODERATION_ACTION_EXECUTION`** (no intent, needs Manage Server) and write
-  every hit into the activity log, so moderation is visible and reviewable;
+- **subscribe to `AUTO_MODERATION_ACTION_EXECUTION`** and write every hit into the log, so
+  moderation is visible and reviewable. ⚠ **CORRECTED 2026-08-19: this DOES need an intent** -
+  `AUTO_MODERATION_EXECUTION` (`1 << 21`). The earlier "no intent" note here was wrong in the
+  expensive way: the events simply never arrive and the feature looks perfectly healthy. The intent
+  is **not privileged**, so it needs no portal toggle and cannot cause a 4014; the **Manage Server**
+  permission is a separate requirement, and without it the rules cannot even be listed;
 - **cross-channel and cross-time patterns** AutoMod does not model: the same message posted in 5
   channels in 10 seconds, a brand-new account posting a link, join-then-immediately-post, repeated
   near-identical messages with small mutations;
@@ -242,9 +248,15 @@ an external API call if it is ever wanted.
    ⚠ Needs **MESSAGE CONTENT** and **SERVER MEMBERS** enabled in the portal, plus **Attach Files**
    and **View Audit Log**. Each feature requests its intent only while it has a channel to post to.
    Channel and role change logging is NOT included yet.
-4. **Link and media moderation** — native AutoMod rules for the cheap wins (invite links, keyword
-   presets, mention spam), custom checks for domains and attachment types. Escalation is delete then
-   timeout, **never** auto-ban. Adds **Manage Server**, **Manage Messages**, **Moderate Members**.
+4. **Link and media moderation** — DONE 2026-08-19. `features/moderation.js` owns what AutoMod
+   cannot express: attachment type and size (AutoMod has **no** attachment condition at all),
+   account age ("a three-hour-old account may not post links", checked BEFORE the domain lists so an
+   allow-listed host cannot smuggle one past), and escalation with memory (strikes in a window then
+   a timeout). `features/automod.js` logs Discord's native hits and `/automod` reports which rules
+   exist and which recommended ones are missing. ⚠ It **reports and never edits** - rule changes
+   belong in Server Settings where an owner can see what they do.
+   ⚠ The ladder stops at **timeout**, structurally: a test fails if anything here ever reaches for a
+   ban or a kick. Adds **Manage Server**, **Manage Messages**, **Moderate Members**.
 5. **Security** — join-rate raid alarm, account-age flag on the join card, and alerts on the audit
    events that actually matter (role and permission changes, webhook creation, mass delete).
 6. **Stats and leaderboards** — `/stats`, `/leaderboard`, rank cards from the existing `GF_STAT`

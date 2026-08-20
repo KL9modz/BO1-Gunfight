@@ -18,6 +18,18 @@
   "messageLogIgnoreChannels": [],
   "memberLogChannelId": "",
   "memberLogNewAccountDays": 7,
+  "modChannelId": "",
+  "modBlockedExtensions": [],
+  "modMaxAttachmentMB": 0,
+  "modAllowedDomains": [],
+  "modBlockedDomains": [],
+  "modLinkMinAccountDays": 0,
+  "modExemptRoles": [],
+  "modExemptChannels": [],
+  "modStrikes": 3,
+  "modStrikeWindowMinutes": 10,
+  "modTimeoutMinutes": 10,
+  "automodChannelId": "",
   "_notes": {
     "adminRoleId": "Required. Gates every command that changes the server (say, map, restart, pause, resume). Read-only commands (status, players) are open to the guild.",
     "relayChannelId": "The ONE channel whose messages are relayed into the game. Leave empty to disable the relay entirely. Every other channel is ignored.",
@@ -31,6 +43,17 @@
     "messageLogMedia": "true (default) buffers attachments in MEMORY while a message is alive and re-uploads them if it is deleted - the only way to log media, since a deleted message's CDN link cannot be refreshed. Capped in lib/attachments.js: 8MB per file, 64MB total, 15 minute TTL, nothing written to disk and nothing surviving a restart. Set false to log filenames only.",
     "messageLogIgnoreChannels": "Channel ids never logged. The message-log channel itself is ALWAYS excluded automatically - without that the bot's own cards would be logged and a purge in there would recurse.",
     "memberLogChannelId": "Channel that receives JOIN / LEAVE / rename cards. EMPTY = off. ⚠ Needs the privileged SERVER MEMBERS intent enabled in the Developer Portal. A leave card cannot tell a leave from a kick or a ban - the gateway does not say - so it reports what is known rather than guessing.",
-    "memberLogNewAccountDays": "Join cards flag an account younger than this many days (default 7), read from the user id itself, so it costs no API call. A raid and ban-evasion signal, not a verdict: nothing is kicked, a human decides."
+    "memberLogNewAccountDays": "Join cards flag an account younger than this many days (default 7), read from the user id itself, so it costs no API call. A raid and ban-evasion signal, not a verdict: nothing is kicked, a human decides.",
+    "modChannelId": "Channel that receives moderation cards, and the switch for the whole link/media filter. EMPTY = off. Not optional decoration: moderation with no log is moderation nobody can review or appeal. Needs MANAGE MESSAGES to delete and MODERATE MEMBERS to time out. ⚠ The escalation stops at TIMEOUT - nothing here kicks or bans, deliberately, because a false positive that bans a real player costs more than any spam wave.",
+    "modBlockedExtensions": "File extensions refused outright, EMPTY = use the built-in list (executables and script types: exe, bat, ps1, jar, apk, vbs and friends). Checked on the LAST extension, so 'screenshot.png.exe' is caught. ⚠ Cannot see inside an archive: a .zip full of malware passes.",
+    "modMaxAttachmentMB": "Refuse attachments larger than this. 0 = no size rule.",
+    "modAllowedDomains": "Non-empty turns links into an ALLOWLIST: any message containing a host not on this list is removed. Subdomains are covered, so 'youtube.com' allows 'www.youtube.com'. Leave empty to use modBlockedDomains instead.",
+    "modBlockedDomains": "Denylist, used only when modAllowedDomains is empty. Both empty = links are unrestricted.",
+    "modLinkMinAccountDays": "Accounts younger than this many days may not post links (0 = off). The single most effective anti-spam rule there is, and it is checked BEFORE the domain lists so an allow-listed host cannot smuggle a fresh account past it.",
+    "modExemptRoles": "Role ids never filtered. The admin role is always exempt without being listed.",
+    "modExemptChannels": "Channel ids never filtered. The log channels are always exempt automatically - our own cards quote removed content and would otherwise trip the filters that produced them.",
+    "modStrikes": "Strikes inside modStrikeWindowMinutes before a timeout is applied (default 3). Strikes live in memory and reset on restart, which is a deliberate amnesty rather than an oversight.",
+    "modTimeoutMinutes": "How long a timeout lasts once the strike threshold is hit (default 10).",
+    "automodChannelId": "Where Discord's NATIVE AutoMod hits are logged, and the /automod command's home. Falls back to modChannelId. ⚠ Needs the AUTO_MODERATION_EXECUTION intent (1<<21, NOT privileged, requested automatically) plus the MANAGE SERVER permission - without the permission the feature is blind and says so in the service log. This module REPORTS Discord's rules and never edits them: rule changes belong in Server Settings where an owner can see what they do."
   }
 }

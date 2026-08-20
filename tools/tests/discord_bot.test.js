@@ -491,3 +491,116 @@ test('a bot author is recorded, so the log can skip its own cards', () => {
   cache.observe('MESSAGE_CREATE', { id: 'b1', channel_id: 'c', author: { id: 'x', bot: true }, content: 'card' });
   assert.strictEqual(cache.message.get('b1').authorBot, true);
 });
+
+// ── moderation ─────────────────────────────────────────────────────────────────────────────────
+// judge() is a pure decision, so every rule is pinned individually. These matter more than most:
+// a false positive here DELETES someone's message and can time them out.
+const moderation = require(path.join(botDir, 'features', 'moderation.js'));
+const automod = require(path.join(botDir, 'features', 'automod.js'));
+const snowflake = require(path.join(botDir, 'lib', 'snowflake.js'));
+
+const RULES = (over) => Object.assign({
+  blocked: moderation.DEFAULT_BLOCKED, maxBytes: 0, maxMB: 0,
+  allowDomains: [], denyDomains: [], linkMinAge: 0,
+}, over);
+const msg = (over) => Object.assign({ content: '', attachments: [] }, over);
+
+test('an executable attachment is refused', () => {
+  const v = moderation.judge(msg({ attachments: [{ filename: 'cheat.exe', size: 10 }] }), null, RULES());
+  assert.ok(v && /blocked file type/.test(v.reason), JSON.stringify(v));
+});
+
+test('the DOUBLE EXTENSION trick does not work', () => {
+  // The whole reason a filename cannot be trusted from the left.
+  const v = moderation.judge(msg({ attachments: [{ filename: 'screenshot.png.exe', size: 10 }] }), null, RULES());
+  assert.ok(v, 'screenshot.png.exe must be judged on .exe');
+});
+
+test('an ordinary screenshot passes', () => {
+  assert.strictEqual(moderation.judge(msg({ attachments: [{ filename: 'clip.png', size: 10 }] }), null, RULES()), null);
+});
+
+test('an oversized attachment is refused, and says the limit', () => {
+  const v = moderation.judge(msg({ attachments: [{ filename: 'big.mp4', size: 30e6 }] }), null,
+                             RULES({ maxBytes: 8e6, maxMB: 8 }));
+  assert.ok(/too large/.test(v.reason) && /8MB/.test(v.detail), JSON.stringify(v));
+});
+
+test('a message with no link and no attachment is always fine', () => {
+  assert.strictEqual(moderation.judge(msg({ content: 'gg wp everyone' }), 0.1, RULES({ linkMinAge: 7 })), null);
+});
+
+test('ALLOWLIST mode removes a message carrying any host not on the list', () => {
+  const r = RULES({ allowDomains: ['youtube.com', 'gunfight.us'] });
+  assert.strictEqual(moderation.judge(msg({ content: 'see https://www.youtube.com/watch?v=1' }), null, r), null,
+                     'a subdomain of an allowed host must pass');
+  const v = moderation.judge(msg({ content: 'https://youtube.com/ok and https://sketchy.tld/x' }), null, r);
+  assert.ok(v && /allowlist/.test(v.reason), 'one disallowed host must remove the message');
+});
+
+test('DENYLIST mode only removes the hosts named', () => {
+  const r = RULES({ denyDomains: ['sketchy.tld'] });
+  assert.strictEqual(moderation.judge(msg({ content: 'https://example.com/x' }), null, r), null);
+  assert.ok(moderation.judge(msg({ content: 'https://a.sketchy.tld/x' }), null, r), 'subdomains of a blocked host count');
+});
+
+test('a NEW ACCOUNT cannot post links, even to an allowed domain', () => {
+  // THE anti-spam rule, and the ordering that makes it work: an allow-listed host must not smuggle
+  // a three-hour-old account past the age check.
+  const r = RULES({ linkMinAge: 7, allowDomains: ['youtube.com'] });
+  const v = moderation.judge(msg({ content: 'https://youtube.com/x' }), 0.2, r);
+  assert.ok(v && /new account/.test(v.reason), JSON.stringify(v));
+});
+
+test('an established account posts the same link freely', () => {
+  const r = RULES({ linkMinAge: 7, allowDomains: ['youtube.com'] });
+  assert.strictEqual(moderation.judge(msg({ content: 'https://youtube.com/x' }), 400, r), null);
+});
+
+test('an UNREADABLE account age never triggers the age rule', () => {
+  // null means "cannot say", and cannot-say must not become a deletion.
+  assert.strictEqual(moderation.judge(msg({ content: 'https://x.tld/a' }), null, RULES({ linkMinAge: 7 })), null);
+});
+
+test('host matching covers subdomains without covering lookalikes', () => {
+  assert.ok(moderation.hostMatches('www.youtube.com', 'youtube.com'));
+  assert.ok(moderation.hostMatches('m.youtube.com', 'youtube.com'));
+  assert.ok(!moderation.hostMatches('notyoutube.com', 'youtube.com'), 'a lookalike must not match');
+  assert.ok(!moderation.hostMatches('youtube.com.evil.tld', 'youtube.com'), 'a suffix trick must not match');
+});
+
+test('link extraction finds every host and drops the port', () => {
+  const hosts = moderation.hostsIn('a https://one.tld/x b http://two.tld:8080/y');
+  assert.deepStrictEqual(hosts, ['one.tld', 'two.tld']);
+});
+
+test('MODERATION NEVER BANS OR KICKS - the escalation ceiling is structural', () => {
+  // The stated ceiling is delete then timeout. This fails if anyone ever reaches for the ban or
+  // kick endpoints, which is the change that would need a human argument rather than a commit.
+  const src = fs.readFileSync(path.join(botDir, 'features', 'moderation.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(!/\/bans\//.test(src) && !/\bban\(/.test(src), 'moderation reached for a ban');
+  assert.ok(!/\/members\/[^)]*\/?['"`]\s*,\s*'DELETE'/.test(src) && !/kick/i.test(src), 'moderation reached for a kick');
+  assert.ok(/communication_disabled_until/.test(src), 'timeout is the intended top of the ladder');
+});
+
+test('moderation and automod are OFF without a channel', () => {
+  const ctxOff = { cfg: { guildId: 'g' }, log: () => {}, rest: {}, cache };
+  assert.strictEqual(moderation(ctxOff).enabled, false);
+  assert.strictEqual(moderation(ctxOff).intents, 0);
+  assert.strictEqual(automod(ctxOff).enabled, false);
+  assert.strictEqual(automod(ctxOff).intents, 0);
+});
+
+test('automod requests the execution intent, which is 1<<21 and NOT privileged', () => {
+  // Recorded wrong once as "no intent needed", which would mean the events never arrive while
+  // everything looks healthy.
+  const on = automod({ cfg: { guildId: 'g', automodChannelId: 'A' }, log: () => {}, rest: {}, cache });
+  assert.strictEqual(on.intents, 1 << 21);
+});
+
+test('snowflake age says "cannot say" rather than guessing', () => {
+  assert.strictEqual(snowflake.ageDays('nonsense'), null);
+  assert.strictEqual(snowflake.ageDays('0'), null);
+  assert.ok(snowflake.ageDays('175928847299117063') > 3000, 'a 2016 account should read as years old');
+});

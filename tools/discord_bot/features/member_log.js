@@ -20,14 +20,11 @@
  */
 
 const { COLOR, card, userTag, plural } = require('../lib/brand.js');
+// ⚠ Shared with the link filter, which refuses links from new accounts. Two copies of snowflake
+// arithmetic is exactly how the join card and the filter would come to disagree about an age.
+const { createdAt } = require('../lib/snowflake.js');
 
 const GUILD_MEMBERS = 1 << 1;
-// Discord's epoch. A snowflake's top 42 bits are milliseconds since this instant.
-const DISCORD_EPOCH = 1420070400000n;
-
-const createdAt = (id) => {
-  try { return Number((BigInt(id) >> 22n) + DISCORD_EPOCH); } catch { return null; }
-};
 // Discord renders <t:seconds:R> as a live relative time ("3 days ago") in every reader's own zone,
 // which beats us formatting a date badly.
 const stamp = (ms, style = 'f') => `<t:${Math.floor(ms / 1000)}:${style}>`;
@@ -135,4 +132,4 @@ module.exports = function memberLog(ctx) {
   };
 };
 
-module.exports.createdAt = createdAt;
+module.exports.createdAt = createdAt;   // re-exported: the tests pin the age rules here
