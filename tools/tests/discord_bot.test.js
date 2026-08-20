@@ -202,12 +202,20 @@ test('presence reads singular for one player', () => {
   assert.strictEqual(line(buildPresence(snap({ humans: 1 }), NOW)), '1 player on Nuketown');
 });
 
-test('BOTS ARE NOT PLAYERS - a bot-padded server reads empty', () => {
+test('BOTS ARE NOT PLAYERS - a bot-padded server never claims a player count', () => {
   // Bot fill is on by default, so counting bots would make the line permanently say "busy" and
   // mean nothing. Same rule the match stats and the join alerts follow.
   const p = buildPresence(snap({ humans: 0, bots: 6 }), NOW);
-  assert.strictEqual(line(p), 'an empty server');
-  assert.strictEqual(p.status, 'idle');
+  assert.ok(!/\d+ player/.test(line(p)), `claimed players with none on: "${line(p)}"`);
+});
+
+test('an EMPTY server is never advertised as empty', () => {
+  // The line sits on a public profile, so "an empty server" prints a reason not to join exactly
+  // where prospective players read it. It must stop selling the emptiness WITHOUT becoming a lie.
+  const p = buildPresence(snap({ humans: 0, bots: 6 }), NOW);
+  assert.ok(!/empty|nobody|no one|0 player/i.test(line(p)), `still selling it: "${line(p)}"`);
+  assert.strictEqual(line(p), 'for players');
+  assert.strictEqual(p.status, 'online', 'the dot must not read dormant either');
 });
 
 test('an offline server is never dressed up as a quiet one', () => {

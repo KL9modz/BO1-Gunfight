@@ -101,11 +101,11 @@ const shape = (name, status, art, style) => {
 //   branded - completes "Playing ..." / "Competing in ...", and gets the game name into the line
 //   plain   - stands alone under type 4, which prints no verb at all
 const SAY = {
-  verb:    { unknown: 'the server (status unknown)', offline: 'the server (offline)', empty: 'an empty server',
+  verb:    { unknown: 'the server (status unknown)', offline: 'the server (offline)', empty: 'for players',
              busy: (n, m) => `${n} player${n === 1 ? '' : 's'} on ${m}` },
-  branded: { unknown: 'Gunfight - status unknown',   offline: 'Gunfight - server offline', empty: 'Gunfight - nobody on',
+  branded: { unknown: 'Gunfight - status unknown',   offline: 'Gunfight - server offline', empty: 'Gunfight - open now',
              busy: (n, m) => `Gunfight - ${n} on ${m}` },
-  plain:   { unknown: 'Status unknown',              offline: 'Server offline',       empty: 'Server is empty',
+  plain:   { unknown: 'Status unknown',              offline: 'Server offline',       empty: 'Waiting for players',
              busy: (n, m) => `${n} player${n === 1 ? '' : 's'} on ${m}` },
 };
 const SAY_FOR = (style) => (style === 'custom' ? SAY.plain
@@ -123,9 +123,15 @@ function buildPresence(snap, nowMs, art, style) {
   if (!snap.online) return shape(say.offline, 'dnd', null, style);
 
   const humans = Number(snap.humans) || 0;
-  // The map is dropped here on purpose: which map an empty server sits on helps nobody, and the
-  // shorter line reads better in a member list.
-  if (humans === 0) return shape(say.empty, 'idle', null, style);
+  // ⚠ AN EMPTY SERVER IS NOT ADVERTISED AS EMPTY. This line sits on a public profile, so "an empty
+  // server" prints a reason not to join exactly where prospective players read it. "for players" is
+  // equally true - the bot IS watching for them - without selling the emptiness.
+  // ⚠ Still no lie: it never claims anyone is on, and it never counts bots to pad a number.
+  // ⚠ The dot goes GREEN rather than idle for the same reason. That does cost a signal - green no
+  // longer means "someone is playing" - but red still means offline and idle still means the data
+  // cannot be vouched for, so both states that indicate a PROBLEM are untouched.
+  // The map is dropped here on purpose: which map an empty server sits on helps nobody.
+  if (humans === 0) return shape(say.empty, 'online', null, style);
 
   const map = snap.mapName || snap.map || 'Gunfight';
   // ⚠ Art only on the ONLINE path. An empty or offline server has no map worth picturing, and a
