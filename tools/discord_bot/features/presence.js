@@ -54,6 +54,32 @@ const STALE_MS = 60000;
 const REFRESH_MS = 20000;
 const DEFAULT_STATUS_JSON = 'C:\\inetpub\\wwwroot\\live\\status.json';
 
+/*
+ * "KL9, jjsetfree, Aoron123" - and a HARD budget, because the activity name caps at 128 and a full
+ * 14-player server would blow straight past it. Names that do not fit are counted rather than cut,
+ * so the line never ends mid-nickname.
+ * ⚠ status.json's players list is HUMANS ONLY and already has its Treyarch colour codes stripped,
+ * so nothing here re-filters or re-sanitises. It does include an IGNORED player (the owner idling)
+ * on purpose - they are visible on the website's live list too, and a presence that hid them would
+ * disagree with the site.
+ */
+function nameList(players, budget) {
+  const names = (players || []).map((p) => p && p.name).filter(Boolean);
+  if (!names.length) return '';
+  // ⚠ The "+N more" suffix is INSIDE the budget. Counting only the names let a full server build a
+  // 128-char line and then get clamped mid-suffix ("... +6…"), which is exactly the ragged ending
+  // this function exists to avoid. So: take the largest count whose WHOLE rendered string fits.
+  const render = (k) => {
+    const rest = names.length - k;
+    return names.slice(0, k).join(', ') + (rest > 0 ? ` +${rest} more` : '');
+  };
+  for (let k = names.length; k >= 1; k--) {
+    const s = render(k);
+    if (s.length <= budget) return s;
+  }
+  return `${names.length} players`;                        // not even one name fits
+}
+
 const clamp = (t, n) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
 /*
  * 🛑 MAP ART ON A BOT PROFILE DOES NOT RENDER. SETTLED 2026-08-20 - see
@@ -127,7 +153,15 @@ const SAY = {
   verb:    { unknown: 'the server (status unknown)', offline: 'the server (offline)', empty: (s) => (s.mapName || s.map ? (s.mapName || s.map) : 'Gunfight'),
              busy: (n, m) => `${n} player${n === 1 ? '' : 's'} on ${m}` },
   branded: { unknown: 'Gunfight - status unknown',   offline: 'Gunfight - server offline', empty: (s) => `Gunfight - ${s.mapName || 'open now'}`,
-             busy: (n, m) => `Gunfight - ${n} on ${m}` },
+             // ⚠ Owner's wording, 2026-08-20: "Playing Gunfight on Nuketown with: KL9, ...". The
+             // NAMES are the point - a count says the server is busy, names say WHO, and that is
+             // what makes someone click. Falls back to the count when no roster is available,
+             // because a snapshot without a players array must not print "with: ".
+             busy: (n, m, names) => {
+               const head = `Gunfight on ${m}`;
+               const list = nameList(names, NAME_MAX - head.length - 8);
+               return list ? `${head} with: ${list}` : `${head} - ${n} playing`;
+             } },
   plain:   { unknown: 'Status unknown',              offline: 'Server offline',       empty: (s) => (s.mapName || s.map || 'Gunfight'),
              busy: (n, m) => `${n} player${n === 1 ? '' : 's'} on ${m}` },
 };
@@ -141,14 +175,14 @@ function buildPresence(snap, nowMs, art, style, buttons, opts) {
   // alone and the brand is already one line above it. So it takes the PLAIN phrasing - otherwise
   // "Playing gunfight.us" sits over "Gunfight - 3 on Nuketown" and says Gunfight twice, which is
   // the "Play appeared twice" bug for the third time in one day.
-  const say = o.text ? SAY.plain : SAY_FOR(style);
-  if (!snap || typeof snap !== 'object') return withOverrides(shape(say.unknown, 'idle', null, style, buttons), o, say.unknown);
+  const say = SAY_FOR(style);
+  if (!snap || typeof snap !== 'object') return withOverrides(shape(say.unknown, 'idle', null, style, buttons), o, say.unknown, true);
 
   const stamped = Date.parse(snap.updated);
   if (!Number.isFinite(stamped) || nowMs - stamped > STALE_MS) {
-    return withOverrides(shape(say.unknown, 'idle', null, style, buttons), o, say.unknown);
+    return withOverrides(shape(say.unknown, 'idle', null, style, buttons), o, say.unknown, true);
   }
-  if (!snap.online) return withOverrides(shape(say.offline, 'dnd', null, style, buttons), o, say.offline);
+  if (!snap.online) return withOverrides(shape(say.offline, 'dnd', null, style, buttons), o, say.offline, true);
 
   const humans = Number(snap.humans) || 0;
   // ⚠ AN EMPTY SERVER IS NOT ADVERTISED AS EMPTY. This line sits on a public profile, so "an empty
@@ -159,14 +193,16 @@ function buildPresence(snap, nowMs, art, style, buttons, opts) {
   // longer means "someone is playing" - but red still means offline and idle still means the data
   // cannot be vouched for, so both states that indicate a PROBLEM are untouched.
   // The map is dropped here on purpose: which map an empty server sits on helps nobody.
-  if (humans === 0) { const live = say.empty(snap); return withOverrides(shape(live, 'online', null, style, buttons), o, live); }
+  if (humans === 0) { const live = say.empty(snap); return withOverrides(shape(live, 'online', null, style, buttons), o, live, true); }
 
   const map = snap.mapName || snap.map || 'Gunfight';
   // ⚠ Art only on the ONLINE path. An empty or offline server has no map worth picturing, and a
   // stale snapshot must not put a confident map image on the profile.
   const withArt = art && snap.map ? Object.assign({}, art, { key: snap.map, text: map }) : null;
-  const live = say.busy(humans, map);
-  return withOverrides(shape(live, 'online', withArt, style, buttons), o, live);
+  const live = say.busy(humans, map, snap.players);
+  // ⚠ NOT pinned while humans are on. presenceText is what the profile says when there is nothing
+  // to report; the moment there IS something, reporting beats advertising.
+  return withOverrides(shape(live, 'online', withArt, style, buttons), o, live, false);
 }
 
 /*
@@ -182,9 +218,9 @@ function buildPresence(snap, nowMs, art, style, buttons, opts) {
  * move into the custom status via the {status} token - so the profile can advertise and report at
  * the same time instead of choosing.
  */
-function withOverrides(p, o, liveLine) {
+function withOverrides(p, o, liveLine, allowPin) {
   const a = p.activities[0];
-  if (o.text) {
+  if (o.text && allowPin) {
     // A static activity: the verb still applies, so "gunfight.us" reads "Playing gunfight.us".
     if (a.type === TYPES.custom) { a.state = clamp(o.text, NAME_MAX); } else { a.name = clamp(o.text, NAME_MAX); }
   }

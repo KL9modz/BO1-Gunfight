@@ -865,22 +865,38 @@ test('changing the TYPE repicks the WORDS - no "Playing 3 players on"', () => {
 });
 
 // ── the two profile surfaces ───────────────────────────────────────────────────────────────────
-test('presenceText pins the ACTIVITY and moves the live line to the custom status', () => {
-  // The activity becomes branding ("Playing gunfight.us"); the live information does not vanish,
-  // it moves to the type-4 line where {status} expands it.
-  const p = buildPresence(snap({ humans: 3 }), NOW, null, 'playing', [],
-                          { text: 'gunfight.us', custom: '{status}' });
-  const custom = p.activities.find((a) => a.type === 4);
-  const game = p.activities.find((a) => a.type === 0);
-  assert.strictEqual(game.name, 'gunfight.us', 'the activity is pinned');
-  assert.strictEqual(custom.state, '3 players on Nuketown', '{status} expanded to the live line');
+test('REPORTING BEATS ADVERTISING: presenceText yields while humans are on', () => {
+  // presenceText is what the profile says when there is nothing to report. The moment somebody is
+  // playing, the live line wins - an advert shown over a busy server wastes the one moment the
+  // profile actually has news.
+  const busy = buildPresence(snap({ humans: 3, players: [{ name: 'KL9' }] }), NOW, null, 'playing', [],
+                             { text: 'gunfight.us' });
+  assert.ok(/Gunfight on Nuketown with: KL9/.test(busy.activities[0].name), busy.activities[0].name);
+
+  const quiet = buildPresence(snap({ humans: 0 }), NOW, null, 'playing', [], { text: 'gunfight.us' });
+  assert.strictEqual(quiet.activities[0].name, 'gunfight.us', 'quiet falls back to the advert');
 });
 
-test('pinning the activity switches the live line to PLAIN phrasing', () => {
-  // Otherwise "Playing gunfight.us" sits above "Gunfight - 3 on Nuketown" and says Gunfight twice.
-  const p = buildPresence(snap({ humans: 3 }), NOW, null, 'playing', [],
-                          { text: 'gunfight.us', custom: '{status}' });
-  assert.ok(!/Gunfight/.test(p.activities.find((a) => a.type === 4).state), 'brand must not repeat');
+test('the busy line NAMES the players, which is the point of it', () => {
+  const p = buildPresence(snap({ humans: 3, players: [{ name: 'KL9' }, { name: 'jjsetfree' }] }),
+                          NOW, null, 'playing', [], {});
+  assert.strictEqual(p.activities[0].name, 'Gunfight on Nuketown with: KL9, jjsetfree');
+});
+
+test('a snapshot with no roster falls back to a COUNT, never a dangling "with:"', () => {
+  const p = buildPresence(snap({ humans: 2 }), NOW, null, 'playing', [], {});
+  assert.ok(!/with:/.test(p.activities[0].name), p.activities[0].name);
+  assert.ok(/2 playing/.test(p.activities[0].name), p.activities[0].name);
+});
+
+test('a full server fits the cap WITH its "+N more" suffix intact', () => {
+  // The suffix has to be inside the budget: counting only the names built a 128-char line that then
+  // clamped mid-suffix ("+6…"), the exact ragged ending the name list exists to prevent.
+  const players = Array.from({ length: 14 }, (_, i) => ({ name: 'PlayerWithALongName' + i }));
+  const line = buildPresence(snap({ humans: 14, players }), NOW, null, 'playing', [], {}).activities[0].name;
+  assert.ok(line.length <= 128, `${line.length} chars`);
+  assert.ok(/\+\d+ more$/.test(line), `suffix was cut: "${line}"`);
+  assert.ok(!/…/.test(line), 'nothing should have been clamped');
 });
 
 test('the custom status comes FIRST, so a one-activity client shows the live half', () => {
