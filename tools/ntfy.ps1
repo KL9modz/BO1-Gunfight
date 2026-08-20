@@ -48,6 +48,9 @@ function Get-GfNtfyConfig {
             # anything omitted is silently absent at the send site with no error - exactly how
             # discordWebhooks went missing from join-notify's copy and sent joins to ntfy only.
             discordFooter   = $j.discordFooter
+            # Optional channel ids for the BOT transport (components). Absent is normal - the id is
+            # then derived from the webhook itself, so a working box needs no new config.
+            discordChannels = $j.discordChannels
         }
         $hasNtfy = -not [string]::IsNullOrWhiteSpace($cfg.ntfyTopic)
         # ⚠ ANY channel counts, not just 'default'. Checking only the default would return $null
@@ -164,6 +167,59 @@ function Get-GfDiscordWebhook {
     return ''
 }
 
+# ---- Bot transport (ONLY for messages that need COMPONENTS) ------------------------------
+# ⚠ A WEBHOOK CANNOT SEND COMPONENTS. Proven live 2026-08-20: a webhook POST carrying one link
+# button returned 200 and echoed `components: []` - accepted and silently dropped, the same shape
+# as the presence-button finding. So a card with a real button has to come from the BOT.
+#
+# ⚠ THIS DOES NOT MOVE THE ALERT FEED ONTO THE BOT. Only a caller that passes -Components takes
+# this path. Everything else stays on the webhook, which keeps watchdog/security alerts on their
+# existing identity and keeps them working on a box where the bot is not installed at all.
+#
+# ⚠ The token is READ FROM THE BOT'S OWN CONFIG, never copied into notify\config.json: one copy of
+# a credential is one place to rotate, the same rule that keeps rcon_password in dedicated.cfg.
+$script:GfBotToken = $null
+function Get-GfBotToken {
+    if ($null -ne $script:GfBotToken) { return $script:GfBotToken }
+    $script:GfBotToken = ''
+    # $PSScriptRoot here is tools\ - the bot lives beside this file.
+    $p = Join-Path $PSScriptRoot 'discord_bot\config.local.json'
+    try {
+        if (Test-Path $p) {
+            $raw = (Get-Content $p -Raw) -replace "^$([char]0xFEFF)", ''
+            $script:GfBotToken = [string](($raw | ConvertFrom-Json).token)
+        }
+    } catch { $script:GfBotToken = '' }
+    return $script:GfBotToken
+}
+
+# Which channel a category posts to. Explicit `discordChannels` wins; otherwise it is DERIVED from
+# the webhook, since GET /webhooks/{id}/{token} returns channel_id - so this needs no new config on
+# a box that already has webhooks working. Cached: the answer cannot change without a restart.
+$script:GfBotChannels = @{}
+function Get-GfDiscordChannelId {
+    param($Config, [string]$Category = 'default')
+    $map = $null
+    if ($null -ne $Config) { $map = $Config.discordChannels }
+    foreach ($key in @($Category, 'default')) {
+        if ([string]::IsNullOrWhiteSpace($key) -or $null -eq $map) { continue }
+        $v = $null
+        if ($map -is [System.Collections.IDictionary]) { if ($map.Contains($key)) { $v = $map[$key] } }
+        elseif ($map.PSObject.Properties.Name -contains $key) { $v = $map.$key }
+        if (-not [string]::IsNullOrWhiteSpace($v)) { return [string]$v }
+    }
+    $hook = Get-GfDiscordWebhook -Config $Config -Category $Category
+    if ([string]::IsNullOrWhiteSpace($hook)) { return '' }
+    if ($script:GfBotChannels.ContainsKey($hook)) { return $script:GfBotChannels[$hook] }
+    $id = ''
+    try {
+        $res = Invoke-RestMethod -Uri $hook -Method Get -TimeoutSec 15
+        if ($res -and $res.channel_id) { $id = [string]$res.channel_id }
+    } catch { $id = '' }
+    $script:GfBotChannels[$hook] = $id
+    return $id
+}
+
 # One webhook POST. Returns $true/$false and never throws - an alert transport that can take a
 # service down is worse than no alert. $Category selects the channel (joins / alerts / security).
 # $Color overrides the priority stripe when a caller owns its own colour language (joins are
@@ -173,7 +229,7 @@ function Get-GfDiscordWebhook {
 function Send-GfDiscord {
     param($Config, [string]$Title, [string]$Message, [string]$Priority = 'default',
           [string[]]$Tags = @(), [string]$Category = 'default', [int]$Color = 0,
-          [string]$Prefix = '', $Fields = @())
+          [string]$Prefix = '', $Fields = @(), $Components = @())
 
     $script:GfDiscordLastError = ''
     # ⚠ DO NOT ADD A PARAMETER NAMED $Url TO THIS FUNCTION. PowerShell variables are
@@ -227,6 +283,29 @@ function Send-GfDiscord {
     # alert is exactly the one a phone should be able to read without opening the app.
     if ($Priority -eq 'urgent' -or $Priority -eq 'max') { $payload['content'] = (($badge + $Title).Trim()) }
 
+    # ⚠ COMPONENTS FORCE THE BOT TRANSPORT, because a webhook silently drops them (see above).
+    # A caller asking for a button gets the bot or gets told why - it must never post a card that
+    # LOOKS right and quietly has no button on it.
+    if ($Components -and @($Components).Count) {
+        $token = Get-GfBotToken
+        $chan  = Get-GfDiscordChannelId -Config $Config -Category $Category
+        if (-not [string]::IsNullOrWhiteSpace($token) -and -not [string]::IsNullOrWhiteSpace($chan)) {
+            $payload['components'] = @($Components)
+            try {
+                $bytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $payload -Compress -Depth 8))
+                Invoke-RestMethod -Uri "https://discord.com/api/v10/channels/$chan/messages" -Method Post `
+                    -Body $bytes -Headers @{ Authorization = "Bot $token" } `
+                    -ContentType 'application/json; charset=utf-8' -TimeoutSec 15 | Out-Null
+                return $true
+            }
+            catch { $script:GfDiscordLastError = 'bot post failed: ' + $_.Exception.Message; return $false }
+        }
+        # ⚠ Fall through WITHOUT the components rather than sending them into the void, and say so.
+        # A silent buttonless card would look like a Discord bug rather than a missing bot token.
+        $payload.Remove('components')
+        $script:GfDiscordLastError = 'no bot token/channel - posted via webhook WITHOUT buttons'
+    }
+
     try {
         $bytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $payload -Compress -Depth 6))
         Invoke-RestMethod -Uri $url -Method Post -Body $bytes `
@@ -254,7 +333,7 @@ function Send-GfAlert {
     param($Config, [string]$Title, [string]$Message, [string]$Priority = 'default',
           [string[]]$Tags = @(), [string]$Category = 'default', [int]$DiscordColor = 0,
           [string]$DiscordPrefix = '', [string]$DiscordTitle = '',
-          [string]$DiscordMessage = '', $DiscordFields = @())
+          [string]$DiscordMessage = '', $DiscordFields = @(), $DiscordComponents = @())
 
     $ntfyOk = $false; $ntfyTried = $false
     if ($null -ne $Config -and $Config.ntfyTopic) {
@@ -267,7 +346,7 @@ function Send-GfAlert {
         $dTitle = $(if ($DiscordTitle) { $DiscordTitle } else { $Title })
         # Same idea for the body: the phone and the channel do not want the same sentence.
         $dMsg   = $(if ($DiscordMessage) { $DiscordMessage } else { $Message })
-        $dscOk = Send-GfDiscord -Config $Config -Title $dTitle -Message $dMsg -Priority $Priority -Tags $Tags -Category $Category -Color $DiscordColor -Prefix $DiscordPrefix -Fields $DiscordFields
+        $dscOk = Send-GfDiscord -Config $Config -Title $dTitle -Message $dMsg -Priority $Priority -Tags $Tags -Category $Category -Color $DiscordColor -Prefix $DiscordPrefix -Fields $DiscordFields -Components $DiscordComponents
     }
     return [pscustomobject]@{
         ntfy        = $ntfyOk

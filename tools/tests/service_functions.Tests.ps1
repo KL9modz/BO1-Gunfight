@@ -55,6 +55,7 @@ function Get-FunctionText {
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-DetailBits')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinBody')))
 . ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinFieldsDiscord')))
+. ([scriptblock]::Create((Get-FunctionText (Join-Path $toolsRoot 'notify\join-notify.ps1') 'Get-JoinButton')))
 
 Describe "Resolve-ServiceImagePath (security_watch)" {
     It "resolves a %SystemRoot%-relative path (the KslD shape)" {
@@ -471,5 +472,30 @@ Describe "Get-JoinFieldsDiscord - detail lives in FIELDS, which stay out of the 
         # keeps this an array, and ConvertTo-Json would otherwise emit an object where Discord wants a list.
         $f = Get-JoinFieldsDiscord '' $null '' $link
         Assert-True ($f -is [array]) 'fields must stay an array'
+    }
+}
+
+Describe "Get-JoinButton - the call to action as a real button" {
+    $link = "**Play for free** -> [gunfight.us](https://gunfight.us/)"
+
+    It 'returns an ARRAY, not an unrolled hashtable' {
+        # PowerShell unrolls a one-element array on return, and ConvertTo-Json would then emit
+        # `components: {...}` where Discord requires a LIST - a 400 on every join card. The comma
+        # operator in the function is the whole fix. Same trap as Get-JoinFieldsDiscord.
+        $b = Get-JoinButton $link
+        Assert-True ($b -is [array]) 'components must stay an array'
+        Assert-True ((ConvertTo-Json @($b) -Depth 6 -Compress).StartsWith('[')) 'and serialise as one'
+    }
+    It 'carries the owner-authored label and a LINK style' {
+        $c = (Get-JoinButton $link)[0].components[0]
+        Assert-Eq $c.label 'Play for free!' 'label is the owner wording'
+        Assert-Eq $c.style 5 'style 5 = link, so it needs no interaction handler'
+    }
+    It 'takes its url FROM $JoinLink rather than repeating it' {
+        # One source for both the wording and the destination - the copy is the owner's.
+        Assert-Eq (Get-JoinButton $link)[0].components[0].url 'https://gunfight.us/' 'url extracted'
+    }
+    It 'no link means no button' {
+        Assert-Eq ((Get-JoinButton '') | Measure-Object).Count 0 'nothing to point at'
     }
 }

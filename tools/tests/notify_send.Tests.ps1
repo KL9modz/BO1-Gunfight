@@ -333,3 +333,52 @@ Describe "Send-GfDiscord - the webhook URL must never appear in the payload" {
         }
     }
 }
+
+Describe "Send-GfDiscord - components force the BOT transport" {
+    # ⚠ A WEBHOOK CANNOT SEND COMPONENTS. Proven live 2026-08-20: a webhook POST carrying one link
+    # button returns 200 and echoes components:[] - accepted and silently dropped. So a card with a
+    # button has to be posted by the bot, and the failure mode to guard is a card that looks right
+    # and quietly has no button on it.
+    $script:sentBody = $null; $script:sentUri = $null; $script:sentHeaders = $null
+    function Invoke-RestMethod { param($Uri, $Method, $Body, $ContentType, $TimeoutSec, $Headers)
+        $script:sentUri = $Uri; $script:sentHeaders = $Headers
+        if ($Body) { $script:sentBody = [System.Text.Encoding]::UTF8.GetString($Body) }
+        return $null }
+
+    $btn = ,@( @{ type = 1; components = @( @{ type = 2; style = 5; label = 'Play for free!'; url = 'https://gunfight.us/' } ) } )
+
+    It 'with a channel id it posts as the BOT, and the button survives' {
+        $cfg = [pscustomobject]@{ serverName = 'Gunfight'; ntfyTopic = ''
+                                  discordWebhooks = [pscustomobject]@{ joins = 'https://d/joins' }
+                                  discordChannels = [pscustomobject]@{ joins = '1156243690168266822' } }
+        $script:sentBody = $null; $script:sentUri = $null
+        $null = Send-GfDiscord -Config $cfg -Title 't' -Message 'm' -Category 'joins' -Components $btn
+        Assert-True ($script:sentUri -like '*/channels/1156243690168266822/messages') "posted to $($script:sentUri)"
+        Assert-True ($script:sentHeaders -and $script:sentHeaders['Authorization'] -like 'Bot *') 'bot auth header'
+        $p = $script:sentBody | ConvertFrom-Json
+        Assert-Eq $p.components[0].components[0].label 'Play for free!' 'button label shipped'
+        Assert-Eq $p.components[0].components[0].style 5 'link style'
+    }
+
+    It 'with NO bot channel it falls back to the webhook and DROPS the components, loudly' {
+        # The important half: never post a card that looks right and silently has no button. The
+        # reason lands in GfDiscordLastError so join-notify can log it.
+        $cfg = [pscustomobject]@{ serverName = 'Gunfight'; ntfyTopic = ''
+                                  discordWebhooks = [pscustomobject]@{ joins = 'https://d/joins' } }
+        $script:sentBody = $null; $script:sentUri = $null
+        $null = Send-GfDiscord -Config $cfg -Title 't' -Message 'm' -Category 'joins' -Components $btn
+        Assert-True ($script:sentUri -eq 'https://d/joins') "fell back to the webhook, got $($script:sentUri)"
+        $p = $script:sentBody | ConvertFrom-Json
+        Assert-True ($null -eq $p.components) 'components must NOT be sent to a webhook - it drops them silently'
+        Assert-True ($script:GfDiscordLastError -like '*WITHOUT buttons*') "said why: '$($script:GfDiscordLastError)'"
+    }
+
+    It 'a card with no components still goes to the webhook exactly as before' {
+        $cfg = [pscustomobject]@{ serverName = 'Gunfight'; ntfyTopic = ''
+                                  discordWebhooks = [pscustomobject]@{ default = 'https://d/def' }
+                                  discordChannels = [pscustomobject]@{ default = '999' } }
+        $script:sentUri = $null
+        $null = Send-GfDiscord -Config $cfg -Title 't' -Message 'm'
+        Assert-True ($script:sentUri -eq 'https://d/def') 'ordinary alerts keep the webhook identity'
+    }
+}

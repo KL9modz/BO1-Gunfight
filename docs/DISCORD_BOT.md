@@ -213,6 +213,23 @@ server on it; (c) build it here only if (a) and (b) are unacceptable, accepting 
 
 ---
 
+## 🛑 Never probe against the public channels
+
+**Owner's rule, 2026-08-20.** When testing a Discord change that has to hit the real API, post to
+the **watchdog** or **changelog** channel - never the joins / activity channel, and never any
+channel players read. A probe that is deleted a second later is still a notification on someone's
+phone and still a blip in a public feed.
+
+This was earned: the "can a webhook send components" test posted a card to the **joins** channel and
+deleted it. The finding was worth having, the channel was the wrong one.
+
+⚠ The webhook a probe uses is chosen by `Category` - pass `alerts` (or whichever category maps to
+the watchdog channel in `tools
+otifyconfig.json`), never `joins`, and never the bare default if
+default is a player-facing channel.
+
+---
+
 ## Scope, decided 2026-08-19
 
 The owner's feature list, and the two structural calls made while scoping it.

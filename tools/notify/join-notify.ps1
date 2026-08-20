@@ -51,6 +51,11 @@ $script:JoinLink = "**Play for free** $([char]0x2794) [gunfight.us](https://gunf
 # Send-GfNtfy: the shared ntfy sender (JSON publish, unicode-safe titles).
 . (Join-Path $PSScriptRoot '..\ntfy.ps1')
 
+# ⚠ Decided ONCE at startup, not per card. Only the BOT transport can carry components - a webhook
+# returns 200 and echoes components:[], proven live 2026-08-20 - so a box with no bot token keeps
+# the TEXT link rather than silently posting a card with no call to action at all.
+$script:UseJoinButton = -not [string]::IsNullOrWhiteSpace((Get-GfBotToken))
+
 # Resolve-T5Root + Get-RconPassword (shared path/cfg helpers).
 . (Join-Path $PSScriptRoot '..\common.ps1')
 
@@ -137,7 +142,7 @@ function P-Key($p) {
 # this script's own (cfg, title, message, priority, tags) call shape and to LOG a failure; the
 # shared sender deliberately returns $false instead of throwing, so nothing here can be taken
 # down by a push.
-function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, $discordPrefix = '', $discordTitle = '', $category = 'default', $discordMessage = '', $discordFields = @()) {
+function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, $discordPrefix = '', $discordTitle = '', $category = 'default', $discordMessage = '', $discordFields = @(), $discordComponents = @()) {
   # Send-GfAlert fans out to every configured transport. $category picks the DISCORD channel and
   # defaults to 'default' deliberately: the joins channel is for PLAYERS JOINING, and only the two
   # join call sites pass 'joins'. This service also emits notifier-online, heartbeat and
@@ -151,7 +156,7 @@ function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, 
                     -Priority ([string]$priority) -Tags ([string[]]@($tags)) -Category ([string]$category) `
                     -DiscordColor ([int]$discordColor) -DiscordPrefix ([string]$discordPrefix) `
                     -DiscordTitle ([string]$discordTitle) -DiscordMessage ([string]$discordMessage) `
-                    -DiscordFields $discordFields
+                    -DiscordFields $discordFields -DiscordComponents $discordComponents
   if ($r.ntfyError)    { Write-Log "[ntfy] send failed: $($r.ntfyError)" }
   if ($r.discordError) { Write-Log "[discord] send failed: $($r.discordError)" }
   return $r.anySent
@@ -400,6 +405,27 @@ function Get-JoinTitleNtfy($name, $mapName, $count, $isFirst) {
 # ⚠ This only works because a mention in an embed DESCRIPTION renders the chip and notifies
 # NOBODY. If it ever moves to the message content it starts pinging a player every time they
 # join their own server, and then "instead of location" becomes a spam decision, not a layout one.
+# The call to action as a real BUTTON rather than a line of text.
+#
+# ⚠ A WEBHOOK CANNOT SEND COMPONENTS - proven live 2026-08-20, a POST with a link button returns
+# 200 and echoes components:[] - so this only renders when ntfy.ps1 can reach the BOT transport.
+# That is why the caller decides ONCE (via Get-GfBotToken) and passes either a button or the text
+# link, never both: two call-to-actions on one card is the "Play appeared twice" bug again.
+#
+# ⚠ The URL is pulled out of $JoinLink rather than written twice. That string is the owner's
+# marketing copy and stays the single source for both the wording and the destination.
+function Get-JoinButton($link) {
+    if (-not $link) { return @() }
+    $m = [regex]::Match($link, '\((https?://[^\)]+)\)')
+    $url = $(if ($m.Success) { $m.Groups[1].Value } else { 'https://gunfight.us/' })
+    # style 5 = LINK. A link button carries no custom_id and fires no interaction, so it needs no
+    # handler in the bot and cannot break while the bot is restarting.
+    # ⚠ COMMA OPERATOR, same trap as Get-JoinFieldsDiscord below: PowerShell UNROLLS a one-element
+    # array on return, so without it the caller gets a bare hashtable and ConvertTo-Json emits
+    # `components: {...}` where Discord requires a LIST - a 400 on every join card.
+    return ,@( @{ type = 1; components = @( @{ type = 2; style = 5; label = 'Play for free!'; url = $url } ) } )
+}
+
 function Get-JoinFieldsDiscord($loc, $ping, $mention, $link) {
   $fields = @()
   # ⚠ UNLABELLED, all of it. Every value here says what it is on sight - a flag and a city, an
@@ -554,7 +580,11 @@ function Do-Tick($cfg) {
       # read alongside its neighbours, so "first connect" is clutter. The PHONE keeps it - an
       # ntfy push is read alone, where 'is this someone new' is context it has no other way to
       # convey. Same per-transport split as the titles.
-      $dFields = Get-JoinFieldsDiscord $loc $p.ping $mention $script:JoinLink
+      # ⚠ Either a BUTTON or the text link, never both - two calls to action on one card is the
+      # "Play appeared twice" bug in a new costume. Decided once at startup by whether the bot
+      # transport is reachable, because only the bot can carry components.
+      $dButtons = $(if ($script:UseJoinButton) { Get-JoinButton $script:JoinLink } else { @() })
+      $dFields  = Get-JoinFieldsDiscord $loc $p.ping $mention $(if ($script:UseJoinButton) { '' } else { $script:JoinLink })
       $logd = Get-LogDetail $geo.place $p.ping $cnt     # log gets the place without the flag
       $ptag = Count-Tag $cur.Count                      # 👤 / 👥 by TOTAL players online
       $dTitle = Get-JoinTitleDiscord $p.name $mapName $cur.Count
@@ -570,7 +600,7 @@ function Do-Tick($cfg) {
           # mention field.
           [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $true) `
                            -message $body -priority 'high' -tags @($ptag) `
-                           -discordColor $script:JoinColor -discordTitle $dTitle -discordFields $dFields `
+                           -discordColor $script:JoinColor -discordTitle $dTitle -discordFields $dFields -discordComponents $dButtons `
                            -category 'joins')
           continue
         }
@@ -578,7 +608,7 @@ function Do-Tick($cfg) {
       Write-Log "JOIN  $($p.name)  ($($cur.Count) online)$logd"
       [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $false) `
                        -message $body -priority 'default' -tags @($ptag) `
-                       -discordColor $script:JoinColor -discordTitle $dTitle -discordFields $dFields `
+                       -discordColor $script:JoinColor -discordTitle $dTitle -discordFields $dFields -discordComponents $dButtons `
                        -category 'joins')
     }
   }
