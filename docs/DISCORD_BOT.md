@@ -19,6 +19,8 @@ Zero npm dependencies: Node 24's native `WebSocket` + `fetch` cover the gateway.
 | Commands | `/status` `/players` (open) · `/say` `/map` `/restart` `/pause` `/resume` `/moveall` (Admin role) |
 | Relay | one configured channel to in-game broadcast (off until a channel is set) |
 | Voice log | joined / left / moved cards, with **who did it** from the audit log (off until a channel is set) |
+| Message log | delete / edit / bulk-purge cards **with the content and the media** (off until a channel is set) |
+| Member log | join / leave / rename cards, with an account-age flag (off until a channel is set) |
 | Presence | member-list line, "Watching 3 players on Nuketown", off `status.json` |
 | Game access | **only** the panel's `/api/rcon` on loopback, the panel is the single rcon pacer |
 | Intents | `GUILDS` + `GUILD_VOICE_STATES`, plus `GUILD_MESSAGES` + `MESSAGE_CONTENT` **only when a relay channel is set** |
@@ -111,18 +113,25 @@ handful of requests per second, and posting one message per event will queue, th
 Every serious log bot batches. Do the same: a per-destination queue that coalesces events for ~2-5
 seconds and posts one embed with several lines. This also makes the log readable.
 
-### ⚠ Privacy — the part worth deciding before writing code
+### ⚠ Privacy — DECIDED 2026-08-19: log content and media
 
-Message-content logging on a 621-member server means the bot persists, in a channel, things people
-deliberately deleted. That is a bigger commitment than any feature so far, and it interacts with the
-project's existing stance (player IPs and GUIDs are kept out of git, muting is honoured, the joins
-channel is private). Decide up front:
-- log channel **private to staff**, always;
-- retention: prune log messages older than N days (the bot can delete its own messages);
-- consider logging *metadata only* (who/where/when + length) for ordinary channels and content only
-  where it is justified;
-- never log DMs, and never log a channel the staff themselves would not want quoted back.
+The owner's call, made explicitly: deleted and edited messages **and their attachments** are logged
+in full. What that commits to, recorded here so it is never a surprise:
 
+- The log channel holds things people deleted **on purpose**, including messages deleted seconds
+  after posting by mistake. It must be **private to staff**, always.
+- Media can only be logged by **buffering it while the message is alive** - a deleted message's CDN
+  link is signed and expiring, and refreshing it needs the message to still exist. So the box holds
+  a copy of anything anyone uploads, briefly. `lib/attachments.js` caps that: **8MB per file, 64MB
+  total, 15 minute TTL, memory only**. Nothing is written to disk, so a crash cannot leave a pile of
+  other people's files on the game server, and nothing survives a restart.
+- An oversized file is **not** downloaded, but its metadata still appears on the card, so "a 40MB
+  video was deleted" is reported rather than silently omitted.
+- ⚠ There is no un-logging. Turning the feature off stops new cards; it does not retract old ones.
+
+Not implemented, and deliberately left as later choices rather than assumed: **retention pruning**
+(the bot could delete its own cards after N days) and **per-channel content policy** (metadata-only
+for ordinary channels). `messageLogIgnoreChannels` covers the blunt version of the second today.
 ---
 
 ## 2. Spam filtering
@@ -227,11 +236,12 @@ an external API call if it is ever wanted.
 2. **Bulk move** — DONE. `/moveall from to`, the first feature built on the new shape and the proof
    it works. Needs **Move Members**. Its own moves are suppressed in the voice log, because the
    command already summarises them and one card per member is duplicate reporting.
-3. **Logging family** — member join/leave, name and nick changes, message delete/edit against the
-   bounded cache, channel/role changes with the actor from `GUILD_AUDIT_LOG_ENTRY_CREATE`. Adds the
-   privileged **GUILD_MEMBERS** intent (portal toggle) and **View Audit Log**.
-   ⚠ Carries the privacy decision in §1 below: logging deleted message CONTENT means holding content
-   in memory and reposting it. That is the owner's call, and it is the reason this step is not first.
+3. **Logging family** — DONE 2026-08-19. `features/message_log.js` (delete, edit, bulk purge, media
+   re-upload, moderator attribution from `GUILD_AUDIT_LOG_ENTRY_CREATE` action 72) and
+   `features/member_log.js` (join, leave, nickname and display-name changes, account-age flag).
+   ⚠ Needs **MESSAGE CONTENT** and **SERVER MEMBERS** enabled in the portal, plus **Attach Files**
+   and **View Audit Log**. Each feature requests its intent only while it has a channel to post to.
+   Channel and role change logging is NOT included yet.
 4. **Link and media moderation** — native AutoMod rules for the cheap wins (invite links, keyword
    presets, mention spam), custom checks for domains and attachment types. Escalation is delete then
    timeout, **never** auto-ban. Adds **Manage Server**, **Manage Messages**, **Moderate Members**.

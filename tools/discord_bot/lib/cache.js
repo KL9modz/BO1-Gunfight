@@ -66,12 +66,33 @@ function remember(m) {
     channelId: m.channel_id,
     authorId: (m.author && m.author.id) || null,
     authorTag: (m.author && (m.author.global_name || m.author.username)) || null,
+    authorBot: Boolean(m.author && m.author.bot),
     content: m.content || '',
-    attachments: (m.attachments || []).length,
+    // ⚠ The METADATA, not the bytes. A deleted message's card wants to say what was attached even
+    // when the file itself was too big to buffer or media logging is off, and those are different
+    // failures with different answers. The bytes live in lib/attachments.js, keyed by the same id.
+    attachments: (m.attachments || []).map((a) => ({
+      filename: a.filename, size: a.size, contentType: a.content_type || null, url: a.url,
+    })),
     at: Date.now(),
   });
-  while (messages.size > MESSAGE_CAP) messages.delete(messages.keys().next().value);
+  evict();
 }
+
+// ⚠ Eviction is what makes the memory ceiling a NUMBER rather than a hope. Insertion order means
+// the first key is always the oldest, so this is O(1) per evicted row.
+function evict() {
+  while (messages.size > MESSAGE_CAP) {
+    const oldest = messages.keys().next().value;
+    messages.delete(oldest);
+    if (onEvict) { try { onEvict(oldest); } catch { /* a listener must not break the cache */ } }
+  }
+}
+
+// lib/attachments.js registers here so the buffered bytes for a message are dropped at the same
+// moment its metadata is - one lifetime, not two that can drift apart.
+let onEvict = null;
+const setEvictListener = (fn) => { onEvict = fn; };
 
 const voice = {
   transition,
@@ -120,8 +141,11 @@ const channels = {
 
 const message = {
   get: (id) => messages.get(id) || null,
+  // MESSAGE_UPDATE has to overwrite the row or the NEXT edit would diff against the original rather
+  // than against what was on screen a moment ago.
+  update: (id, content) => { const m = messages.get(id); if (m) m.content = content; return m; },
   forget: (id) => messages.delete(id),
   size: () => messages.size,
 };
 
-module.exports = { observe, voice, channels, message, MESSAGE_CAP };
+module.exports = { observe, voice, channels, message, setEvictListener, MESSAGE_CAP };

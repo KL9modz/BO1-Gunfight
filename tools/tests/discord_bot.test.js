@@ -372,3 +372,122 @@ test('the footer is opt-in - a burst of cards must not each carry branding', () 
   assert.ok(!('footer' in brand.card({ title: 'T' })), 'footer should be off by default');
   assert.strictEqual(brand.card({ title: 'T', footer: true }).footer.text, brand.FOOTER);
 });
+
+// ── logging family ─────────────────────────────────────────────────────────────────────────────
+// These features REPUBLISH things people deleted, so the tests are mostly about the guards: what is
+// never logged, what is never claimed, and what is never downloaded.
+const messageLog = require(path.join(botDir, 'features', 'message_log.js'));
+const memberLog = require(path.join(botDir, 'features', 'member_log.js'));
+const makeAttachments = require(path.join(botDir, 'lib', 'attachments.js'));
+
+const noop = () => {};
+const fakeRest = {
+  probe: async () => ({ ok: false, status: 403 }),
+  postMessage: async () => ({ id: 'card1' }),
+  editMessage: async () => ({}),
+  postMessageWithFiles: async () => ({ id: 'card1' }),
+};
+const mkMsgLog = (over) => messageLog({
+  cfg: Object.assign({ guildId: 'g1', messageLogChannelId: 'LOG' }, over),
+  log: noop, rest: fakeRest, cache,
+});
+
+test('message logging is OFF without a channel, and asks for no intent', () => {
+  // MESSAGE_CONTENT is privileged: requesting it while the portal toggle is off is a fatal 4014 for
+  // every feature, so a feature with nowhere to post must not ask.
+  const off = mkMsgLog({ messageLogChannelId: '' });
+  assert.strictEqual(off.enabled, false);
+  assert.strictEqual(off.intents, 0);
+});
+
+test('message logging asks for MESSAGE_CONTENT only when it is on', () => {
+  assert.ok(mkMsgLog({}).intents & (1 << 15), 'enabled log needs MESSAGE_CONTENT');
+});
+
+test('the log channel is ALWAYS excluded from logging itself', async () => {
+  // Without this the bot's own cards are messages, deleting one logs the log, and a purge in there
+  // recurses. Probed through the media path: an ignored channel buffers nothing.
+  const m = mkMsgLog({});
+  m.on.MESSAGE_CREATE({ id: 'x1', guild_id: 'g1', channel_id: 'LOG',
+                        author: { id: 'u1' }, attachments: [{ filename: 'a.png', size: 10, url: 'http://x' }] });
+  await new Promise((r) => setTimeout(r, 20));
+  // Nothing was fetched, so nothing can be taken back out.
+  assert.deepStrictEqual(await makeAttachments(noop).take('x1'), []);
+});
+
+test('a deleted message quotes its content instead of interpolating it', () => {
+  // Deleted text can contain markdown, backticks or @everyone. Quoting keeps it from reformatting
+  // the card; allowed_mentions in lib/rest.js covers the pinging half.
+  const q = messageLog.quote('hello\n@everyone');
+  assert.ok(q.split('\n').every((l) => l.startsWith('> ')), q);
+});
+
+test('an over-long message is truncated with a visible marker', () => {
+  // A partial message must never read as the whole message.
+  const out = messageLog.preview('x'.repeat(5000));
+  assert.ok(out.length < 1024, `preview was ${out.length}`);
+  assert.ok(/truncated/.test(out), 'truncation must be visible');
+});
+
+test('an empty message and an uncached one are not the same fact', () => {
+  // Both would render as "nothing to show" if the code were lazy, but one means the message had no
+  // text and the other means we never had it - and only the second is a gap in the log.
+  assert.strictEqual(messageLog.preview(''), '');
+  assert.strictEqual(messageLog.preview(null), '');
+});
+
+test('member logging is OFF without a channel, and never asks for GUILD_MEMBERS', () => {
+  const off = memberLog({ cfg: { guildId: 'g1', memberLogChannelId: '' }, log: noop, rest: fakeRest, cache });
+  assert.strictEqual(off.enabled, false);
+  assert.strictEqual(off.intents, 0, 'GUILD_MEMBERS is privileged - never request it while off');
+  const on = memberLog({ cfg: { guildId: 'g1', memberLogChannelId: 'M' }, log: noop, rest: fakeRest, cache });
+  assert.strictEqual(on.intents, 1 << 1);
+});
+
+test('account age comes from the snowflake itself, no API call', () => {
+  // Discord's epoch is 2015-01-01. This id is the documented example.
+  const ms = memberLog.createdAt('175928847299117063');
+  assert.ok(Math.abs(ms - Date.parse('2016-04-30T11:18:25.796Z')) < 2, `got ${new Date(ms).toISOString()}`);
+  assert.strictEqual(memberLog.createdAt('not-a-snowflake'), null, 'a bad id must not throw');
+});
+
+// ── lib/attachments.js ─────────────────────────────────────────────────────────────────────────
+test('an oversized attachment is never downloaded', async () => {
+  // THE safety property: the input is arbitrary user uploads onto the box that runs the game server.
+  const a = makeAttachments(noop);
+  a.remember('big', [{ filename: 'huge.mp4', size: a.MAX_FILE + 1, url: 'http://never-fetched' }]);
+  assert.strictEqual(a.stats().messages, 0, 'an over-cap file must not even be tracked');
+  assert.deepStrictEqual(await a.take('big'), []);
+});
+
+test('taking an unknown message yields nothing rather than throwing', async () => {
+  assert.deepStrictEqual(await makeAttachments(noop).take('never-seen'), []);
+});
+
+test('the caps are real numbers, not aspirations', () => {
+  const a = makeAttachments(noop);
+  assert.ok(a.MAX_FILE > 0 && a.MAX_FILE <= 10 * 1024 * 1024, 'per-file cap within Discord upload limits');
+  assert.ok(a.MAX_TOTAL >= a.MAX_FILE, 'total cap must fit at least one file');
+  assert.ok(a.TTL_MS > 0 && a.TTL_MS <= 3600000, 'TTL must be minutes, not hours');
+});
+
+// ── the extended message cache ─────────────────────────────────────────────────────────────────
+test('the cache keeps attachment METADATA even when the bytes are not held', () => {
+  // So a card can say a 40MB video was deleted rather than silently omitting it.
+  cache.observe('MESSAGE_CREATE', { id: 'meta1', channel_id: 'c', author: { id: 'u', username: 'n' },
+    content: 'hi', attachments: [{ filename: 'clip.mp4', size: 40e6, content_type: 'video/mp4', url: 'u' }] });
+  const row = cache.message.get('meta1');
+  assert.strictEqual(row.attachments.length, 1);
+  assert.strictEqual(row.attachments[0].filename, 'clip.mp4');
+});
+
+test('an edit overwrites the cached content, so the NEXT edit diffs against what was on screen', () => {
+  cache.observe('MESSAGE_CREATE', { id: 'e1', channel_id: 'c', author: { id: 'u' }, content: 'first' });
+  cache.message.update('e1', 'second');
+  assert.strictEqual(cache.message.get('e1').content, 'second');
+});
+
+test('a bot author is recorded, so the log can skip its own cards', () => {
+  cache.observe('MESSAGE_CREATE', { id: 'b1', channel_id: 'c', author: { id: 'x', bot: true }, content: 'card' });
+  assert.strictEqual(cache.message.get('b1').authorBot, true);
+});

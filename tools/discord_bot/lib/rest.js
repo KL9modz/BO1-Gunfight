@@ -55,13 +55,17 @@ module.exports = function makeRest(token, log) {
     const wait = globalUntil - Date.now();
     if (wait > 0) await sleep(wait);
 
+    // ⚠ A FormData body is passed THROUGH and its Content-Type is deliberately NOT set: fetch
+    // generates the multipart boundary itself, and a hand-set header would omit it and make every
+    // upload a 400. That is the whole trick to file uploads on native fetch.
+    const isForm = (typeof FormData !== 'undefined') && (body instanceof FormData);
     const res = await fetch(API + path, {
       method,
       headers: Object.assign(
         { Authorization: 'Bot ' + token },
-        body === undefined ? {} : { 'Content-Type': 'application/json' },
+        (body === undefined || isForm) ? {} : { 'Content-Type': 'application/json' },
         headers || {}),
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : (isForm ? body : JSON.stringify(body)),
     });
     return res;
   }
@@ -118,6 +122,21 @@ module.exports = function makeRest(token, log) {
       request('POST', `/channels/${channelId}/messages`, withMentions(payload)),
     editMessage: (channelId, messageId, payload) =>
       request('PATCH', `/channels/${channelId}/messages/${messageId}`, withMentions(payload)),
+    /*
+     * Post with attachments. Used to re-upload a deleted message's media into the log channel.
+     * ⚠ Discord takes the JSON under the field name `payload_json` and each file as `files[n]`,
+     * and it rides the SAME queue as every other call so a burst of deletions cannot outrun the
+     * rate limiter.
+     */
+    postMessageWithFiles(channelId, payload, files) {
+      const form = new FormData();
+      form.append('payload_json', JSON.stringify(withMentions(payload)));
+      files.forEach((f, i) => {
+        form.append(`files[${i}]`, new Blob([f.buf], f.contentType ? { type: f.contentType } : {}), f.filename);
+      });
+      return request('POST', `/channels/${channelId}/messages`, form);
+    },
+
     deleteMessage: (channelId, messageId, reason) =>
       request('DELETE', `/channels/${channelId}/messages/${messageId}`, undefined, { reason }),
 

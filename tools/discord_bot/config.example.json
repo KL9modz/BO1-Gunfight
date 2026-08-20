@@ -13,6 +13,11 @@
   "panelPort": 3000,
   "rconHost": "127.0.0.1",
   "rconPort": 28960,
+  "messageLogChannelId": "",
+  "messageLogMedia": true,
+  "messageLogIgnoreChannels": [],
+  "memberLogChannelId": "",
+  "memberLogNewAccountDays": 7,
   "_notes": {
     "adminRoleId": "Required. Gates every command that changes the server (say, map, restart, pause, resume). Read-only commands (status, players) are open to the guild.",
     "relayChannelId": "The ONE channel whose messages are relayed into the game. Leave empty to disable the relay entirely. Every other channel is ignored.",
@@ -21,6 +26,11 @@
     "quietActorIds": "Discord user ids whose ACTIONS are never named. The event is still logged in full, only the By line is withheld - intended for the owner, whose routine moderation is noise rather than news. It is not a mute: to keep someone's own joins and leaves out of the channel you would need a different filter.",
     "voiceLogBots": "false (default) ignores bots moving in and out of voice, which is almost always what you want since music and recording bots churn. true logs them like anyone else.",
     "presence": "true (default) puts a live line under the bot in the member list: 'Watching 3 players on Nuketown', or 'an empty server' / 'the server (offline)' / 'the server (status unknown)' with the dot going idle or red to match. Set false to turn it off. It needs NO intent, NO permission and NO portal setting, which is why it defaults on. It counts HUMANS only, because bot fill would otherwise make it read busy around the clock. Note this is bot presence (gateway op 3), NOT Rich Presence: the Developer Portal's Rich Presence Art Assets are published by a game client over local IPC, which BO1/Plutonium does not do, so no server-side feature can reach them.",
-    "statusJson": "Optional override for the status projection presence reads (default C:\\inetpub\\wwwroot\\live\\status.json, written every ~5s by GF-StatusService). Presence deliberately reads this FILE rather than polling rcon: the panel is the box's single rcon pacer and a permanent 20s poller for a cosmetic feature is exactly what the project rule forbids."
+    "statusJson": "Optional override for the status projection presence reads (default C:\\inetpub\\wwwroot\\live\\status.json, written every ~5s by GF-StatusService). Presence deliberately reads this FILE rather than polling rcon: the panel is the box's single rcon pacer and a permanent 20s poller for a cosmetic feature is exactly what the project rule forbids.",
+    "messageLogChannelId": "Channel that receives DELETE / EDIT / bulk-purge cards. EMPTY = off, and the privileged MESSAGE_CONTENT intent is then not requested. ⚠ MAKE THIS CHANNEL PRIVATE: to report a deleted message the bot has to have kept it, so this channel will contain things people deleted on purpose. Needs MESSAGE CONTENT enabled in the Developer Portal, plus View Audit Log to name a moderator who deleted someone else's message (a self-delete writes no audit entry at all, which is why an unattributed card means the author did it).",
+    "messageLogMedia": "true (default) buffers attachments in MEMORY while a message is alive and re-uploads them if it is deleted - the only way to log media, since a deleted message's CDN link cannot be refreshed. Capped in lib/attachments.js: 8MB per file, 64MB total, 15 minute TTL, nothing written to disk and nothing surviving a restart. Set false to log filenames only.",
+    "messageLogIgnoreChannels": "Channel ids never logged. The message-log channel itself is ALWAYS excluded automatically - without that the bot's own cards would be logged and a purge in there would recurse.",
+    "memberLogChannelId": "Channel that receives JOIN / LEAVE / rename cards. EMPTY = off. ⚠ Needs the privileged SERVER MEMBERS intent enabled in the Developer Portal. A leave card cannot tell a leave from a kick or a ban - the gateway does not say - so it reports what is known rather than guessing.",
+    "memberLogNewAccountDays": "Join cards flag an account younger than this many days (default 7), read from the user id itself, so it costs no API call. A raid and ban-evasion signal, not a verdict: nothing is kicked, a human decides."
   }
 }
