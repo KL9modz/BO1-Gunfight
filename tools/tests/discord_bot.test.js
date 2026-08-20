@@ -910,15 +910,29 @@ test('a full server fits the cap WITH its "+N more" suffix intact', () => {
   assert.ok(!/…/.test(line), 'nothing should have been clamped');
 });
 
-test('the custom status comes FIRST, so a one-activity client shows the live half', () => {
-  const p = buildPresence(snap({ humans: 3 }), NOW, null, 'playing', [],
-                          { text: 'gunfight.us', custom: '{status}' });
-  assert.strictEqual(p.activities[0].type, 4, 'custom status leads');
+test('ONE SURFACE AT A TIME - never both, because Discord renders only one', () => {
+  // Proven live 2026-08-20, TWICE, and order made no difference: sending an activity AND a custom
+  // status showed only the custom status whichever came first. So sending both does not get you
+  // both, it silently throws the activity away - and the state has to pick one.
+  const busy = buildPresence(snap({ humans: 3, players: [{ name: 'KL9' }] }), NOW, null, '', [],
+                             { custom: 'gunfight.us' });
+  assert.strictEqual(busy.activities.length, 1, 'never two');
+  assert.strictEqual(busy.activities[0].type, 0, 'humans on -> the Playing activity');
+  assert.ok(/with: KL9/.test(busy.activities[0].name), busy.activities[0].name);
+
+  const quiet = buildPresence(snap({ humans: 0 }), NOW, null, '', [], { custom: 'gunfight.us' });
+  assert.strictEqual(quiet.activities.length, 1, 'never two');
+  assert.strictEqual(quiet.activities[0].type, 4, 'nobody on -> the custom status');
+  assert.strictEqual(quiet.activities[0].state, 'gunfight.us');
 });
 
 test('a literal custom status needs no {status} token', () => {
-  const p = buildPresence(snap({ humans: 3 }), NOW, null, 'playing', [], { custom: 'gunfight.us' });
+  const p = buildPresence(snap({ humans: 0 }), NOW, null, '', [], { custom: 'gunfight.us' });
   assert.strictEqual(p.activities[0].state, 'gunfight.us');
+});
+
+test('with no custom status configured the activity is used in every state', () => {
+  assert.strictEqual(buildPresence(snap({ humans: 0 }), NOW, null, '', [], {}).activities[0].type, 3);
 });
 
 test('no overrides means exactly one activity, as before', () => {

@@ -237,12 +237,22 @@ function withOverrides(p, o, liveLine, allowPin) {
     // A static activity: the verb still applies, so "gunfight.us" reads "Playing gunfight.us".
     if (a.type === TYPES.custom) { a.state = clamp(o.text, NAME_MAX); } else { a.name = clamp(o.text, NAME_MAX); }
   }
-  if (o.custom) {
-    // {status} is what keeps the live half alive when the activity has been pinned to branding.
+  // 🛑 A BOT RENDERS ONE ACTIVITY, AND A CUSTOM STATUS BEATS EVERYTHING ELSE.
+  // Proven live 2026-08-20, twice, and ORDER MADE NO DIFFERENCE: with type 4 first the profile
+  // showed only the custom status; with the real activity first it still showed only the custom
+  // status. So sending both does not get you both - it silently throws the activity away.
+  //
+  // Hence ONE SURFACE AT A TIME, picked by state (the owner's design, and the right one):
+  //     nobody on -> the custom status alone   "gunfight.us"
+  //     humans on -> the activity alone        "Playing Gunfight on Nuketown with: KL9, ..."
+  //
+  // ⚠ `allowPin` is reused deliberately rather than adding a second flag: it already means "there
+  // is nothing live to report", which is exactly when the custom status should take over.
+  // ⚠ It REPLACES the activity rather than joining it. Appending would look right in the payload
+  // and render as the custom status alone anyway, which is how this cost two live looks to find.
+  if (o.custom && allowPin) {
     const text = String(o.custom).replace(/{status}/g, liveLine);
-    // ⚠ FIRST in the array: a client rendering only one takes the first, and the custom status is
-    // the one carrying the live information once the activity is a fixed advert.
-    p.activities.unshift({ name: 'Custom Status', type: TYPES.custom, state: clamp(text, NAME_MAX) });
+    p.activities = [{ name: 'Custom Status', type: TYPES.custom, state: clamp(text, NAME_MAX) }];
   }
   return p;
 }

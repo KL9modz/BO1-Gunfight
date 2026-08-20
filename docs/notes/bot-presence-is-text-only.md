@@ -38,6 +38,23 @@ rich fields, and both belong to the same Rich Presence family that is published 
 local IPC socket. Nobody should spend a day sourcing 26 map images for a profile widget on the hope
 that the image half behaves differently from the button half.
 
+## And only ONE activity renders, custom status winning
+
+Tested twice on 2026-08-20 with a live look each time:
+
+| sent | rendered |
+|---|---|
+| custom status first, then the activity | the custom status only |
+| the ACTIVITY first, then the custom status | **still** the custom status only |
+
+⚠ **Order makes no difference.** Sending both does not get you both - it silently discards the
+activity, and a custom status beats every other type regardless of position. A user profile shows a
+custom status *and* a game; a bot does not.
+
+So the presence uses **one surface at a time, chosen by state**: the custom status while nobody is
+playing, the activity the moment somebody is. That sidesteps the limit rather than fighting it, and
+it is what `features/presence.js` does.
+
 ## What this closes
 
 - **The Rich Presence tab is dead weight for this project.** Art Assets, the Visualizer and the
