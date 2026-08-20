@@ -863,3 +863,46 @@ test('changing the TYPE repicks the WORDS - no "Playing 3 players on"', () => {
     assert.ok(!/^\d+ player/.test(a.name), `${style} kept the Watching fragment: "${a.name}"`);
   }
 });
+
+// ── the two profile surfaces ───────────────────────────────────────────────────────────────────
+test('presenceText pins the ACTIVITY and moves the live line to the custom status', () => {
+  // The activity becomes branding ("Playing gunfight.us"); the live information does not vanish,
+  // it moves to the type-4 line where {status} expands it.
+  const p = buildPresence(snap({ humans: 3 }), NOW, null, 'playing', [],
+                          { text: 'gunfight.us', custom: '{status}' });
+  const custom = p.activities.find((a) => a.type === 4);
+  const game = p.activities.find((a) => a.type === 0);
+  assert.strictEqual(game.name, 'gunfight.us', 'the activity is pinned');
+  assert.strictEqual(custom.state, '3 players on Nuketown', '{status} expanded to the live line');
+});
+
+test('pinning the activity switches the live line to PLAIN phrasing', () => {
+  // Otherwise "Playing gunfight.us" sits above "Gunfight - 3 on Nuketown" and says Gunfight twice.
+  const p = buildPresence(snap({ humans: 3 }), NOW, null, 'playing', [],
+                          { text: 'gunfight.us', custom: '{status}' });
+  assert.ok(!/Gunfight/.test(p.activities.find((a) => a.type === 4).state), 'brand must not repeat');
+});
+
+test('the custom status comes FIRST, so a one-activity client shows the live half', () => {
+  const p = buildPresence(snap({ humans: 3 }), NOW, null, 'playing', [],
+                          { text: 'gunfight.us', custom: '{status}' });
+  assert.strictEqual(p.activities[0].type, 4, 'custom status leads');
+});
+
+test('a literal custom status needs no {status} token', () => {
+  const p = buildPresence(snap({ humans: 3 }), NOW, null, 'playing', [], { custom: 'gunfight.us' });
+  assert.strictEqual(p.activities[0].state, 'gunfight.us');
+});
+
+test('no overrides means exactly one activity, as before', () => {
+  const p = buildPresence(snap({ humans: 3 }), NOW, null, 'watching', [], {});
+  assert.strictEqual(p.activities.length, 1, 'nothing extra is sent when nothing is configured');
+});
+
+test('an empty server never advertises emptiness in EITHER phrasing', () => {
+  for (const style of ['watching', 'playing', 'custom']) {
+    const line = buildPresence(snap({ humans: 0 }), NOW, null, style, [], {}).activities[0];
+    const t = line.state || line.name;
+    assert.ok(!/empty|nobody|waiting|no one/i.test(t), `${style} still sells it: "${t}"`);
+  }
+});

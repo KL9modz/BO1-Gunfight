@@ -128,22 +128,27 @@ const SAY = {
              busy: (n, m) => `${n} player${n === 1 ? '' : 's'} on ${m}` },
   branded: { unknown: 'Gunfight - status unknown',   offline: 'Gunfight - server offline', empty: (s) => `Gunfight - ${s.mapName || 'open now'}`,
              busy: (n, m) => `Gunfight - ${n} on ${m}` },
-  plain:   { unknown: 'Status unknown',              offline: 'Server offline',       empty: (s) => `${s.mapName || 'Gunfight'} - waiting for players`,
+  plain:   { unknown: 'Status unknown',              offline: 'Server offline',       empty: (s) => (s.mapName || s.map || 'Gunfight'),
              busy: (n, m) => `${n} player${n === 1 ? '' : 's'} on ${m}` },
 };
 const SAY_FOR = (style) => (style === 'custom' ? SAY.plain
                           : (style === 'playing' || style === 'competing') ? SAY.branded
                           : SAY.verb);
 
-function buildPresence(snap, nowMs, art, style, buttons) {
-  const say = SAY_FOR(style);
-  if (!snap || typeof snap !== 'object') return shape(say.unknown, 'idle', null, style, buttons);
+function buildPresence(snap, nowMs, art, style, buttons, opts) {
+  const o = opts || {};
+  // ⚠ Pinning the activity to branding MOVES the live line into the custom status, where it stands
+  // alone and the brand is already one line above it. So it takes the PLAIN phrasing - otherwise
+  // "Playing gunfight.us" sits over "Gunfight - 3 on Nuketown" and says Gunfight twice, which is
+  // the "Play appeared twice" bug for the third time in one day.
+  const say = o.text ? SAY.plain : SAY_FOR(style);
+  if (!snap || typeof snap !== 'object') return withOverrides(shape(say.unknown, 'idle', null, style, buttons), o, say.unknown);
 
   const stamped = Date.parse(snap.updated);
   if (!Number.isFinite(stamped) || nowMs - stamped > STALE_MS) {
-    return shape(say.unknown, 'idle', null, style, buttons);
+    return withOverrides(shape(say.unknown, 'idle', null, style, buttons), o, say.unknown);
   }
-  if (!snap.online) return shape(say.offline, 'dnd', null, style, buttons);
+  if (!snap.online) return withOverrides(shape(say.offline, 'dnd', null, style, buttons), o, say.offline);
 
   const humans = Number(snap.humans) || 0;
   // ⚠ AN EMPTY SERVER IS NOT ADVERTISED AS EMPTY. This line sits on a public profile, so "an empty
@@ -154,13 +159,43 @@ function buildPresence(snap, nowMs, art, style, buttons) {
   // longer means "someone is playing" - but red still means offline and idle still means the data
   // cannot be vouched for, so both states that indicate a PROBLEM are untouched.
   // The map is dropped here on purpose: which map an empty server sits on helps nobody.
-  if (humans === 0) return shape(say.empty(snap), 'online', null, style, buttons);
+  if (humans === 0) { const live = say.empty(snap); return withOverrides(shape(live, 'online', null, style, buttons), o, live); }
 
   const map = snap.mapName || snap.map || 'Gunfight';
   // ⚠ Art only on the ONLINE path. An empty or offline server has no map worth picturing, and a
   // stale snapshot must not put a confident map image on the profile.
   const withArt = art && snap.map ? Object.assign({}, art, { key: snap.map, text: map }) : null;
-  return shape(say.busy(humans, map), 'online', withArt, style, buttons);
+  const live = say.busy(humans, map);
+  return withOverrides(shape(live, 'online', withArt, style, buttons), o, live);
+}
+
+/*
+ * The presence the gateway actually receives.
+ *
+ * ⚠ TWO SEPARATE SURFACES, and they are easy to conflate:
+ *   - the ACTIVITY  ("Playing gunfight.us")   - a verb plus `name`, types 0/2/3/5
+ *   - the CUSTOM STATUS                       - type 4, prints NO verb and reads `state`
+ * A user can show both at once. Whether a BOT can is undocumented, so this sends both when both
+ * are configured and the answer is whatever the profile renders.
+ *
+ * `presenceText` pins the activity to a fixed string (branding), which frees the LIVE line to
+ * move into the custom status via the {status} token - so the profile can advertise and report at
+ * the same time instead of choosing.
+ */
+function withOverrides(p, o, liveLine) {
+  const a = p.activities[0];
+  if (o.text) {
+    // A static activity: the verb still applies, so "gunfight.us" reads "Playing gunfight.us".
+    if (a.type === TYPES.custom) { a.state = clamp(o.text, NAME_MAX); } else { a.name = clamp(o.text, NAME_MAX); }
+  }
+  if (o.custom) {
+    // {status} is what keeps the live half alive when the activity has been pinned to branding.
+    const text = String(o.custom).replace(/{status}/g, liveLine);
+    // ⚠ FIRST in the array: a client rendering only one takes the first, and the custom status is
+    // the one carrying the live information once the activity is a fixed advert.
+    p.activities.unshift({ name: 'Custom Status', type: TYPES.custom, state: clamp(text, NAME_MAX) });
+  }
+  return p;
 }
 
 module.exports = presence;
@@ -176,6 +211,7 @@ function presence(ctx) {
   const art = cfg.presenceMapArt ? { appId: cfg.applicationId } : null;
   const style = cfg.presenceStyle || 'watching';
   const buttons = cfg.presenceButtons || [];
+  const opts = { text: cfg.presenceText || '', custom: cfg.presenceCustom || '' };
 
   let timer = null;
   let lastSent = null;      // full payload signature: suppresses a resend of an identical line
@@ -192,7 +228,7 @@ function presence(ctx) {
   }
 
   function tick() {
-    const p = buildPresence(read(), Date.now(), art, style, buttons);
+    const p = buildPresence(read(), Date.now(), art, style, buttons, opts);
     const sig = JSON.stringify(p);
     if (sig === lastSent) return;
     lastSent = sig;
