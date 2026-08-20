@@ -607,7 +607,15 @@ function Restart-BoxServices {
         Write-Host "Skipping box-service restart$(if ($DryRun) { ' (dry run)' })."
         return
     }
-    foreach ($name in @('GF-StatusService', 'GF-ConnLogger', 'GF-JoinNotify')) {
+    # ⚠ GF-DiscordBot belongs here for exactly the reason above and was MISSED when it was added:
+    # register_services.ps1 marks it "NOT Periodic - a long-running gateway client, like the panel",
+    # so a deploy updated bot.js on disk and left the old process running its old features. The
+    # symptom is the worst kind - the deploy reports success and the new feature simply is not there.
+    #   Still exempt, and NOT an oversight: GF-DiscordStatus and GF-SecurityWatch are Periodic=$true
+    #   (short-lived, re-read fresh every run), and GF-Watchdog likewise.
+    # ⚠ NEVER add GF-ClaudeRC. Restarting it orphans every open Claude Remote Control session,
+    # including whichever one is running this deploy.
+    foreach ($name in @('GF-StatusService', 'GF-ConnLogger', 'GF-JoinNotify', 'GF-DiscordBot')) {
         $r = Restart-GfScheduledTask -Name $name    # shared primitive (common.ps1); never throws
         if ($r -eq 'recycled')      { Write-Host "Recycled $name (now on the deployed code)." }
         elseif ($r -ne 'absent')    { Write-Host "$name restart $r (non-fatal)" -ForegroundColor Yellow }
