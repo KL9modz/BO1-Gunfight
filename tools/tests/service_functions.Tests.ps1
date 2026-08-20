@@ -423,17 +423,28 @@ Describe "Get-JoinFieldsDiscord - detail lives in FIELDS, which stay out of the 
     # in the channel but never reaches the lock screen. So the card is title + fields, and these
     # tests pin that structure rather than a string.
     $link = '**Play for free** -> [gunfight.us](https://gunfight.us/)'
-    $val  = { param($f, $n) ($f | Where-Object { $_.name -eq $n } | Select-Object -First 1).value }
+    # ⚠ Everything below matches on VALUES. The card is deliberately label-free, so a test that
+    # looked a field up by name would be pinning headings that are supposed to be gone.
+    $vals = { param($f) (($f | ForEach-Object { $_.value }) -join "`n") }
 
+    It 'NO field carries a visible label' {
+        # The card reads as a list of self-describing lines: a flag and a city, an @mention chip, a
+        # bold call to action. Headings above those were pure repetition - and 'Play' above
+        # "Play for free" printed the word twice outright.
+        $blank = [string][char]0x200B
+        foreach ($x in (Get-JoinFieldsDiscord 'Papeete, French Polynesia' 42 '' $link)) {
+            Assert-Eq $x.name $blank "field label '$($x.name)' should be blank"
+        }
+    }
     It 'a LINKED player shows the mention and NO location' {
-        $f = Get-JoinFieldsDiscord 'Papeete, French Polynesia' 42 '<@123456789012345678>' $link
-        Assert-Eq (& $val $f 'Discord') '<@123456789012345678>' 'mention field'
-        Assert-True ($null -eq (& $val $f 'Location')) 'location must be REPLACED, not added alongside'
+        $v = & $vals (Get-JoinFieldsDiscord 'Papeete, French Polynesia' 42 '<@123456789012345678>' $link)
+        Assert-True ($v -like '*<@123456789012345678>*') 'mention present'
+        Assert-True (-not ($v -like '*Papeete*')) 'location must be REPLACED, not added alongside'
     }
     It 'an UNLINKED player still shows the location' {
-        $f = Get-JoinFieldsDiscord 'Papeete, French Polynesia' 42 '' $link
-        Assert-Eq (& $val $f 'Location') 'Papeete, French Polynesia' 'location field'
-        Assert-True ($null -eq (& $val $f 'Discord')) 'no mention field'
+        $v = & $vals (Get-JoinFieldsDiscord 'Papeete, French Polynesia' 42 '' $link)
+        Assert-True ($v -like '*Papeete, French Polynesia*') 'location present'
+        Assert-True (-not ($v -like '*<@*')) 'no mention'
     }
     It 'the call to action is always a field of its own' {
         # Looked up by VALUE, not by label: the label is deliberately a zero-width space, and a test

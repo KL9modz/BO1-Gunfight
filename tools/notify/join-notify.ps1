@@ -402,14 +402,18 @@ function Get-JoinTitleNtfy($name, $mapName, $count, $isFirst) {
 # join their own server, and then "instead of location" becomes a spam decision, not a layout one.
 function Get-JoinFieldsDiscord($loc, $ping, $mention, $link) {
   $fields = @()
-  if ($mention)   { $fields += @{ name = 'Discord';  value = $mention } }
-  elseif ($loc)   { $fields += @{ name = 'Location'; value = $loc } }
-  # ⚠ The call to action is UNLABELLED, and that is the fix for a real bug rather than a style
-  # choice: $JoinLink already opens with its own bold lead-in, so a 'Play' heading above it printed
-  # the word twice. A Discord field name cannot be empty, so this is a zero-width space - it
-  # renders as no heading at all and the CTA reads as its own line.
-  # ⚠ Fix the LABEL here, never $JoinLink: that string is the owner's marketing copy.
-  if ($link)      { $fields += @{ name = [string][char]0x200B; value = $link } }
+  # ⚠ UNLABELLED, all of it. Every value here says what it is on sight - a flag and a city, an
+  # @mention chip, a bold call to action - so a heading above each was pure repetition, and 'Play'
+  # above "Play for free" printed the word twice outright.
+  # ⚠ The mention and the location share ONE slot (a linked player shows the mention INSTEAD of
+  # their location), so they must be labelled the same way or the card looks broken on whichever
+  # branch kept its heading.
+  # ⚠ A Discord field name cannot be EMPTY, so this is a zero-width space: it renders as no
+  # heading at all. Fix a LABEL here, never $JoinLink - that string is the owner's marketing copy.
+  $blank = [string][char]0x200B
+  if ($mention)   { $fields += @{ name = $blank; value = $mention } }
+  elseif ($loc)   { $fields += @{ name = $blank; value = $loc } }
+  if ($link)      { $fields += @{ name = $blank; value = $link } }
   return ,$fields          # comma operator: a 1-element array must not unroll to a bare hashtable
 }
 function Get-JoinBody($loc, $ping, $count) {
