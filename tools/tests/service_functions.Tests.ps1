@@ -294,17 +294,17 @@ Describe "Get-JoinTitleDiscord (join-notify) - the Discord card format" {
     #     label stuck to the player's name
     #   * the map is the public display name, resolved upstream by Get-GfMapName
     It 'a join into an empty server carries neither count nor empty-server text' {
-        Assert-Eq (Get-JoinTitleDiscord 'fentfella' 'Havana' 1) "fentfella $([char]0x2794) Joined: Havana" 'first join'
+        Assert-Eq (Get-JoinTitleDiscord 'fentfella' 'Havana' 1) "fentfella $([char]0x2794) Joined match: Havana" 'first join'
     }
     It 'a join with others already on puts the total AFTER the map name' {
-        Assert-Eq (Get-JoinTitleDiscord 'KL9' 'Havana' 3) "KL9 $([char]0x2794) Joined: Havana (3)" 'later join'
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' 'Havana' 3) "KL9 $([char]0x2794) Joined match: Havana (3)" 'later join'
     }
     It 'an unknown map degrades to name + count, never a dangling separator' {
-        Assert-Eq (Get-JoinTitleDiscord 'KL9' '' 3) "KL9 $([char]0x2794) Joined (3)" 'no map, others on'
-        Assert-Eq (Get-JoinTitleDiscord 'KL9' '' 1) "KL9 $([char]0x2794) Joined"      'no map, alone'
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' '' 3) "KL9 $([char]0x2794) Joined match (3)" 'no map, others on'
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' '' 1) "KL9 $([char]0x2794) Joined match" 'no map, alone'
     }
     It 'a count of 0 or a non-numeric count never renders a count' {
-        Assert-Eq (Get-JoinTitleDiscord 'KL9' 'Zoo' 0) "KL9 $([char]0x2794) Joined: Zoo" 'zero'
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' 'Zoo' 0) "KL9 $([char]0x2794) Joined match: Zoo" 'zero'
     }
 }
 
@@ -497,5 +497,18 @@ Describe "Get-JoinButton - the call to action as a real button" {
     }
     It 'no link means no button' {
         Assert-Eq ((Get-JoinButton '') | Measure-Object).Count 0 'nothing to point at'
+    }
+}
+
+Describe "Join title says what was joined" {
+    It 'reads "Joined match:", not a bare "Joined:"' {
+        # Owner's wording, 2026-08-20: a Discord reader has no context telling them this is a game
+        # server rather than the Discord itself.
+        $t = Get-JoinTitleDiscord 'KL9' 'Nuketown' 2
+        Assert-True ($t -like '*Joined match: Nuketown*') "got '$t'"
+        Assert-True (-not ($t -match 'Joined:')) 'the bare form must be gone'
+    }
+    It 'the colon still belongs to the MAP, so a mapless title does not dangle' {
+        Assert-Eq (Get-JoinTitleDiscord 'KL9' '' 1) "KL9 $([char]0x2794) Joined match" 'no trailing colon'
     }
 }
