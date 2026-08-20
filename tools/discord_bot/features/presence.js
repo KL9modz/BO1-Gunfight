@@ -237,8 +237,10 @@ function presence(ctx) {
     // line per change would bury the gateway's own messages in a cosmetic feature's chatter.
     if (p.status !== lastStatus) {
       lastStatus = p.status;
-      const a = p.activities[0];
-      log(`presence: ${a.state || a.name} [${p.status}, type ${a.type}]`);
+      // ⚠ EVERY activity, not just the first. With a custom status AND a pinned activity there are
+      // two, and logging only [0] made the service log look like the branding half was never sent.
+      log('presence: ' + p.activities.map((a) => `[type ${a.type}] ${a.state || a.name}`).join('  +  ')
+          + `  (${p.status})`);
     }
   }
 
