@@ -592,15 +592,165 @@ test('moderation and automod are OFF without a channel', () => {
   assert.strictEqual(automod(ctxOff).intents, 0);
 });
 
-test('automod requests the execution intent, which is 1<<21 and NOT privileged', () => {
-  // Recorded wrong once as "no intent needed", which would mean the events never arrive while
-  // everything looks healthy.
+test('automod pays for BOTH of its intents, and neither is privileged', () => {
+  // Recorded wrong twice. First as "no intent needed", then as EXECUTION alone - but the RULE_*
+  // subscriptions need the SEPARATE CONFIGURATION intent, and without it /automod would quietly go
+  // stale the moment someone edited a rule in Server Settings.
   const on = automod({ cfg: { guildId: 'g', automodChannelId: 'A' }, log: () => {}, rest: {}, cache });
-  assert.strictEqual(on.intents, 1 << 21);
+  assert.ok(on.intents & (1 << 21), 'ACTION_EXECUTION delivers the hits');
+  assert.ok(on.intents & (1 << 20), 'CONFIGURATION delivers RULE_CREATE/UPDATE/DELETE');
+  assert.strictEqual(on.intents & intents.PRIVILEGED, 0, 'neither costs a portal toggle');
 });
 
 test('snowflake age says "cannot say" rather than guessing', () => {
   assert.strictEqual(snowflake.ageDays('nonsense'), null);
   assert.strictEqual(snowflake.ageDays('0'), null);
   assert.ok(snowflake.ageDays('175928847299117063') > 3000, 'a 2016 account should read as years old');
+});
+
+// ── the intent table ───────────────────────────────────────────────────────────────────────────
+// ⚠ THE GUARD THAT MAKES THE WHOLE CLASS IMPOSSIBLE. A feature that subscribes to an event without
+// requesting its intent does not error, does not warn and does not retry - the event just never
+// arrives. That shipped twice before this test existed (audit-log attribution in voice_log and
+// message_log, and the AutoMod RULE_* events), both times found by reading docs rather than by
+// anything failing.
+const intents = require(path.join(botDir, 'lib', 'intents.js'));
+
+test('every subscribed event has its intent paid for', () => {
+  for (const f of ENABLED) {
+    for (const event of Object.keys(f.on || {})) {
+      const need = intents.EVENT_INTENT[event];
+      assert.notStrictEqual(need, undefined,
+        `${f.name} subscribes to ${event}, which is not in lib/intents.js - add it there`);
+      if (!need) continue;
+      assert.ok(f.intents & need,
+        `${f.name} subscribes to ${event} but does not request ${intents.names(need).join('|')} - ` +
+        `the event would never arrive, silently`);
+    }
+  }
+});
+
+test('audit-log attribution actually pays for GUILD_MODERATION', () => {
+  // Named separately because it is the one that shipped broken: both features probe the audit-log
+  // REST endpoint and would report "audit access OK" while the gateway sent them nothing.
+  for (const f of FEATURES) {
+    if (!f.on || !f.on.GUILD_AUDIT_LOG_ENTRY_CREATE || !f.enabled) continue;
+    assert.ok(f.intents & intents.BITS.GUILD_MODERATION,
+      `${f.name} correlates audit entries without GUILD_MODERATION`);
+  }
+});
+
+test('no feature requests a privileged intent it has not been switched on for', () => {
+  // A privileged intent that is not enabled in the portal is a 4014: fatal for EVERY feature, not
+  // just the one that asked. So a disabled feature must contribute none of them.
+  for (const f of FEATURES) {
+    if (f.enabled) continue;
+    assert.strictEqual(f.intents & intents.PRIVILEGED, 0,
+      `disabled ${f.name} still asks for ${intents.names(f.intents & intents.PRIVILEGED).join('|')}`);
+  }
+});
+
+// ── security watch ─────────────────────────────────────────────────────────────────────────────
+const security = require(path.join(botDir, 'features', 'security.js'));
+
+const permChange = (oldV, newV) => [{ key: 'permissions', old_value: oldV, new_value: newV }];
+
+test('a permission diff reports what was GRANTED, not what a role already had', () => {
+  // "This role has Administrator" is not news; "this role was JUST given Administrator" is the
+  // whole alert. Renaming an admin role must not read as a takeover.
+  assert.deepStrictEqual(security.grantedPerms(permChange('8', '8')), [], 'already had it');
+  assert.deepStrictEqual(security.grantedPerms(permChange('8', '0')), [], 'removing power is not a grant');
+  assert.deepStrictEqual(security.grantedPerms(permChange('0', '8')), ['ADMINISTRATOR']);
+});
+
+test('ADMINISTRATOR is reported alone, since it implies the rest', () => {
+  // Listing twelve permissions when one word covers it makes an alert harder to read, not better.
+  assert.deepStrictEqual(security.grantedPerms(permChange('0', '2147483647')), ['ADMINISTRATOR']);
+});
+
+test('lesser dangerous grants are named individually', () => {
+  assert.deepStrictEqual(security.grantedPerms(permChange('0', '6')).sort(), ['BAN_MEMBERS', 'KICK_MEMBERS']);
+});
+
+test('a change with no permissions key is not a permission grant', () => {
+  assert.deepStrictEqual(security.grantedPerms([{ key: 'name', old_value: 'a', new_value: 'b' }]), []);
+  assert.deepStrictEqual(security.grantedPerms(undefined), []);
+});
+
+test('an unparseable permission value degrades to zero rather than throwing', () => {
+  // These arrive from the gateway as strings and a malformed one must not kill the handler.
+  assert.deepStrictEqual(security.grantedPerms(permChange('nonsense', 'also nonsense')), []);
+});
+
+test('the raid alarm fires once per wave, not once per joiner', async () => {
+  const posts = [];
+  const rest = { postMessage: async (c, p) => { posts.push(p); return { id: 'x' }; } };
+  const s = security({
+    cfg: { guildId: 'g', securityChannelId: 'S', securityRaidJoins: 3,
+           securityRaidWindowSeconds: 60, securityRaidCooldownMinutes: 10 },
+    log: () => {}, rest, cache,
+  });
+  for (let i = 0; i < 6; i++) {
+    s.on.GUILD_MEMBER_ADD({ guild_id: 'g', user: { id: String(175928847299117063n + BigInt(i)), username: 'u' + i } });
+  }
+  await new Promise((r) => setTimeout(r, 30));
+  assert.strictEqual(posts.length, 1, `expected one alarm, got ${posts.length}`);
+  assert.ok(/join/i.test(posts[0].embeds[0].title), posts[0].embeds[0].title);
+});
+
+test('the raid alarm says out loud that it did NOT act', async () => {
+  // An alarm that looks like it handled something, but did not, is worse than no alarm.
+  const posts = [];
+  const rest = { postMessage: async (c, p) => { posts.push(p); return { id: 'x' }; } };
+  const s = security({ cfg: { guildId: 'g', securityChannelId: 'S', securityRaidJoins: 2 }, log: () => {}, rest, cache });
+  for (let i = 0; i < 2; i++) {
+    s.on.GUILD_MEMBER_ADD({ guild_id: 'g', user: { id: String(200000000000000000n + BigInt(i)), username: 'u' } });
+  }
+  await new Promise((r) => setTimeout(r, 30));
+  const fields = posts[0].embeds[0].fields.map((f) => f.value).join(' ');
+  assert.ok(/none/i.test(fields) && /alert only/i.test(fields), fields);
+});
+
+test('the bot never alerts on its OWN audit entries', async () => {
+  // /moveall and moderation timeouts both write audit entries. Alerting on them would train
+  // everyone to ignore this channel inside a day.
+  const posts = [];
+  const rest = { postMessage: async (c, p) => { posts.push(p); return { id: 'x' }; } };
+  const s = security({ cfg: { guildId: 'g', securityChannelId: 'S' }, log: () => {}, rest, cache });
+  s.on.READY({ user: { id: 'SELF' } });
+  s.on.GUILD_AUDIT_LOG_ENTRY_CREATE({ guild_id: 'g', action_type: 25, user_id: 'SELF', target_id: 'v' });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.strictEqual(posts.length, 0, 'the bot alerted on its own action');
+  s.on.GUILD_AUDIT_LOG_ENTRY_CREATE({ guild_id: 'g', action_type: 25, user_id: 'SOMEONE', target_id: 'v' });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.strictEqual(posts.length, 1, 'a real actor should alert');
+});
+
+test('an Administrator grant pings, an ordinary audit event does not', async () => {
+  // The single justified override of the no-ping default in this entire bot.
+  const posts = [];
+  const rest = { postMessage: async (c, p) => { posts.push(p); return { id: 'x' }; } };
+  const s = security({ cfg: { guildId: 'g', securityChannelId: 'S', securityAlertRoleId: 'R9' }, log: () => {}, rest, cache });
+  s.on.GUILD_AUDIT_LOG_ENTRY_CREATE({ guild_id: 'g', action_type: 31, user_id: 'X', changes: permChange('0', '8') });
+  s.on.GUILD_AUDIT_LOG_ENTRY_CREATE({ guild_id: 'g', action_type: 23, user_id: 'X' });   // unban, NOTABLE
+  await new Promise((r) => setTimeout(r, 30));
+  assert.deepStrictEqual(posts[0].allowed_mentions, { roles: ['R9'] }, 'a granted Administrator must ping');
+  assert.ok(!posts[1].allowed_mentions || !posts[1].allowed_mentions.roles, 'an unban must not ping');
+});
+
+test('SECURITY ALERTS NEVER ACT - no kick, ban, prune or permission write', () => {
+  const src = fs.readFileSync(path.join(botDir, 'features', 'security.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  for (const forbidden of ['/bans/', 'modifyMember', 'deleteMessage', 'PUT', 'DELETE']) {
+    assert.ok(!src.includes(forbidden), `security reached for ${forbidden}`);
+  }
+});
+
+test('security is OFF without a channel and asks for no privileged intent', () => {
+  const off = security({ cfg: { guildId: 'g' }, log: () => {}, rest: {}, cache });
+  assert.strictEqual(off.enabled, false);
+  assert.strictEqual(off.intents & intents.PRIVILEGED, 0);
+  const on = security({ cfg: { guildId: 'g', securityChannelId: 'S' }, log: () => {}, rest: {}, cache });
+  assert.ok(on.intents & intents.BITS.GUILD_MEMBERS, 'raid alarm needs member events');
+  assert.ok(on.intents & intents.BITS.GUILD_MODERATION, 'audit stream needs GUILD_MODERATION');
 });

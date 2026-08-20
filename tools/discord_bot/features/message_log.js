@@ -33,8 +33,7 @@
 const { COLOR, card, clamp, chanChip, userTag, FIELD_MAX, plural } = require('../lib/brand.js');
 const makeAttachments = require('../lib/attachments.js');
 
-const GUILD_MESSAGES  = 1 << 9;
-const MESSAGE_CONTENT = 1 << 15;
+const { BITS } = require('../lib/intents.js');
 const A_MESSAGE_DELETE = 72;
 // How long after a delete an audit entry may still explain it. Discord batches these, so they can
 // trail the gateway event by a second or two.
@@ -204,7 +203,9 @@ module.exports = function messageLog(ctx) {
     enabled,
     // ⚠ MESSAGE_CONTENT is PRIVILEGED and must be enabled in the Developer Portal, or the gateway
     // closes with 4014 and every other feature dies with it. Requested only while this is on.
-    intents: enabled ? (GUILD_MESSAGES | MESSAGE_CONTENT) : 0,
+    // ⚠ GUILD_MODERATION delivers the audit entries that name a moderator who deleted someone
+    // else's message. Missing it does not error - the "Deleted by" line simply never appears.
+    intents: enabled ? (BITS.GUILD_MESSAGES | BITS.MESSAGE_CONTENT | BITS.GUILD_MODERATION) : 0,
     permissions: ['View Audit Log', 'Attach Files'],
     commands: {},
 

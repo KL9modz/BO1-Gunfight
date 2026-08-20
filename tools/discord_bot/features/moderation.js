@@ -29,8 +29,7 @@
 const { COLOR, card, clamp, chanChip, userTag, plural, FIELD_MAX } = require('../lib/brand.js');
 const { ageDays } = require('../lib/snowflake.js');
 
-const GUILD_MESSAGES  = 1 << 9;
-const MESSAGE_CONTENT = 1 << 15;
+const { BITS } = require('../lib/intents.js');
 
 // Executables and script types. ⚠ The check is on the LAST extension, which is what makes
 // "screenshot.png.exe" resolve to exe rather than to png - that trick is the whole reason a filename
@@ -201,7 +200,7 @@ module.exports = function moderation(ctx) {
   return {
     name: 'moderation',
     enabled,
-    intents: enabled ? (GUILD_MESSAGES | MESSAGE_CONTENT) : 0,
+    intents: enabled ? (BITS.GUILD_MESSAGES | BITS.MESSAGE_CONTENT) : 0,
     permissions: ['Manage Messages', 'Moderate Members'],
     commands: {},
 

@@ -24,7 +24,7 @@ const { COLOR, card, userTag, plural } = require('../lib/brand.js');
 // arithmetic is exactly how the join card and the filter would come to disagree about an age.
 const { createdAt } = require('../lib/snowflake.js');
 
-const GUILD_MEMBERS = 1 << 1;
+const { BITS } = require('../lib/intents.js');
 // Discord renders <t:seconds:R> as a live relative time ("3 days ago") in every reader's own zone,
 // which beats us formatting a date badly.
 const stamp = (ms, style = 'f') => `<t:${Math.floor(ms / 1000)}:${style}>`;
@@ -47,7 +47,7 @@ module.exports = function memberLog(ctx) {
   return {
     name: 'member_log',
     enabled,
-    intents: enabled ? GUILD_MEMBERS : 0,
+    intents: enabled ? BITS.GUILD_MEMBERS : 0,
     permissions: [],
     commands: {},
 

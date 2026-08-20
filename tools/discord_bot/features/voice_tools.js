@@ -18,7 +18,7 @@
 
 const { COLOR, card, chanChip, plural } = require('../lib/brand.js');
 
-const GUILD_VOICE_STATES = 1 << 7;
+const { BITS } = require('../lib/intents.js');
 const CH_VOICE = 2, CH_STAGE = 13;         // Discord channel types the picker should offer
 // ⚠ A ceiling, not a limit anyone should hit. Fifty moves is already ~25s through the paced REST
 // queue; a request for more is far likelier to be a mistake than an intention, and a bot that
@@ -92,7 +92,7 @@ module.exports = function voiceTools(ctx) {
     name: 'voice_tools',
     enabled: true,
     // Reads the shared voice cache, which only stays warm while the core receives voice events.
-    intents: GUILD_VOICE_STATES,
+    intents: BITS.GUILD_VOICE_STATES,
     permissions: ['Move Members'],
     commands,
     on: {},

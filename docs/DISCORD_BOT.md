@@ -23,6 +23,7 @@ Zero npm dependencies: Node 24's native `WebSocket` + `fetch` cover the gateway.
 | Member log | join / leave / rename cards, with an account-age flag (off until a channel is set) |
 | Moderation | link + attachment filtering, strikes, escalation to timeout (off until a channel is set) |
 | AutoMod | logs Discord's own AutoMod hits, `/automod` reports rules and gaps (off until a channel is set) |
+| Security | raid alarm + alerts on dangerous guild changes; the only feature that can ping (off until a channel is set) |
 | Presence | member-list line, "Watching 3 players on Nuketown", off `status.json` |
 | Game access | **only** the panel's `/api/rcon` on loopback, the panel is the single rcon pacer |
 | Intents | `GUILDS` + `GUILD_VOICE_STATES`, plus `GUILD_MESSAGES` + `MESSAGE_CONTENT` **only when a relay channel is set** |
@@ -235,6 +236,26 @@ players), the wheel spin is an edit-animation with a branded reveal rather than 
 moderation means rules on type/size/extension/channel, not "is this image NSFW" - that last one is
 an external API call if it is ever wanted.
 
+### ⚠ Intents are silent when they are wrong
+
+A feature that subscribes to an event without requesting its intent does not error, warn or retry.
+The event simply never arrives, and everything looks healthy. That shipped **twice** here, both
+found by reading the docs rather than by anything failing:
+
+- `voice_log` and `message_log` correlate `GUILD_AUDIT_LOG_ENTRY_CREATE` to name who moved,
+  disconnected or deleted. It needs **`GUILD_MODERATION` (1 << 2)**, which neither declared, so the
+  **By:** line could never have appeared. Both even PROBE the audit-log REST endpoint at startup and
+  would report *"audit access OK"* - because the permission was fine and it was the gateway
+  subscription that was missing. Two different halves, one of them invisible.
+- `automod` subscribes to `AUTO_MODERATION_RULE_*`, which need
+  **`AUTO_MODERATION_CONFIGURATION` (1 << 20)**, while it declared only `AUTO_MODERATION_EXECUTION`.
+
+`lib/intents.js` is now the single table of event to required intent, verified against
+[the gateway docs](https://docs.discord.com/developers/events/gateway), and a test walks every
+enabled feature's subscriptions against it. **This class of bug is now impossible to ship silently.**
+
+---
+
 ## Build order
 
 1. **Module refactor + `lib/brand.js`** — DONE 2026-08-19. Everything below inherits the shape and
@@ -257,8 +278,13 @@ an external API call if it is ever wanted.
    belong in Server Settings where an owner can see what they do.
    ⚠ The ladder stops at **timeout**, structurally: a test fails if anything here ever reaches for a
    ban or a kick. Adds **Manage Server**, **Manage Messages**, **Moderate Members**.
-5. **Security** — join-rate raid alarm, account-age flag on the join card, and alerts on the audit
-   events that actually matter (role and permission changes, webhook creation, mass delete).
+5. **Security** — DONE 2026-08-19. `features/security.js`: a join-rate raid alarm naming the
+   accounts and their ages, and a curated audit-log watch (role permissions granted, a BOT added, a
+   webhook created, server settings edited, kicks and bans). The high-signal case is a permission
+   DIFF - it reports what a change newly granted, so renaming an admin role is silent while handing
+   one Administrator is not. ⚠ It ALERTS and never acts: every automated raid response has a failure
+   mode worse than the raid, so the edge is noticing in seconds and the decision stays human.
+   ⚠ It is the ONLY feature that can ping, and only on CRITICAL - see `securityAlertRoleId`.
 6. **Stats and leaderboards** — `/stats`, `/leaderboard`, rank cards from the existing `GF_STAT`
    pipeline joined to the GUID link table. No new permissions; it reads files the box already writes.
 7. **Tournaments** — the big bespoke one, worth its own design pass: register button to roster,

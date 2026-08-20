@@ -30,6 +30,11 @@
   "modStrikeWindowMinutes": 10,
   "modTimeoutMinutes": 10,
   "automodChannelId": "",
+  "securityChannelId": "",
+  "securityAlertRoleId": "",
+  "securityRaidJoins": 5,
+  "securityRaidWindowSeconds": 60,
+  "securityRaidCooldownMinutes": 10,
   "_notes": {
     "adminRoleId": "Required. Gates every command that changes the server (say, map, restart, pause, resume). Read-only commands (status, players) are open to the guild.",
     "relayChannelId": "The ONE channel whose messages are relayed into the game. Leave empty to disable the relay entirely. Every other channel is ignored.",
@@ -54,6 +59,10 @@
     "modExemptChannels": "Channel ids never filtered. The log channels are always exempt automatically - our own cards quote removed content and would otherwise trip the filters that produced them.",
     "modStrikes": "Strikes inside modStrikeWindowMinutes before a timeout is applied (default 3). Strikes live in memory and reset on restart, which is a deliberate amnesty rather than an oversight.",
     "modTimeoutMinutes": "How long a timeout lasts once the strike threshold is hit (default 10).",
-    "automodChannelId": "Where Discord's NATIVE AutoMod hits are logged, and the /automod command's home. Falls back to modChannelId. ⚠ Needs the AUTO_MODERATION_EXECUTION intent (1<<21, NOT privileged, requested automatically) plus the MANAGE SERVER permission - without the permission the feature is blind and says so in the service log. This module REPORTS Discord's rules and never edits them: rule changes belong in Server Settings where an owner can see what they do."
+    "automodChannelId": "Where Discord's NATIVE AutoMod hits are logged, and the /automod command's home. Falls back to modChannelId. ⚠ Needs the AUTO_MODERATION_EXECUTION intent (1<<21, NOT privileged, requested automatically) plus the MANAGE SERVER permission - without the permission the feature is blind and says so in the service log. This module REPORTS Discord's rules and never edits them: rule changes belong in Server Settings where an owner can see what they do.",
+    "securityChannelId": "Channel for the raid alarm and alerts on dangerous guild changes (role permissions granted, a BOT added, a webhook created, server settings edited). Falls back to modChannelId. EMPTY = off. ⚠ Needs the privileged SERVER MEMBERS intent for the raid alarm, and View Audit Log for the rest. ⚠ It ALERTS and never acts: every automated response to a raid has a failure mode worse than the raid itself, so the bot's job is noticing within seconds and the decision stays with a human.",
+    "securityAlertRoleId": "Role pinged for CRITICAL alerts only (default: nobody). ⚠ The ONLY place in this bot that can ping - every other card sets allowed_mentions parse:[] so a mention chip notifies nobody. 'Someone just granted a role Administrator' is worth a phone buzzing at 3am; nothing else here is.",
+    "securityRaidJoins": "Joins inside securityRaidWindowSeconds before the raid alarm fires (default 5 in 60s).",
+    "securityRaidCooldownMinutes": "Minimum gap between raid alarms (default 10), so a wave produces one alert rather than one per joiner."
   }
 }

@@ -81,6 +81,7 @@ const FEATURES = [
   require('./features/ops.js')(ctx),
   require('./features/relay.js')(ctx),
   require('./features/voice_tools.js')(ctx),
+  require('./features/security.js')(ctx),
   require('./features/moderation.js')(ctx),
   require('./features/automod.js')(ctx),
   require('./features/message_log.js')(ctx),

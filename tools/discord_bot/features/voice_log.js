@@ -61,7 +61,7 @@ const ATTRIB_MS  = 8000;   // how long an audit entry may explain a state change
 // ⚠ Was 15 when a burst was 15 TEXT LINES. A burst is now one embed per event, and Discord caps a
 // message at TEN embeds - exceeding it is a rejected request, not a truncation. A protocol limit.
 const MAX_CARDS  = 10;     // per message, then start a new one
-const GUILD_VOICE_STATES = 1 << 7;
+const { BITS } = require('../lib/intents.js');
 const A_MEMBER_MOVE = 26, A_MEMBER_DISCONNECT = 27;
 
 // ── THE CARD ───────────────────────────────────────────────────────────────────────────────────
@@ -256,7 +256,10 @@ function voiceLog(ctx) {
   return {
     name: 'voice_log',
     enabled,
-    intents: enabled ? GUILD_VOICE_STATES : 0,
+    // ⚠ GUILD_MODERATION is what delivers GUILD_AUDIT_LOG_ENTRY_CREATE. Without it the **By:**
+    // line could never appear - and the startup probe below would still say "audit access OK",
+    // because that checks the PERMISSION and this is the SUBSCRIPTION. Two different halves.
+    intents: enabled ? (BITS.GUILD_VOICE_STATES | BITS.GUILD_MODERATION) : 0,
     permissions: ['View Audit Log'],
     commands: {},
 

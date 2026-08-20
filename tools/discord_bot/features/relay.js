@@ -10,8 +10,7 @@
  * we ask to read message text only while a relay channel actually exists.
  */
 
-const GUILD_MESSAGES = 1 << 9;
-const MESSAGE_CONTENT = 1 << 15;
+const { BITS } = require('../lib/intents.js');
 
 module.exports = function relay(ctx) {
   const { cfg, log, panel, allow } = ctx;
@@ -37,7 +36,7 @@ module.exports = function relay(ctx) {
   return {
     name: 'relay',
     enabled,
-    intents: enabled ? (GUILD_MESSAGES | MESSAGE_CONTENT) : 0,
+    intents: enabled ? (BITS.GUILD_MESSAGES | BITS.MESSAGE_CONTENT) : 0,
     permissions: ['Read Message History'],
     commands: {},
     on: {

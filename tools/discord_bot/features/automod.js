@@ -18,8 +18,10 @@
  * ── ⚠ THE INTENT CORRECTION ────────────────────────────────────────────────────────────────────
  * An earlier draft of docs/DISCORD_BOT.md recorded that AUTO_MODERATION_ACTION_EXECUTION needs "no
  * intent". THAT IS WRONG and it is the expensive kind of wrong - the events simply never arrive and
- * everything looks healthy. It needs AUTO_MODERATION_EXECUTION (1 << 21). The saving grace is that
- * this intent is NOT privileged, so it needs no portal toggle and cannot cause a 4014.
+ * everything looks healthy. It needs AUTO_MODERATION_EXECUTION (1 << 21), and the RULE_* events need
+ * the SEPARATE AUTO_MODERATION_CONFIGURATION (1 << 20). Neither is privileged, so neither needs a
+ * portal toggle and neither can cause a 4014. lib/intents.js now holds that table, and a test walks
+ * every feature's subscriptions against it so this class of mistake cannot be made silently again.
  *
  * ⚠ Receiving the events, and listing rules at all, additionally needs the MANAGE SERVER permission.
  * Without it the probe below says so in the service log rather than leaving a silent dead feature.
@@ -27,7 +29,7 @@
 
 const { COLOR, card, chanChip, userTag, clamp, plural, FIELD_MAX } = require('../lib/brand.js');
 
-const AUTO_MODERATION_EXECUTION = 1 << 21;
+const { BITS } = require('../lib/intents.js');
 
 // Trigger types, for reporting what a guild has and what it is missing.
 const TRIGGER = { 1: 'Keyword', 3: 'Spam', 4: 'Keyword preset', 5: 'Mention spam', 6: 'Member profile' };
@@ -102,8 +104,10 @@ module.exports = function automod(ctx) {
   return {
     name: 'automod',
     enabled,
-    // ⚠ 1 << 21, non-privileged. Without it the ACTION_EXECUTION events never arrive at all.
-    intents: enabled ? AUTO_MODERATION_EXECUTION : 0,
+    // ⚠ TWO intents, and they are easy to conflate. EXECUTION (1<<21) delivers the hits;
+    // CONFIGURATION (1<<20) delivers RULE_CREATE/UPDATE/DELETE, which is what keeps /automod honest
+    // after someone edits a rule in Server Settings. Neither is privileged.
+    intents: enabled ? (BITS.AUTO_MODERATION_EXECUTION | BITS.AUTO_MODERATION_CONFIGURATION) : 0,
     permissions: ['Manage Server'],
     commands,
 
