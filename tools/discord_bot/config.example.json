@@ -36,6 +36,7 @@
   "securityRaidWindowSeconds": 60,
   "securityRaidCooldownMinutes": 10,
   "presenceMapArt": false,
+  "presenceStyle": "watching",
   "_notes": {
     "adminRoleId": "Required. Gates every command that changes the server (say, map, restart, pause, resume). Read-only commands (status, players) are open to the guild.",
     "relayChannelId": "The ONE channel whose messages are relayed into the game. Leave empty to disable the relay entirely. Every other channel is ignored.",
@@ -65,6 +66,7 @@
     "securityAlertRoleId": "Role pinged for CRITICAL alerts only (default: nobody). ⚠ The ONLY place in this bot that can ping - every other card sets allowed_mentions parse:[] so a mention chip notifies nobody. 'Someone just granted a role Administrator' is worth a phone buzzing at 3am; nothing else here is.",
     "securityRaidJoins": "Joins inside securityRaidWindowSeconds before the raid alarm fires (default 5 in 60s).",
     "securityRaidCooldownMinutes": "Minimum gap between raid alarms (default 10), so a wave produces one alert rather than one per joiner.",
-    "presenceMapArt": "false (default) = the bot's profile shows text only. true adds the current map as the activity's large image. ⚠ UNPROVEN: the gateway docs do not state whether Discord renders activity ASSETS for a BOT's own presence, and it cannot be tested from code - uploading an asset needs the Developer Portal, because the API answers a bot token with 'Bots cannot use this endpoint' (403 / 20001). ⚠ The key is an ASSET NAME uploaded under Rich Presence > Art Assets, NOT a URL - this is the one place a gunfight.us image does NOT work, unlike an embed thumbnail which takes any public https URL. Name each asset after the ENGINE map id (mp_nuked), which is what status.json already carries."
+    "presenceMapArt": "false (default) = the bot's profile shows text only. true adds the current map as the activity's large image. ⚠ UNPROVEN: the gateway docs do not state whether Discord renders activity ASSETS for a BOT's own presence, and it cannot be tested from code - uploading an asset needs the Developer Portal, because the API answers a bot token with 'Bots cannot use this endpoint' (403 / 20001). ⚠ The key is an ASSET NAME uploaded under Rich Presence > Art Assets, NOT a URL - this is the one place a gunfight.us image does NOT work, unlike an embed thumbnail which takes any public https URL. Name each asset after the ENGINE map id (mp_nuked), which is what status.json already carries.",
+    "presenceStyle": "How the bot's activity line reads: 'watching' (default, type 3), 'playing' or 'competing' (type 0/5, both branded 'Gunfight - 3 on Nuketown'), or 'custom' (type 4, no verb at all and the only type that can carry an emoji). ⚠ The wording changes WITH the type, not just the verb - 'Playing 3 players on Nuketown' is what you get when the type moves and the words do not. ⚠ Whether a BOT's type 4 renders at all is unverified; it needs a live look before trusting it."
   }
 }

@@ -784,3 +784,36 @@ test('an empty, offline or stale server carries NO map picture', () => {
       `art leaked onto ${JSON.stringify(snap).slice(0, 60)}`);
   }
 });
+
+// ── activity line style ────────────────────────────────────────────────────────────────────────
+test('the shipped default is Watching, type 3', () => {
+  // Chosen 2026-08-20. The type is selectable, but this is what goes out of the box.
+  const p = require(path.join(botDir, 'features', 'presence.js'));
+  const snap = { updated: new Date().toISOString(), online: true, map: 'mp_nuked', mapName: 'Nuketown', humans: 3 };
+  const a = p.buildPresence(snap, Date.now(), null, undefined).activities[0];
+  assert.strictEqual(a.type, 3);
+  assert.strictEqual(a.name, '3 players on Nuketown');
+});
+
+test('type 4 puts the text in STATE, and still carries a name', () => {
+  // Custom prints no verb and reads `state`; `name` is ignored by the client but mandatory on the
+  // wire, so omitting it is a malformed payload rather than a shorter one.
+  const p = require(path.join(botDir, 'features', 'presence.js'));
+  const snap = { updated: new Date().toISOString(), online: true, map: 'mp_nuked', mapName: 'Nuketown', humans: 3 };
+  const a = p.buildPresence(snap, Date.now(), null, 'custom').activities[0];
+  assert.strictEqual(a.type, 4);
+  assert.strictEqual(a.state, '3 players on Nuketown');
+  assert.ok(a.name, 'name is mandatory even when nothing renders it');
+});
+
+test('changing the TYPE repicks the WORDS - no "Playing 3 players on"', () => {
+  // THE bug this guards: a verb type with fragment phrasing reads broken. Each type gets phrasing
+  // that completes its own verb.
+  const p = require(path.join(botDir, 'features', 'presence.js'));
+  const snap = { updated: new Date().toISOString(), online: true, map: 'mp_nuked', mapName: 'Nuketown', humans: 3 };
+  for (const style of ['playing', 'competing']) {
+    const a = p.buildPresence(snap, Date.now(), null, style).activities[0];
+    assert.ok(/^Gunfight/.test(a.name), `${style} should lead with the game name, got "${a.name}"`);
+    assert.ok(!/^\d+ player/.test(a.name), `${style} kept the Watching fragment: "${a.name}"`);
+  }
+});

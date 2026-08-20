@@ -31,8 +31,16 @@
 
 const fs = require('fs');
 
-// Discord activity types. 3 = Watching, so the client renders "Watching <name>" and `name` has to
-// complete that sentence.
+/*
+ * Discord activity types. For 0/2/3/5 the client prints a VERB and then `name`, so the text has to
+ * complete that sentence ("Watching 3 players on Nuketown").
+ *
+ * ⚠ TYPE 4 (Custom) is the odd one and the reason this is selectable at all: it prints NO verb, and
+ * it reads `state` rather than `name` - `name` still has to be present but is ignored by the
+ * client. That frees the line from sounding like a sentence someone else started, and it is the only
+ * type that can carry an emoji.
+ */
+const TYPES = { playing: 0, listening: 2, watching: 3, custom: 4, competing: 5 };
 const WATCHING = 3;
 const NAME_MAX = 128;
 // ⚠ status_service writes every ~5s, so anything approaching a minute means the writer is dead or
@@ -63,8 +71,13 @@ const clamp = (t, n) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
  * The key used is the ENGINE map id straight out of status.json (mp_nuked), so an uploaded asset
  * named mp_nuked just starts working with no second lookup table to drift.
  */
-const shape = (name, status, art) => {
-  const activity = { name: clamp(name, NAME_MAX), type: WATCHING };
+const shape = (name, status, art, style) => {
+  const type = Object.prototype.hasOwnProperty.call(TYPES, style) ? TYPES[style] : WATCHING;
+  // ⚠ `name` is mandatory on every activity, even type 4 where nothing renders it. Omitting it is a
+  // malformed payload, not a shorter one.
+  const activity = type === TYPES.custom
+    ? { name: 'Custom Status', type, state: clamp(name, NAME_MAX) }
+    : { name: clamp(name, NAME_MAX), type };
   if (art && art.key) {
     activity.application_id = art.appId;
     activity.assets = { large_image: art.key, large_text: clamp(art.text || art.key, NAME_MAX) };
@@ -79,25 +92,46 @@ const shape = (name, status, art) => {
 // file it wrote stays on disk saying "4 players on Zoo" forever, and presence would advertise a
 // server that may be empty or down. Unknown is the honest answer, and the dot going yellow is the
 // only warning anyone gets. Same rule the status embed follows (New-StatusEmbed, PS suite).
-function buildPresence(snap, nowMs, art) {
-  if (!snap || typeof snap !== 'object') return shape('the server (status unknown)', 'idle');
+// ⚠ Two phrasings, because the types are grammatically different. "an empty server" completes
+// "Watching ..." and reads as a fragment on its own; "Server is empty" is the reverse. Picking a
+// type without repicking the words is how a status ends up sounding broken.
+// ⚠ THREE phrasings, one per grammatical shape. "Playing 3 players on Nuketown" is what you get if
+// the type changes and the words do not, so the words are chosen per type rather than reused.
+//   verb    - completes "Watching ..."
+//   branded - completes "Playing ..." / "Competing in ...", and gets the game name into the line
+//   plain   - stands alone under type 4, which prints no verb at all
+const SAY = {
+  verb:    { unknown: 'the server (status unknown)', offline: 'the server (offline)', empty: 'an empty server',
+             busy: (n, m) => `${n} player${n === 1 ? '' : 's'} on ${m}` },
+  branded: { unknown: 'Gunfight - status unknown',   offline: 'Gunfight - server offline', empty: 'Gunfight - nobody on',
+             busy: (n, m) => `Gunfight - ${n} on ${m}` },
+  plain:   { unknown: 'Status unknown',              offline: 'Server offline',       empty: 'Server is empty',
+             busy: (n, m) => `${n} player${n === 1 ? '' : 's'} on ${m}` },
+};
+const SAY_FOR = (style) => (style === 'custom' ? SAY.plain
+                          : (style === 'playing' || style === 'competing') ? SAY.branded
+                          : SAY.verb);
+
+function buildPresence(snap, nowMs, art, style) {
+  const say = SAY_FOR(style);
+  if (!snap || typeof snap !== 'object') return shape(say.unknown, 'idle', null, style);
 
   const stamped = Date.parse(snap.updated);
   if (!Number.isFinite(stamped) || nowMs - stamped > STALE_MS) {
-    return shape('the server (status unknown)', 'idle');
+    return shape(say.unknown, 'idle', null, style);
   }
-  if (!snap.online) return shape('the server (offline)', 'dnd');
+  if (!snap.online) return shape(say.offline, 'dnd', null, style);
 
   const humans = Number(snap.humans) || 0;
   // The map is dropped here on purpose: which map an empty server sits on helps nobody, and the
   // shorter line reads better in a member list.
-  if (humans === 0) return shape('an empty server', 'idle');
+  if (humans === 0) return shape(say.empty, 'idle', null, style);
 
   const map = snap.mapName || snap.map || 'Gunfight';
   // ⚠ Art only on the ONLINE path. An empty or offline server has no map worth picturing, and a
   // stale snapshot must not put a confident map image on the profile.
   const withArt = art && snap.map ? Object.assign({}, art, { key: snap.map, text: map }) : null;
-  return shape(`${humans} player${humans === 1 ? '' : 's'} on ${map}`, 'online', withArt);
+  return shape(say.busy(humans, map), 'online', withArt, style);
 }
 
 module.exports = presence;
@@ -111,6 +145,7 @@ function presence(ctx) {
   const statusPath = cfg.statusJson || DEFAULT_STATUS_JSON;
   // Off until someone uploads art in the Portal and confirms a bot profile actually renders it.
   const art = cfg.presenceMapArt ? { appId: cfg.applicationId } : null;
+  const style = cfg.presenceStyle || 'watching';
 
   let timer = null;
   let lastSent = null;      // full payload signature: suppresses a resend of an identical line
@@ -127,7 +162,7 @@ function presence(ctx) {
   }
 
   function tick() {
-    const p = buildPresence(read(), Date.now(), art);
+    const p = buildPresence(read(), Date.now(), art, style);
     const sig = JSON.stringify(p);
     if (sig === lastSent) return;
     lastSent = sig;
@@ -136,7 +171,8 @@ function presence(ctx) {
     // line per change would bury the gateway's own messages in a cosmetic feature's chatter.
     if (p.status !== lastStatus) {
       lastStatus = p.status;
-      log(`presence: ${p.activities[0].name} [${p.status}]`);
+      const a = p.activities[0];
+      log(`presence: ${a.state || a.name} [${p.status}, type ${a.type}]`);
     }
   }
 
