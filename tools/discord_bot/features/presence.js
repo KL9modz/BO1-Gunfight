@@ -56,13 +56,19 @@ const DEFAULT_STATUS_JSON = 'C:\\inetpub\\wwwroot\\live\\status.json';
 
 const clamp = (t, n) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
 /*
- * ⚠ MAP ART ON THE BOT'S PROFILE IS UNPROVEN, AND OFF BY DEFAULT.
+ * 🛑 MAP ART ON A BOT PROFILE DOES NOT RENDER. SETTLED 2026-08-20 - see
+ * docs/notes/bot-presence-is-text-only.md. Kept, off, in case Discord ever changes.
  *
  * The activity object has an `assets` field (large_image / large_text). For a GAME's rich presence
- * it renders the big picture on a profile. Whether Discord honours it for a BOT's own presence is
- * not something the gateway docs state, and it cannot be tested from here: uploading an asset needs
- * the Developer Portal, because the API answers a bot token with
- * "Bots cannot use this endpoint" (403, code 20001).
+ * it renders the big picture on a profile. For a BOT it is IGNORED, which the buttons probe below
+ * settled: buttons are the same rich-presence family and the MORE permissive of the two, and a
+ * well-formed two-button payload was accepted by the gateway and rendered as text only.
+ *
+ * ⚠ So do NOT go and source 26 map images for this. Map art in an EMBED is unaffected and works
+ * fine - that takes any public https URL and is a completely different mechanism.
+ *
+ * (Uploading an asset would need the Portal anyway: the API answers a bot token with
+ * "Bots cannot use this endpoint", 403 code 20001.)
  *
  * ⚠ The key is an ASSET NAME uploaded to OUR application (Portal -> Rich Presence -> Art Assets),
  * NOT a URL. This is the one place a gunfight.us image does NOT work - unlike an embed thumbnail,
@@ -86,12 +92,13 @@ const shape = (name, status, art, style, buttons) => {
     activity.application_id = art.appId;
     activity.assets = { large_image: art.key, large_text: clamp(art.text || art.key, NAME_MAX) };
   }
-  // ⚠ UNPROVEN for a bot's own presence, exactly like assets - but unlike assets this costs NOTHING
-  // to try, because buttons are pure payload with no Portal upload behind them. That makes them the
-  // cheapest available answer to "does a bot presence honour rich fields at all", which is why they
-  // are the first probe rather than the last.
-  // ⚠ Validated here rather than trusted from config: Discord rejects the WHOLE payload on a
-  // malformed button, so a typo'd url would cost the entire presence, not just the button.
+  // 🛑 PROVEN IGNORED for a bot's own presence, 2026-08-20. Two well-formed buttons were sent, the
+  // gateway ACCEPTED the payload (the text half updated normally, no disconnect), and the profile
+  // rendered "Watching / Launch" and nothing else. So this is Discord dropping the field for bots,
+  // not rejecting our message - and it is what settles the assets question above too.
+  // ⚠ Do not re-run this experiment: docs/notes/bot-presence-is-text-only.md.
+  // Kept and defaulted OFF because it costs nothing and Discord may change; the validation below
+  // stays for the same reason - a malformed button would cost the WHOLE presence, not just itself.
   const btns = (buttons || [])
     .filter((b) => b && b.label && typeof b.url === 'string' && /^https?:/i.test(b.url))
     .slice(0, BUTTON_MAX)

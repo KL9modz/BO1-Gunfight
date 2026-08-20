@@ -37,12 +37,7 @@
   "securityRaidCooldownMinutes": 10,
   "presenceMapArt": false,
   "presenceStyle": "watching",
-  "presenceButtons": [
-    {
-      "label": "Play now",
-      "url": "https://gunfight.us"
-    }
-  ],
+  "presenceButtons": [],
   "_notes": {
     "adminRoleId": "Required. Gates every command that changes the server (say, map, restart, pause, resume). Read-only commands (status, players) are open to the guild.",
     "relayChannelId": "The ONE channel whose messages are relayed into the game. Leave empty to disable the relay entirely. Every other channel is ignored.",
@@ -72,8 +67,8 @@
     "securityAlertRoleId": "Role pinged for CRITICAL alerts only (default: nobody). ⚠ The ONLY place in this bot that can ping - every other card sets allowed_mentions parse:[] so a mention chip notifies nobody. 'Someone just granted a role Administrator' is worth a phone buzzing at 3am; nothing else here is.",
     "securityRaidJoins": "Joins inside securityRaidWindowSeconds before the raid alarm fires (default 5 in 60s).",
     "securityRaidCooldownMinutes": "Minimum gap between raid alarms (default 10), so a wave produces one alert rather than one per joiner.",
-    "presenceMapArt": "false (default) = the bot's profile shows text only. true adds the current map as the activity's large image. ⚠ UNPROVEN: the gateway docs do not state whether Discord renders activity ASSETS for a BOT's own presence, and it cannot be tested from code - uploading an asset needs the Developer Portal, because the API answers a bot token with 'Bots cannot use this endpoint' (403 / 20001). ⚠ The key is an ASSET NAME uploaded under Rich Presence > Art Assets, NOT a URL - this is the one place a gunfight.us image does NOT work, unlike an embed thumbnail which takes any public https URL. Name each asset after the ENGINE map id (mp_nuked), which is what status.json already carries.",
+    "presenceMapArt": "🛑 PROVEN IGNORED, same finding as presenceButtons - buttons are the more permissive of the two rich fields, so assets will not render either. ⚠ Do NOT source map images for this. Map art in an EMBED is unaffected and works fine: that takes any public https URL and is a different mechanism.",
     "presenceStyle": "How the bot's activity line reads: 'watching' (default, type 3), 'playing' or 'competing' (type 0/5, both branded 'Gunfight - 3 on Nuketown'), or 'custom' (type 4, no verb at all and the only type that can carry an emoji). ⚠ The wording changes WITH the type, not just the verb - 'Playing 3 players on Nuketown' is what you get when the type moves and the words do not. ⚠ Whether a BOT's type 4 renders at all is unverified; it needs a live look before trusting it.",
-    "presenceButtons": "Up to TWO link buttons on the bot's activity, [{label,url}]. ⚠ UNPROVEN for a bot's own presence, like the map art - but unlike the art it costs nothing to try, since buttons are pure payload with no Portal upload behind them, which makes them the cheapest test of whether a bot presence honours rich fields at all. ⚠ Only http/https urls are sent and only the first two: Discord rejects the WHOLE presence on a malformed button, so a typo would cost the activity line entirely, not just the button. Empty array = no buttons key is sent."
+    "presenceButtons": "🛑 PROVEN IGNORED for a bot's own presence (2026-08-20): a well-formed two-button payload was accepted by the gateway and the profile rendered text only. Kept, empty, in case Discord ever changes. See docs/notes/bot-presence-is-text-only.md - do not re-test."
   }
 }

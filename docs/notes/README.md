@@ -172,3 +172,4 @@ in a diff and on GitHub — **prefer that for anything new.** Either way: link r
 ## Client-side
 - [bo1-sprint-ads-compound-bind](bo1-sprint-ads-compound-bind.md) — needs a trailing inert keynum-absorber token; HOLD ads only; Pluto reads the storage-path config_mp.cfg.
 - [unknown-command-cd-and-cfg-semicolon-parse](unknown-command-cd-and-cfg-semicolon-parse.md) — client "unknown cmd cd" = stale Plutonium build; a string absent from all mod source → suspect the engine build. Also: keep `dedicated.cfg` comments semicolon-free.
+- [bot-presence-is-text-only](bot-presence-is-text-only.md) — a bot profile shows its activity TYPE + one line of text and nothing else; `buttons` and `assets` are accepted by the gateway and silently ignored, so map art on the profile is impossible (embed thumbnails are unaffected). Proven live; do not re-test.
