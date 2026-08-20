@@ -71,7 +71,11 @@ const clamp = (t, n) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
  * The key used is the ENGINE map id straight out of status.json (mp_nuked), so an uploaded asset
  * named mp_nuked just starts working with no second lookup table to drift.
  */
-const shape = (name, status, art, style) => {
+// ⚠ Max TWO, labels capped at 32. Discord rejects the whole payload on a malformed button rather
+// than dropping it, so it is clamped here instead of trusted from config.
+const BUTTON_MAX = 2, LABEL_MAX = 32;
+
+const shape = (name, status, art, style, buttons) => {
   const type = Object.prototype.hasOwnProperty.call(TYPES, style) ? TYPES[style] : WATCHING;
   // ⚠ `name` is mandatory on every activity, even type 4 where nothing renders it. Omitting it is a
   // malformed payload, not a shorter one.
@@ -82,6 +86,17 @@ const shape = (name, status, art, style) => {
     activity.application_id = art.appId;
     activity.assets = { large_image: art.key, large_text: clamp(art.text || art.key, NAME_MAX) };
   }
+  // ⚠ UNPROVEN for a bot's own presence, exactly like assets - but unlike assets this costs NOTHING
+  // to try, because buttons are pure payload with no Portal upload behind them. That makes them the
+  // cheapest available answer to "does a bot presence honour rich fields at all", which is why they
+  // are the first probe rather than the last.
+  // ⚠ Validated here rather than trusted from config: Discord rejects the WHOLE payload on a
+  // malformed button, so a typo'd url would cost the entire presence, not just the button.
+  const btns = (buttons || [])
+    .filter((b) => b && b.label && typeof b.url === 'string' && /^https?:/i.test(b.url))
+    .slice(0, BUTTON_MAX)
+    .map((b) => ({ label: clamp(b.label, LABEL_MAX), url: b.url }));
+  if (btns.length) activity.buttons = btns;
   return { since: null, afk: false, status, activities: [activity] };
 };
 
@@ -92,35 +107,36 @@ const shape = (name, status, art, style) => {
 // file it wrote stays on disk saying "4 players on Zoo" forever, and presence would advertise a
 // server that may be empty or down. Unknown is the honest answer, and the dot going yellow is the
 // only warning anyone gets. Same rule the status embed follows (New-StatusEmbed, PS suite).
-// ⚠ Two phrasings, because the types are grammatically different. "an empty server" completes
-// "Watching ..." and reads as a fragment on its own; "Server is empty" is the reverse. Picking a
-// type without repicking the words is how a status ends up sounding broken.
 // ⚠ THREE phrasings, one per grammatical shape. "Playing 3 players on Nuketown" is what you get if
 // the type changes and the words do not, so the words are chosen per type rather than reused.
+// ⚠ And each must ALSO read standalone: the member list prints "Watching for players" inline, but
+// the PROFILE CARD stacks them - "Watching" on one line, the text under it - where a fragment like
+// "for players" reads broken. Proven on a real profile 2026-08-20. That is why the empty state
+// names the MAP: it stands alone, says the server is alive, and never advertises the emptiness.
 //   verb    - completes "Watching ..."
 //   branded - completes "Playing ..." / "Competing in ...", and gets the game name into the line
 //   plain   - stands alone under type 4, which prints no verb at all
 const SAY = {
-  verb:    { unknown: 'the server (status unknown)', offline: 'the server (offline)', empty: 'for players',
+  verb:    { unknown: 'the server (status unknown)', offline: 'the server (offline)', empty: (s) => (s.mapName || s.map ? (s.mapName || s.map) : 'Gunfight'),
              busy: (n, m) => `${n} player${n === 1 ? '' : 's'} on ${m}` },
-  branded: { unknown: 'Gunfight - status unknown',   offline: 'Gunfight - server offline', empty: 'Gunfight - open now',
+  branded: { unknown: 'Gunfight - status unknown',   offline: 'Gunfight - server offline', empty: (s) => `Gunfight - ${s.mapName || 'open now'}`,
              busy: (n, m) => `Gunfight - ${n} on ${m}` },
-  plain:   { unknown: 'Status unknown',              offline: 'Server offline',       empty: 'Waiting for players',
+  plain:   { unknown: 'Status unknown',              offline: 'Server offline',       empty: (s) => `${s.mapName || 'Gunfight'} - waiting for players`,
              busy: (n, m) => `${n} player${n === 1 ? '' : 's'} on ${m}` },
 };
 const SAY_FOR = (style) => (style === 'custom' ? SAY.plain
                           : (style === 'playing' || style === 'competing') ? SAY.branded
                           : SAY.verb);
 
-function buildPresence(snap, nowMs, art, style) {
+function buildPresence(snap, nowMs, art, style, buttons) {
   const say = SAY_FOR(style);
-  if (!snap || typeof snap !== 'object') return shape(say.unknown, 'idle', null, style);
+  if (!snap || typeof snap !== 'object') return shape(say.unknown, 'idle', null, style, buttons);
 
   const stamped = Date.parse(snap.updated);
   if (!Number.isFinite(stamped) || nowMs - stamped > STALE_MS) {
-    return shape(say.unknown, 'idle', null, style);
+    return shape(say.unknown, 'idle', null, style, buttons);
   }
-  if (!snap.online) return shape(say.offline, 'dnd', null, style);
+  if (!snap.online) return shape(say.offline, 'dnd', null, style, buttons);
 
   const humans = Number(snap.humans) || 0;
   // ⚠ AN EMPTY SERVER IS NOT ADVERTISED AS EMPTY. This line sits on a public profile, so "an empty
@@ -131,13 +147,13 @@ function buildPresence(snap, nowMs, art, style) {
   // longer means "someone is playing" - but red still means offline and idle still means the data
   // cannot be vouched for, so both states that indicate a PROBLEM are untouched.
   // The map is dropped here on purpose: which map an empty server sits on helps nobody.
-  if (humans === 0) return shape(say.empty, 'online', null, style);
+  if (humans === 0) return shape(say.empty(snap), 'online', null, style, buttons);
 
   const map = snap.mapName || snap.map || 'Gunfight';
   // ⚠ Art only on the ONLINE path. An empty or offline server has no map worth picturing, and a
   // stale snapshot must not put a confident map image on the profile.
   const withArt = art && snap.map ? Object.assign({}, art, { key: snap.map, text: map }) : null;
-  return shape(say.busy(humans, map), 'online', withArt, style);
+  return shape(say.busy(humans, map), 'online', withArt, style, buttons);
 }
 
 module.exports = presence;
@@ -152,6 +168,7 @@ function presence(ctx) {
   // Off until someone uploads art in the Portal and confirms a bot profile actually renders it.
   const art = cfg.presenceMapArt ? { appId: cfg.applicationId } : null;
   const style = cfg.presenceStyle || 'watching';
+  const buttons = cfg.presenceButtons || [];
 
   let timer = null;
   let lastSent = null;      // full payload signature: suppresses a resend of an identical line
@@ -168,7 +185,7 @@ function presence(ctx) {
   }
 
   function tick() {
-    const p = buildPresence(read(), Date.now(), art, style);
+    const p = buildPresence(read(), Date.now(), art, style, buttons);
     const sig = JSON.stringify(p);
     if (sig === lastSent) return;
     lastSent = sig;

@@ -214,8 +214,46 @@ test('an EMPTY server is never advertised as empty', () => {
   // where prospective players read it. It must stop selling the emptiness WITHOUT becoming a lie.
   const p = buildPresence(snap({ humans: 0, bots: 6 }), NOW);
   assert.ok(!/empty|nobody|no one|0 player/i.test(line(p)), `still selling it: "${line(p)}"`);
-  assert.strictEqual(line(p), 'for players');
+  assert.ok(!/\d+ player/.test(line(p)), 'and it must not invent a count either');
   assert.strictEqual(p.status, 'online', 'the dot must not read dormant either');
+});
+
+test('every line reads STANDALONE, because the profile stacks the verb above it', () => {
+  // Proven on a real profile 2026-08-20: the member list prints "Watching for players" inline, but
+  // the profile card puts "Watching" on one line and the text under it - where a fragment starting
+  // with a preposition reads broken. So no line may open with one.
+  const cases = [
+    snap({ humans: 3 }), snap({ humans: 0 }), snap({ online: false }),
+    snap({ updated: new Date(NOW - 10 * 60000).toISOString() }),
+  ];
+  for (const s of cases) {
+    const t = line(buildPresence(s, NOW));
+    assert.ok(!/^(for|on|in|at|with|to)\b/i.test(t), `fragment on the profile card: "${t}"`);
+  }
+});
+
+test('an empty server names the MAP - alive, inviting, and still true', () => {
+  assert.strictEqual(line(buildPresence(snap({ humans: 0 }), NOW)), 'Nuketown');
+});
+
+test('presence buttons are validated, not trusted', () => {
+  // Discord rejects the WHOLE payload on a malformed button, so a bad url would cost the entire
+  // presence rather than just the button.
+  const good = { label: 'Play now', url: 'https://gunfight.us' };
+  const a = buildPresence(snap({ humans: 3 }), NOW, null, 'watching', [
+    good,
+    { label: 'XSS', url: 'javascript:alert(1)' },
+    { label: 'no url' },
+    { label: 'third', url: 'https://x.tld' },
+  ]).activities[0];
+  assert.strictEqual(a.buttons.length, 2, 'max two, and only well-formed ones');
+  assert.deepStrictEqual(a.buttons[0], good);
+  assert.ok(!a.buttons.some((b) => /javascript:/i.test(b.url)), 'a non-http url must be dropped');
+});
+
+test('no buttons configured means no buttons key at all', () => {
+  const a = buildPresence(snap({ humans: 3 }), NOW, null, 'watching', []).activities[0];
+  assert.ok(!('buttons' in a), 'an empty array must not ship as an empty field');
 });
 
 test('an offline server is never dressed up as a quiet one', () => {
