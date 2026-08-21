@@ -237,7 +237,7 @@ function Get-GfDiscordChannelId {
 function Send-GfDiscord {
     param($Config, [string]$Title, [string]$Message, [string]$Priority = 'default',
           [string[]]$Tags = @(), [string]$Category = 'default', [int]$Color = 0,
-          [string]$Prefix = '', $Fields = @(), $Components = @())
+          [string]$Prefix = '', $Fields = @(), $Components = @(), [string]$Thumbnail = '')
 
     $script:GfDiscordLastError = ''
     # ⚠ DO NOT ADD A PARAMETER NAMED $Url TO THIS FUNCTION. PowerShell variables are
@@ -284,6 +284,10 @@ function Send-GfDiscord {
         # getting that backwards is its own bug (it ships `[[{...}]]`, also a 400).
         fields      = $(if ($Fields -and $Fields.Count) { ,@($Fields) } else { $null })
         color       = $stripe
+        # ⚠ Any public https URL. This is the ONE image mechanism that works for us - a bot's own
+        # PRESENCE ignores art entirely (docs/notes/bot-presence-is-text-only.md), but an embed
+        # renders a thumbnail happily. A 404 here draws nothing, so a missing map degrades quietly.
+        thumbnail   = $(if ($Thumbnail) { @{ url = $Thumbnail } } else { $null })
         # ⚠ FOOTER TEXT IS RAW - Discord renders no markdown and no links in it, so a footer can
         # never be a hyperlink. It can only SAY 'gunfight.us'; the clickable half is the embed url
         # below, which turns the title into the link. discordFooter overrides serverName so the
@@ -370,7 +374,8 @@ function Send-GfAlert {
     param($Config, [string]$Title, [string]$Message, [string]$Priority = 'default',
           [string[]]$Tags = @(), [string]$Category = 'default', [int]$DiscordColor = 0,
           [string]$DiscordPrefix = '', [string]$DiscordTitle = '',
-          [string]$DiscordMessage = '', $DiscordFields = @(), $DiscordComponents = @())
+          [string]$DiscordMessage = '', $DiscordFields = @(), $DiscordComponents = @(),
+          [string]$DiscordThumbnail = '')
 
     $ntfyOk = $false; $ntfyTried = $false
     if ($null -ne $Config -and $Config.ntfyTopic) {
@@ -383,7 +388,7 @@ function Send-GfAlert {
         $dTitle = $(if ($DiscordTitle) { $DiscordTitle } else { $Title })
         # Same idea for the body: the phone and the channel do not want the same sentence.
         $dMsg   = $(if ($DiscordMessage) { $DiscordMessage } else { $Message })
-        $dscOk = Send-GfDiscord -Config $Config -Title $dTitle -Message $dMsg -Priority $Priority -Tags $Tags -Category $Category -Color $DiscordColor -Prefix $DiscordPrefix -Fields $DiscordFields -Components $DiscordComponents
+        $dscOk = Send-GfDiscord -Config $Config -Title $dTitle -Message $dMsg -Priority $Priority -Tags $Tags -Category $Category -Color $DiscordColor -Prefix $DiscordPrefix -Fields $DiscordFields -Components $DiscordComponents -Thumbnail $DiscordThumbnail
     }
     return [pscustomobject]@{
         ntfy        = $ntfyOk

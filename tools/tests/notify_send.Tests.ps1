@@ -453,3 +453,86 @@ Describe "Send-GfDiscord - a ONE-field card must ship fields as a LIST" {
         Assert-True ($script:sentBody -match '"description":"body text"') 'falls back to the description'
     }
 }
+
+Describe "Send-GfDiscord - the map thumbnail" {
+    # The ONE image mechanism available to us. A bot's own presence ignores art entirely
+    # (docs/notes/bot-presence-is-text-only.md), but an embed renders a thumbnail from any public
+    # https URL - which is why the map picture lives on the join CARD and not on the profile.
+    $script:sentBody = $null
+    function Invoke-RestMethod { param($Uri,$Method,$Body,$ContentType,$TimeoutSec,$Headers)
+        $script:sentBody = [System.Text.Encoding]::UTF8.GetString($Body); return $null }
+    $cfg = [pscustomobject]@{ serverName='Gunfight'; ntfyTopic=''
+                              discordWebhooks=[pscustomobject]@{ default='https://d/def' } }
+
+    It 'a URL ships as an OBJECT with a url key, which is the shape Discord requires' {
+        $script:sentBody = $null
+        $null = Send-GfDiscord -Config $cfg -Title 't' -Message 'm' -Thumbnail 'https://gunfight.us/assets/maps/mp_nuked.jpg'
+        Assert-True ($script:sentBody -match '"thumbnail":\{"url":"https://gunfight\.us/assets/maps/mp_nuked\.jpg"\}') `
+                    "shipped: $([regex]::Match($script:sentBody,'"thumbnail":.{0,60}').Value)"
+    }
+    It 'omitted is null, never an empty object (which Discord rejects)' {
+        $script:sentBody = $null
+        $null = Send-GfDiscord -Config $cfg -Title 't' -Message 'm'
+        Assert-True ($script:sentBody -match '"thumbnail":null') "shipped: $([regex]::Match($script:sentBody,'"thumbnail":.{0,30}').Value)"
+    }
+    It 'a thumbnail does not disturb the fields array - the two coexist on one card' {
+        # Guards the 2026-08-20 class of bug from the other direction: adding an embed key must not
+        # perturb the serialisation of the neighbouring one.
+        $script:sentBody = $null
+        $null = Send-GfDiscord -Config $cfg -Title 't' -Message 'm' -Fields @(@{ name='x'; value='v' }) `
+                               -Thumbnail 'https://gunfight.us/assets/maps/mp_array.jpg'
+        Assert-True ($script:sentBody -match '"fields":\[') 'fields must still be a list'
+        Assert-True ($script:sentBody -match '"thumbnail":\{') 'and the thumbnail must still be an object'
+    }
+    It 'it also rides the BOT transport, not just the webhook' {
+        # The join card uses the bot whenever a button is on it, so a thumbnail that only survived
+        # the webhook path would be invisible on exactly the cards that have one.
+        $script:calls = @()
+        function Get-GfBotToken { return 'tok' }
+        function Invoke-RestMethod { param($Uri,$Method,$Body,$ContentType,$TimeoutSec,$Headers)
+            $script:calls += @{ uri = $Uri; body = [System.Text.Encoding]::UTF8.GetString($Body) }; return $null }
+        $c = [pscustomobject]@{ serverName='Gunfight'; ntfyTopic=''
+                                discordWebhooks=[pscustomobject]@{ joins='https://d/joins' }
+                                discordChannels=[pscustomobject]@{ joins='123' } }
+        $btn = @( @{ type=1; components=@( @{ type=2; style=5; label='Play for free!'; url='https://gunfight.us/' } ) } )
+        $null = Send-GfDiscord -Config $c -Title 't' -Message 'm' -Category 'joins' -Components $btn `
+                               -Thumbnail 'https://gunfight.us/assets/maps/mp_villa.jpg'
+        Assert-True ($script:calls[0].uri -like '*/channels/123/messages') 'the bot transport was used'
+        Assert-True ($script:calls[0].body -match '"thumbnail":\{"url":"[^"]*mp_villa\.jpg"\}') 'and it carried the thumbnail'
+    }
+}
+
+Describe "Get-GfMapThumb - only ever points at art that exists" {
+    # ⚠ $toolsRoot from the top of this file, NOT $MyInvocation - inside a Describe scriptblock
+    # Pester 3.4 leaves MyCommand.Path null and Join-Path then throws on a null Path.
+    $toolsDir = $toolsRoot
+    . (Join-Path $toolsDir 'map_names.ps1')
+
+    It 'a known map resolves to its picture' {
+        Assert-Eq (Get-GfMapThumb 'mp_nuked') 'https://gunfight.us/assets/maps/mp_nuked.jpg' 'nuketown'
+    }
+    It 'an UNKNOWN map yields nothing rather than a guaranteed 404' {
+        Assert-Eq (Get-GfMapThumb 'mp_notarealmap') '' 'unknown id must not build a URL'
+    }
+    It 'empty in, empty out' {
+        Assert-Eq (Get-GfMapThumb '') '' 'blank'
+        Assert-Eq (Get-GfMapThumb $null) '' 'null'
+    }
+    It 'the path is LOWERCASED - hashtables ignore case, web servers do not' {
+        Assert-Eq (Get-GfMapThumb 'MP_Nuked') 'https://gunfight.us/assets/maps/mp_nuked.jpg' 'MP_Nuked'
+    }
+    It 'EVERY map in the name table has a staged image, and vice versa' {
+        # 🛑 The invariant the whole design rests on: the art set and the id table are the same 26
+        # maps, which is what lets Get-GfMapThumb treat "in the table" as "the image exists". A map
+        # added to one and not the other silently breaks that, so it is asserted rather than assumed.
+        $repo = Split-Path -Parent $toolsDir
+        $dir  = Join-Path $repo 'site\wwwroot\assets\maps'
+        if (-not (Test-Path $dir)) { throw "ASSERT: map art missing - run tools\fetch_map_art.ps1" }
+        $onDisk = @(Get-ChildItem $dir -Filter '*.jpg' | ForEach-Object { $_.BaseName })
+        $inTable = @($script:GfMapNames.Keys)
+        $missing = @($inTable | Where-Object { $onDisk -notcontains $_ })
+        $extra   = @($onDisk  | Where-Object { $inTable -notcontains $_ })
+        Assert-True ($missing.Count -eq 0) "maps with no picture: $($missing -join ', ')"
+        Assert-True ($extra.Count   -eq 0) "pictures with no map: $($extra -join ', ')"
+    }
+}

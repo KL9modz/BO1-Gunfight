@@ -142,7 +142,7 @@ function P-Key($p) {
 # this script's own (cfg, title, message, priority, tags) call shape and to LOG a failure; the
 # shared sender deliberately returns $false instead of throwing, so nothing here can be taken
 # down by a push.
-function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, $discordPrefix = '', $discordTitle = '', $category = 'default', $discordMessage = '', $discordFields = @(), $discordComponents = @()) {
+function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, $discordPrefix = '', $discordTitle = '', $category = 'default', $discordMessage = '', $discordFields = @(), $discordComponents = @(), $discordThumbnail = '') {
   # Send-GfAlert fans out to every configured transport. $category picks the DISCORD channel and
   # defaults to 'default' deliberately: the joins channel is for PLAYERS JOINING, and only the two
   # join call sites pass 'joins'. This service also emits notifier-online, heartbeat and
@@ -156,7 +156,8 @@ function Send-Ntfy($cfg, $title, $message, $priority, $tags, $discordColor = 0, 
                     -Priority ([string]$priority) -Tags ([string[]]@($tags)) -Category ([string]$category) `
                     -DiscordColor ([int]$discordColor) -DiscordPrefix ([string]$discordPrefix) `
                     -DiscordTitle ([string]$discordTitle) -DiscordMessage ([string]$discordMessage) `
-                    -DiscordFields $discordFields -DiscordComponents $discordComponents
+                    -DiscordFields $discordFields -DiscordComponents $discordComponents `
+                    -DiscordThumbnail ([string]$discordThumbnail)
   if ($r.ntfyError)    { Write-Log "[ntfy] send failed: $($r.ntfyError)" }
   if ($r.discordError) { Write-Log "[discord] send failed: $($r.discordError)" }
   return $r.anySent
@@ -614,6 +615,7 @@ function Do-Tick($cfg) {
           [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $true) `
                            -message $body -priority 'high' -tags @($ptag) `
                            -discordColor $script:JoinColor -discordTitle $dTitle -discordFields $dFields -discordComponents $dButtons `
+                           -discordThumbnail $mapThumb `
                            -category 'joins')
           continue
         }
@@ -622,6 +624,7 @@ function Do-Tick($cfg) {
       [void](Send-Ntfy -cfg $cfg -title (Get-JoinTitleNtfy $p.name $mapName $cur.Count $false) `
                        -message $body -priority 'default' -tags @($ptag) `
                        -discordColor $script:JoinColor -discordTitle $dTitle -discordFields $dFields -discordComponents $dButtons `
+                       -discordThumbnail $mapThumb `
                        -category 'joins')
     }
   }
