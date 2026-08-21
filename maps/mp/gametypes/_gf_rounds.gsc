@@ -164,6 +164,49 @@ gf_setTeamFields( who, team )
     self.pers["team"]  = team;
     self.team          = team;
     self.sessionteam   = team;
+    if ( gf_isHuman( self ) )
+        self gf_pushEscMenu( team );
+}
+
+// g_scriptMainMenu IS the pause screen's only door: it is the client dvar naming the scriptmenu the
+// engine opens on ESC in game (menu_class_<team> -> "class_marines"/"class_opfor", each a one-line
+// wrapper whose onOpen opens the `class` menuDef -- the PC pause screen, the one we fork for the
+// ticker). Empty means ESC does nothing at all, which is indistinguishable from an "anti-quit" mod
+// and is exactly how it gets reported.
+//
+// ⚠ EVERY stock team-assignment path re-pushes it -- menuAutoAssign (_globallogic_ui.gsc:269),
+// menuAllies (:502), menuAxis (:551), menuSpectator (:591), and Callback_PlayerConnect's team-menu
+// branches (_globallogic_player.gsc:344/:367) -- and this mod REPLACES those handlers with quiet
+// seating that has no menus by design, so the push went missing with them. A human seated by the
+// balancer (gf_seatJoinTeam / gf_quietSetTeam / the pre-spawn pteam + movePending consumers) was
+// left holding whatever their client happened to have: "" on a fresh game launch, or "endofgame"
+// left over from the previous match's end (_globallogic.gsc:1023). "Sometimes" is the tell -- the
+// EXACT-PARITY stock fall-through (gf_stockAutoassignStamped -> menuAutoAssign) still pushed it, so
+// whether a joiner was affected depended on how the human split happened to sit when they connected.
+//
+// ⚠ beginClassChoice does NOT cover this: under scr_disable_cac 1 (which this mod forces every
+// round) it assigns level.defaultClass and returns before any menu work (_globallogic_ui.gsc:335).
+//
+// Pushed from gf_setTeamFields -- the one choke point every sanctioned team write passes through,
+// the same reason the spectate-breadcrumb clear lives there -- so no seating path can drift out of
+// sync again. Humans only: a bot has no ESC key and the push costs a reliable command.
+//
+// ⚠ UNCONDITIONAL, deliberately with no skip-if-unchanged cache: the client's copy is rewritten
+// underneath us by stock (the game-end push above), so a cached "we already sent this" would skip
+// precisely the push that repairs it. Same rule as the per-client flinch push. Team writes are rare
+// (a few per player per match), so the command cost is noise next to the per-spawn burst.
+// ⚠ Kept (public), like its caller: gf_setTeamFields ships in the release build, so a strip region
+// here would be an `unknown function` that fails the whole server.
+gf_pushEscMenu( team )
+{
+    key = "menu_team";                                 // spectator: ESC opens the team menu (stock)
+    if ( team == "allies" || team == "axis" )
+        key = "menu_class_" + team;
+    // game[] is populated by stock _menus::init at level load. Never push an empty string -- that is
+    // the broken state this exists to prevent.
+    if ( !isDefined( game[ key ] ) || game[ key ] == "" )
+        return;
+    self setClientDvar( "g_scriptMainMenu", game[ key ] );
 }
 
 // Flinch (damage view-kick) scale. scr_gf_flinch is a MULTIPLIER of the stock
