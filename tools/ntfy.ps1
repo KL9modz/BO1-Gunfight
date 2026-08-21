@@ -178,6 +178,14 @@ function Get-GfDiscordWebhook {
 #
 # ⚠ The token is READ FROM THE BOT'S OWN CONFIG, never copied into notify\config.json: one copy of
 # a credential is one place to rotate, the same rule that keeps rcon_password in dedicated.cfg.
+# ⚠ DISCORD'S REST API REQUIRES A USER-AGENT AND 403s WITHOUT ONE - with an EMPTY body, which reads
+# exactly like a missing permission and is why the YooDyl join card was first blamed on one.
+# PowerShell 5.1's Invoke-RestMethod sends the default .NET WebRequest agent, which Discord refuses.
+# Their docs specify the format: DiscordBot ($url, $version).
+# ⚠ WEBHOOKS DO NOT ENFORCE IT, which is why every alert has worked for months and only the newer
+# BOT-token calls started failing. Same host, different rule.
+$script:GfDiscordUA = 'DiscordBot (https://gunfight.us, 1.0)'
+
 $script:GfBotToken = $null
 function Get-GfBotToken {
     if ($null -ne $script:GfBotToken) { return $script:GfBotToken }
@@ -294,7 +302,7 @@ function Send-GfDiscord {
             try {
                 $bytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $payload -Compress -Depth 8))
                 Invoke-RestMethod -Uri "https://discord.com/api/v10/channels/$chan/messages" -Method Post `
-                    -Body $bytes -Headers @{ Authorization = "Bot $token" } `
+                    -Body $bytes -Headers @{ Authorization = "Bot $token"; 'User-Agent' = $script:GfDiscordUA } `
                     -ContentType 'application/json; charset=utf-8' -TimeoutSec 15 | Out-Null
                 return $true
             }

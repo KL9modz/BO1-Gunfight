@@ -48,11 +48,17 @@ if (-not $chan) { throw "could not resolve the channel id for '$Category'" }
 $tok = Get-GfBotToken
 if (-not $tok) { throw 'no bot token - reading the channel needs one (tools\discord_bot\config.local.json)' }
 
-Write-Host "channel $chan, scanning the last $Limit message(s)$(if (-not $Apply) { '  [DRY RUN]' })"
+# Our own identity in that channel, taken from the webhook URL we already hold.
+$ourWebhookId = ''
+$m = [regex]::Match($hook, 'webhooks/(\d+)/')
+if ($m.Success) { $ourWebhookId = $m.Groups[1].Value }
+if (-not $ourWebhookId) { throw "could not read the webhook id out of the '$Category' webhook URL" }
+
+Write-Host "channel $chan, our webhook $ourWebhookId, scanning the last $Limit message(s)$(if (-not $Apply) { '  [DRY RUN]' })"
 
 try {
     $msgs = Invoke-RestMethod -Uri "https://discord.com/api/v10/channels/$chan/messages?limit=$Limit" `
-                              -Headers @{ Authorization = "Bot $tok" } -TimeoutSec 25
+                              -Headers @{ Authorization = "Bot $tok"; 'User-Agent' = $script:GfDiscordUA } -TimeoutSec 25
 }
 catch {
     # THE expected failure until someone grants it: the bot is in the guild but not on the channel.
@@ -61,9 +67,12 @@ catch {
 
 $changed = 0; $skipped = 0
 foreach ($m in $msgs) {
-    # Only OUR webhook's join cards. A bot-posted card (anything from today onward) already has
-    # blank headings, and someone else's message is never touched.
-    if (-not $m.webhook_id) { continue }
+    # 🛑 ONLY OUR OWN WEBHOOK'S MESSAGES. Not "any webhook" - this channel is SHARED. It also
+    # carries another app's voice-activity cards, whose titles read "gandylion ➔ Joined: Gunfight"
+    # (that "Gunfight" is a VOICE CHANNEL, not a map). A filter of "any webhook + a title containing
+    # Joined:" would have rewritten twenty of someone else's messages to say "Joined match:".
+    # The webhook id in the URL we already hold is the only reliable identity here.
+    if ($m.webhook_id -ne $ourWebhookId) { continue }
     if (-not $m.embeds -or $m.embeds.Count -eq 0) { continue }
     $e = $m.embeds[0]
     # "Joined:" -> "Joined match:" (owner's wording, 2026-08-20). ⚠ Anchored on "Joined:" WITH the
@@ -95,9 +104,12 @@ foreach ($m in $msgs) {
             $name = $(if ($STALE -contains $f.name) { $BLANK } else { $f.name })
             $fields += @{ name = $name; value = $f.value; inline = [bool]$f.inline }
         }
-        # ⚠ Comma operator: a ONE-field card would otherwise unroll to a bare hashtable and ship
-        # `fields: {...}` where Discord requires a list. Same trap as Get-JoinButton.
-        $embed['fields'] = ,$fields
+        # ⚠ @(), NOT the comma operator. The comma prevents a FUNCTION RETURN from unrolling; an
+        # assignment into a hashtable never unrolls, so `,$fields` wraps the array in ANOTHER array
+        # and ships `fields: [[{...}]]`, which Discord rejects with a bare 400. That is exactly what
+        # happened on the first apply run: every card WITH fields failed and only the title-only
+        # ones went through. Right lesson, wrong place.
+        $embed['fields'] = @($fields)
     }
     if ($e.footer)    { $embed['footer']    = @{ text = [string]$e.footer.text } }
     if ($e.thumbnail) { $embed['thumbnail'] = @{ url  = [string]$e.thumbnail.url } }
@@ -116,10 +128,22 @@ foreach ($m in $msgs) {
             Invoke-RestMethod -Uri "$hook/messages/$($m.id)" -Method Patch -Body $bytes `
                 -ContentType 'application/json; charset=utf-8' -TimeoutSec 20 | Out-Null
             $changed++
-            # Discord allows 5 edits / 2s per webhook. Pacing beats catching a 429 in a loop.
-            Start-Sleep -Milliseconds 450
         }
-        catch { Write-Host "    FAILED: $($_.Exception.Message)" -ForegroundColor Yellow }
+        catch {
+            $msg = $_.Exception.Message
+            # Discord puts the REASON in the body; the status line alone ("400 Bad Request") sends
+            # you looking at permissions when the payload is what is wrong.
+            try {
+                $sr = New-Object IO.StreamReader($_.Exception.Response.GetResponseStream())
+                $body = $sr.ReadToEnd()
+                if ($body) { $msg += " :: $body" }
+            } catch { }
+            Write-Host "    FAILED: $msg" -ForegroundColor Yellow
+        }
+        # ⚠ OUTSIDE the try, so a FAILURE paces too. It used to sit inside, so a run that started
+        # failing hammered the endpoint with no delay and earned 429s on top of the real error -
+        # turning one bug into two symptoms. Discord allows 5 edits / 2s per webhook.
+        Start-Sleep -Milliseconds 450
     }
     else { $changed++ }
 }
