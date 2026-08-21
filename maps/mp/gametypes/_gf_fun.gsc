@@ -274,7 +274,18 @@ gf_funGiveWeapon( weapon )
     {
         if ( !isAlive( humans[i] ) )
             continue;
-        humans[i] GiveWeapon( weapon );
+        // ⚠ CAMO-AWARE ON PURPOSE. A bare GiveWeapon( weapon ) is camo index 0 — a PLAIN gun — so
+        // this verb used to be useless for looking at a camo: you would swap weapon and silently
+        // lose the finish, which reads as "the camo broke". Honour gf_force_camo when it is set so
+        // fungive can cycle weapons during a camo review without a round restart.
+        fc = getDvar( "gf_force_camo" );
+        if ( fc != "" && int( fc ) >= 0 )
+        {
+            opts = int( humans[i] CalcWeaponOptions( int( fc ), 0, 0, 0 ) );
+            humans[i] GiveWeapon( weapon, 0, opts );
+        }
+        else
+            humans[i] GiveWeapon( weapon );
         humans[i] SwitchToWeapon( weapon );
         humans[i] GiveMaxAmmo( weapon );
         n++;
@@ -993,9 +1004,13 @@ gf_funTeamGod( team, enable )
 //     the cheat gate is for. Do NOT re-widen it into a casual toy, and do NOT "fix" this comment
 //     back to the sandboxed wording without first checking what modStats actually reads.
 //  2. These writes are PERSISTENT with NO UNDO, which is why they sit behind the cheat gate and
-//     use only paths proven elsewhere: the prestige write is EnCoRe's exact battle-tested sequence
-//     (setDStat plevel + setRank), the level-50 write is its exact statSet, and the pro-perk unlock
-//     is stock's own unlockItemFromChallenge.
+//     use only paths proven elsewhere -- STOCK's paths, read out of raw/, not a ported mod menu's.
+//     ⚠ The prestige write used to be called "EnCoRe's exact battle-tested sequence" here; it was a
+//     4-arg setDStat aimed at a node stock never reads, so it reverted at the next round boundary.
+//     Do not restore that framing: a borrowed line is not evidence. The rule is that every account
+//     write goes through the same _persistence entry point stock's own reader is the inverse of --
+//     statSet for prestige and rank XP, _rank::setCodPointsStat for CoD points, and stock's
+//     unlockItemFromChallenge for the pro perks. See gf_funPrestige for the full key-path autopsy.
 //  3. The name / clantag / class-name editors EnCoRe ships next to these are setClientDvar writes
 //     to ARCHIVED client dvars ("name", "clanName", "customclassN") -- refused on arrival on a
 //     dedicated server. They ship as CLIENT-ONLY clipboard rows in the panel, not as GSC.
@@ -1013,8 +1028,32 @@ gf_funPrestige( numStr, prestigeStr )
     }
 
     p = int( prestigeStr );
-    target.pers["plevel"] = p;
-    target setDStat( "playerstatslist", "plevel", "StatValue", p );
+
+    // ⚠ THE KEY PATH IS THE WHOLE BUG SURFACE HERE -- write the node stock READS, nothing else.
+    // This used to be a FOUR-arg `setDStat( "playerstatslist", "plevel", "StatValue", p )`, i.e. the
+    // CHILD node PlayerStatsList/plevel/StatValue. Stock never looks there:
+    //   read : _rank::getPrestigeLevel() -> _persistence::statGet( "plevel" )
+    //          -> getdstat( "PlayerStatsList", "plevel" )                       [2 args]
+    //   write: _persistence::statSet -> statSetInternal -> setPlayerStat
+    //          -> setdstat( baseName, dataName, value )                         [3 args]
+    // ("StatValue" IS a real DDL field, but only inside the WEAPON/GROUP challenge sub-trees --
+    //  getDStat( baseName, item, "stats", statName, statType ) -- never under PlayerStatsList/<stat>.)
+    // ⚠ Getting it wrong did NOT look like a failure, which is what made it expensive to find:
+    // setRank() below is a LIVE, NON-PERSISTENT call, so the prestige changed on screen and the
+    // notify reported success -- and then stock quietly put it back. Callback_PlayerConnect re-runs
+    // on every map_restart, so _rank::onPlayerConnect re-reads statGet("plevel") and re-applies
+    // setRank() at EVERY ROUND BOUNDARY: the value reverted mid-match, a round after the click.
+    // ⚠ Route through _persistence::statSet, exactly like gf_funLevel50's rankxp write -- do not
+    // hand-roll a setdstat here again. includeGameType FALSE: prestige is a GLOBAL stat, there is no
+    // PlayerStatsByGameMode/plevel, and stock's own connect-time read is the global one.
+    target maps\mp\gametypes\_persistence::statSet( "plevel", p, false );
+
+    // Mirror BOTH pers fields stock stamps at connect (_rank::onPlayerConnect writes plevel AND
+    // prestige). pers["plevel"] is what shouldKickByRank() reads; pers["prestige"] is what the rest
+    // of the rank code reads. Setting only one left them disagreeing until the next re-begin.
+    target.pers["plevel"]   = p;
+    target.pers["prestige"] = p;
+
     rank = 0;
     if ( isDefined( target.pers["rank"] ) )
         rank = target.pers["rank"];

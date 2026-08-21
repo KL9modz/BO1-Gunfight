@@ -133,7 +133,7 @@
 //                        so it fights back and reads as violent aim assist); "silent" leaves the view
 //                        alone and MagicBullets the target's head on each shot — the one that works.
 //   functeamgod_<allies|axis>_<0|1> - invulnerability for ONE side (refereeing a 1vN, walking a demo)
-//   funprestige_<num>_<p> - set prestige (EnCoRe's exact setDStat plevel + setRank sequence)
+//   funprestige_<num>_<p> - set prestige (_persistence::statSet "plevel" + setRank; see gf_funPrestige)
 //   funlevel50_<num>   - max rank XP (statSet rankxp 1262500, EnCoRe's exact write)
 //   funcodpoints_<n>   - CoD points for all humans | fununlockpro - all pro perks, all humans
 //                        ⚠ All account writes land on THIS MOD'S stats namespace

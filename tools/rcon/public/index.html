@@ -626,7 +626,7 @@
   <!-- EnCoRe port: gated cheats + account editors. GSC: _gf_fun.gsc (dev-only). -->
   <div class="block" data-eff="live" data-per="transient">
     <div class="btitle">CHAOS &amp; ACCOUNT  <span style="font-weight:400;font-size:10px;color:var(--dm)">EnCoRe port · gated</span></div>
-    <div class="srow" data-tip="gf_fun_cheats — the gate for everything in this block. Default 0, and Reset All Mods (DASHBOARD → MOD TOOLS) re-locks it.&#10;Gated because these verbs are SERVER-side: unlike the client-dvar toys they genuinely work on dedicated, they decide who wins a live public round, and the account writes are persistent with no undo. A locked verb reports its refusal in-game rather than no-opping.">
+    <div class="srow" data-tip="gf_fun_cheats — the gate for everything in this block. Default 0, and Reset All Mods (DASHBOARD → MOD TOOLS) re-locks it.&#10;⚠ IT ALSO RE-LOCKS ON EVERY SERVER RESTART: gf_fun_cheats has no dedicated.cfg line, so the GSC seed puts it back to 0 in each fresh server process. This checkbox is re-read whenever ADVANCED is opened, and the gated buttons re-check it before sending, so a stale ON can no longer swallow a click.&#10;Gated because these verbs are SERVER-side: unlike the client-dvar toys they genuinely work on dedicated, they decide who wins a live public round, and the account writes are persistent with no undo. A locked verb reports its refusal in-game rather than no-opping.">
       <span class="slbl">Cheat Verbs Unlocked</span><span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbFunCheats" data-dvar="gf_fun_cheats" onchange="sdvv('gf_fun_cheats',this.checked?'1':'0')"><span class="tog-t"></span><span class="tog-th"></span></label>
       <span class="shint">off by default</span>
@@ -635,48 +635,48 @@
       <span class="slbl">Aimbot</span>
       <input id="vFunAimN" class="num ctrl" type="number" style="width:64px" placeholder="num" min="0">
       <span style="flex:1"></span>
-      <button class="b-gh b-sm ctrl" onclick="bridge('pfunaim_'+g('vFunAimN').value+'_snap')">Snap</button>
-      <button class="b-wn b-sm ctrl" onclick="bridge('pfunaim_'+g('vFunAimN').value+'_silent')">Silent</button>
-      <button class="b-gh b-sm ctrl" onclick="bridge('pfunaim_'+g('vFunAimN').value+'_off')">Off</button>
+      <button class="b-gh b-sm ctrl" onclick="funBridge('pfunaim_'+g('vFunAimN').value+'_snap')">Snap</button>
+      <button class="b-wn b-sm ctrl" onclick="funBridge('pfunaim_'+g('vFunAimN').value+'_silent')">Silent</button>
+      <button class="b-gh b-sm ctrl" onclick="funBridge('pfunaim_'+g('vFunAimN').value+'_off')">Off</button>
     </div>
     <div class="srow" data-via="bridge" data-tip="Invulnerability for ONE side. Separate from DASHBOARD's God Mode (everyone) because 'make one team unkillable' is the actual admin toy — refereeing a 1vN, walking a demo. Bridge: functeamgod_&lt;allies|axis&gt;_&lt;0|1&gt;">
       <span class="slbl">Team God Mode</span><span style="flex:1"></span>
-      <button class="b-gh b-sm ctrl" onclick="bridge('functeamgod_allies_1')">Allies On</button>
-      <button class="b-gh b-sm ctrl" onclick="bridge('functeamgod_allies_0')">Off</button>
-      <button class="b-gh b-sm ctrl" onclick="bridge('functeamgod_axis_1')">Axis On</button>
-      <button class="b-gh b-sm ctrl" onclick="bridge('functeamgod_axis_0')">Off</button>
+      <button class="b-gh b-sm ctrl" onclick="funBridge('functeamgod_allies_1')">Allies On</button>
+      <button class="b-gh b-sm ctrl" onclick="funBridge('functeamgod_allies_0')">Off</button>
+      <button class="b-gh b-sm ctrl" onclick="funBridge('functeamgod_axis_1')">Axis On</button>
+      <button class="b-gh b-sm ctrl" onclick="funBridge('functeamgod_axis_0')">Off</button>
     </div>
     <div class="srow" data-via="bridge" data-tip="Sphere-ride ONE player 2000 units into the sky, then drop them. The drop is the punchline (EnCoRe's does the same) — with stock fall damage they will likely die, which can spend a life in a one-life round. That is why it sits in the gated block. Bridge: funadventure_&lt;num&gt;">
       <span class="slbl">Adventure Time</span>
       <input id="vFunAdvN" class="num ctrl" type="number" style="width:64px" placeholder="num" min="0">
       <span style="flex:1"></span>
-      <button class="b-ac b-sm ctrl" onclick="bridge('funadventure_'+g('vFunAdvN').value)">🎈 Ride</button>
+      <button class="b-ac b-sm ctrl" onclick="funBridge('funadventure_'+g('vFunAdvN').value)">🎈 Ride</button>
     </div>
     <div class="srow" data-via="bridge" data-tip="Keep every human's ESC menu closed so the quit path is unusable. 2 Hz, NOT EnCoRe's 20 Hz — closeInGameMenu is a reliable command per call per player, and 20/sec is exactly the stream class the command budget forbids.&#10;⚠ Menu only: Alt-F4, the console and a network drop all still quit. A speed bump for ragequitters, not a lock. Bridge: funantiquit_0/1">
       <span class="slbl">Anti-Quit</span><span style="flex:1"></span>
       <label class="tog ctrl"><input type="checkbox" id="cbFunAQ" data-dvar="gf_fun_antiquit" onchange="bridge('funantiquit_'+(cbFunAQ.checked?'1':'0'))"><span class="tog-t"></span><span class="tog-th"></span></label>
       <span class="shint">menu only</span>
     </div>
-    <div class="sgroup">Account Editor — writes THIS MOD's own ladder (players\mods\mp_gunfight), persistent, no undo</div>
-    <div class="srow" data-via="bridge" data-tip="Set a player's prestige — EnCoRe's exact battle-tested sequence (setDStat plevel + setRank). 0-15 are the real BO1 prestiges; higher values render whatever icon the table wraps to.&#10;⚠ Persistent on this mod's own stats namespace; nobody's real Black Ops rank is touched. Bridge: funprestige_&lt;num&gt;_&lt;p&gt;">
+    <div class="sgroup">Account Editor — ⚠ writes the player's REAL Black Ops profile (modStats 0), permanent, no undo</div>
+    <div class="srow" data-via="bridge" data-tip="Set a player's prestige (_persistence::statSet 'plevel' + setRank). 0-15 are the real BO1 prestiges; higher values render whatever icon the table wraps to.&#10;⚠ This writes the player's REAL Black Ops profile: we ship modStats 0, so it is NOT sandboxed to this mod. Permanent, no undo.&#10;History: this used to send a 4-arg setDStat aimed at a node stock never reads, so the prestige changed on screen and then reverted at the next round boundary, when _rank::onPlayerConnect re-read the untouched stat. Bridge: funprestige_&lt;num&gt;_&lt;p&gt;">
       <span class="slbl">Prestige</span>
       <input id="vFunPreN" class="num ctrl" type="number" style="width:58px" placeholder="num" min="0">
       <input id="vFunPreP" class="num ctrl" type="number" style="width:58px" placeholder="0-15" min="0" max="999" value="15">
       <span style="flex:1"></span>
-      <button class="b-ac b-sm ctrl" onclick="bridge('funprestige_'+g('vFunPreN').value+'_'+g('vFunPreP').value)">Set</button>
+      <button class="b-ac b-sm ctrl" onclick="funBridge('funprestige_'+g('vFunPreN').value+'_'+g('vFunPreP').value)">Set</button>
     </div>
     <div class="srow" data-via="bridge" data-tip="Max rank XP for one player (statSet rankxp 1262500 — EnCoRe's exact write; 1,262,500 is max-rank XP on the BO1 rank table). Badge updates at the next spawn/scoreboard refresh. Bridge: funlevel50_&lt;num&gt;">
       <span class="slbl">Instant Level 50</span>
       <input id="vFunL50N" class="num ctrl" type="number" style="width:64px" placeholder="num" min="0">
       <span style="flex:1"></span>
-      <button class="b-ac b-sm ctrl" onclick="bridge('funlevel50_'+g('vFunL50N').value)">Set 50</button>
+      <button class="b-ac b-sm ctrl" onclick="funBridge('funlevel50_'+g('vFunL50N').value)">Set 50</button>
     </div>
     <div class="srow" data-via="bridge" data-tip="CoD points for ALL humans (stock setCodPointsStat, engine-capped) + unlock every pro perk for ALL humans (stock unlockItemFromChallenge — EnCoRe's 'Unlock All' and 'Unlock Pro Perks' are the SAME call, so one button covers both labels). Bridge: funcodpoints_&lt;n&gt; / fununlockpro">
       <span class="slbl">CoD Points / Perks</span>
       <input id="vFunCP" class="num ctrl" type="number" style="width:90px" value="1000000" min="0">
       <span style="flex:1"></span>
-      <button class="b-ac b-sm ctrl" onclick="bridge('funcodpoints_'+g('vFunCP').value)">Set CP</button>
-      <button class="b-ac b-sm ctrl" onclick="bridge('fununlockpro')">Unlock Pros</button>
+      <button class="b-ac b-sm ctrl" onclick="funBridge('funcodpoints_'+g('vFunCP').value)">Set CP</button>
+      <button class="b-ac b-sm ctrl" onclick="funBridge('fununlockpro')">Unlock Pros</button>
     </div>
   </div>
 

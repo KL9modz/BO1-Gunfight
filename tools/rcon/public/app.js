@@ -866,6 +866,10 @@ function tab(n){
   if(n==='fav') favBuild();   // borrow the pinned rows in (needs the panel active to measure columns)
   layoutColumns(g('p-'+n));   // first reveal of a settings panel lays out its columns
   if(n==='maps' && live) loadRotation();
+  // ADVANCED holds the CHAOS & ACCOUNT block, whose Cheat Verbs checkbox goes stale the moment the
+  // server restarts (gf_fun_cheats re-seeds to 0 and readServerDvars never re-reads). Re-sync it on
+  // every reveal so the control stops claiming the gate is open when it is not.
+  if(n==='srv' && live) refreshFunGate(true);
 }
 
 // Sidebar roster tabs (PLAYERS / NEXT MATCH) — two views of the same roster in one card.
@@ -1510,6 +1514,51 @@ async function bridge(bcmd,label){
   const r=await rcon(`set gf_cmd ${seq}:${bcmd}`,true);
   if(!r.ok){ cqFail(seq,r.error||'send failed'); toast('Bridge error: '+r.error,'err'); return false; }
   return true;
+}
+
+// ─── Cheat-verb gate (CHAOS & ACCOUNT) ───────────────────────────────────────
+// gf_fun_cheats guards the 7 verbs in _gf_fun.gsc that call gf_funCheatGate(). Sending one while
+// it is 0 is NOT a no-op and NOT an error: the GSC refuses and reports via gf_bridgeNotify, which
+// is private to gf_admin_guids and prints with iPrintLn into the IN-GAME KILLFEED. From the panel
+// there is no signal at all — gf_ack still advances, so the command queue shows a clean ✓.
+//
+// ⚠ Why the checkbox alone cannot be trusted: gf_fun_cheats has no dedicated.cfg line, so
+// gf_funInit's seed-if-empty puts it back to 0 on EVERY fresh server process, while #cbFunCheats is
+// filled only by readServerDvars() — a connect/manual sweep that never re-reads. A browser tab left
+// open across a server restart therefore shows ON over a server sitting at 0, and every account
+// edit silently refuses. That combination cost a live debugging session: prestige "stopped working"
+// for 323 straight rounds after a restart with nothing on screen to say why.
+//
+// So the gate is re-read FRESH at click time. One paced rcon slot on a rare admin click is the
+// right trade for never sending into a locked gate again.
+const FUN_GATED_RX = /^(pfunaim|funadventure|functeamgod|funprestige|funlevel50|funcodpoints|fununlockpro)/;
+
+// Sync #cbFunCheats from the server. Returns '1'/'0', or null when the read gave us nothing.
+async function refreshFunGate(fresh){
+  if(!live) return null;
+  let v=null;
+  try{ const r=await fetchDvars(['gf_fun_cheats'],fresh); if(r&&r.ok) v=r.values['gf_fun_cheats']; }catch(_){}
+  const cb=g('cbFunCheats');
+  if(cb && v!==null && v!==undefined) cb.checked = (String(v).trim()==='1');
+  return (v===null||v===undefined)?null:String(v).trim();
+}
+
+// bridge() for the gated verbs. Refuses locally — with a reason — instead of firing a command whose
+// refusal the admin can only see in game.
+// ⚠ A FAILED read must not block the send. Absent evidence is not evidence of a locked gate, and
+// the GSC gate is authoritative either way: refusing here on a dropped rcon packet would invent an
+// outage the server does not have. Warn and send.
+async function funBridge(bcmd,label){
+  if(FUN_GATED_RX.test(bcmd)){
+    const v=await refreshFunGate(true);
+    if(v==='0'){
+      toast('Locked — Cheat Verbs is OFF on the server (it re-locks on every server restart). Flip it on, then retry.','wn');
+      actLog('Refused '+bcmd+' — gf_fun_cheats is 0','wn');
+      return false;
+    }
+    if(v===null) toast('Could not read the cheat gate — sending anyway','wn');
+  }
+  return bridge(bcmd,label);
 }
 
 // ─── Command queue (sent → received tracker, with auto-retry) ─────────────────
