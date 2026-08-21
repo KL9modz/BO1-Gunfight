@@ -256,6 +256,11 @@ Do not decommission the old box until every line passes.
 - [ ] Country flags render (geo path working through the panel)
 - [ ] Connect history shows **pre-migration** entries (day-files carried successfully)
 - [ ] ntfy join alert fires on a real join
+- [ ] The Discord join card carries the **map picture** - i.e. `deploy.ps1 -Web` actually ran.
+      ⚠ This one **cannot fail loudly**: the card builds the URL from the map id and Discord draws
+      nothing on a 404, so the alert still posts, still has its button and mention, and simply loses
+      its picture. Nobody would notice from the alert alone. Spot-check the source directly:
+      `https://gunfight.us/assets/maps/mp_nuked.jpg` must return **200**.
 - [ ] `register_services.ps1 -List` shows all tasks `Running`
 - [ ] Panel reachable over the SSH tunnel; FAVORITES pinboard intact
 - [ ] `ssh -v -o PubkeyAuthentication=no gf-vps` answers `publickey` **and nothing else**
