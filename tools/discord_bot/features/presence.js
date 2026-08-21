@@ -268,7 +268,12 @@ function presence(ctx) {
   const statusPath = cfg.statusJson || DEFAULT_STATUS_JSON;
   // Off until someone uploads art in the Portal and confirms a bot profile actually renders it.
   const art = cfg.presenceMapArt ? { appId: cfg.applicationId } : null;
-  const style = cfg.presenceStyle || 'watching';
+  // ⚠ NO DEFAULT HERE, and that is the whole point. This line used to read `|| 'watching'`, which
+  // turned an unset presenceStyle into an explicit "watching" BEFORE buildPresence saw it - so
+  // `busyStyle = style || 'playing'` resolved to watching and the state-based type selection never
+  // ran. The profile read "Watching 1 player on Drive-In" while the config and the state logic were
+  // both correct. An empty string has to stay empty for "let the state decide" to mean anything.
+  const style = cfg.presenceStyle || '';
   const buttons = cfg.presenceButtons || [];
   const opts = { text: cfg.presenceText || '', custom: cfg.presenceCustom || '' };
 
@@ -292,10 +297,15 @@ function presence(ctx) {
     if (sig === lastSent) return;
     lastSent = sig;
     setPresence(p);
-    // ⚠ Logged on a STATE change, not on every push. The player count changes all evening, and a
-    // line per change would bury the gateway's own messages in a cosmetic feature's chatter.
-    if (p.status !== lastStatus) {
-      lastStatus = p.status;
+    // ⚠ Logged on a STATE change, not on every push - the player count changes all evening and a
+    // line per change would bury the gateway's own messages in cosmetic chatter.
+    // ⚠ But the state is the STATUS **and the activity type**. Gating on status alone hid the
+    // quiet->busy transition entirely, because both are 'online': the bot switched from a custom
+    // status to a Playing activity and the service log said nothing for sixteen minutes, which is
+    // exactly the window where "is it even pushing?" needed answering.
+    const stateKey = p.status + '/' + p.activities.map((a) => a.type).join(',');
+    if (stateKey !== lastStatus) {
+      lastStatus = stateKey;
       // ⚠ EVERY activity, not just the first. With a custom status AND a pinned activity there are
       // two, and logging only [0] made the service log look like the branding half was never sent.
       log('presence: ' + p.activities.map((a) => `[type ${a.type}] ${a.state || a.name}`).join('  +  ')

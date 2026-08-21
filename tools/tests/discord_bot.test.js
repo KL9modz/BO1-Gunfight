@@ -947,3 +947,18 @@ test('an empty server never advertises emptiness in EITHER phrasing', () => {
     assert.ok(!/empty|nobody|waiting|no one/i.test(t), `${style} still sells it: "${t}"`);
   }
 });
+
+test('an UNSET presenceStyle must stay unset all the way into buildPresence', () => {
+  // THE bug: the factory read `cfg.presenceStyle || 'watching'`, so an empty setting became an
+  // explicit "watching" before the state logic ever saw it - and `busyStyle = style || 'playing'`
+  // then resolved to watching. The profile read "Watching 1 player on Drive-In" while both the
+  // config and the state logic were individually correct. A default in the wrong place.
+  const src = fs.readFileSync(path.join(botDir, 'features', 'presence.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(!/cfg\.presenceStyle\s*\|\|\s*'watching'/.test(src),
+    'the factory must not substitute a style - the STATE decides');
+  // and prove the end-to-end behaviour, not just the absence of a string
+  const busy = buildPresence(snap({ humans: 1, players: [{ name: 'KL9' }] }), NOW, null, '', [], {});
+  assert.strictEqual(busy.activities[0].type, 0, 'one human -> Playing');
+  assert.ok(/with: KL9/.test(busy.activities[0].name), busy.activities[0].name);
+});
