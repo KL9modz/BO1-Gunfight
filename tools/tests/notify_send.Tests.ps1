@@ -416,3 +416,40 @@ Describe "Send-GfDiscord - a failed BOT post must never lose the alert" {
         Assert-True ($script:GfDiscordLastError -like '*WITHOUT buttons*') "got '$($script:GfDiscordLastError)'"
     }
 }
+
+Describe "Send-GfDiscord - a ONE-field card must ship fields as a LIST" {
+    # 🛑 THE INCIDENT, 2026-08-20: four join alerts lost to a bare 400. A $( ) SUBEXPRESSION unrolls
+    # a one-element array back to the bare element, so a card with a single field shipped
+    #     "fields":{...}     instead of     "fields":[{...}]
+    # and Discord rejected the whole message. Every card had TWO fields (location + the text link)
+    # until the button replaced the link field with nothing - so this lay dormant for months and
+    # detonated on a config change rather than a code change.
+    $script:sentBody = $null
+    function Invoke-RestMethod { param($Uri,$Method,$Body,$ContentType,$TimeoutSec,$Headers)
+        $script:sentBody = [System.Text.Encoding]::UTF8.GetString($Body); return $null }
+    $cfg = [pscustomobject]@{ serverName='Gunfight'; ntfyTopic=''
+                              discordWebhooks=[pscustomobject]@{ default='https://d/def' } }
+    $field = @{ name = 'x'; value = 'v' }
+
+    It 'ONE field serialises as an array, not an object' {
+        $script:sentBody = $null
+        $null = Send-GfDiscord -Config $cfg -Title 't' -Message 'm' -Fields @($field)
+        Assert-True ($script:sentBody -match '"fields":\[') "shipped: $([regex]::Match($script:sentBody,'"fields":.{0,40}').Value)"
+    }
+    It 'TWO fields still serialise as an array' {
+        $script:sentBody = $null
+        $null = Send-GfDiscord -Config $cfg -Title 't' -Message 'm' -Fields @($field, @{ name='y'; value='v2' })
+        Assert-True ($script:sentBody -match '"fields":\[') 'two fields must stay a list'
+    }
+    It 'and it is never DOUBLE wrapped, which is the opposite mistake' {
+        # `,` inside $( ) is right; `,` on a plain assignment ships [[{...}]] and 400s just as hard.
+        $script:sentBody = $null
+        $null = Send-GfDiscord -Config $cfg -Title 't' -Message 'm' -Fields @($field)
+        Assert-True (-not ($script:sentBody -match '"fields":\[\[')) 'fields must not be nested'
+    }
+    It 'no fields at all still sends, with a description instead' {
+        $script:sentBody = $null
+        $null = Send-GfDiscord -Config $cfg -Title 't' -Message 'body text' -Fields @()
+        Assert-True ($script:sentBody -match '"description":"body text"') 'falls back to the description'
+    }
+}

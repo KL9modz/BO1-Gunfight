@@ -274,7 +274,15 @@ function Send-GfDiscord {
         description = $(if ($Fields -and $Fields.Count) { $null }
                         elseif ($Prefix) { ([string]$Prefix + "`n" + [string]$Message).Trim() }
                         else { [string]$Message })
-        fields      = $(if ($Fields -and $Fields.Count) { @($Fields) } else { $null })
+        # ⚠ THE COMMA IS LOad-BEARING, and its absence cost four lost join alerts on 2026-08-20.
+        # A $( ) SUBEXPRESSION UNROLLS a one-element array back to the bare element, so a card with
+        # a single field shipped `"fields":{...}` instead of `"fields":[{...}]` and Discord answered
+        # a bare 400. Every card had two fields until the button replaced the link field with
+        # nothing - so this lay dormant for months and detonated on a config change.
+        # ⚠ Note the OPPOSITE rule one line up: `embeds = @($embed)` needs no comma, because a plain
+        # assignment into a hashtable does NOT unroll. Comma inside $( ), never on assignment - and
+        # getting that backwards is its own bug (it ships `[[{...}]]`, also a 400).
+        fields      = $(if ($Fields -and $Fields.Count) { ,@($Fields) } else { $null })
         color       = $stripe
         # ⚠ FOOTER TEXT IS RAW - Discord renders no markdown and no links in it, so a footer can
         # never be a hyperlink. It can only SAY 'gunfight.us'; the clickable half is the embed url
@@ -333,7 +341,18 @@ function Send-GfDiscord {
     catch {
         # 429 = webhook rate limit (5 req / 2s per webhook). Report it and MOVE ON: a retry loop
         # inside a watchdog tick would stall the very health check that is trying to alert.
+        # ⚠ READ THE BODY. Discord puts the actual reason there - "Invalid Form Body" plus the exact
+        # offending field - while the status line alone says "400 Bad Request", which is nearly
+        # content-free. Four join alerts were lost chasing a bare 400 that could have named itself.
         $script:GfDiscordLastError = $_.Exception.Message
+        try {
+            $resp = $_.Exception.Response
+            if ($resp) {
+                $sr = New-Object IO.StreamReader($resp.GetResponseStream())
+                $body = $sr.ReadToEnd()
+                if ($body) { $script:GfDiscordLastError += ' :: ' + $body }
+            }
+        } catch { }
         return $false
     }
 }
