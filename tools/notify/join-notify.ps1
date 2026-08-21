@@ -585,15 +585,26 @@ function Do-Tick($cfg) {
       # ⚠ Either a BUTTON or the text link, never both - two calls to action on one card is the
       # "Play appeared twice" bug in a new costume. Decided once at startup by whether the bot
       # transport is reachable, because only the bot can carry components.
+      # Discord-only: a mention is meaningless on ntfy and would render as literal <@123…> there.
+      # In an embed it draws the chip WITHOUT notifying anyone (embeds never notify), which is what
+      # we want - the player who just joined does not need their phone buzzed.
+      #
+      # 🛑 THIS MUST BE RESOLVED **BEFORE** THE CARD IS BUILT, and for a long time it was not: the
+      # assignment sat SEVEN LINES BELOW the Get-JoinFieldsDiscord call that reads it. Inside this
+      # foreach, that meant the first player of a batch got an EMPTY mention (so a linked player
+      # showed their city instead of their @) and every later player got the PREVIOUS player's
+      # mention - a mis-attribution, not just a missing field. It predates the fields refactor; the
+      # same gap existed when this built a description instead.
+      $mention = Get-GfPlayerMention (Get-GfPlayerLinks $script:PlayerLinkFile) $p.guid
+
+      # ⚠ Either a BUTTON or the text link, never both - two calls to action on one card is the
+      # "Play appeared twice" bug in a new costume. Decided once at startup by whether the bot
+      # transport is reachable, because only the bot can carry components.
       $dButtons = $(if ($script:UseJoinButton) { Get-JoinButton $script:JoinLink } else { @() })
       $dFields  = Get-JoinFieldsDiscord $loc $p.ping $mention $(if ($script:UseJoinButton) { '' } else { $script:JoinLink })
       $logd = Get-LogDetail $geo.place $p.ping $cnt     # log gets the place without the flag
       $ptag = Count-Tag $cur.Count                      # 👤 / 👥 by TOTAL players online
       $dTitle = Get-JoinTitleDiscord $p.name $mapName $cur.Count
-      # Discord-only: a mention is meaningless on ntfy and would render as literal <@123…> there.
-      # In an embed description it draws the chip WITHOUT notifying anyone (embeds never notify),
-      # which is what we want - the player who just joined does not need their phone buzzed.
-      $mention = Get-GfPlayerMention (Get-GfPlayerLinks $script:PlayerLinkFile) $p.guid
       if ($wasEmpty -and -not $firstDone) {
         $firstDone = $true
         Write-Log "FIRST $($p.name)  (server now active, $($cur.Count) online)$logd"

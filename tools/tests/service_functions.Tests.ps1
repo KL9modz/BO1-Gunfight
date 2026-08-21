@@ -512,3 +512,20 @@ Describe "Join title says what was joined" {
         Assert-Eq (Get-JoinTitleDiscord 'KL9' '' 1) "KL9 $([char]0x2794) Joined match" 'no trailing colon'
     }
 }
+
+Describe "join-notify - the mention is resolved BEFORE the card is built" {
+    # 🛑 A source-ORDER test, because this bug is invisible to a unit test: $mention was assigned
+    # SEVEN LINES BELOW the Get-JoinFieldsDiscord call that reads it, inside a foreach. The first
+    # player of a batch therefore got an empty mention (a linked player showed their city), and
+    # every later player got the PREVIOUS player's mention - a mis-attribution. Every function
+    # involved passed its own tests; only the ORDER was wrong.
+    $src = Get-Content (Join-Path $toolsRoot 'notify\join-notify.ps1')
+    $assign = ($src | Select-String -Pattern '^\s*\$mention\s*=\s*Get-GfPlayerMention' | Select-Object -First 1).LineNumber
+    $use    = ($src | Select-String -Pattern 'Get-JoinFieldsDiscord \$loc' | Select-Object -First 1).LineNumber
+
+    It 'assigns $mention before the field builder reads it' {
+        Assert-True ($assign -gt 0) 'the mention assignment was not found - renamed?'
+        Assert-True ($use -gt 0)    'the Get-JoinFieldsDiscord call was not found - renamed?'
+        Assert-True ($assign -lt $use) "assignment is on line $assign but it is READ on line $use"
+    }
+}

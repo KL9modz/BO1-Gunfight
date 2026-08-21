@@ -107,13 +107,26 @@ const clamp = (t, n) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
 // than dropping it, so it is clamped here instead of trusted from config.
 const BUTTON_MAX = 2, LABEL_MAX = 32;
 
-const shape = (name, status, art, style, buttons) => {
+/*
+ * ⚠ The profile card TRUNCATES a long activity line to its own width - "Gunfight on Drive-In (5-4)
+ * with: Sora35…" - and that is the client's layout, not our 128-char cap. Rich presence normally
+ * splits across THREE lines (name, details, state), so `extra` carries the other two.
+ * Whether a BOT's type-0 activity honours details/state is untested: buttons and assets are both
+ * ignored for bots, so this may be too. It costs nothing to send and is verified by looking.
+ */
+const shape = (name, status, art, style, buttons, extra) => {
   const type = Object.prototype.hasOwnProperty.call(TYPES, style) ? TYPES[style] : WATCHING;
   // ⚠ `name` is mandatory on every activity, even type 4 where nothing renders it. Omitting it is a
   // malformed payload, not a shorter one.
   const activity = type === TYPES.custom
     ? { name: 'Custom Status', type, state: clamp(name, NAME_MAX) }
     : { name: clamp(name, NAME_MAX), type };
+  // ⚠ A BOT RENDERS `name` AND `state`, BUT NOT `details`. Proven live 2026-08-20: a payload
+  // carrying all three showed "Playing / Gunfight / with: KL9" - name bold on one line, state under
+  // it, and the details line (which held the map and score) silently dropped.
+  // So there are exactly TWO usable lines, and anything put in `details` is thrown away. That is
+  // why the map and score belong in `name`.
+  if (extra && extra.state && type !== TYPES.custom) activity.state = clamp(extra.state, NAME_MAX);
   if (art && art.key) {
     activity.application_id = art.appId;
     activity.assets = { large_image: art.key, large_text: clamp(art.text || art.key, NAME_MAX) };
@@ -213,9 +226,22 @@ function buildPresence(snap, nowMs, art, style, buttons, opts) {
   // stale snapshot must not put a confident map image on the profile.
   const withArt = art && snap.map ? Object.assign({}, art, { key: snap.map, text: map }) : null;
   const live = SAY_FOR(busyStyle).busy(humans, map, snap.players, snap);
+  // The same information, split the way rich presence lays it out. If the client renders only
+  // `name` we lose nothing - it still carries the whole line.
+  const sc = snap.score || {};
+  const a2 = Number(sc.allies) || 0, x2 = Number(sc.axis) || 0;
+  const roster = nameList(snap.players, 100);
+  // TWO lines, because that is what a bot profile actually renders:
+  //     Playing
+  //     Gunfight on Drive-In (5-4)     <- name, bold
+  //     with: Sora35, KL9, YooDyl      <- state
+  // ⚠ The map and score live in NAME, not details. `details` is silently dropped for a bot, and
+  // putting them there made them vanish from the card entirely.
+  const headline = (a2 || x2) ? `Gunfight on ${map} (${a2}-${x2})` : `Gunfight on ${map}`;
+  const split = o.split ? { state: roster ? `with: ${roster}` : '' } : null;
   // ⚠ NOT pinned while humans are on. presenceText is what the profile says when there is nothing
   // to report; the moment there IS something, reporting beats advertising.
-  return withOverrides(shape(live, 'online', withArt, busyStyle, buttons), o, live, false);
+  return withOverrides(shape(o.split ? headline : live, 'online', withArt, busyStyle, buttons, split), o, live, false);
 }
 
 /*
@@ -275,7 +301,7 @@ function presence(ctx) {
   // both correct. An empty string has to stay empty for "let the state decide" to mean anything.
   const style = cfg.presenceStyle || '';
   const buttons = cfg.presenceButtons || [];
-  const opts = { text: cfg.presenceText || '', custom: cfg.presenceCustom || '' };
+  const opts = { text: cfg.presenceText || '', custom: cfg.presenceCustom || '', split: Boolean(cfg.presenceSplit) };
 
   let timer = null;
   let lastSent = null;      // full payload signature: suppresses a resend of an identical line
