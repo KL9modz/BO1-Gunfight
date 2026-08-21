@@ -77,6 +77,25 @@ wins** takes the match.
   spectator-strand theory for these reports. ⚠ That zero was **local to those captures, never global** —
   the strand is real and measured; see the next-but-one bullet.
   ([[quiet-team-move-cleared-class-blocks-respawn]])
+- **RESOLVED — "sometimes players can't open the pause menu, as if anti-quit were on".** Same family
+  as the bullet above and the same root shape: a stock post-condition of team assignment that the
+  mod's *quiet* seating silently dropped. **`g_scriptMainMenu` is the pause screen's only door** — the
+  client dvar naming the scriptmenu ESC opens (`menu_class_<team>` → `class_marines`/`class_opfor`,
+  one-line wrappers that `open class`, the PC pause menuDef we fork for the ticker; `menu_team` for a
+  spectator; **empty = ESC does nothing**). **Every** stock team-assign path re-pushes it and nothing
+  else ever writes it (`_globallogic_ui` `:269`/`:502`/`:551`/`:591`, `_globallogic_player`
+  `:344`/`:367`, and `_globallogic.gsc:1023` rewriting it to `endofgame` at **match end**), but this
+  mod replaces those handlers with menu-free quiet seating (`gf_seatJoinTeam`, `gf_quietSetTeam`, the
+  pre-spawn `pteam`/`movePending` consumers), so a seated human kept whatever their client held: `""`
+  on a fresh launch, or a stale `endofgame`. ⚠ **`beginClassChoice` does NOT cover it** — under
+  `scr_disable_cac 1` it assigns `level.defaultClass` and returns before any menu work. "Sometimes" was
+  `gf_seatBalancedJoin`'s **exact-parity fall-through** to real stock `menuAutoAssign`, which did push —
+  so it depended on how the human split sat when they connected. Fixed by pushing it from
+  **`gf_setTeamFields`** (`gf_pushEscMenu`, humans only, unconditional — a skip-if-unchanged cache
+  would skip exactly the push that repairs a client stock rewrote), the one choke point every
+  sanctioned team write passes through, the same reason the spectate breadcrumb clears there.
+  ⚠ Rule, the sibling of the `pers["class"]` one above: **any mod path that seats a human must leave
+  `g_scriptMainMenu` valid.** ([[quiet-seating-skipped-g-scriptmainmenu-esc-dead]])
 - **Bot mis-seater — reattributed: the "UNTRACED" writes are (mostly) unstamped STOCK menu/autoassign
   paths, not a C-side engine writer.** The every-re-begin `GF_TEAMTRACE: UNTRACED bot <name> spectator ->
   <team> - last stamp NONE …, at pre-spawn` noise is parked bots hitting the re-begin team menu
@@ -152,6 +171,32 @@ wins** takes the match.
   at `gf_round_over` +0.5s, and `startLastKillcam` snapshots `level.players` *after* `play_final_killcam`).
   **Next occurrence: read the `GF_ENDWATCH:` log line — it names the client and the flag.**
   ([[infinite-round-orphaned-killcam-flag]])
+- **OPEN — the main menu's "JOIN GUNFIGHT" button dies after leaving a match and stays dead until the
+  GAME is restarted.** ⚠ **NOT root-caused, and this bullet has already carried two WRONG diagnoses —
+  do not treat the hardening below as the fix.** The repro is precise and any explanation must fit
+  both halves: it breaks **only after having been in a match** (never on a cold main menu) and it
+  needs a **restart** (it does not clear on its own). ⚠ Decisive narrowing from the owner: **in the
+  broken state the rest of the fork still renders** (gunfight.us ad block + our ticker on screen), so
+  the menu is ours and the itemDef is live — **only the ACTION does nothing.** Not the
+  `g_scriptMainMenu` bug (that is read *in game* for ESC's menu). **Ruled out, do not re-chase:** the
+  build (the action inflates from `mod.ff` intact), the macro, DNS, the **`:8305`** in every
+  client-log resolution (it is the session endpoint Plutonium negotiates *after* the connect;
+  `connect gunfight.us:28960` typed at the console connects), **"Demonware wasn't ready"** (all **45**
+  readiness dumps across every client log read `Can play online: true`, including one *after* a
+  disconnect), and **"the `mod` zone loses the UI-zone reload"** (killed by the ad block still
+  rendering). **Shipped in `ui_mp/main.menu`, one rebuild, in confidence order:** a leading
+  `exec "disconnect";` (**the live hypothesis** — the only change whose shape matches "breaks only
+  once a session exists to go stale"; stock issues `exec "disconnect"` **30** times and
+  `execNow "disconnect"` zero, and it is a no-op at an unconnected menu), stock's DW readiness gate as
+  `GF_JOIN_ACTION` (hardening — ours was the only networked main-menu button without one, and its
+  `else` turns a dead click into a "still connecting" popup), and `execNow` → **`exec`**. ⚠ **ONE
+  TEST IS STILL OWED and it is the only discriminating step:** in the broken state, does console
+  `connect gunfight.us:28960` work? Yes ⇒ only the menu action path is broken (`exec` is the cure);
+  no ⇒ the client is wedged and the button is a victim. ⚠ **Nothing is in a built artifact yet**, and
+  note the trap: a `mod.ff` whose mtime was 31s NEWER than the source edit still inflated to the old
+  `execNow`, because `build_ff.ps1` stages menus and the linker reads the staged copy — **inflate and
+  read the action string; never trust the timestamp.**
+  ([[join-gunfight-button-exec-form-and-endpoint]])
 - **Pregame lobby can end on its own** (should end only via the load/min gate or an admin START) — only
   reachable when `scr_gf_lobby` is Auto/Manual, which is now the **default** (`1` = Auto, changed
   2026-07-29), so it is no longer masked by the shipped config.
@@ -867,13 +912,23 @@ exist in T5). Base perks: no-fall-damage (Lightweight Pro — the speed half `mo
 **not** granted, the +7% made 42s rounds twitchy), Marathon, Flak Jacket, flash/stun resist. Fast
 weapon switch is **not** in the base set (admins add it via `gf_perk_on`).
 
-Per-slot camo via `CalcWeaponOptions` (primary + independent secondary); rolled once at pool build.
+Per-slot camo via `CalcWeaponOptions` (primary + secondary, independent); dealt once at pool build.
 **The rotation is a curated list — `gf_camoPool()` in `_gf_loadouts.gsc`, and that function IS the
 edit surface**: uncomment an index to add it, comment it out to drop it. Every pool line ships as camo
-`-1` (Random), so `gf_rollCamo()` picks from that list at pool build (53 loadouts × 2 slots, once per
-match — never per spawn, never per frame, so rebuilding the small array there is free). **Two runtime
-switches sit on top of that list** — `scr_gf_camo_base` / `scr_gf_camo_modded` (see the dvar table),
-which filter it at pool build and re-resolve at each give, with **Gold in both sets**. ⚠ **It used to
+`-1` (Random). ⚠ **Random here means DEALT FROM A SHUFFLED BAG, never an independent roll** — that is
+the fix for "camos repeat too often" (2026-08-20): with ~29 enabled indices and 106 independent draws
+a camo landed 3-4 times on average and nothing stopped two *consecutive* loadouts drawing it, and a
+player only sees ~6 loadouts a match, so a visible repeat per match was the norm rather than bad luck.
+`gf_dealCamos( pool )` runs in `gf_initLoadouts` **after** the Fisher-Yates pool shuffle — so bag
+order IS play order — and fills every `-1` from two shuffled `gf_shuffledCamoBag()` bags (primary and
+secondary independently), handing out every enabled camo **once before any repeats**; a refilled bag
+swaps its first entry away if it equals the value the previous bag closed on, the one place a
+back-to-back repeat could survive. ⚠ **The deal must stay AFTER the shuffle** — rolling per slot
+inside `gf_load` (the old shape) spread the guarantee over the *authoring* order, which the shuffle
+then scrambled straight back into noise. Still once per match, never per spawn, never per frame.
+**Two runtime switches sit on top of that list** — `scr_gf_camo_base` / `scr_gf_camo_modded`
+(see the dvar table), which filter it at pool build and re-resolve at each give, with **Gold in both
+sets**. ⚠ **It used to
 be a bare `randomInt( 16 )`, which could only ever return 0-15 and therefore made every custom camo
 UNREACHABLE no matter how many shipped** — if a newly added camo never appears in a live round, check
 this list before suspecting the assets. ⚠ An index here **must** have a `weaponOptions.csv` row **and**
@@ -1613,7 +1668,7 @@ tables → `docs/REFERENCE.md`.
 | `scr_gf_roundswitch` | 2 | Rounds between side switches. |
 | `scr_gf_roundsperloadout` | 2 | Rounds before the shared loadout rotates (clamp 1-9). |
 | `scr_gf_lethals` / `scr_gf_tacticals` / `scr_gf_equipment` | 1 / 1 / 1 | **Per-slot admin switches** — `0` turns that whole loadout slot off server-wide (nobody gets a lethal / tactical / placed equipment, on any loadout), and `_gf_hud` hides the matching overview column (`ui_gf_lo_show2`/`3`/`4`; the row's bracket still spans all three, so the block never reflows). Read **live at each spawn's loadout build** (`_gf_loadouts::gf_slotOn`, empty = on), so a panel flip lands on the next spawn — the next round for anyone already alive. **No pool rebuild**: the loadout still carries the item, only the give is skipped, so flipping one back on restores exactly what it was giving. Composes with, and never overrides, the two existing narrower skips — a loadout authored with `"none"` equipment (`gf_slotEmpty`) and the bot equipment exclusion. Panel: DASHBOARD → GUNFIGHT → *Loadout Slots*. Plain dvar rows, **no bridge verb** (nothing to apply — the give site is the reader). |
-| `scr_gf_camo_base` / `scr_gf_camo_modded` | 1 / 1 | **The two camo-class switches** — `0` on either forbids that whole family from the rotation: base = the stock camos (1-14), modded = this mod's own (17-46). ⚠ **Gold (15) belongs to BOTH sets** deliberately (the one camo every BO1 player knows), so it survives either switch and is gone only when both are off — which leaves every gun on index `0`, the plain factory finish, itself never a camo and **always** allowed (that is also what keeps the Minigun/M202/Finger-Gun `0` pins untouched). Read at **pool build** (`gf_camoPool` filters through `_gf_loadouts::gf_camoAllowed`) **and** at each spawn's give (`gf_resolveCamo`), so a flip lands on the **next spawn**, not the next match. ⚠ A loadout already carrying a disabled camo is remapped **deterministically** (`enabled[ idx % enabled.size ]`), never re-rolled — a roll would hand two players different guns out of the one shared loadout. `gf_force_camo` is applied after the resolve, so an admin force still wins. Plain dvar rows (DASHBOARD → GUNFIGHT → *Camo*), **no bridge verb**. Which indices are in the rotation *at all* remains the source-side `gf_camoPool()` list — these are the runtime masters over it. |
+| `scr_gf_camo_base` / `scr_gf_camo_modded` | 1 / 1 | **The two camo-class switches** — `0` on either forbids that whole family from the rotation: base = the stock camos (1-14), modded = this mod's own (17-33, incl. the MW2 imports at 30-33). ⚠ **Gold (15) belongs to BOTH sets** deliberately (the one camo every BO1 player knows), so it survives either switch and is gone only when both are off — which leaves every gun on index `0`, the plain factory finish, itself never a camo and **always** allowed (that is also what keeps the Minigun/M202/Finger-Gun `0` pins untouched). Read at **pool build** (`gf_camoPool` filters through `_gf_loadouts::gf_camoAllowed`) **and** at each spawn's give (`gf_resolveCamo`), so a flip lands on the **next spawn**, not the next match. ⚠ A loadout already carrying a disabled camo is remapped **deterministically** (`enabled[ idx % enabled.size ]`), never re-rolled — a roll would hand two players different guns out of the one shared loadout. `gf_force_camo` is applied after the resolve, so an admin force still wins. Plain dvar rows (DASHBOARD → GUNFIGHT → *Camo*), **no bridge verb**. Which indices are in the rotation *at all* remains the source-side `gf_camoPool()` list — these are the runtime masters over it. |
 | `scr_gf_timelimit` / `_large` | 0.7 / 1.5 | Round length in minutes, small / large mode (0.7 = 42s). |
 | `scr_gf_overtimelimit` / `_large` | 15 / 30 | Overtime seconds, small / large; `0` = OT off (HP decides now). |
 | `gf_capture_time` / `_large` | 3.5 / 5 | OT zone hold-to-capture seconds, small / large. |
@@ -1760,7 +1815,24 @@ evidence, incl. the live typed read (`default:"1" Domain is 0 or 1`, versus the 
   `funcodpoints_`, `fununlockpro`), permanently, no undo. **Intended** — that is the rank-restoration
   path for a player who wants their Gunfight progress folded into their real profile. Rare-use by
   policy, behind the panel's Cheat Verbs gate. ⚠ Do not re-widen them, and do not "restore" the old
-  sandboxed wording in `_gf_fun.gsc`.
+  sandboxed wording in `_gf_fun.gsc` — or in the **panel**, which kept that wording until 2026-08-20
+  because `3fd02ea` fixed the GSC comments and missed `index.html`.
+  ⚠ **Every account write must go through the `_persistence` entry point that stock's READER is the
+  inverse of** — `statSet` for `plevel`/`rankxp`, `_rank::setCodPointsStat` for CoD points, stock's
+  `unlockItemFromChallenge` for pro perks. `gf_funPrestige` hand-rolled a **4-arg**
+  `setDStat( …, "plevel", "StatValue", p )` — a child node stock never reads (its reader is the
+  **2-arg** `getdstat( "PlayerStatsList", "plevel" )`; the literal `"StatValue"` appears **nowhere**
+  in the stock dump). A DStat key-path error is **silent in both directions**, and `setRank` made it
+  look applied, so the only symptom was the prestige **reverting at the next round boundary** when
+  `Callback_PlayerConnect` re-ran and `_rank::onPlayerConnect` re-read the untouched stat. ⚠ The
+  header calling it "EnCoRe's exact battle-tested sequence" is what kept it unexamined — a borrowed
+  line from another mod is **not** evidence ([[dstat-key-path-must-match-stock-reader]]).
+  ⚠ **The Cheat Verbs gate re-locks on EVERY server restart** (`gf_fun_cheats` has no
+  `dedicated.cfg` line, so `gf_funInit`'s seed-if-empty puts it back to 0), and its refusal prints
+  only to the admin's in-game killfeed — so from the panel a locked gate looks exactly like a broken
+  button, `gf_ack` and all. The panel now re-reads the gate on every ADVANCED reveal and re-checks
+  it at click time (`funBridge`/`refreshFunGate`); a **failed** read still sends, because absent
+  evidence is not a locked gate ([[cheat-gate-relocks-on-every-server-restart]]).
 - **Not retroactive** — rank already earned in the per-mod file stays stranded there.
 Panel: ADVANCED → ENGINE GAMEPLAY → *Player Stats Profile*, badged `RESTART` (whether the engine
 latches it is unverified, and clients pick their stat set at connect, so cfg + restart is the only
@@ -1811,6 +1883,21 @@ smaller). ([[fastdl-download-clobbers-local-modff]])
 `mod`.** First registration wins; the later duplicate is discarded. From a client `console_mp.log`,
 one connect sequence: `code_pre_gfx_mp` → **`code_post_gfx_mp`(896)** → `patch_mp` → `plutonium_mp` →
 **`mod`(946)** → `patch_ui_mp` → **`ui_mp`(965)** → **`common_mp`/`en_common_mp`(999)** → map zones.
+
+⚠ **"one connect sequence" is doing load-bearing work in that sentence — the client has THREE UI-zone
+passes and `mod` is only in ONE of them.** Read off a live client log (2026-08-20), the UI zones
+`patch_ui_mp`/`plutonium_ui_mp`/`en_ui_mp`/`ui_mp` are loaded **three times** per session, and the
+mod is present for exactly one:
+1. **Game startup** — UI zones load with **NO `mod` at all** (`mod` never appears before them).
+2. **Connect** — `mod` loads first (logging `Overridden rawfile: … from zone mod`), *then* the UI
+   zones reload. **This is the only pass our overrides win.**
+3. **Return to the main menu after leaving a match** — the map zone unloads and the UI zones reload,
+   and **`mod` is NOT reloaded** (it is never unloaded either — it simply is not part of this pass).
+⚠ So a `menufile` override is **only reliably live while connected**, and the table below is about
+pass 2. Anything of ours that must render on the **main menu** (the `main.menu` fork: ad block,
+ticker, JOIN button) is therefore structurally fragile — see the JOIN-button bug in *Open bugs*.
+This is **not** a claim the other overrides are affected: `cgame.str` and the HUD menus are consumed
+in-game, inside pass 2's lifetime, which is why they have always worked.
 
 | Home zone | Overridable by mod.ff? | Proven by |
 |---|---|---|
@@ -2344,6 +2431,36 @@ deliberate diagnostic (a stock resident image at an index >15): if a custom camo
 "the index path broke" from "the image never arrived". Full architecture, incl. the tooling
 (`make_camo_iwi.ps1` generator, `dds_to_iwi.ps1` header-swap importer, `preview_iwi.ps1`) →
 [[custom-camos-bocl-architecture]].
+
+⚠⚠ **A CAMO IS IDENTIFIED BY ITS ROW POSITION IN THE CAMO BLOCK, NOT BY THE INDEX IN COLUMN 1.** The
+index column is decorative: the engine resolves camo N to the **Nth camo row in the file**. While the
+block runs contiguously the two agree, so nothing reveals it — until a row is deleted. Pruning 17
+unused rows (2026-08-21) shifted everything after the first gap: `gf_force_camo 20` rendered **Violet**
+(the row now sitting at position 20), and rows numbered past the end rendered **nothing at all**, while
+camos *before* the gap still worked. **Never delete a camo row without renumbering the block; never
+leave a gap.** The symptom lands on camos you never touched and looks exactly like a delivery failure —
+expect to waste a cycle checking the `.iwd`, the carrier materials and the zone before suspecting it.
+⚠ **The six stock-"solid" columns (f4, f5, f10, f12, f14, f19) are PER-MATERIAL and want different
+tiling**, because furniture UVs magnify a texture far harder than metal ones — that is why stock puts a
+flat swatch there and we put a tile. Shipped: only **`cammo_gunplastic` (f4, 19 of 53 weapons)** takes a
+finer variant (`<camo>_solid`, 8 repeats); every other furniture column takes the **base tile**. Wood and
+small-part columns were measurably *too fine* at even 2 repeats. ⚠ Variance **within** one column (a
+FAL's stock top vs its sides) is not reachable from a camo cell at all, and matching an extreme
+magnification destroys the pattern's character (16 repeats = a dotted mesh). ([[mw2-camo-import-iwi-v8-to-v13]])
+
+⚠ **ANOTHER GAME'S ART IS A THIRD SOURCE — four MW2 camos ship at 30-33** (Blue Tiger, Red Tiger, Red
+Urban, Orange Fall; five more were imported and cut after an in-game audition).
+**MW2 keeps its textures in loose `main\iw_NN.iwd` zips**, so the whole IW4 set is one `unzip` away with
+no fastfile extractor — a property BO1 does not have and MW3/BO2/Ghosts lost again. Its art is **IWi v8**,
+and ⚠⚠ **v8 stores its mip chain SMALLEST-FIRST, so mip 0 is the file's TAIL** — take the head and you get
+a structurally valid image that renders as a smear, with no error anywhere. **`tools/iw4_iwi_to_t5.ps1`**
+does the v8→v13 header swap (same no-re-encode trick as `dds_to_iwi.ps1`) and **verifies** the layout off
+the header's own `offsets[0]`/`offsets[1]` rather than trusting it. ⚠ MW2 tiles are **128²**, half BO1's
+own 256² camo art, and read **too soft** on a gun as-is — what ships is the tile block-tiled **3×** into
+384² with a contrast punch (`tools/camo_punch.ps1`; endpoint maths + block copies, so it is lossless and
+needs no encoder). ⚠ MW2's **gold is not importable** — it is a per-weapon UV-mapped diffuse
+(`weapon_desert_eagle_gold_col`), the same category a camo cell provably cannot deliver.
+([[mw2-camo-import-iwi-v8-to-v13]])
 
 **Perks** (`SetPerk`/`hasPerk`/`UnSetPerk`). **A CAC perk is a `|`-delimited GROUP of `specialty_*`
 tokens, and a Pro ability is just EXTRA tokens in that group** (`_class::validatePerkGroup` splits it,
