@@ -345,6 +345,15 @@ Describe "Send-GfDiscord - components force the BOT transport" {
         if ($Body) { $script:sentBody = [System.Text.Encoding]::UTF8.GetString($Body) }
         return $null }
 
+    # ⚠ THE BOT TOKEN IS STUBBED, and it has to be. Get-GfBotToken reads
+    # tools/discord_bot/config.local.json, which is gitignored and BOX-LOCAL -- so these tests
+    # passed on the server and failed on every other machine (a dev laptop, CI): the token came
+    # back empty, the bot route was skipped, and the card correctly fell to the webhook. That
+    # fallback is the RIGHT production behaviour, which is what made the failure confusing --
+    # the test was asserting the environment, not the code. Stub it like Invoke-RestMethod
+    # above so the bot route is exercised wherever this runs.
+    function Get-GfBotToken { 'STUB-BOT-TOKEN' }
+
     $btn = ,@( @{ type = 1; components = @( @{ type = 2; style = 5; label = 'Play for free!'; url = 'https://gunfight.us/' } ) } )
 
     It 'with a channel id it posts as the BOT, and the button survives' {
@@ -394,6 +403,15 @@ Describe "Send-GfDiscord - a failed BOT post must never lose the alert" {
         # Fail ONLY the bot route, exactly like a missing Send Messages permission.
         if ("$Uri" -like '*/channels/*') { throw 'The remote server returned an error: (403) Forbidden.' }
         return $null }
+
+    # ⚠ THE BOT TOKEN IS STUBBED, and it has to be. Get-GfBotToken reads
+    # tools/discord_bot/config.local.json, which is gitignored and BOX-LOCAL -- so these tests
+    # passed on the server and failed on every other machine (a dev laptop, CI): the token came
+    # back empty, the bot route was skipped, and the card correctly fell to the webhook. That
+    # fallback is the RIGHT production behaviour, which is what made the failure confusing --
+    # the test was asserting the environment, not the code. Stub it like Invoke-RestMethod
+    # above so the bot route is exercised wherever this runs.
+    function Get-GfBotToken { 'STUB-BOT-TOKEN' }
 
     $btn = ,@( @{ type = 1; components = @( @{ type = 2; style = 5; label = 'Play for free!'; url = 'https://gunfight.us/' } ) } )
     $cfg = [pscustomobject]@{ serverName = 'Gunfight'; ntfyTopic = ''
