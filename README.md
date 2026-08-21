@@ -8,7 +8,7 @@
 
 Made by **KL9**. Join us on **[Discord](https://discord.gg/blackops)**.
 
-[![Version](https://img.shields.io/badge/version-0.8.4-ff7a1a)](https://github.com/KL9modz/BO1-Gunfight/releases/latest)
+[![Version](https://img.shields.io/badge/version-0.8.5-ff7a1a)](https://github.com/KL9modz/BO1-Gunfight/releases/latest)
 [![Discord](https://img.shields.io/badge/Discord-join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/blackops)
 [![Website](https://img.shields.io/badge/web-gunfight.us-2ea44f)](https://gunfight.us)
 
