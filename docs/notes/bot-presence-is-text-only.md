@@ -62,7 +62,15 @@ it is what `features/presence.js` does.
   BO1/Plutonium does not speak that protocol either ([[plutonium-serverkey-sets-browser-name]] is
   unrelated; the relevant point is simply that no server can set a *player's* presence).
 - **Map thumbnails on the bot profile: not possible.** Map art in an EMBED still works fine - that
-  takes any public https URL and is a completely different mechanism.
+  takes any public https URL and is a completely different mechanism. **Shipped there instead,
+  2026-08-21:** the join card carries the map picture as its embed thumbnail (`Get-GfMapThumb` in
+  `tools/map_names.ps1` -> `Send-GfDiscord -Thumbnail`), and it coexists with the link button on the
+  same card. Verified live by reading the posted message back: Discord returned a `proxy_url` and
+  `256 x 256`, i.e. it fetched and cached the image rather than merely storing the URL.
+  ⚠ The pictures come from **Plutonium's own rich-presence Art Assets** (app `924614901975117834`,
+  keyed by engine map id), rehosted on gunfight.us by `tools/fetch_map_art.ps1` - so the same art
+  this note proves we cannot put on the profile is exactly what the embed now shows. The asset
+  *page* was never the problem; the *presence* was.
 - The `presenceMapArt` and `presenceButtons` config keys are kept, defaulted OFF, and marked with
   this finding. They cost nothing, and if Discord ever honours these for bots the switch is there.
 
