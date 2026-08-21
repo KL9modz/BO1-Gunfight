@@ -382,3 +382,37 @@ Describe "Send-GfDiscord - components force the BOT transport" {
         Assert-True ($script:sentUri -eq 'https://d/def') 'ordinary alerts keep the webhook identity'
     }
 }
+
+Describe "Send-GfDiscord - a failed BOT post must never lose the alert" {
+    # 🛑 THE INCIDENT, 2026-08-20: components forced the bot transport, the bot lacked Send Messages
+    # on the joins channel, the POST 403'd - and the code returned $false, so a real join (the FIRST
+    # player of the session) produced no Discord card at all. A missing button is cosmetic; a missing
+    # join alert is the feature not working. A failed bot post must degrade to the webhook.
+    $script:calls = @()
+    function Invoke-RestMethod { param($Uri, $Method, $Body, $ContentType, $TimeoutSec, $Headers)
+        $script:calls += [pscustomobject]@{ uri = $Uri; body = $(if ($Body) { [System.Text.Encoding]::UTF8.GetString($Body) } else { '' }) }
+        # Fail ONLY the bot route, exactly like a missing Send Messages permission.
+        if ("$Uri" -like '*/channels/*') { throw 'The remote server returned an error: (403) Forbidden.' }
+        return $null }
+
+    $btn = ,@( @{ type = 1; components = @( @{ type = 2; style = 5; label = 'Play for free!'; url = 'https://gunfight.us/' } ) } )
+    $cfg = [pscustomobject]@{ serverName = 'Gunfight'; ntfyTopic = ''
+                              discordWebhooks = [pscustomobject]@{ joins = 'https://d/joins' }
+                              discordChannels = [pscustomobject]@{ joins = '123' } }
+
+    It 'falls back to the webhook and STILL DELIVERS when the bot post 403s' {
+        $script:calls = @()
+        $ok = Send-GfDiscord -Config $cfg -Title 'YooDyl joined' -Message 'm' -Category 'joins' -Components $btn
+        Assert-True $ok 'the alert must still be reported as sent'
+        Assert-Eq $script:calls.Count 2 'one failed bot attempt, then the webhook'
+        Assert-True ($script:calls[0].uri -like '*/channels/123/messages') 'tried the bot first'
+        Assert-True ($script:calls[1].uri -eq 'https://d/joins') 'then the webhook'
+        $p = $script:calls[1].body | ConvertFrom-Json
+        Assert-True ($null -eq $p.components) 'the webhook copy carries no components'
+        Assert-True ($p.embeds[0].title -like '*YooDyl joined*') 'and it is the SAME alert, not a stub'
+    }
+    It 'records WHY the button is missing, so it is diagnosable' {
+        $null = Send-GfDiscord -Config $cfg -Title 't' -Message 'm' -Category 'joins' -Components $btn
+        Assert-True ($script:GfDiscordLastError -like '*WITHOUT buttons*') "got '$($script:GfDiscordLastError)'"
+    }
+}

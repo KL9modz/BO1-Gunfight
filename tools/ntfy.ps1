@@ -298,7 +298,17 @@ function Send-GfDiscord {
                     -ContentType 'application/json; charset=utf-8' -TimeoutSec 15 | Out-Null
                 return $true
             }
-            catch { $script:GfDiscordLastError = 'bot post failed: ' + $_.Exception.Message; return $false }
+            catch {
+                # 🛑 NEVER LOSE THE ALERT FOR THE SAKE OF A BUTTON. This used to `return $false`, and
+                # on 2026-08-20 a real join (YooDyl, the FIRST player of the session) produced no
+                # Discord card at all: the bot lacked Send Messages on that channel, the POST 403'd,
+                # and the message was simply abandoned. A missing button is cosmetic; a missing join
+                # alert is the feature not working.
+                # So a failed bot post degrades to the WEBHOOK without components, exactly like the
+                # no-token path above, and the reason is recorded for the caller to log.
+                $script:GfDiscordLastError = 'bot post failed (' + $_.Exception.Message + ') - sent via webhook WITHOUT buttons'
+                $payload.Remove('components')
+            }
         }
         # ⚠ Fall through WITHOUT the components rather than sending them into the void, and say so.
         # A silent buttonless card would look like a Discord bug rather than a missing bot token.
