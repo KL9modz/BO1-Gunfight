@@ -549,6 +549,16 @@ function Do-Tick($cfg) {
   # unlisted id falls through to the raw "mp_*" rather than vanishing.
   $mapName = ''
   if ($st.map) { $mapName = Get-GfMapName $st.map }
+  # The map's picture, for the JOIN card only (owner's choice, 2026-08-21). A leave or a heartbeat is
+  # not about a map, and a thumbnail on every card would turn the channel into a photo wall.
+  # '' on an unknown map, and Send-GfDiscord then omits the field entirely.
+  # 🛑 ASSIGNED HERE, BESIDE $mapName, AND NOT ONE LINE LOWER. It is read by both join sends inside
+  # the loop below. It shipped MISSING once (2026-08-21): the sends referenced it, nothing assigned
+  # it, PowerShell resolved an undefined variable to $null without complaint, and every join card
+  # posted with no picture and no error anywhere. Exactly the $mention bug documented further down,
+  # in this same function - a variable READ before it is WRITTEN is this file's recurring failure.
+  $mapThumb = ''
+  if ($st.map) { $mapThumb = Get-GfMapThumb $st.map }
   # Join titles carry the map alone (Get-JoinTitle); $ctx (map + gametype) still backs the
   # heartbeat/empty alerts and the watcher's own status line.
   $ctx = ''

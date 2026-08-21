@@ -529,3 +529,73 @@ Describe "join-notify - the mention is resolved BEFORE the card is built" {
         Assert-True ($assign -lt $use) "assignment is on line $assign but it is READ on line $use"
     }
 }
+
+Describe "notify scripts - no variable is READ that is never ASSIGNED" {
+    # 🛑 THE SECOND read-before-write bug in join-notify.ps1, 2026-08-21. $mapThumb was passed to
+    # BOTH join sends and assigned nowhere: PowerShell resolves an undefined variable to $null
+    # without a murmur, [string]$null is '', and Send-GfDiscord treats '' as "no thumbnail". So every
+    # join card posted with no picture, no error on either side, and a passing test suite - the unit
+    # tests covered Get-GfMapThumb and Send-GfDiscord in isolation and neither could see the gap
+    # between them.
+    #
+    # The order test above catches a variable assigned in the WRONG PLACE. This catches one assigned
+    # in NO place, which is the cheaper mistake to make and the harder one to see.
+    #
+    # ⚠ Deliberately coarse: "assigned ANYWHERE in the file" rather than real flow analysis. It
+    # cannot catch a genuine ordering fault (that is the test above) but it has no false positives
+    # to tune, which is what keeps a lint alive.
+    $files = @('notify\join-notify.ps1', 'ntfy.ps1', 'map_names.ps1')
+
+    # $_ and friends are bound by the runtime, not by any assignment in the source.
+    $automatic = @(
+        '_', 'psitem', 'args', 'true', 'false', 'null', 'input', 'this', 'matches', 'error',
+        'lastexitcode', 'psscriptroot', 'pscommandpath', 'myinvocation', 'psboundparameters',
+        'host', 'home', 'pwd', 'pid', 'stacktrace', 'executioncontext', 'psversiontable',
+        'outputencoding', 'foreach', 'switch', 'ofs', 'nestedpromptlevel', 'shellid'
+    )
+
+    foreach ($rel in $files) {
+        $path = Join-Path $toolsRoot $rel
+        It "$rel reads nothing it never assigns" {
+            $errs = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$errs)
+            Assert-True (-not $errs -or $errs.Count -eq 0) "$rel does not parse: $($errs | Select-Object -First 1)"
+
+            $assigned = New-Object 'System.Collections.Generic.HashSet[string]'
+            # every `$x = ...`, including $script:x
+            foreach ($a in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)) {
+                foreach ($v in $a.Left.FindAll({ $args[0] -is [System.Management.Automation.Language.VariableExpressionAst] }, $true)) {
+                    [void]$assigned.Add($v.VariablePath.UserPath.Split(':')[-1].ToLower())
+                }
+            }
+            # param() blocks AND the `function f($a, $b)` short form
+            foreach ($p in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.ParameterAst] }, $true)) {
+                [void]$assigned.Add($p.Name.VariablePath.UserPath.Split(':')[-1].ToLower())
+            }
+            # foreach ($x in ...) and catch/trap bind a name without an assignment statement
+            foreach ($f in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.ForEachStatementAst] }, $true)) {
+                [void]$assigned.Add($f.Variable.VariablePath.UserPath.Split(':')[-1].ToLower())
+            }
+            # `$x++` / `$x += 1` on a fresh name is still a write as far as this lint cares
+            foreach ($u in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.UnaryExpressionAst] }, $true)) {
+                foreach ($v in $u.FindAll({ $args[0] -is [System.Management.Automation.Language.VariableExpressionAst] }, $true)) {
+                    [void]$assigned.Add($v.VariablePath.UserPath.Split(':')[-1].ToLower())
+                }
+            }
+
+            $orphans = @{}
+            foreach ($v in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.VariableExpressionAst] }, $true)) {
+                $vp = $v.VariablePath
+                # env:/global: come from outside the file; a drive-qualified path is never a local.
+                if ($vp.IsDriveQualified -or $vp.IsGlobal) { continue }
+                $n = $vp.UserPath.Split(':')[-1].ToLower()
+                if ($automatic -contains $n) { continue }
+                if ($assigned.Contains($n)) { continue }
+                if (-not $orphans.ContainsKey($n)) { $orphans[$n] = $v.Extent.StartLineNumber }
+            }
+
+            $report = ($orphans.GetEnumerator() | Sort-Object Value | ForEach-Object { "`$$($_.Key) (line $($_.Value))" }) -join ', '
+            Assert-True ($orphans.Count -eq 0) "read but never assigned in ${rel}: $report"
+        }
+    }
+}
