@@ -342,8 +342,77 @@ CHOICE_MENU_TITLE_CENTER_ALIGN_VIS( "@MPUI_THEATER_LOBBY_CAPS", ITEM_ALIGN_TOP_R
 		// index (stock 1-7 -> 2-8) so this sits at the top of the column.
 		// Hostname, not a literal IP: keeps this file inside the repo address
 		// rule, and gunfight.us is public branding already.
+		//
+		// ⚠ THE GATE BELOW IS THE WHOLE REASON THIS BUTTON USED TO WORK "ONLY
+		// SOMETIMES". `connect` is refused while the client is not ready to play
+		// online -- the engine prints the decision and its terms at every attempt:
+		//     Can play online (controller: 0): true
+		//         false - Live_UserIsGuest( controller: 0 )
+		//         true  - Live_IsUserSignedInToDemonware( controller: 0 )
+		//         true  - LiveStorage_DoWeHavePlaylists()
+		//         true  - LiveStorage_DoWeHaveAllStats( controller: 0 )
+		//         true  - LiveStorage_IsTimeSynced()
+		//         true  - LiveStorage_DoWeHaveContracts()
+		// Those become true some seconds after launch, at a time that varies with
+		// the DW round trip -- so a click landing early did nothing AT ALL, and the
+		// same click a moment later joined. That is the intermittency, and it hits
+		// hardest right after starting the game, which is exactly when a player
+		// reaches for a JOIN button.
+		//
+		// The gate is stock's own, copied verbatim in shape from the three MP
+		// buttons directly below (PLAY/OPERATIONS/THEATER, and ui/main.menu +
+		// ui/main_online.menu use it too): EVERY stock main-menu action that
+		// touches the network is wrapped in it. Ours was the only one that was not.
+		// The `else` branch matters as much as the gate: `popup_connectingtodwhandler`
+		// (ui/error.menu, already registered -- ui/code.txt loads before mod) tells
+		// the player the client is still connecting, instead of a dead click.
+		//
+		// ⚠ `exec`, NOT `execNow`, for the connect itself. `execNow` is
+		// Cbuf_ExecuteText( EXEC_NOW ), which runs the command SYNCHRONOUSLY and
+		// RE-ENTRANTLY from inside this item's click handling, i.e. mid-UI-frame;
+		// `exec` queues it (EXEC_APPEND) to run after the frame. Stock's discipline
+		// is unambiguous: every connection-state command is queued -- `exec
+		// "disconnect"` 30 times and `execNow "disconnect"` ZERO, `exec "map"` 1/0 --
+		// while `execNow` is reserved for UI-local work (ui_animate, set, focusItem,
+		// feeder ops). Stock never issues `connect` from a menu at all, so there is
+		// no precedent to copy; the nearest neighbour is `disconnect`, and it is
+		// queued. It matters more here than on retail because Plutonium replaces the
+		// connect path with an async pipeline (register a Demonware address handle
+		// -> resolve -> request the server's mod list -> FastDL -> "joining
+		// server..."), a poor thing to start re-entrantly from inside a click.
+		//
+		// ⚠ The ADDRESS is proven good -- `connect gunfight.us:28960` typed at the
+		// main-menu console connects (2026-08-20). Do NOT re-chase the port: every
+		// client-log resolution reads `:8305`, but that is the session endpoint
+		// Plutonium negotiates AFTER the connect, not an address a player names.
+		// Full write-up: docs/notes/join-gunfight-button-exec-form-and-endpoint.md
+		// ⚠ THE LEADING `disconnect` IS DELIBERATE, and it targets the actual repro:
+		// the button fails specifically AFTER you have been in a match and come back
+		// to the main menu, and stays failed until the GAME is restarted -- i.e. it
+		// only breaks once there is a session to go stale. Stock never issues a bare
+		// connection change either: `exec "disconnect"` appears 30 times across the
+		// shipped menus (every leave-game path is literally `close popup; exec
+		// "disconnect"`) and `execNow "disconnect"` ZERO times. At the main menu with
+		// nothing connected it is a no-op, so it costs nothing on the healthy path.
+		// ⚠ HYPOTHESIS, not proven -- see the note for the one test that settles it.
+#define GF_JOIN_ACTION																		\
+		if( IsSignedInToLive() == 0 )														\
+		{																					\
+			SIGN_IN_CMD																		\
+			open error_netconnect_popmenu;													\
+		}																					\
+		elseif( isDemonwareFetchingDone() == 1 )											\
+		{																					\
+			exec "disconnect";																\
+			exec "connect gunfight.us:28960";												\
+		}																					\
+		else																				\
+		{																					\
+			open popup_connectingtodwhandler;												\
+		}
+
 		TEMP_CHOICE_BUTTON_VIS(	1, "^3JOIN GUNFIGHT",
-								execNow "connect gunfight.us:28960",
+								GF_JOIN_ACTION,
 								dvarInt( ui_flyoutHasFocus ) == FLYOUT_NONE )
 		PREPROC_TEXT_DRAW_VIS( CHOICE_RECT( 1 ), 0 0, "^3JOIN GUNFIGHT", CHOICE_TEXTSIZE, CHOICE_TEXT_OFFSET_X, 0, CHOICE_TEXTALIGN, NO_BG_DISABLED_COLOR, when( dvarInt( ui_flyoutHasFocus ) != FLYOUT_NONE ); )
 		// ----------------- END gunfight.us join button ---------------------
