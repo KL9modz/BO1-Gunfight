@@ -241,12 +241,13 @@ function validEntry( lo )
     for ( const key of [ "camo", "camoSec" ] )
     {
         const c = lo[key];
-        // Upper bound is 46, not 15: 0-15 are stock, 16 is the diagnostic control row and 17-24
-        // are our custom camos (mp/weaponOptions.csv + the carrier materials in mod.csv). ⚠ Raise
+        // Upper bound is 33, not 15: 0-15 are stock, 16 is the diagnostic control row, 17-29 are
+        // our custom camos and 30-33 the MW2 imports (mp/weaponOptions.csv + the carrier
+        // materials in mod.csv). ⚠ Raise
         // this in lockstep with the last gf_camo_* row, or the editor silently refuses to save a
         // camo the game renders perfectly well.
-        if ( !Number.isInteger( c ) || c < -1 || c > 46 )
-            return key + " must be an integer -1..46 (got " + JSON.stringify( c ) + ")";
+        if ( !Number.isInteger( c ) || c < -1 || c > 33 )
+            return key + " must be an integer -1..33 (got " + JSON.stringify( c ) + ")";
     }
     return validPerks( lo.perks );
 }

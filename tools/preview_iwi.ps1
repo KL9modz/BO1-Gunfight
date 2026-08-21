@@ -82,8 +82,15 @@ for ($by = 0; $by -lt $bh; $by++) {
         $pal = @($p0, $p1, $p2, $p3)
 
         if ($Full) {
+            # ⚠ [Math]::Floor, NOT [int]. PowerShell's [int] cast is BANKER'S ROUNDING, so
+            # [int]($t / 4) over t = 0..15 gives 0,0,0,1,1,1,2,2,2,2,2,3,3,3,4,4 instead of four
+            # clean rows of four -- every 4th texel row landed in the NEXT block down, painting a
+            # regular dot lattice across the whole image. It reads as fine mesh woven into the art,
+            # which is how it survived: -Full is the rarely-used path (block mode averages all 16
+            # texels and is immune), and it took decoding a camo with a genuinely smooth pattern
+            # (the MW2 import) for the lattice to be obviously wrong rather than plausible detail.
             for ($t = 0; $t -lt 16; $t++) {
-                $px = $bx * 4 + ($t % 4); $py = $by * 4 + [int]($t / 4)
+                $px = $bx * 4 + ($t % 4); $py = $by * 4 + [Math]::Floor($t / 4)
                 if ($px -ge $w -or $py -ge $h) { continue }
                 $c = $pal[[int](($idx -shr ($t * 2)) -band 3)]
                 $q = $py * $stride + $px * 3

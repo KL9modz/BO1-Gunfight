@@ -14,8 +14,9 @@
 // free (e.g. "famas_reflex_mp" -> "famas_gl_mp" still shows "FAMAS" + the FAMAS
 // icon). A brand-new base weapon just needs one gf_reg()/gf_regFamily() row.
 //
-//   CAMO: 0-15 pins a camo index (see the camo table in .claude/CLAUDE.md), or
-//         -1 = roll a fresh random camo each match (the old behavior). Minigun &
+//   CAMO: pins a camo index (see the camo table in .claude/CLAUDE.md), or
+//         -1 = DEAL one from the rotation at pool build. Dealt, not rolled: gf_dealCamos()
+//         hands out every enabled camo once before any repeats, in play order. Minigun &
 //         M202 are auto-forced to stock camo (they reject a real camo).
 //
 //   PERKS: OPTIONAL. Comma-separated specialty tokens layered on top of the base perk
@@ -148,6 +149,10 @@ gf_initLoadouts()
         pool[i] = pool[j];
         pool[j] = temp;
     }
+
+    // Deal the camos NOW, walking the shuffled pool in play order, so consecutive loadouts can
+    // never hand out the same camo (see gf_dealCamos). Must run after the shuffle above.
+    pool = gf_dealCamos( pool );
 
     game["gf_pool"] = pool;
     game["gf_init"] = 1;
@@ -422,39 +427,32 @@ gf_camoPool()
     p[p.size] = 14;   // Flora
     p[p.size] = 15;   // Gold
     // ── Gunfight originals (generated, tools/make_camo_iwi.ps1) ──
+    // ⚠ EVERY index here ships, and only these ship. The camos that used to sit commented out in
+    // this list were DELETED outright (rows, art and materials) on 2026-08-21: a commented index
+    // still cost every player its .iwi in the FastDL download while never being rollable. Recover
+    // one from git history if it is ever wanted back.
   p[p.size] = 17;   // Crimson    - dark red / oxblood
   p[p.size] = 18;   // Teal       - teal / navy
-//  p[p.size] = 19;   // Urban      - grey splinter
-  p[p.size] = 20;   // Toxic      - acid green
-//  p[p.size] = 21;   // Sand       - desert khaki
-  p[p.size] = 22;   // Violet     - deep plum
-  p[p.size] = 23;   // White      - flat near-white
-//  p[p.size] = 24;   // Arctic     - pale grey splinter
+  p[p.size] = 19;   // Toxic      - acid green
+  p[p.size] = 20;   // Violet     - deep plum
+  p[p.size] = 21;   // White      - flat near-white
     // ── Novelty (community SSCv1 pack — loud, not military) ──
-//  p[p.size] = 25;   // Rainbow    - vertical rainbow stripes
-//  p[p.size] = 26;   // Monogram   - red repeating monogram
-//  p[p.size] = 27;   // Neon       - neon triangles
-//  p[p.size] = 28;   // Spiral     - rainbow spiral
-  p[p.size] = 29;   // Nebula     - purple/magenta cloud
-  p[p.size] = 30;   // Weave      - magenta/black weave
-  p[p.size] = 31;   // Splatter   - multicolour splatter
-//  p[p.size] = 32;   // Ember      - red/black
-  p[p.size] = 33;   // Oilslick   - green/purple swirl
-  p[p.size] = 34;   // Pastel     - pastel multicolour
+  p[p.size] = 22;   // Nebula     - purple/magenta cloud
+  p[p.size] = 23;   // Weave      - magenta/black weave
+  p[p.size] = 24;   // Splatter   - multicolour splatter
+  p[p.size] = 25;   // Oilslick   - green/purple swirl
+  p[p.size] = 26;   // Pastel     - pastel multicolour
     // ── Gunfight wave 2 (generated; blue/yellow/orange were owner requests) ──
-  p[p.size] = 39;   // Blue       - cobalt / navy
-  p[p.size] = 40;   // Yellow     - wasp yellow / bronze
-  p[p.size] = 41;   // Orange     - burnt orange / ember
-//  p[p.size] = 42;   // Midnight   - near-black blues, stealth
-//  p[p.size] = 43;   // Copper     - copper / rust
-//  p[p.size] = 44;   // Forest     - deep bottle greens
-//  p[p.size] = 45;   // Storm      - blue-grey, finer grain
-//  p[p.size] = 46;   // Bubblegum  - pink / magenta (loud)
-    // ── Military (authentic Treyarch art MP never exposed) ──
-//  p[p.size] = 35;   // Desert RUS - dark olive/brown organic
-//  p[p.size] = 36;   // Urban RUS  - grey-blue horizontal
-//  p[p.size] = 37;   // Flecktarn  - fine German dots
-//  p[p.size] = 38;   // Digital    - chunky multicam blocks
+  p[p.size] = 27;   // Blue       - cobalt / navy
+  p[p.size] = 28;   // Yellow     - wasp yellow / bronze
+  p[p.size] = 29;   // Orange     - burnt orange / ember
+    // ── Modern Warfare 2 (MW2's own camo tiles, imported from its iw_07.iwd) ──
+    // Auditioned in game 2026-08-21; these four were kept, five were cut (Woodland, Desert,
+    // Digital, Arctic, Bush Dweller). See docs/notes/mw2-camo-import-iwi-v8-to-v13.md.
+  p[p.size] = 30;   // MW2 Blue Tiger  - navy tiger stripe
+  p[p.size] = 31;   // MW2 Red Tiger   - red/black tiger stripe
+  p[p.size] = 32;   // MW2 Red Urban   - red/grey urban splinter
+  p[p.size] = 33;   // MW2 Orange Fall - orange/yellow autumn
     return gf_camoClassFilter( p );
 }
 
@@ -510,13 +508,90 @@ gf_resolveCamo( idx )
     return p[ idx % p.size ];
 }
 
-// One roll from the curated set above.
-gf_rollCamo()
+// ── CAMO DEALING — a shuffled BAG, not an independent roll per slot ─────────────────────────
+// Independent uniform rolls are why camos "repeat too often". With ~29 enabled indices and 106
+// draws (53 loadouts × 2 slots) the same camo lands 3-4 times on average, and nothing stops two
+// BACK-TO-BACK loadouts drawing it — a player sees only ~6 loadouts in a match, so a visible
+// repeat inside one match was the norm, not bad luck. Dealing from a shuffled bag makes the
+// spread structural instead of probabilistic: every enabled camo is handed out ONCE before any
+// of them comes round again.
+//
+// ⚠ Dealt AFTER the pool's Fisher-Yates shuffle, so bag order IS play order. Rolling at
+//   gf_load() time (what this used to do) put the no-repeat run on the AUTHORING order, which the
+//   shuffle then scrambled straight back into noise — that is why gf_load now defers with -1.
+// ⚠ Primary and secondary draw from SEPARATE bags, so the primary — the only slot most players
+//   ever see a camo on (neutral-base pistols/launchers render none) — gets the whole no-repeat
+//   run to itself: 29 loadouts, i.e. far longer than any match.
+// Cost: once per match, a handful of shuffles of a ~29-entry array. Free.
+gf_dealCamos( pool )
+{
+    priBag = [];   priAt = 0;   priLast = undefined;
+    secBag = [];   secAt = 0;   secLast = undefined;
+
+    for ( i = 0; i < pool.size; i++ )
+    {
+        ld = pool[i];
+
+        if ( ld["camo"] < 0 )             // -1 = "deal me one"; a pinned index is left alone
+        {
+            if ( priAt >= priBag.size )
+            {
+                priBag = gf_shuffledCamoBag( priLast );
+                priAt  = 0;
+            }
+            if ( priBag.size == 0 )       // both classes off AND 0 dropped: plain factory finish
+                ld["camo"] = 0;
+            else
+            {
+                ld["camo"] = priBag[ priAt ];
+                priLast    = priBag[ priAt ];
+                priAt++;
+            }
+        }
+
+        if ( ld["camoSecondary"] < 0 )
+        {
+            if ( secAt >= secBag.size )
+            {
+                secBag = gf_shuffledCamoBag( secLast );
+                secAt  = 0;
+            }
+            if ( secBag.size == 0 )
+                ld["camoSecondary"] = 0;
+            else
+            {
+                ld["camoSecondary"] = secBag[ secAt ];
+                secLast             = secBag[ secAt ];
+                secAt++;
+            }
+        }
+
+        pool[i] = ld;
+    }
+    return pool;
+}
+
+// One shuffled copy of the curated rotation. `avoidFirst` is the value the PREVIOUS bag closed on
+// — the single place a back-to-back repeat could still survive — so it is swapped off the front.
+gf_shuffledCamoBag( avoidFirst )
 {
     p = gf_camoPool();
     if ( p.size == 0 )                    // both classes off and 0 dropped from the list
-        return 0;
-    return p[ randomInt( p.size ) ];
+        return p;
+    for ( i = p.size - 1; i > 0; i-- )
+    {
+        j    = randomInt( i + 1 );
+        temp = p[i];
+        p[i] = p[j];
+        p[j] = temp;
+    }
+    if ( isDefined( avoidFirst ) && p.size > 1 && p[0] == avoidFirst )
+    {
+        temp = p[0];
+        p[0] = p[1];
+        p[1] = temp;
+    }
+    return p;
 }
 
 // Build one loadout from weapon tokens only — name + HUD icon for every slot are
@@ -562,14 +637,11 @@ gf_load( pri, sec, equip, lethal, tactical, camo, camoSec, perks )
 
     if ( !isDefined( camoSec ) )   // 6-arg call (pre-migration line): secondary follows primary
         camoSec = camo;
-    if ( camo < 0 )
-        load["camo"] = gf_rollCamo();              // -1 = fresh per-match roll, from the curated set
-    else
-        load["camo"] = camo;
-    if ( camoSec < 0 )
-        load["camoSecondary"] = gf_rollCamo();     // independent secondary roll (only real-base secondaries show it)
-    else
-        load["camoSecondary"] = camoSec;
+    // -1 is left AS -1 here: the camo is dealt later by gf_dealCamos(), once the pool has been
+    // shuffled into play order — rolling one here would spread the no-repeat guarantee over the
+    // AUTHORING order, which the shuffle immediately scrambles. A pinned index is honoured as-is.
+    load["camo"]          = camo;
+    load["camoSecondary"] = camoSec;
     // Special primaries reject a real camo — force stock so GiveWeapon doesn't no-op.
     if ( isSubStr( pri, "minigun" ) || isSubStr( pri, "m202" ) )
         load["camo"] = 0;

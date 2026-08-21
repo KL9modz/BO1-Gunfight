@@ -2379,7 +2379,7 @@ const SRV_SECTIONS = [
     { n:'gf_debug_hud_pool',      lbl:'HUD Pool Debug',       type:'tog', def:'0', tip:'gf_debug_hud_pool\nLog HUD element pool allocation counts each round.' },
     { n:'gf_debug_elem_probe',    lbl:'Elem Probe',           type:'tog', def:'0', tip:'gf_debug_elem_probe\nProbe available client HUD element slots; prints count.' },
     // Force Camo moved out of DEBUG 2026-08-16 -> DASHBOARD > GUNFIGHT, next to Loadout Slots.
-    // With 30 custom camos shipping it is a real cosmetic control, not a debug toggle, and nobody
+    // With 17 custom camos shipping it is a real cosmetic control, not a debug toggle, and nobody
     // finds it buried here. Same dvar, same behaviour.
     { n:'gf_force_loadout',       lbl:'Force Loadout (-1=off)', type:'num', def:'-1', tip:'gf_force_loadout\nDEV/TEST: lock ONE loadout on every spawn instead of the round rotation, to inspect it without waiting. Value = index into the live (SHUFFLED) pool, 0-53 — NOT the editor row number, so cycle 0,1,2… and read the on-screen loadout HUD to find the one you want. -1 = off (normal rotation).' },
     // (duplicate Killcam row removed — the one control lives in GAME RULES)
@@ -2483,27 +2483,30 @@ const GF_MATCH_VARS = [
     // admin force wins). Gold (15) counts as BOTH families on purpose, so it survives either switch.
     { grp:'Camo',
       n:'scr_gf_camo_base',           lbl:'Base Camos',               type:'tog', def:'1', tip:'scr_gf_camo_base\nON (default): the round’s shared loadout may roll any of the STOCK camos the game shipped with — Dusty, Ice, Red, Olive, Nevada, Sahara, ERDL, Tiger, Berlin, Warsaw, Siberia, Yukon, Woodland, Flora, Gold.\nOFF: none of them roll.\n\nGOLD counts as BOTH base and modded, so it keeps rolling unless BOTH switches are off. With both off every gun runs its plain factory finish.\n\nApplies on the NEXT SPAWN (anyone already alive keeps their current gun for the round). A loadout carrying a switched-off camo is remapped to an enabled one — the same one for everybody, so the shared loadout stays identical across the server.' },
-    { n:'scr_gf_camo_modded',         lbl:'Modded Camos',             type:'tog', def:'1', tip:'scr_gf_camo_modded\nON (default): the rotation may roll THIS MOD’S own camos (indices 17-46 — Crimson, Teal, Toxic, Violet, White, Nebula, Weave, Splatter, Oilslick, Pastel, Blue, Yellow, Orange, …), whichever of them the rotation list has enabled.\nOFF: only stock camos roll.\n\nGOLD counts as BOTH base and modded, so it keeps rolling unless BOTH switches are off.\n\nThese camos reach a player through mp_gunfight.iwd, so anyone who has not downloaded the current mod.ff + .iwd sees a plain gun regardless of this switch.\n\nApplies on the NEXT SPAWN. Which of the 30 is in the rotation at all is a source-side list (gf_camoPool in _gf_loadouts.gsc); this switch is the runtime master for the whole family.' },
+    { n:'scr_gf_camo_modded',         lbl:'Modded Camos',             type:'tog', def:'1', tip:'scr_gf_camo_modded\nON (default): the rotation may roll THIS MOD’S own camos (indices 17-33 — Crimson, Teal, Toxic, Violet, White, Nebula, Weave, Splatter, Oilslick, Pastel, Blue, Yellow, Orange, …), whichever of them the rotation list has enabled.\nOFF: only stock camos roll.\n\nGOLD counts as BOTH base and modded, so it keeps rolling unless BOTH switches are off.\n\nThese camos reach a player through mp_gunfight.iwd, so anyone who has not downloaded the current mod.ff + .iwd sees a plain gun regardless of this switch.\n\nApplies on the NEXT SPAWN. Which of the 17 is in the rotation at all is a source-side list (gf_camoPool in _gf_loadouts.gsc); this switch is the runtime master for the whole family.' },
 
     { n:'gf_force_camo', lbl:'Force Camo (all players)', type:'sel', def:'-1',
       opts:[['-1','Off — use each loadout’s own camo'],
             {grp:'Stock'},['0','None'],['1','Dusty'],['2','Ice'],['3','Red'],['4','Olive'],['5','Nevada'],['6','Sahara'],['7','ERDL'],['8','Tiger'],['9','Berlin'],['10','Warsaw'],['11','Siberia'],['12','Yukon'],['13','Woodland'],['14','Flora'],['15','Gold'],
             
-            {grp:'Gunfight'},['17','Crimson'],['18','Teal'],['19','Urban'],['20','Toxic'],['21','Sand'],['22','Violet'],['23','White'],['24','Arctic'],['39','Blue'],['40','Yellow'],['41','Orange'],['42','Midnight'],['43','Copper'],['44','Forest'],['45','Storm'],['46','Bubblegum'],
-            {grp:'Novelty'},['25','Rainbow'],['26','Monogram'],['27','Neon'],['28','Spiral'],['29','Nebula'],['30','Weave'],['31','Splatter'],['32','Ember'],['33','Oilslick'],['34','Pastel'],
+            {grp:'Gunfight'},['17','Crimson'],['18','Teal'],['19','Toxic'],['20','Violet'],['21','White'],['27','Blue'],['28','Yellow'],['29','Orange'],
+            {grp:'Novelty'},['22','Nebula'],['23','Weave'],['24','Splatter'],['25','Oilslick'],['26','Pastel'],
             // Treyarch's own SP/campaign camos, absent from every stock weaponOptions row.
             // ⚠ Four more were imported and then DROPPED 2026-08-16 after a mip-0 pixel-hash
             // comparison proved them byte-identical to stock camos: desert_us == desert_nevada(5),
             // jungle_us == jungle_erdl(7), winter_rus == winter_siberia(11),
             // winter_us == winter_yukon(12). Treyarch shipped the same art under both naming
             // schemes. Hash-compare before importing any "new" camo from an asset dump.
-            {grp:'Military'},['35','Desert RUS'],['36','Urban RUS'],['37','Flecktarn'],['38','Digital'],
+            // MW2's own camo tiles, lifted straight out of its iw_07.iwd and converted v8 -> v13
+            // (tools/iw4_iwi_to_t5.ps1). Bush Dweller is a pattern MW2 itself never exposed in MP.
+            // ⚠ 128x128 art, half BO1's own camo resolution -- softer on the gun, by construction.
+            {grp:'Modern Warfare 2'},['30','Blue Tiger'],['31','Red Tiger'],['32','Red Urban'],['33','Orange Fall'],
             // Probe row, kept: a STOCK image at an index >15, so it separates "the index path
             // broke" from "the image never arrived" if a custom camo ever misrenders.
             // (A second probe at 44 named a MATERIAL instead of an image; it rendered WHITE, so
             // camo cells are image-name lookups only. Row and option both removed 2026-08-16.)
             {grp:'Diagnostic'},['16','16 · Red (control)']],
-      tip:'gf_force_camo\nForce ONE camo on both guns for every player, every spawn, overriding each loadout’s own camo. Off = normal per-loadout camos.\n\nStock 0-15 ship with the game. 17-46 are this mod’s custom camos, delivered to clients in mp_gunfight.iwd — a player only sees them once they have the current mod.ff AND that .iwd.\n\nApplies on the NEXT SPAWN (anyone already alive keeps their current gun until the round ends). Works on the dedicated server — no sv_cheats needed.' },
+      tip:'gf_force_camo\nForce ONE camo on both guns for every player, every spawn, overriding each loadout’s own camo. Off = normal per-loadout camos.\n\nStock 0-15 ship with the game. 17-33 are this mod’s custom camos, delivered to clients in mp_gunfight.iwd — a player only sees them once they have the current mod.ff AND that .iwd.\n\nApplies on the NEXT SPAWN (anyone already alive keeps their current gun until the round ends). Works on the dedicated server — no sv_cheats needed.' },
 
     { grp:'Spawns &amp; Round Time',
       n:'scr_gf_teamspawnmode',       lbl:'Team Spawn Mode',          type:'sel', def:'auto', opts:[['auto','Auto (5+/team → large)'],['large','Force Large'],['small','Force Small']], tip:'scr_gf_teamspawnmode\nauto = switch by the larger team (5+ on a team → large, hard-wired to the HUD skulls→readout switch); large/small = force the mode. (scr_gf_largemode_minplayers is retired.)' },

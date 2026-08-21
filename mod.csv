@@ -110,12 +110,9 @@ stringtable,mp/weaponOptions.csv
 # ⚠ Do not "clean up" an apparently-unused material row here -- it is load-bearing.
 material,gf_camo_crimson_mtl
 material,gf_camo_teal_mtl
-material,gf_camo_urban_mtl
 material,gf_camo_toxic_mtl
-material,gf_camo_sand_mtl
 material,gf_camo_violet_mtl
 material,gf_camo_white_mtl
-material,gf_camo_arctic_mtl
 # 25-34: textures from the community "BO1 Custom Camos MP SSCv1" pack (2022), re-shipped through
 # OUR pipeline instead of installed its way. As distributed it is a CLIENT-SIDE REPLACEMENT -- its
 # .iwi files are named after STOCK camos (camo_woodland, camo_desert_nevada...) and you drop them
@@ -126,14 +123,9 @@ material,gf_camo_arctic_mtl
 # ⚠ Gold is deliberately NOT imported: it is a 3-map material (camo_gold_c/env/spec) and the
 #   colorDetailMap route carries one image, so it would not reproduce.
 # ⚠ Third-party art -- credit the pack if these ship publicly.
-material,gf_camo_rainbow_mtl
-material,gf_camo_monogram_mtl
-material,gf_camo_neon_mtl
-material,gf_camo_spiral_mtl
 material,gf_camo_nebula_mtl
 material,gf_camo_weave_mtl
 material,gf_camo_splatter_mtl
-material,gf_camo_ember_mtl
 material,gf_camo_oilslick_mtl
 material,gf_camo_pastel_mtl
 # 35-38: AUTHENTIC TREYARCH camo art that MP never exposes. Found in the community
@@ -147,10 +139,6 @@ material,gf_camo_pastel_mtl
 # byte-identical to stock camos: desert_us == desert_nevada(5), jungle_us == jungle_erdl(7),
 # winter_rus == winter_siberia(11), winter_us == winter_yukon(12). Treyarch shipped the same art
 # under both naming schemes. HASH-COMPARE before importing any "new" camo from an asset dump.
-material,gf_camo_desertrus_mtl
-material,gf_camo_urbanrus_mtl
-material,gf_camo_flecktarn_mtl
-material,gf_camo_digital_mtl
 # 39-46: second generated wave (2026-08-16; owner requested blue/yellow/orange by name, rest are
 # creative extras). Same tools/make_camo_iwi.ps1 pipeline as 17-24, but each preset was generated
 # with a DIFFERENT -Blobs pattern scale (10-22) and its own seed, so the wave reads as different
@@ -158,11 +146,50 @@ material,gf_camo_digital_mtl
 material,gf_camo_blue_mtl
 material,gf_camo_yellow_mtl
 material,gf_camo_orange_mtl
-material,gf_camo_midnight_mtl
-material,gf_camo_copper_mtl
-material,gf_camo_forest_mtl
-material,gf_camo_storm_mtl
-material,gf_camo_bubblegum_mtl
+# 47-55: MODERN WARFARE 2's OWN WEAPON CAMOS -- the first CROSS-GAME art import (2026-08-20).
+# MW2 keeps its textures in loose main\iw_NN.iwd zips (BO1 does not), so iw_07.iwd yields the nine
+# tiling camo tiles -- woodland, desert, digital, arctic, blue_tiger, red_tiger, red_urban,
+# orange_fall and bush_dweller (that last is a pattern MW2 itself never exposed in MP) -- as plain
+# files, no fastfile extractor required. They are 128x128 DXT1, the same ONE-TILING-IMAGE shape a
+# weaponOptions camo cell wants, so they need no weapon forks: same three-file recipe as 17-46.
+# ⚠ The art is IWi v8 (IW4), not v13 (T5). Converted with tools\iw4_iwi_to_t5.ps1 -- a header swap
+#   like dds_to_iwi.ps1, EXCEPT that v8 stores its mip chain SMALLEST-FIRST, so mip 0 is the TAIL
+#   of the file. Wrong end = a structurally valid image that renders as a smear.
+# ⚠ 128x128 is HALF the linear resolution of BO1's own 256x256 camo tiles (the pattern scale on the
+#   gun comes from the material's detail tiling, not the image, so these read at the right size but
+#   softer). That is the one quality caveat and it is a look-at-it call, not a measurable one.
+# ⚠ MW2's GOLD is NOT here and cannot be: it ships as weapon_desert_eagle_gold_col, a per-weapon
+#   UV-mapped diffuse -- the per-gun repaint category a camo cell provably cannot deliver.
+material,gf_camo_mw2_blue_tiger_mtl
+material,gf_camo_mw2_red_tiger_mtl
+material,gf_camo_mw2_red_urban_mtl
+material,gf_camo_mw2_orange_fall_mtl
+# ⚠ THE SIX FURNITURE COLUMNS: every stock PATTERN camo (rows 5-14) puts an 8x8 FLAT swatch
+# (solid_camo_*) in CSV fields f4,f5,f10,f12,f14,f19 -- the plastic/wood/black furniture
+# materials -- and the tiling pattern in the other 11. Those surfaces have a completely
+# different UV density, so a tile lands on them MAGNIFIED: one blob smeared over a whole
+# stock, mismatched against the fine weave on the metal. Treyarch never scaled the tile to
+# fit; they simply did not pattern those parts. Each solid here is sampled from its own
+# tile mean, so it matches the camo it belongs to by construction.
+# ⚠ These need carrier materials exactly like the tiles do. make_camo_iwi.ps1 prints "No
+#   mod.csv row needed" -- that advice is STALE and is how the first camo wave rendered white.
+material,gf_camo_mw2_blue_tiger_solid_mtl
+material,gf_camo_mw2_red_tiger_solid_mtl
+material,gf_camo_mw2_red_urban_solid_mtl
+material,gf_camo_mw2_orange_fall_solid_mtl
+material,gf_camo_blue_solid_mtl
+material,gf_camo_crimson_solid_mtl
+material,gf_camo_nebula_solid_mtl
+material,gf_camo_oilslick_solid_mtl
+material,gf_camo_orange_solid_mtl
+material,gf_camo_pastel_solid_mtl
+material,gf_camo_splatter_solid_mtl
+material,gf_camo_teal_solid_mtl
+material,gf_camo_toxic_solid_mtl
+material,gf_camo_violet_solid_mtl
+material,gf_camo_weave_solid_mtl
+material,gf_camo_white_solid_mtl
+material,gf_camo_yellow_solid_mtl
 # GOLD IS STOCK, BY CHOICE -- and the capability that would change it is PROVEN, so read this
 # before assuming it cannot be done. Orion's camo_gold_c/_env/_spec were shipped in our .iwd under
 # their exact stock names and BO1's gold camo rendered as Orion in game (2026-08-16). A mod .iwd
